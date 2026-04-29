@@ -67,10 +67,16 @@ export function mapPromptSnapshotToSnakeCase(promptSnapshot: PromptSnapshotPrevi
     regex_profile_id: promptSnapshot.regexProfileId,
     regex_profile_updated_at: promptSnapshot.regexProfileUpdatedAt,
     regex_profile_version: promptSnapshot.regexProfileVersion,
+    character_id: promptSnapshot.characterId ?? null,
+    character_version_id: promptSnapshot.characterVersionId ?? null,
+    character_imported_format: promptSnapshot.characterImportedFormat ?? null,
+    character_content_hash: promptSnapshot.characterContentHash ?? null,
     worldbook_activated_entry_uids: promptSnapshot.worldbookActivatedEntryUids,
+    worldbook_activated_entries: (promptSnapshot.worldbookActivatedEntries ?? []).map(mapPromptSnapshotWorldbookActivationToSnakeCase),
     regex_pre_rule_names: promptSnapshot.regexPreRuleNames,
     regex_post_rule_names: promptSnapshot.regexPostRuleNames,
     prompt_mode: promptSnapshot.promptMode,
+    asset_manifest_digest: promptSnapshot.assetManifestDigest ?? null,
     prompt_digest: promptSnapshot.promptDigest,
     token_estimate: promptSnapshot.tokenEstimate,
   };
@@ -253,9 +259,32 @@ function mapMacroTraceEntryToSnakeCase(trace: NonNullable<PromptRuntimeTrace["ma
   };
 }
 
+function mapPromptSnapshotWorldbookActivationToSnakeCase(
+  activation: NonNullable<PromptSnapshotPreview["worldbookActivatedEntries"]>[number],
+): Record<string, unknown> {
+  return {
+    uid: activation.uid,
+    activation_key: activation.activationKey,
+    source: {
+      kind: activation.source.kind,
+      worldbook_id: activation.source.worldbookId,
+      worldbook_name: activation.source.worldbookName,
+      asset_scope_id: activation.source.assetScopeId,
+    },
+    insertion: {
+      position: activation.insertion.position,
+      ...(activation.insertion.depth !== undefined ? { depth: activation.insertion.depth } : {}),
+      ...(activation.insertion.role ? { role: activation.insertion.role } : {}),
+      ...(activation.insertion.outletName ? { outlet_name: activation.insertion.outletName } : {}),
+    },
+  };
+}
+
 export function mapWorldbookMatchDetail(match: WorldbookMatchDetail): Record<string, unknown> {
   return {
     uid: match.uid,
+    activation_key: match.activationKey,
+    asset_scope_id: match.assetScopeId,
     comment: match.comment,
     content_preview: match.contentPreview,
     order: match.order,
@@ -263,6 +292,7 @@ export function mapWorldbookMatchDetail(match: WorldbookMatchDetail): Record<str
       kind: match.source.kind,
       worldbook_id: match.source.worldbookId,
       worldbook_name: match.source.worldbookName,
+      asset_scope_id: match.source.assetScopeId,
     },
     insertion: {
       position: match.insertion.position,

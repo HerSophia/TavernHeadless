@@ -96,6 +96,14 @@ export interface TriggerResult {
   after: STWorldBookEntry[];
   /** position=atDepth(4) 的条目 */
   atDepth: DepthEntry[];
+  /** position=AN_TOP(2) 的条目 */
+  anTop: STWorldBookEntry[];
+  /** position=AN_BOTTOM(3) 的条目 */
+  anBottom: STWorldBookEntry[];
+  /** position=EM_TOP(5) 的条目 */
+  emTop: STWorldBookEntry[];
+  /** position=EM_BOTTOM(6) 的条目 */
+  emBottom: STWorldBookEntry[];
   /** position=outlet(7) 的条目，按 outletName 分组 */
   outletEntries?: Record<string, STWorldBookEntry[]>;
   /** debug 模式下返回，每个 activated entry 的首个命中轨迹 */
@@ -417,14 +425,16 @@ function selectFirstMatchTrace(traces: MatchTrace[]): MatchTrace | null {
 function toTriggerFirstMatch(trace: MatchTrace, segment: HaystackSegment): TriggerFirstMatch {
   return {
     sourceKind: segment.kind,
-    messageIndexFromLatest: segment.messageIndexFromLatest,
-    injectionIndex: segment.injectionIndex,
     matchedKey: trace.matchedKey,
     matchedKeyScope: trace.matchedKeyScope,
     matchedKeyType: trace.matchedKeyType,
     charStart: trace.charStart,
     charEnd: trace.charEnd,
     excerpt: buildExcerpt(segment.text, trace.charStart, trace.charEnd),
+    ...(segment.messageIndexFromLatest !== undefined
+      ? { messageIndexFromLatest: segment.messageIndexFromLatest }
+      : {}),
+    ...(segment.injectionIndex !== undefined ? { injectionIndex: segment.injectionIndex } : {}),
   };
 }
 
@@ -662,6 +672,10 @@ export function triggerWorldBook(
   const after: STWorldBookEntry[] = [];
   const atDepth: DepthEntry[] = [];
   const outletEntries: Record<string, STWorldBookEntry[]> = {};
+  const anTop: STWorldBookEntry[] = [];
+  const anBottom: STWorldBookEntry[] = [];
+  const emTop: STWorldBookEntry[] = [];
+  const emBottom: STWorldBookEntry[] = [];
 
   for (const entry of activated) {
     switch (entry.position) {
@@ -673,6 +687,18 @@ export function triggerWorldBook(
         break;
       case WI_POSITION.AT_DEPTH:
         atDepth.push({ entry, depth: entry.depth, role: entry.role });
+        break;
+      case WI_POSITION.AN_TOP:
+        anTop.push(entry);
+        break;
+      case WI_POSITION.AN_BOTTOM:
+        anBottom.push(entry);
+        break;
+      case WI_POSITION.EM_TOP:
+        emTop.push(entry);
+        break;
+      case WI_POSITION.EM_BOTTOM:
+        emBottom.push(entry);
         break;
       case WI_POSITION.OUTLET: {
         const outletName = entry.outletName?.trim();
@@ -686,10 +712,6 @@ export function triggerWorldBook(
         outletEntries[outletName].push(entry);
         break;
       }
-      default:
-        // AN_TOP, AN_BOTTOM, EM_TOP, EM_BOTTOM → 暂时放入 after
-        after.push(entry);
-        break;
     }
   }
 
@@ -698,6 +720,10 @@ export function triggerWorldBook(
     before,
     after,
     atDepth,
+    anTop,
+    anBottom,
+    emTop,
+    emBottom,
     outletEntries,
     ...(traceEnabled ? { activationTraces } : {}),
   };

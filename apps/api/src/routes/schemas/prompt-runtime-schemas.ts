@@ -19,6 +19,8 @@ import {
   generationParamsJsonSchema,
   liveDebugOptionsJsonSchema,
   promptBudgetJsonSchema,
+  livePromptSnapshotExample,
+  livePromptSnapshotJsonSchema,
   promptDeliveryJsonSchema,
   promptIntentValues,
   promptSourceSelectionJsonSchema,
@@ -108,7 +110,7 @@ const promptRuntimeDebugPolicyExample = {
 
 const promptRuntimeAssetsExample = {
   preset: {
-    id: "preset-story",
+    id: "preset-1",
     name: "Story Preset",
   },
   character_card: {
@@ -116,11 +118,11 @@ const promptRuntimeAssetsExample = {
     name: "Hero",
   },
   worldbook: {
-    id: "wb-lore",
-    name: "Lorebook",
+    id: "worldbook-1",
+    name: "Campfire Worldbook",
   },
   regex_profile: {
-    id: "regex-safe",
+    id: "regex-1",
     name: "Safety Regex",
   },
 } as const;
@@ -465,23 +467,7 @@ export const promptRuntimeHistoricalExplainResponseExample = {
   },
   snapshot_available: true,
   assets: promptRuntimeAssetsExample,
-  prompt_snapshot: {
-    preset_id: "preset-story",
-    preset_updated_at: 1710000000000,
-    preset_version: 3,
-    worldbook_id: "wb-lore",
-    worldbook_updated_at: 1710000001000,
-    worldbook_version: 5,
-    regex_profile_id: "regex-safe",
-    regex_profile_updated_at: 1710000002000,
-    regex_profile_version: 2,
-    worldbook_activated_entry_uids: [7, 12],
-    regex_pre_rule_names: ["trim_whitespace"],
-    regex_post_rule_names: [],
-    prompt_mode: "compat_strict",
-    prompt_digest: "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
-    token_estimate: 512,
-  },
+  prompt_snapshot: livePromptSnapshotExample,
   resolved_policy: promptRuntimePolicyViewExample.resolved_policy,
   source_map: promptRuntimeSourceMapExample,
   trim_reasons: [
@@ -1062,44 +1048,7 @@ const promptRuntimeGovernanceJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const promptRuntimeHistoricalPromptSnapshotJsonSchema = {
-  type: "object",
-  required: [
-    "preset_id",
-    "preset_updated_at",
-    "preset_version",
-    "worldbook_id",
-    "worldbook_updated_at",
-    "worldbook_version",
-    "regex_profile_id",
-    "regex_profile_updated_at",
-    "regex_profile_version",
-    "worldbook_activated_entry_uids",
-    "regex_pre_rule_names",
-    "regex_post_rule_names",
-    "prompt_mode",
-    "prompt_digest",
-    "token_estimate",
-  ],
-  properties: {
-    preset_id: { anyOf: [{ type: "string" }, { type: "null" }] },
-    preset_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
-    preset_version: { anyOf: [{ type: "integer" }, { type: "null" }] },
-    worldbook_id: { anyOf: [{ type: "string" }, { type: "null" }] },
-    worldbook_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
-    worldbook_version: { anyOf: [{ type: "integer" }, { type: "null" }] },
-    regex_profile_id: { anyOf: [{ type: "string" }, { type: "null" }] },
-    regex_profile_updated_at: { anyOf: [{ type: "integer" }, { type: "null" }] },
-    regex_profile_version: { anyOf: [{ type: "integer" }, { type: "null" }] },
-    worldbook_activated_entry_uids: { type: "array", items: { type: "integer" } },
-    regex_pre_rule_names: { type: "array", items: { type: "string" } },
-    regex_post_rule_names: { type: "array", items: { type: "string" } },
-    prompt_mode: { type: "string", enum: ["compat_strict", "compat_plus", "native"] },
-    prompt_digest: { type: "string" },
-    token_estimate: { type: "integer", minimum: 0 },
-  },
-  additionalProperties: false,
-} as const;
+const promptRuntimeHistoricalPromptSnapshotJsonSchema = livePromptSnapshotJsonSchema;
 
 const promptRuntimeHistoricalExplainFloorJsonSchema = {
   type: "object",

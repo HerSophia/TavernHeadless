@@ -88,6 +88,32 @@ function shouldIncludePromptEntry(promptEntry: STPromptEntry | undefined, intent
   return promptEntry.behavior.triggers.includes(intent);
 }
 
+function buildWorldbookSection(args: {
+  name: string;
+  order: number;
+  entries: STWorldBookEntry[];
+  wiFormat: string;
+  variables: Record<string, unknown>;
+  macroRuntime?: CompatAssemblerInput['macroRuntime'];
+}): IRSection | null {
+  const messages = worldBookEntriesToMessages(
+    args.entries,
+    args.wiFormat,
+    args.variables,
+    args.macroRuntime,
+  );
+  if (messages.length === 0) {
+    return null;
+  }
+  return {
+    name: args.name,
+    order: args.order,
+    budgetGroup: 'worldbook',
+    pinned: true,
+    messages,
+  };
+}
+
 function toInsertion(promptEntry: STPromptEntry | undefined): IRSection['insertion'] | undefined {
   const placement = promptEntry?.behavior?.placement;
   if (!placement || placement.kind !== 'in_chat') {
@@ -418,6 +444,42 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
     }
   }
 
+  const specialWorldbookSections = [
+    buildWorldbookSection({
+      name: 'worldInfoAuthorNoteTop',
+      order: orderIndex++,
+      entries: worldBookResults?.anTop ?? [],
+      wiFormat: preset.wiFormat,
+      variables,
+      macroRuntime,
+    }),
+    buildWorldbookSection({
+      name: 'worldInfoAuthorNoteBottom',
+      order: orderIndex++,
+      entries: worldBookResults?.anBottom ?? [],
+      wiFormat: preset.wiFormat,
+      variables,
+      macroRuntime,
+    }),
+    buildWorldbookSection({
+      name: 'worldInfoExampleMessageTop',
+      order: orderIndex++,
+      entries: worldBookResults?.emTop ?? [],
+      wiFormat: preset.wiFormat,
+      variables,
+      macroRuntime,
+    }),
+    buildWorldbookSection({
+      name: 'worldInfoExampleMessageBottom',
+      order: orderIndex++,
+      entries: worldBookResults?.emBottom ?? [],
+      wiFormat: preset.wiFormat,
+      variables,
+      macroRuntime,
+    }),
+  ].filter((section): section is IRSection => section !== null);
+  sections.push(...specialWorldbookSections);
+
   if (worldBookResults?.atDepth.length) {
     for (const depthEntry of worldBookResults.atDepth) {
       sections.push({
@@ -431,7 +493,7 @@ export function assembleCompat(input: CompatAssemblerInput): PromptIR {
           order: depthEntry.entry.order,
         },
         messages: [{
-          role: wiRoleToChatRole(depthEntry.entry.position),
+          role: wiRoleToChatRole(depthEntry.role),
           content: renderTemplate(depthEntry.entry.content, variables, macroRuntime),
           source: `worldbook:${depthEntry.entry.uid}`,
           prunable: false,

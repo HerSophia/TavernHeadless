@@ -73,6 +73,8 @@ export class TurnModelService {
       regexProfileId: string | null;
       metadataJson: string | null;
       characterSnapshotJson: string | null;
+      characterId?: string | null;
+      characterVersionId?: string | null;
       promptMode: SessionPromptInfo["promptMode"];
       userSnapshotJson: string | null;
     },
@@ -85,6 +87,8 @@ export class TurnModelService {
       regexProfileId: session.regexProfileId,
       metadataJson: mergeSessionMetadataWithFirstPartyState(session.metadataJson, firstPartyStateContext),
       characterSnapshotJson: session.characterSnapshotJson,
+      characterId: session.characterId ?? null,
+      characterVersionId: session.characterVersionId ?? null,
       promptMode: session.promptMode,
       userSnapshotJson: session.userSnapshotJson,
     };

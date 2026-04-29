@@ -15,6 +15,13 @@ export interface BuildImportedPresetPromptGraphOptions {
   outletNames?: string[];
 }
 
+const SPECIAL_WORLDBOOK_POSITIONS = [
+  { position: 'an_top' as const, id: 'native:worldbook:an-top', name: 'Worldbook Author Note Top', orderOffset: 0.11 },
+  { position: 'an_bottom' as const, id: 'native:worldbook:an-bottom', name: 'Worldbook Author Note Bottom', orderOffset: 0.12 },
+  { position: 'em_top' as const, id: 'native:worldbook:em-top', name: 'Worldbook Example Message Top', orderOffset: 0.13 },
+  { position: 'em_bottom' as const, id: 'native:worldbook:em-bottom', name: 'Worldbook Example Message Bottom', orderOffset: 0.14 },
+] as const;
+
 const ROOT_GROUP_ID = 'imported-st-preset-root';
 const ORDER_STEP = 10;
 
@@ -60,6 +67,16 @@ function toOutletNodePlacement(
   }
 
   return toNodePlacement(promptEntry, fallbackOrder);
+}
+
+function buildPromptEntryMetadata(identifier: string, promptEntry: STPromptEntry | undefined): Record<string, unknown> {
+  return {
+    source: 'sillytavern',
+    identifier,
+    ...(promptEntry?.behavior?.semantics
+      ? { semantics: { ...promptEntry.behavior.semantics } }
+      : {}),
+  };
 }
 
 function makeStaticTextNode(args: {
@@ -108,7 +125,7 @@ function makePromptNodeFromIdentifier(
         order,
         template: promptEntry.content,
         promptEntry,
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       });
     case 'worldInfoBefore':
       return {
@@ -120,7 +137,7 @@ function makePromptNodeFromIdentifier(
         placement: toNodePlacement(promptEntry, order),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
         position: 'before',
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     case 'worldInfoAfter':
       return {
@@ -132,7 +149,7 @@ function makePromptNodeFromIdentifier(
         placement: toNodePlacement(promptEntry, order),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
         position: 'after',
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     case 'charDescription':
       return {
@@ -144,7 +161,7 @@ function makePromptNodeFromIdentifier(
         placement: toNodePlacement(promptEntry, order),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
         part: 'description',
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     case 'charPersonality':
       return {
@@ -156,7 +173,7 @@ function makePromptNodeFromIdentifier(
         placement: toNodePlacement(promptEntry, order),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
         part: 'personality',
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     case 'scenario':
       return {
@@ -168,7 +185,7 @@ function makePromptNodeFromIdentifier(
         placement: toNodePlacement(promptEntry, order),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
         part: 'scenario',
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     case 'personaDescription':
       return {
@@ -179,7 +196,7 @@ function makePromptNodeFromIdentifier(
         role: 'system',
         placement: toNodePlacement(promptEntry, order),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     case 'dialogueExamples':
       return {
@@ -190,7 +207,7 @@ function makePromptNodeFromIdentifier(
         role: 'system',
         placement: toNodePlacement(promptEntry, order),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     case 'chatHistory':
       return {
@@ -201,7 +218,7 @@ function makePromptNodeFromIdentifier(
         role: 'system',
         placement: toNodePlacement(promptEntry, order, false),
         ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       };
     default:
       if (promptEntry?.marker) {
@@ -214,7 +231,7 @@ function makePromptNodeFromIdentifier(
           placement: toNodePlacement(promptEntry, order),
           ...(toNodeTriggers(promptEntry) ? { triggers: toNodeTriggers(promptEntry) } : {}),
           markerId: identifier,
-          metadata: { source: 'sillytavern', identifier },
+          metadata: buildPromptEntryMetadata(identifier, promptEntry),
         };
       }
       if (!promptEntry?.content?.trim()) {
@@ -227,7 +244,7 @@ function makePromptNodeFromIdentifier(
         order,
         template: promptEntry.content,
         promptEntry,
-        metadata: { source: 'sillytavern', identifier },
+        metadata: buildPromptEntryMetadata(identifier, promptEntry),
       });
   }
 }
@@ -301,6 +318,22 @@ export function buildImportedPresetPromptGraph(
       placement: { kind: 'relative', order: chatHistoryOrder + 1 },
       position: 'after',
       metadata: { source: 'native-fallback', reason: 'worldInfoAfter marker missing from preset.promptOrder' },
+    });
+  }
+
+  for (const item of SPECIAL_WORLDBOOK_POSITIONS) {
+    if (hasNode(nodes, (node) => node.nodeType === 'worldbook' && node.position === item.position)) {
+      continue;
+    }
+    pushNode(nodes, {
+      id: item.id,
+      name: item.name,
+      nodeType: 'worldbook',
+      enabled: true,
+      role: 'system',
+      placement: { kind: 'relative', order: chatHistoryOrder + item.orderOffset },
+      position: item.position,
+      metadata: { source: 'native-fallback', reason: `${item.position} worldbook entries detected at runtime` },
     });
   }
 

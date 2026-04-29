@@ -10,6 +10,7 @@ import {
   type MemoryInjectionResult,
   type PromptRunIntent,
   type PromptGraphWorldbookEntry,
+  type PromptSnapshotWorldbookActivation,
   type PromptSnapshotRecord,
   type PromptRuntimeBudgetTrace as CorePromptRuntimeBudgetTrace,
   type PromptRuntimeDeliveryDegradeReason,
@@ -70,6 +71,12 @@ import {
   applyMemorySourceGate,
   type PromptSourceResolution,
 } from "./prompt-runtime-source-resolution.js";
+import { buildPromptAssetManifestForAssembly } from "./prompt-assets/index.js";
+import {
+  buildCharacterBookAssetScopeId,
+  buildSessionWorldbookAssetScopeId,
+  buildWorldbookActivationKey,
+} from "./prompt-assets/worldbook/index.js";
 
 export interface SessionPromptInfo {
   presetId: string | null;
@@ -77,6 +84,8 @@ export interface SessionPromptInfo {
   regexProfileId: string | null;
   metadataJson: string | null;
   characterSnapshotJson: string | null;
+  characterId?: string | null;
+  characterVersionId?: string | null;
   promptMode?: PromptMode | null;
   userSnapshotJson?: string | null;
 }
@@ -154,10 +163,16 @@ export interface PromptSnapshotPreview {
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
   regexProfileVersion: number | null;
+  characterId?: string | null;
+  characterVersionId?: string | null;
+  characterImportedFormat?: string | null;
+  characterContentHash?: string | null;
   worldbookActivatedEntryUids: number[];
+  worldbookActivatedEntries?: PromptSnapshotWorldbookActivation[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];
   promptMode: PromptMode;
+  assetManifestDigest?: string | null;
   promptDigest: string;
   tokenEstimate: number;
 }
@@ -179,6 +194,12 @@ export interface PromptAssemblySnapshot extends PromptSnapshotPreview {
   character?: CharacterSnapshot;
   userSnapshot?: UserSnapshot;
   persona?: PersonaInfo;
+  characterId: string | null;
+  characterVersionId: string | null;
+  characterImportedFormat: string | null;
+  characterContentHash: string | null;
+  worldbookActivatedEntries: PromptSnapshotWorldbookActivation[];
+  assetManifestDigest: string | null;
   variables: Record<string, unknown>;
 }
 
@@ -186,10 +207,19 @@ export interface WorldbookMatchSource {
   kind: "session_worldbook" | "character_book";
   worldbookId: string | null;
   worldbookName: string;
+  assetScopeId: string;
 }
 
 export interface WorldbookMatchInsertion {
-  position: "before" | "after" | "at_depth" | "outlet";
+  position:
+    | "before"
+    | "after"
+    | "an_top"
+    | "an_bottom"
+    | "em_top"
+    | "em_bottom"
+    | "at_depth"
+    | "outlet";
   depth?: number;
   role?: ChatMessage["role"];
   outletName?: string;
@@ -215,6 +245,8 @@ export interface WorldbookMatchActivation {
 
 export interface WorldbookMatchDetail {
   uid: number;
+  activationKey: string;
+  assetScopeId: string;
   comment: string;
   contentPreview: string;
   order: number;
@@ -228,8 +260,29 @@ interface SourcedWorldbook {
   source: WorldbookMatchSource;
 }
 
+interface PromptWorldbookEntryActivation {
+  entry: STWorldBookEntry;
+  activationKey: string;
+  source: WorldbookMatchSource;
+  activation?: ActivationTrace;
+}
+
+interface PromptWorldbookDepthActivation {
+  activation: PromptWorldbookEntryActivation;
+  depth: number;
+  role: number;
+}
+
 interface PromptWorldbookTriggerResult extends TriggerResult {
-  sourceByUid: Map<number, WorldbookMatchSource>;
+  activatedDetails: PromptWorldbookEntryActivation[];
+  beforeDetails: PromptWorldbookEntryActivation[];
+  afterDetails: PromptWorldbookEntryActivation[];
+  anTopDetails: PromptWorldbookEntryActivation[];
+  anBottomDetails: PromptWorldbookEntryActivation[];
+  emTopDetails: PromptWorldbookEntryActivation[];
+  emBottomDetails: PromptWorldbookEntryActivation[];
+  atDepthDetails: PromptWorldbookDepthActivation[];
+  outletEntryDetails: Record<string, PromptWorldbookEntryActivation[]>;
 }
 
 export interface PromptVariableContextInput {
@@ -581,6 +634,9 @@ export async function assemblePrompt(
 
   const character = parseCharacterSnapshot(session.characterSnapshotJson);
   const userSnapshot = parseUserSnapshot(session.userSnapshotJson ?? null);
+  const characterContentHash = session.characterSnapshotJson
+    ? createHash("sha256").update(session.characterSnapshotJson).digest("hex")
+    : null;
   const persona = userSnapshot ?? metadata.persona;
   const promptMode = resolvePromptMode(session, metadata);
   const { ordinaryVariables, variableSnapshot, reservedVariableCollisions } = await resolvePromptVariables({
@@ -676,6 +732,21 @@ export async function assemblePrompt(
     userSnapshot,
     persona,
     variables: promptVariables,
+    characterId: session.characterId ?? null,
+    characterVersionId: session.characterVersionId ?? null,
+    characterImportedFormat: character?.importedFormat ?? null,
+    characterContentHash,
+    worldbookActivatedEntries: [],
+    assetManifestDigest: buildPromptAssetManifestForAssembly({
+      generatedAt: Date.now(),
+      preset,
+      worldbook,
+      regexProfile,
+      character,
+      characterId: session.characterId ?? null,
+      characterVersionId: session.characterVersionId ?? null,
+      characterContentHash,
+    }).digest,
     presetId: preset?.id ?? null,
     presetUpdatedAt: preset?.updatedAt ?? null,
     presetVersion: preset?.version ?? null,
@@ -719,7 +790,10 @@ export async function assemblePrompt(
     : "none";
 
   if (presetData) {
-    const runtimeWorldbooks = collectPromptWorldbooks(promptSnapshot.worldbook, promptSnapshot.character);
+    const runtimeWorldbooks = collectPromptWorldbooks(promptSnapshot.worldbook, promptSnapshot.character, {
+      characterId: promptSnapshot.characterId,
+      characterVersionId: promptSnapshot.characterVersionId,
+    });
 
     // sourceSelection.worldbook.enabled = false 时，跳过世界书触发与注入。
     const worldbookGateEnabled = sourceResolution.gates.worldbook.enabled;
@@ -747,6 +821,7 @@ export async function assemblePrompt(
     }
 
     promptSnapshot.worldbookActivatedEntryUids = collectActivatedEntryUids(worldBookResults);
+    promptSnapshot.worldbookActivatedEntries = buildPromptSnapshotWorldbookActivations(worldBookResults);
     worldbookHits = promptSnapshot.worldbookActivatedEntryUids.length;
 
     const compatInput = {
@@ -866,7 +941,7 @@ export async function assemblePrompt(
     messages = injectMemorySummary(messages, effectiveMemorySummary);
   }
   if (!characterOverridesHandledInPromptIR) {
-    messages = injectCharacterSystemPrompt(messages, promptSnapshot.character);
+    messages = injectCharacterSystemPrompt(messages, promptSnapshot.character, presetForbidsCharacterSystemPrompt(presetData));
     messages = injectCharacterPostHistoryInstructions(messages, promptSnapshot.character);
   }
 
@@ -1100,8 +1175,28 @@ function buildFallbackMessages(
   ];
 }
 
-function injectCharacterSystemPrompt(messages: ChatMessage[], character?: CharacterSnapshot): ChatMessage[] {
+function presetForbidsCharacterSystemPrompt(preset: LoadedPromptPreset["preset"] | null): boolean {
+  if (!preset) {
+    return false;
+  }
+
+  return preset.prompts.some((prompt) => {
+    if (prompt.behavior?.semantics?.forbidOverrides !== true) {
+      return false;
+    }
+    return prompt.identifier === "main" || prompt.behavior.semantics.systemPrompt === true;
+  });
+}
+
+function injectCharacterSystemPrompt(
+  messages: ChatMessage[],
+  character: CharacterSnapshot | undefined,
+  forbidOverrides: boolean,
+): ChatMessage[] {
   if (!character?.systemPrompt?.trim()) {
+    return messages;
+  }
+  if (forbidOverrides) {
     return messages;
   }
 
@@ -1981,29 +2076,37 @@ function parseCharacterBookWorldbook(character?: CharacterSnapshot): STWorldBook
 function collectPromptWorldbooks(
   worldbook: LoadedPromptWorldbook | null,
   character?: CharacterSnapshot,
+  characterBinding?: {
+    characterId?: string | null;
+    characterVersionId?: string | null;
+  },
 ): SourcedWorldbook[] {
   const result: SourcedWorldbook[] = [];
 
   const worldbookData = worldbook?.worldbook;
   if (worldbookData) {
+    const assetScopeId = buildSessionWorldbookAssetScopeId(worldbook);
     result.push({
       worldbook: worldbookData,
       source: {
         kind: "session_worldbook",
         worldbookId: worldbook?.id ?? null,
         worldbookName: worldbookData.name ?? "session worldbook",
+        assetScopeId,
       },
     });
   }
 
   const characterBookWorldbook = parseCharacterBookWorldbook(character);
   if (characterBookWorldbook) {
+    const assetScopeId = buildCharacterBookAssetScopeId(characterBinding?.characterId, characterBinding?.characterVersionId);
     result.push({
       worldbook: characterBookWorldbook,
       source: {
         kind: "character_book",
         worldbookId: null,
         worldbookName: characterBookWorldbook.name ?? "character book",
+        assetScopeId,
       },
     });
   }
@@ -2024,29 +2127,70 @@ function triggerPromptWorldbooks(
     before: [],
     after: [],
     atDepth: [],
+    anTop: [],
+    anBottom: [],
+    emTop: [],
+    emBottom: [],
     outletEntries: {},
-    sourceByUid: new Map(),
-    ...(context.traceEnabled ? { activationTraces: new Map<number, ActivationTrace>() } : {}),
+    activatedDetails: [],
+    beforeDetails: [],
+    afterDetails: [],
+    anTopDetails: [],
+    anBottomDetails: [],
+    emTopDetails: [],
+    emBottomDetails: [],
+    atDepthDetails: [],
+    outletEntryDetails: {},
   };
 
   for (const item of worldbooks) {
     const result = triggerWorldBook(item.worldbook.entries, context);
-    merged.activated.push(...result.activated);
-    merged.before.push(...result.before);
-    merged.after.push(...result.after);
-    merged.atDepth.push(...result.atDepth);
-    if (result.activationTraces) {
-      const target = merged.activationTraces ?? (merged.activationTraces = new Map<number, ActivationTrace>());
-      for (const [uid, trace] of result.activationTraces.entries()) {
-        target.set(uid, trace);
-      }
-    }
+    const decorateEntry = (entry: STWorldBookEntry): PromptWorldbookEntryActivation => ({
+      entry,
+      activationKey: buildWorldbookActivationKey(item.source.assetScopeId, entry.uid),
+      source: item.source,
+      activation: result.activationTraces?.get(entry.uid),
+    });
+    const activatedDetails = result.activated.map(decorateEntry);
+    const beforeDetails = result.before.map(decorateEntry);
+    const afterDetails = result.after.map(decorateEntry);
+    const anTopDetails = result.anTop.map(decorateEntry);
+    const anBottomDetails = result.anBottom.map(decorateEntry);
+    const emTopDetails = result.emTop.map(decorateEntry);
+    const emBottomDetails = result.emBottom.map(decorateEntry);
+    const atDepthDetails = result.atDepth.map((entry) => ({
+      activation: decorateEntry(entry.entry),
+      depth: entry.depth,
+      role: entry.role,
+    }));
+
+    merged.activated.push(...activatedDetails.map((entry) => entry.entry));
+    merged.before.push(...beforeDetails.map((entry) => entry.entry));
+    merged.after.push(...afterDetails.map((entry) => entry.entry));
+    merged.anTop.push(...anTopDetails.map((entry) => entry.entry));
+    merged.anBottom.push(...anBottomDetails.map((entry) => entry.entry));
+    merged.emTop.push(...emTopDetails.map((entry) => entry.entry));
+    merged.emBottom.push(...emBottomDetails.map((entry) => entry.entry));
+    merged.atDepth.push(...atDepthDetails.map((entry) => ({
+      entry: entry.activation.entry,
+      depth: entry.depth,
+      role: entry.role,
+    })));
+    merged.activatedDetails.push(...activatedDetails);
+    merged.beforeDetails.push(...beforeDetails);
+    merged.afterDetails.push(...afterDetails);
+    merged.anTopDetails.push(...anTopDetails);
+    merged.anBottomDetails.push(...anBottomDetails);
+    merged.emTopDetails.push(...emTopDetails);
+    merged.emBottomDetails.push(...emBottomDetails);
+    merged.atDepthDetails.push(...atDepthDetails);
+
     const mergedOutletEntries = merged.outletEntries ?? (merged.outletEntries = {});
+    const mergedOutletEntryDetails = merged.outletEntryDetails;
     for (const [name, entries] of Object.entries(result.outletEntries ?? {})) {
-      mergedOutletEntries[name] = [...(mergedOutletEntries[name] ?? []), ...entries];
-    }
-    for (const entry of result.activated) {
-      merged.sourceByUid.set(entry.uid, item.source);
+      const outletDetails = entries.map(decorateEntry);
+      mergedOutletEntries[name] = [...(mergedOutletEntries[name] ?? []), ...outletDetails.map((entry) => entry.entry)];
+      mergedOutletEntryDetails[name] = [...(mergedOutletEntryDetails[name] ?? []), ...outletDetails];
     }
   }
 
@@ -2089,19 +2233,32 @@ function toPromptGraphWorldbookEntries(
     return [];
   }
 
-  const beforeEntries = result.before.map((entry) => ({ id: String(entry.uid), content: entry.content, position: "before" as const }));
-  const afterEntries = result.after.map((entry) => ({ id: String(entry.uid), content: entry.content, position: "after" as const }));
-  const depthEntries = result.atDepth.map((entry) => ({
-    id: String(entry.entry.uid),
+  const beforeEntries = result.beforeDetails.map((entry) => ({
+    id: entry.activationKey,
     content: entry.entry.content,
+    position: "before" as const,
+  }));
+  const afterEntries = result.afterDetails.map((entry) => ({ id: entry.activationKey, content: entry.entry.content, position: "after" as const }));
+  const anTopEntries = result.anTopDetails.map((entry) => ({ id: entry.activationKey, content: entry.entry.content, position: "an_top" as const }));
+  const anBottomEntries = result.anBottomDetails.map((entry) => ({ id: entry.activationKey, content: entry.entry.content, position: "an_bottom" as const }));
+  const emTopEntries = result.emTopDetails.map((entry) => ({ id: entry.activationKey, content: entry.entry.content, position: "em_top" as const }));
+  const emBottomEntries = result.emBottomDetails.map((entry) => ({ id: entry.activationKey, content: entry.entry.content, position: "em_bottom" as const }));
+  const depthEntries = result.atDepthDetails.map((entry) => ({
+    id: entry.activation.activationKey,
+    content: entry.activation.entry.content,
     position: "depth" as const,
     depth: entry.depth,
   }));
-  const outletEntries = Object.entries(result.outletEntries ?? {}).flatMap(([outletName, entries]) =>
-    entries.map((entry) => ({ id: String(entry.uid), content: entry.content, position: "outlet" as const, outletName })),
+  const outletEntries = Object.entries(result.outletEntryDetails ?? {}).flatMap(([outletName, entries]) =>
+    entries.map((entry) => ({
+      id: entry.activationKey,
+      content: entry.entry.content,
+      position: "outlet" as const,
+      outletName,
+    })),
   );
 
-  return [...beforeEntries, ...afterEntries, ...depthEntries, ...outletEntries];
+  return [...beforeEntries, ...afterEntries, ...anTopEntries, ...anBottomEntries, ...emTopEntries, ...emBottomEntries, ...depthEntries, ...outletEntries];
 }
 
 function buildRegexDepthByMessageIndex(messages: ChatMessage[]): number[] {
@@ -2113,38 +2270,38 @@ function buildWorldbookMatchDetails(result: PromptWorldbookTriggerResult | undef
     return [];
   }
 
-  const activationTraceByUid = result.activationTraces;
-
   const buildDetail = (
-    entry: STWorldBookEntry,
+    activation: PromptWorldbookEntryActivation,
     insertion: WorldbookMatchInsertion,
   ): WorldbookMatchDetail => ({
-    uid: entry.uid,
-    comment: entry.comment,
-    contentPreview: entry.content,
-    order: entry.order,
-    source: result.sourceByUid.get(entry.uid) ?? {
-      kind: "session_worldbook",
-      worldbookId: null,
-      worldbookName: "unknown",
-    },
+    uid: activation.entry.uid,
+    activationKey: activation.activationKey,
+    assetScopeId: activation.source.assetScopeId,
+    comment: activation.entry.comment,
+    contentPreview: activation.entry.content,
+    order: activation.entry.order,
+    source: activation.source,
     insertion,
-    activation: activationTraceByUid?.get(entry.uid) ?? {
-      mode: entry.constant ? "constant" : "triggered",
+    activation: activation.activation ?? {
+      mode: activation.entry.constant ? "constant" : "triggered",
       recursionLevel: 0,
       firstMatch: null,
     },
   });
 
   const details: WorldbookMatchDetail[] = [];
-  details.push(...result.before.map((entry) => buildDetail(entry, { position: "before" })));
-  details.push(...result.after.map((entry) => buildDetail(entry, { position: "after" })));
-  details.push(...result.atDepth.map((item) => buildDetail(item.entry, {
+  details.push(...result.beforeDetails.map((entry) => buildDetail(entry, { position: "before" })));
+  details.push(...result.afterDetails.map((entry) => buildDetail(entry, { position: "after" })));
+  details.push(...result.anTopDetails.map((entry) => buildDetail(entry, { position: "an_top" })));
+  details.push(...result.anBottomDetails.map((entry) => buildDetail(entry, { position: "an_bottom" })));
+  details.push(...result.emTopDetails.map((entry) => buildDetail(entry, { position: "em_top" })));
+  details.push(...result.emBottomDetails.map((entry) => buildDetail(entry, { position: "em_bottom" })));
+  details.push(...result.atDepthDetails.map((item) => buildDetail(item.activation, {
     position: "at_depth",
     depth: item.depth,
-    role: item.role === 1 ? "user" : item.role === 2 ? "assistant" : "system",
+    role: mapWorldbookRole(item.role),
   })));
-  for (const [outletName, entries] of Object.entries(result.outletEntries ?? {})) {
+  for (const [outletName, entries] of Object.entries(result.outletEntryDetails ?? {})) {
     details.push(...entries.map((entry) => buildDetail(entry, {
       position: "outlet",
       outletName,
@@ -2152,6 +2309,60 @@ function buildWorldbookMatchDetails(result: PromptWorldbookTriggerResult | undef
   }
 
   return details;
+}
+
+function buildPromptSnapshotWorldbookActivations(
+  result: PromptWorldbookTriggerResult | undefined,
+): PromptSnapshotWorldbookActivation[] {
+  if (!result) {
+    return [];
+  }
+
+  const buildActivation = (
+    activation: PromptWorldbookEntryActivation,
+    insertion: PromptSnapshotWorldbookActivation["insertion"],
+  ): PromptSnapshotWorldbookActivation => ({
+    uid: activation.entry.uid,
+    activationKey: activation.activationKey,
+    source: {
+      kind: activation.source.kind,
+      worldbookId: activation.source.worldbookId,
+      worldbookName: activation.source.worldbookName,
+      assetScopeId: activation.source.assetScopeId,
+    },
+    insertion,
+  });
+
+  const activations: PromptSnapshotWorldbookActivation[] = [];
+  activations.push(...result.beforeDetails.map((entry) => buildActivation(entry, { position: "before" })));
+  activations.push(...result.afterDetails.map((entry) => buildActivation(entry, { position: "after" })));
+  activations.push(...result.anTopDetails.map((entry) => buildActivation(entry, { position: "an_top" })));
+  activations.push(...result.anBottomDetails.map((entry) => buildActivation(entry, { position: "an_bottom" })));
+  activations.push(...result.emTopDetails.map((entry) => buildActivation(entry, { position: "em_top" })));
+  activations.push(...result.emBottomDetails.map((entry) => buildActivation(entry, { position: "em_bottom" })));
+  activations.push(...result.atDepthDetails.map((entry) => buildActivation(entry.activation, {
+    position: "at_depth",
+    depth: entry.depth,
+    role: mapWorldbookRole(entry.role),
+  })));
+  for (const [outletName, entries] of Object.entries(result.outletEntryDetails ?? {})) {
+    activations.push(...entries.map((entry) => buildActivation(entry, {
+      position: "outlet",
+      outletName,
+    })));
+  }
+
+  return activations;
+}
+
+function mapWorldbookRole(role: number): ChatMessage["role"] {
+  if (role === 1) {
+    return "user";
+  }
+  if (role === 2) {
+    return "assistant";
+  }
+  return "system";
 }
 
 export function buildPromptSnapshotPreview(snapshot: PromptAssemblySnapshot): PromptSnapshotPreview {
@@ -2165,10 +2376,16 @@ export function buildPromptSnapshotPreview(snapshot: PromptAssemblySnapshot): Pr
     regexProfileId: snapshot.regexProfileId,
     regexProfileUpdatedAt: snapshot.regexProfileUpdatedAt,
     regexProfileVersion: snapshot.regexProfileVersion,
+    characterId: snapshot.characterId,
+    characterVersionId: snapshot.characterVersionId,
+    characterImportedFormat: snapshot.characterImportedFormat,
+    characterContentHash: snapshot.characterContentHash,
     worldbookActivatedEntryUids: snapshot.worldbookActivatedEntryUids,
+    worldbookActivatedEntries: snapshot.worldbookActivatedEntries,
     regexPreRuleNames: snapshot.regexPreRuleNames,
     regexPostRuleNames: snapshot.regexPostRuleNames,
     promptMode: snapshot.promptMode,
+    assetManifestDigest: snapshot.assetManifestDigest,
     promptDigest: snapshot.promptDigest,
     tokenEstimate: snapshot.tokenEstimate,
   };
@@ -2191,10 +2408,16 @@ export function buildPromptSnapshotRecord(args: {
     regexProfileId: args.snapshot.regexProfileId,
     regexProfileUpdatedAt: args.snapshot.regexProfileUpdatedAt,
     regexProfileVersion: args.snapshot.regexProfileVersion,
+    characterId: args.snapshot.characterId,
+    characterVersionId: args.snapshot.characterVersionId,
+    characterImportedFormat: args.snapshot.characterImportedFormat,
+    characterContentHash: args.snapshot.characterContentHash,
     worldbookActivatedEntryUids: args.snapshot.worldbookActivatedEntryUids,
+    worldbookActivatedEntries: args.snapshot.worldbookActivatedEntries,
     regexPreRuleNames: args.snapshot.regexPreRuleNames,
     regexPostRuleNames: args.snapshot.regexPostRuleNames,
     promptMode: args.snapshot.promptMode,
+    assetManifestDigest: args.snapshot.assetManifestDigest,
     promptDigest: args.snapshot.promptDigest,
     tokenEstimate: args.snapshot.tokenEstimate,
     createdAt: args.snapshot.createdAt,

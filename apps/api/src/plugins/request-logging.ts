@@ -74,8 +74,15 @@ export async function registerRequestLogging(app: FastifyInstance): Promise<void
         route_tag: resolveRouteTag(route),
         status_code: reply.statusCode,
         latency_ms: Number(toLatencyMs(startedAt).toFixed(2)),
+        smoke_run_id: readOptionalHeader(request, "x-smoke-run-id"),
+        smoke_request_id: readOptionalHeader(request, "x-smoke-request-id"),
       },
       "request completed"
     );
   });
+}
+
+function readOptionalHeader(request: FastifyRequest, name: string): string | undefined {
+  const value = request.headers[name];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }

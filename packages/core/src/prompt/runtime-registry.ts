@@ -1,4 +1,5 @@
 import type { PromptRuntimeSourceKind } from './types.js';
+import { PROMPT_ASSET_CHARACTER_BUDGET_GROUP, PROMPT_ASSET_CHARACTER_SOURCE_KIND } from '../prompt-assets/index.js';
 
 /**
  * Prompt Runtime 来源的治理级别。
@@ -113,6 +114,12 @@ const PROMPT_RUNTIME_SOURCE_REGISTRY: readonly PromptRuntimeSourceDescriptor[] =
     defaultGovernanceLevel: 'budget_prunable',
   },
   {
+    kind: PROMPT_ASSET_CHARACTER_SOURCE_KIND,
+    defaultBudgetGroup: PROMPT_ASSET_CHARACTER_BUDGET_GROUP,
+    traceLabel: 'character',
+    defaultGovernanceLevel: 'hard_required',
+  },
+  {
     kind: 'examples',
     defaultBudgetGroup: 'examples',
     traceLabel: 'examples',
@@ -130,6 +137,7 @@ const PROMPT_RUNTIME_BUDGET_GROUP_REGISTRY: readonly PromptRuntimeBudgetGroupDes
   { group: 'examples', defaultWeight: 1, defaultPruneOrder: 100 },
   { group: 'worldbook', defaultWeight: 2, defaultPruneOrder: 200 },
   { group: 'memory', defaultWeight: 2, defaultPruneOrder: 250 },
+  { group: PROMPT_ASSET_CHARACTER_BUDGET_GROUP, defaultWeight: 5, defaultPruneOrder: 500 },
   { group: PROMPT_RUNTIME_SECTION_BUDGET_GROUP_PATTERN, defaultWeight: 1, defaultPruneOrder: 300 },
   { group: 'history', defaultWeight: 4, defaultPruneOrder: 400 },
 ];

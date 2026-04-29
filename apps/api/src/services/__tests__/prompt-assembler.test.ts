@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import { nanoid } from "nanoid";
 import { buildBranchVariableScopeId } from "@tavern/shared";
 
-import { presets, messagePages, variables, floors, sessions } from "../../db/schema.js";
+import { presets, messagePages, variables, floors, sessions, worldbooks, worldbookEntries } from "../../db/schema.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import {
@@ -1854,6 +1854,90 @@ describe("assemblePrompt", () => {
     expect(systemMessage?.content).toContain("last=Committed assistant reply.");
     expect(systemMessage?.content).toContain("user=Committed user input.");
     expect(systemMessage?.content).toContain("char=Committed assistant reply.");
+  });
+
+  it("keeps source-qualified worldbook provenance when session and character books reuse the same uid", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const worldbookId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Prompt Provenance Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbooks).values({
+      id: worldbookId,
+      name: "Campfire Worldbook",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify({}),
+      version: 5,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await database.db.insert(worldbookEntries).values({
+      id: nanoid(),
+      worldbookId,
+      uid: 7,
+      comment: "Session Lore",
+      content: "Session worldbook lore.",
+      keysJson: JSON.stringify([]),
+      keysSecondaryJson: JSON.stringify([]),
+      selective: true,
+      selectiveLogic: 0,
+      constant: true,
+      position: 0,
+      order: 100,
+      depth: 4,
+      role: 0,
+      disable: false,
+      scanDepth: null,
+      caseSensitive: null,
+      matchWholeWords: null,
+      excludeRecursion: false,
+      preventRecursion: false,
+      delayUntilRecursion: null,
+      outletName: "",
+      extraJson: "{}",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: worldbookId,
+      regexProfileId: null,
+      metadataJson: null,
+      characterId: "char-1",
+      characterVersionId: "charver-1",
+      characterSnapshotJson: JSON.stringify({
+        name: "Knight",
+        characterBook: {
+          entries: [{ uid: 7, key: [], keysecondary: [], selective: true, selectiveLogic: 0, constant: true, content: "Character book lore.", comment: "Character Lore", position: 1, order: 120, disable: false, excludeRecursion: false, preventRecursion: false }],
+        },
+      }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(database.db, DEFAULT_ADMIN_ACCOUNT_ID, sessionInfo, [], "Continue.", new SimpleTokenCounter(), undefined, { includeDebug: true, includeWorldbookMatchTrace: true });
+
+    expect(assembled.promptSnapshot.worldbookActivatedEntryUids).toEqual([7, 7]);
+    expect(assembled.promptSnapshot.worldbookActivatedEntries).toHaveLength(2);
+    expect(new Set(assembled.promptSnapshot.worldbookActivatedEntries.map((entry) => entry.activationKey)).size).toBe(2);
+    expect(assembled.promptSnapshot.worldbookActivatedEntries).toEqual(expect.arrayContaining([
+      { uid: 7, activationKey: `worldbook:${worldbookId}:5:entry:7`, source: { kind: "session_worldbook", worldbookId, worldbookName: "Campfire Worldbook", assetScopeId: `worldbook:${worldbookId}:5` }, insertion: { position: "before" } },
+      { uid: 7, activationKey: "worldbook:character:char-1:charver-1:book:entry:7", source: { kind: "character_book", worldbookId: null, worldbookName: "Unnamed", assetScopeId: "worldbook:character:char-1:charver-1:book" }, insertion: { position: "after" } },
+    ]));
+    expect(assembled.debug?.worldbookMatches?.map((match) => match.activationKey)).toEqual(expect.arrayContaining([`worldbook:${worldbookId}:5:entry:7`, "worldbook:character:char-1:charver-1:book:entry:7"]));
+    expect(assembled.debug?.worldbookMatches?.map((match) => match.assetScopeId)).toEqual(expect.arrayContaining([`worldbook:${worldbookId}:5`, "worldbook:character:char-1:charver-1:book"]));
   });
 });
 

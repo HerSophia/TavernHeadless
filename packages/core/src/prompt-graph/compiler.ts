@@ -1,6 +1,7 @@
 import type { ChatRole, IRMessage, IRSection, PromptIR } from '../prompt/types.js';
 import { resolvePromptRuntimeGovernancePolicy } from '../prompt/governance.js';
 import { TemplateEngine } from '../prompt/template-engine.js';
+import { PROMPT_ASSET_CHARACTER_BUDGET_GROUP, PROMPT_ASSET_CHARACTER_SOURCE_KIND } from '../prompt-assets/index.js';
 import type {
   CharacterNode,
   ChatHistoryNode,
@@ -212,6 +213,19 @@ function compileStaticTextNode(
   });
 }
 
+function resolveCharacterRuntimeSourcePart(part: CharacterNode['part']): string {
+  switch (part) {
+    case 'description':
+    case 'personality':
+    case 'scenario':
+      return 'profile';
+    case 'system_prompt':
+      return 'system_prompt';
+    case 'post_history':
+      return 'post_history_instructions';
+  }
+}
+
 function compileCharacterNode(
   group: PromptNodeGroup,
   node: CharacterNode,
@@ -244,13 +258,19 @@ function compileCharacterNode(
   }
 
   const content = resolveTemplate(templateEngine, raw, input.variables ?? {});
+  const characterGovernance = resolvePromptRuntimeGovernancePolicy({
+    sourceKind: PROMPT_ASSET_CHARACTER_SOURCE_KIND,
+    fallback: { budgetGroup: PROMPT_ASSET_CHARACTER_BUDGET_GROUP, pinned: true, prunable: false },
+  });
+  const runtimeSourcePart = resolveCharacterRuntimeSourcePart(node.part);
   return createSection(node.name, resolvePlacementOrder(group, node.placement), [{
     role: node.role,
     content: applyNamesBehavior(content, node.role, input, policies.namesBehavior, node.placement.kind === 'in_chat'),
-    source: `prompt-graph:${node.id}`,
-    prunable: false,
-  }], true, {
+    source: `character:${runtimeSourcePart}`,
+    prunable: characterGovernance.prunable,
+  }], characterGovernance.pinned, {
     insertion: toSectionInsertion(node.placement),
+    budgetGroup: characterGovernance.budgetGroup,
   });
 }
 

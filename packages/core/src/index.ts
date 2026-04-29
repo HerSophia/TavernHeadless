@@ -101,6 +101,9 @@ export type {
   ChatMessage,
   AssembledPrompt,
   PromptSnapshotRecord,
+  PromptSnapshotWorldbookActivation,
+  PromptSnapshotWorldbookActivationSource,
+  PromptSnapshotWorldbookInsertion,
   PromptRuntimeBudgetGroupTrace,
   PromptTrimReasonCode,
   PromptTrimReason,
@@ -179,6 +182,25 @@ export {
 } from './prompt/index.js';
 export { MessageBuilder } from './prompt/index.js';
 
+// ── Prompt Assets ─────────────────────────────────────
+export type {
+  PromptAssetKind,
+  PromptAssetOrigin,
+  PromptAssetRef,
+  PromptAssetDeclarationPart,
+  PromptAssetDeclaration,
+  PromptAssetManifest,
+} from './prompt-assets/index.js';
+export {
+  createPromptAssetDeclaration,
+  createPromptAssetManifest,
+  stableStringifyPromptAssetManifest,
+  buildPromptAssetScopeId,
+  createPromptAssetRef,
+  PROMPT_ASSET_CHARACTER_BUDGET_GROUP,
+  PROMPT_ASSET_CHARACTER_SOURCE_KIND,
+} from './prompt-assets/index.js';
+
 // ── Prompt Graph ──────────────────────────────────────
 export type {
   PromptRunIntent,
@@ -203,6 +225,7 @@ export type {
   PromptGraphDocument,
   PromptGraphCharacterInput,
   PromptGraphPersonaInput,
+  PromptGraphWorldbookPosition,
   PromptGraphWorldbookEntry,
   PromptGraphCompilerInput,
   PromptGraphCompiler,

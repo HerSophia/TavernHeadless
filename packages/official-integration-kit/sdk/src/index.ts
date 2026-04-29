@@ -383,6 +383,9 @@ export type {
   PromptRuntimeWorldbookMatchInsertion,
   PromptRuntimeWorldbookMatchSource,
   PromptRuntimeWorldbookTrace,
+  PromptSnapshotWorldbookActivation,
+  PromptSnapshotWorldbookActivationSource,
+  PromptSnapshotWorldbookInsertion,
   PromptSnapshotMode,
   PromptSnapshotPreview,
 } from "./prompt-runtime.js";

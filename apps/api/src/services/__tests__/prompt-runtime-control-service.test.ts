@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
-import { characters, floorResultSnapshots, floors, messagePages, messages, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, sessions, worldbooks } from "../../db/schema.js";
+import { characters, characterVersions, floorResultSnapshots, floors, messagePages, messages, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, sessions, worldbooks } from "../../db/schema.js";
 import {
   DEFAULT_RESOLVED_PROMPT_RUNTIME_DEBUG_POLICY,
   DEFAULT_RESOLVED_PROMPT_RUNTIME_BUDGET_POLICY,
@@ -1055,6 +1055,27 @@ describe("PromptRuntimeControlService", () => {
       createdAt: now,
     });
 
+    const characterId = nanoid();
+    const characterVersionId = nanoid();
+    const worldbookActivatedEntries = [
+      {
+        uid: 7,
+        activationKey: "worldbook:worldbook-1:5:entry:7",
+        source: {
+          kind: "session_worldbook",
+          worldbookId: "worldbook-1",
+          worldbookName: "Campfire Worldbook",
+          assetScopeId: "worldbook:worldbook-1:5",
+        },
+        insertion: {
+          position: "before",
+        },
+      },
+    ] as const;
+
+    await database.db.insert(characters).values({ id: characterId, name: "Hero", source: "sillytavern", accountId: DEFAULT_ADMIN_ACCOUNT_ID, status: "active", deletedAt: null, revision: 0, latestVersionNo: 1, createdAt: now, updatedAt: now });
+    await database.db.insert(characterVersions).values({ id: characterVersionId, characterId, versionNo: 1, dataJson: JSON.stringify({ name: "Hero" }), contentHash: "char-hash-1", sourceArtifactJson: null, sourceArtifactFormat: null, sourceArtifactDigest: null, createdAt: now });
+
     await database.db.insert(promptSnapshots).values({
       floorId: floor!.id,
       sessionId,
@@ -1067,10 +1088,16 @@ describe("PromptRuntimeControlService", () => {
       regexProfileId: null,
       regexProfileUpdatedAt: null,
       regexProfileVersion: null,
+      characterId,
+      characterVersionId,
+      characterImportedFormat: "tavern_card_v2",
+      characterContentHash: "char-hash-1",
       worldbookActivatedEntryUidsJson: JSON.stringify([7]),
+      worldbookActivatedEntriesJson: JSON.stringify(worldbookActivatedEntries),
       regexPreRuleNamesJson: JSON.stringify(["Input Rule"]),
       regexPostRuleNamesJson: JSON.stringify([]),
       promptMode: "compat_strict",
+      assetManifestDigest: "manifest-1",
       promptDigest: "digest-1",
       tokenEstimate: 42,
       createdAt: now,
@@ -1121,10 +1148,16 @@ describe("PromptRuntimeControlService", () => {
       regexProfileId: null,
       regexProfileUpdatedAt: null,
       regexProfileVersion: null,
+      characterId,
+      characterVersionId,
+      characterImportedFormat: "tavern_card_v2",
+      characterContentHash: "char-hash-1",
       worldbookActivatedEntryUids: [7],
+      worldbookActivatedEntries,
       regexPreRuleNames: ["Input Rule"],
       regexPostRuleNames: [],
       promptMode: "compat_strict",
+      assetManifestDigest: "manifest-1",
       promptDigest: "digest-1",
       tokenEstimate: 42,
     });

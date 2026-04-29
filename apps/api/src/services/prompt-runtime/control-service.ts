@@ -1,5 +1,6 @@
 import { and, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
+import type { PromptSnapshotWorldbookActivation } from "@tavern/core";
 
 import type { AppDb } from "../../db/client.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
@@ -1908,6 +1909,65 @@ function parseNumberArrayJson(value: string | null | undefined): number[] {
     : [];
 }
 
+function isPromptSnapshotWorldbookActivationSource(
+  value: unknown,
+): value is PromptSnapshotWorldbookActivation["source"] {
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (((value as { kind?: unknown }).kind === "session_worldbook")
+      || ((value as { kind?: unknown }).kind === "character_book"))
+    && (typeof (value as { worldbookId?: unknown }).worldbookId === "string"
+      || (value as { worldbookId?: unknown }).worldbookId === null)
+    && typeof (value as { worldbookName?: unknown }).worldbookName === "string"
+    && typeof (value as { assetScopeId?: unknown }).assetScopeId === "string";
+}
+
+function isPromptSnapshotWorldbookInsertion(
+  value: unknown,
+): value is PromptSnapshotWorldbookActivation["insertion"] {
+  const position = value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as { position?: unknown }).position
+    : undefined;
+  const role = value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as { role?: unknown }).role
+    : undefined;
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (position === "before"
+      || position === "after"
+      || position === "an_top"
+      || position === "an_bottom"
+      || position === "em_top"
+      || position === "em_bottom"
+      || position === "at_depth"
+      || position === "outlet")
+    && (role === undefined || role === "system" || role === "user" || role === "assistant")
+    && ((value as { depth?: unknown }).depth === undefined || typeof (value as { depth?: unknown }).depth === "number")
+    && ((value as { outletName?: unknown }).outletName === undefined || typeof (value as { outletName?: unknown }).outletName === "string");
+}
+
+function isPromptSnapshotWorldbookActivation(
+  value: unknown,
+): value is PromptSnapshotWorldbookActivation {
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && typeof (value as { uid?: unknown }).uid === "number"
+    && Number.isFinite((value as { uid?: number }).uid)
+    && typeof (value as { activationKey?: unknown }).activationKey === "string"
+    && isPromptSnapshotWorldbookActivationSource((value as { source?: unknown }).source)
+    && isPromptSnapshotWorldbookInsertion((value as { insertion?: unknown }).insertion);
+}
+
+function parseWorldbookActivatedEntriesJson(value: string | null | undefined): PromptSnapshotWorldbookActivation[] {
+  const parsed = parseJsonField(value ?? null);
+  return Array.isArray(parsed)
+    ? parsed.filter(isPromptSnapshotWorldbookActivation)
+    : [];
+}
+
 function mapPromptSnapshotRowToPreview(row: typeof promptSnapshots.$inferSelect): PromptSnapshotPreview {
   return {
     presetId: row.presetId,
@@ -1919,10 +1979,16 @@ function mapPromptSnapshotRowToPreview(row: typeof promptSnapshots.$inferSelect)
     regexProfileId: row.regexProfileId,
     regexProfileUpdatedAt: row.regexProfileUpdatedAt,
     regexProfileVersion: row.regexProfileVersion,
+    characterId: row.characterId,
+    characterVersionId: row.characterVersionId,
+    characterImportedFormat: row.characterImportedFormat,
+    characterContentHash: row.characterContentHash,
     worldbookActivatedEntryUids: parseNumberArrayJson(row.worldbookActivatedEntryUidsJson),
+    worldbookActivatedEntries: parseWorldbookActivatedEntriesJson(row.worldbookActivatedEntriesJson),
     regexPreRuleNames: parseStringArrayJson(row.regexPreRuleNamesJson),
     regexPostRuleNames: parseStringArrayJson(row.regexPostRuleNamesJson),
     promptMode: row.promptMode,
+    assetManifestDigest: row.assetManifestDigest,
     promptDigest: row.promptDigest,
     tokenEstimate: row.tokenEstimate,
   };

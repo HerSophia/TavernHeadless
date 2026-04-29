@@ -271,13 +271,10 @@ function parsePromptBehavior(prompt: z.infer<typeof rawPromptEntrySchema>): Prom
     }
   }
 
-  if (prompt.system_prompt !== undefined) {
-    pushUnique(unsupportedFields, 'prompts[].system_prompt');
-  }
-
-  if (prompt.forbid_overrides !== undefined) {
-    pushUnique(unsupportedFields, 'prompts[].forbid_overrides');
-  }
+  const semantics = {
+    ...(prompt.system_prompt !== undefined ? { systemPrompt: prompt.system_prompt } : {}),
+    ...(prompt.forbid_overrides !== undefined ? { forbidOverrides: prompt.forbid_overrides } : {}),
+  };
 
   const downgradedReason = unsupportedFields.some((field) => field.startsWith('prompts[].injection_'))
     ? '条目包含当前未完全承接的 Prompt Manager 位置或触发元数据；解析时已尽量保留可识别部分，并对其余部分发出告警。'
@@ -287,6 +284,7 @@ function parsePromptBehavior(prompt: z.infer<typeof rawPromptEntrySchema>): Prom
     behavior: {
       placement,
       ...(triggers.length > 0 ? { triggers } : {}),
+      ...(Object.keys(semantics).length > 0 ? { semantics } : {}),
     },
     unsupportedFields,
     warnings,
