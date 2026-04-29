@@ -18,6 +18,7 @@ import type {
   ToolExecutionProviderType,
   ToolExecutionStatus,
   ToolResultVisibility,
+  StructuredToolExecutionOutcome,
   ToolAsyncReceipt,
   ToolAsyncCapability,
   ToolPermissions,
@@ -34,6 +35,9 @@ export interface LLMToolEntry {
 }
 
 type FinalToolExecutionStatus = Exclude<ToolExecutionStatus, 'running' | 'queued'>;
+type FinalStructuredToolExecutionOutcome = StructuredToolExecutionOutcome & { executionStatus: FinalToolExecutionStatus };
+type FailedToolExecutionStatus = Extract<FinalToolExecutionStatus, 'error' | 'timeout' | 'uncertain' | 'blocked'>;
+type FailedStructuredToolExecutionOutcome = StructuredToolExecutionOutcome & { executionStatus: FailedToolExecutionStatus };
 
 const FINAL_TOOL_EXECUTION_STATUSES = new Set<FinalToolExecutionStatus>([
   'success',
@@ -128,15 +132,10 @@ function buildDeferredReceipt(args: {
   };
 }
 
-function inferErrorStatus(
-  value: { error?: string; executionStatus?: ToolExecutionStatus } | Error,
+function inferLegacyErrorStatus(
+  value: { error?: string } | Error,
   fallback: FinalToolExecutionStatus = 'error',
 ): FinalToolExecutionStatus {
-  const statusCandidate = 'executionStatus' in value ? value.executionStatus : undefined;
-  if (isFinalToolExecutionStatus(statusCandidate)) {
-    return statusCandidate;
-  }
-
   const message = value instanceof Error ? value.message : value.error;
   if (typeof message === 'string') {
     const normalizedMessage = message.toLowerCase();
@@ -151,6 +150,64 @@ function inferErrorStatus(
   }
 
   return fallback;
+}
+
+function resolveStructuredErrorOutcome(
+  value: ({ error?: string } & Partial<StructuredToolExecutionOutcome>) | Error,
+  fallback: FinalToolExecutionStatus = 'error',
+): FinalStructuredToolExecutionOutcome {
+  if (!(value instanceof Error) && isFinalToolExecutionStatus(value.executionStatus)) {
+    const providerMessage = value.providerMessage ?? value.error;
+    return {
+      executionStatus: value.executionStatus,
+      ...(value.executionReasonCode ? { executionReasonCode: value.executionReasonCode } : {}),
+      ...(value.reconnectRequired !== undefined ? { reconnectRequired: value.reconnectRequired } : {}),
+      ...(value.retryable !== undefined ? { retryable: value.retryable } : {}),
+      ...(providerMessage ? { providerMessage } : {}),
+    };
+  }
+
+  const providerMessage = value instanceof Error ? value.message : value.providerMessage ?? value.error;
+  return {
+    executionStatus: inferLegacyErrorStatus(value, fallback),
+    ...(providerMessage ? { providerMessage } : {}),
+  };
+}
+
+function normalizeFailureOutcome(outcome: FinalStructuredToolExecutionOutcome): FailedStructuredToolExecutionOutcome {
+  if (outcome.executionStatus === 'success' || outcome.executionStatus === 'denied') {
+    return {
+      ...outcome,
+      executionStatus: 'error',
+    };
+  }
+
+  return {
+    ...outcome,
+    executionStatus: outcome.executionStatus as FailedToolExecutionStatus,
+  };
+}
+
+function buildStructuredToolErrorResult(error: string, outcome: StructuredToolExecutionOutcome): ToolCallResult {
+  return {
+    error,
+    executionStatus: outcome.executionStatus,
+    ...(outcome.executionReasonCode ? { executionReasonCode: outcome.executionReasonCode } : {}),
+    ...(outcome.reconnectRequired !== undefined ? { reconnectRequired: outcome.reconnectRequired } : {}),
+    ...(outcome.retryable !== undefined ? { retryable: outcome.retryable } : {}),
+    ...(outcome.providerMessage && outcome.providerMessage !== error ? { providerMessage: outcome.providerMessage } : {}),
+  };
+}
+
+function toStructuredToolErrorPayload(error: string, outcome: StructuredToolExecutionOutcome): Record<string, unknown> {
+  return {
+    error,
+    executionStatus: outcome.executionStatus,
+    ...(outcome.executionReasonCode ? { executionReasonCode: outcome.executionReasonCode } : {}),
+    ...(outcome.reconnectRequired !== undefined ? { reconnectRequired: outcome.reconnectRequired } : {}),
+    ...(outcome.retryable !== undefined ? { retryable: outcome.retryable } : {}),
+    ...(outcome.providerMessage && outcome.providerMessage !== error ? { providerMessage: outcome.providerMessage } : {}),
+  };
 }
 
 /**
@@ -328,13 +385,12 @@ export class ToolExecutor {
         this.finalizeTurnCallSlot(true);
 
         if (result.error) {
-          const status = inferErrorStatus(result, 'error');
-          const failureStatus = status === 'success' || status === 'denied' ? 'error' : status;
+          const failureOutcome = normalizeFailureOutcome(resolveStructuredErrorOutcome(result, 'error'));
           const error = new Error(result.error);
 
           await this.completeExecutionAttempt(openedExecution, {
-            result: { error: result.error },
-            status: failureStatus,
+            result: toStructuredToolErrorPayload(result.error, failureOutcome),
+            status: failureOutcome.executionStatus,
             errorMessage: result.error,
             durationMs,
             finishedAt,
@@ -350,12 +406,12 @@ export class ToolExecutor {
             providerType,
             sideEffectLevel,
             toolName,
-            status: failureStatus,
+            status: failureOutcome.executionStatus,
             error,
             durationMs,
           });
 
-          return { error: result.error };
+          return buildStructuredToolErrorResult(result.error, failureOutcome);
         }
 
         await this.completeExecutionAttempt(openedExecution, {
@@ -385,13 +441,12 @@ export class ToolExecutor {
         const finishedAt = Date.now();
         const durationMs = finishedAt - openedExecution.startedAt;
         const error = err instanceof Error ? err : new Error(String(err));
-        const status = inferErrorStatus(error, 'error');
-        const failureStatus = status === 'success' || status === 'denied' ? 'error' : status;
+        const failureOutcome = normalizeFailureOutcome(resolveStructuredErrorOutcome(error, 'error'));
         this.finalizeTurnCallSlot(true);
 
         await this.completeExecutionAttempt(openedExecution, {
-          result: { error: error.message },
-          status: failureStatus,
+          result: toStructuredToolErrorPayload(error.message, failureOutcome),
+          status: failureOutcome.executionStatus,
           errorMessage: error.message,
           durationMs,
           finishedAt,
@@ -407,12 +462,12 @@ export class ToolExecutor {
           providerType,
           sideEffectLevel,
           toolName,
-          status: failureStatus,
+          status: failureOutcome.executionStatus,
           error,
           durationMs,
         });
 
-        return { error: error.message };
+        return buildStructuredToolErrorResult(error.message, failureOutcome);
       }
     } catch (err) {
       if (!providerExecutionStarted) {
@@ -426,7 +481,10 @@ export class ToolExecutor {
           const durationMs = finishedAt - openedExecution.startedAt;
 
           await this.completeExecutionAttempt(openedExecution, {
-            result: { error: error.message },
+            result: toStructuredToolErrorPayload(blockedMessage, {
+              executionStatus: 'blocked',
+              providerMessage: error.message,
+            }),
             status: 'blocked',
             errorMessage: blockedMessage,
             durationMs,

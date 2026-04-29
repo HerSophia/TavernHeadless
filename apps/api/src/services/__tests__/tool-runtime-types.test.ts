@@ -32,6 +32,8 @@ describe("finalizeToolCallResult", () => {
         error: "some generic failure text without timeout keyword",
         executionStatus: "uncertain",
         executionReasonCode: "mcp_call_timeout_uncertain",
+        reconnectRequired: true,
+        providerMessage: "local timeout while awaiting MCP response",
       },
       100,
     );
@@ -41,6 +43,13 @@ describe("finalizeToolCallResult", () => {
     expect(finalized.errorMessage).toBe(
       "some generic failure text without timeout keyword",
     );
+    expect(JSON.parse(finalized.resultJson)).toEqual({
+      error: "some generic failure text without timeout keyword",
+      executionStatus: "uncertain",
+      executionReasonCode: "mcp_call_timeout_uncertain",
+      reconnectRequired: true,
+      providerMessage: "local timeout while awaiting MCP response",
+    });
   });
 
   it("falls back to message-based inference when no structured status is provided", () => {
@@ -54,6 +63,10 @@ describe("finalizeToolCallResult", () => {
 
     expect(finalized.status).toBe("timeout");
     expect(finalized.reasonCode).toBeUndefined();
+    expect(JSON.parse(finalized.resultJson)).toEqual({
+      error: "Tool call timeout after 10000ms",
+      executionStatus: "timeout",
+    });
   });
 
   it("marks successful results without error as success", () => {

@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { McpConnectionManager } from "../mcp-connection-manager.js";
-import type { McpServerConfig } from "../types.js";
+import { McpConnectionManager } from "../../services/tooling/mcp/mcp-connection-manager.js";
+import type { McpServerConfig } from "../../services/tooling/mcp/types.js";
 
 // ── Mock McpConnection ─────────────────────────────────
 
 const mockConnectFn = vi.fn().mockResolvedValue(undefined);
 const mockDisconnectFn = vi.fn().mockResolvedValue(undefined);
 
-vi.mock("../mcp-connection.js", () => ({
+vi.mock("../../services/tooling/mcp/mcp-connection.js", () => ({
   McpConnection: vi.fn().mockImplementation((config: McpServerConfig) => ({
     config,
     state: "disconnected",

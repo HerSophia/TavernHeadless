@@ -10,9 +10,9 @@ export type {
   CreateMcpServerInput,
   UpdateMcpServerInput,
   McpServerConfigResponse,
-} from './types.js';
+} from '../services/tooling/mcp/types.js';
 
-export { McpConnection } from './mcp-connection.js';
-export type { McpLogger } from './mcp-connection.js';
-export { McpConnectionManager } from './mcp-connection-manager.js';
-export { McpToolProvider } from './mcp-tool-provider.js';
+export { McpConnection } from '../services/tooling/mcp/mcp-connection.js';
+export type { McpLogger } from '../services/tooling/mcp/mcp-connection.js';
+export { McpConnectionManager } from '../services/tooling/mcp/mcp-connection-manager.js';
+export { McpToolProvider } from '../services/tooling/mcp/mcp-tool-provider.js';

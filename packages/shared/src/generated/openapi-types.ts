@@ -5524,6 +5524,31 @@ export interface paths {
                                     tool_count: number;
                                     tools_refreshed_at: number | null;
                                 };
+                                metadata_overrides: {
+                                    allowed_slots?: ("narrator" | "director" | "verifier" | "memory")[];
+                                    parameter_schema?: {
+                                        properties?: {
+                                            [key: string]: {
+                                                default?: unknown;
+                                                description?: string;
+                                                enum?: string[];
+                                                items?: {
+                                                    description?: string;
+                                                    type?: string;
+                                                };
+                                                type: string;
+                                            };
+                                        };
+                                        required?: string[];
+                                        /** @enum {unknown} */
+                                        type: "object";
+                                    };
+                                    /** @enum {string} */
+                                    replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                    /** @enum {string} */
+                                    side_effect_level?: "none" | "sandbox" | "irreversible";
+                                    tool_name: string;
+                                }[];
                                 name: string;
                                 stdio?: {
                                     args?: string[];
@@ -14118,15 +14143,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get session tool permissions */
+        /**
+         * Get session base tool permissions
+         * @description Returns the session-base ToolPermissions snapshot stored in metadata_json.tool_permissions. This route does not expose future run/node/step overlays.
+         */
         get: operations["getSessionToolPermissions"];
-        /** Replace session tool permissions */
+        /**
+         * Replace session base tool permissions
+         * @description Replaces the session-base ToolPermissions object stored in metadata_json.tool_permissions. This route does not define future run/node/step overlays.
+         */
         put: operations["replaceSessionToolPermissions"];
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** Partial update session tool permissions */
+        /**
+         * Partial update session base tool permissions
+         * @description Applies a partial update to the session-base ToolPermissions object in metadata_json.tool_permissions. slot_allow_list and slot_deny_list merge by slot key. This route does not define future run/node/step overlays.
+         */
         patch: operations["patchSessionToolPermissions"];
         trace?: never;
     };
@@ -14137,7 +14171,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get session runtime tool catalog */
+        /**
+         * Get session runtime tool catalog
+         * @description Returns the session-level runtime tool catalog snapshot for the session. It does not expose future run/node/step permission overlays, which only participate when specific executions are prepared.
+         */
         get: operations["getSessionRuntimeToolCatalog"];
         put?: never;
         post?: never;
@@ -20341,6 +20378,31 @@ export interface operations {
                                 tool_count: number;
                                 tools_refreshed_at: number | null;
                             };
+                            metadata_overrides: {
+                                allowed_slots?: ("narrator" | "director" | "verifier" | "memory")[];
+                                parameter_schema?: {
+                                    properties?: {
+                                        [key: string]: {
+                                            default?: unknown;
+                                            description?: string;
+                                            enum?: string[];
+                                            items?: {
+                                                description?: string;
+                                                type?: string;
+                                            };
+                                            type: string;
+                                        };
+                                    };
+                                    required?: string[];
+                                    /** @enum {unknown} */
+                                    type: "object";
+                                };
+                                /** @enum {string} */
+                                replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                side_effect_level?: "none" | "sandbox" | "irreversible";
+                                tool_name: string;
+                            }[];
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -20403,6 +20465,31 @@ export interface operations {
                         /** Format: uri */
                         url: string;
                     };
+                    metadata_overrides?: {
+                        allowed_slots?: ("narrator" | "director" | "verifier" | "memory")[];
+                        parameter_schema?: {
+                            properties?: {
+                                [key: string]: {
+                                    default?: unknown;
+                                    description?: string;
+                                    enum?: string[];
+                                    items?: {
+                                        description?: string;
+                                        type?: string;
+                                    };
+                                    type: string;
+                                };
+                            };
+                            required?: string[];
+                            /** @enum {unknown} */
+                            type: "object";
+                        };
+                        /** @enum {string} */
+                        replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                        /** @enum {string} */
+                        side_effect_level?: "none" | "sandbox" | "irreversible";
+                        tool_name: string;
+                    }[];
                     name: string;
                     stdio?: {
                         args?: string[];
@@ -20453,6 +20540,31 @@ export interface operations {
                                 tool_count: number;
                                 tools_refreshed_at: number | null;
                             };
+                            metadata_overrides: {
+                                allowed_slots?: ("narrator" | "director" | "verifier" | "memory")[];
+                                parameter_schema?: {
+                                    properties?: {
+                                        [key: string]: {
+                                            default?: unknown;
+                                            description?: string;
+                                            enum?: string[];
+                                            items?: {
+                                                description?: string;
+                                                type?: string;
+                                            };
+                                            type: string;
+                                        };
+                                    };
+                                    required?: string[];
+                                    /** @enum {unknown} */
+                                    type: "object";
+                                };
+                                /** @enum {string} */
+                                replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                side_effect_level?: "none" | "sandbox" | "irreversible";
+                                tool_name: string;
+                            }[];
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -20590,6 +20702,31 @@ export interface operations {
                         /** Format: uri */
                         url: string;
                     };
+                    metadata_overrides?: {
+                        allowed_slots?: ("narrator" | "director" | "verifier" | "memory")[];
+                        parameter_schema?: {
+                            properties?: {
+                                [key: string]: {
+                                    default?: unknown;
+                                    description?: string;
+                                    enum?: string[];
+                                    items?: {
+                                        description?: string;
+                                        type?: string;
+                                    };
+                                    type: string;
+                                };
+                            };
+                            required?: string[];
+                            /** @enum {unknown} */
+                            type: "object";
+                        };
+                        /** @enum {string} */
+                        replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                        /** @enum {string} */
+                        side_effect_level?: "none" | "sandbox" | "irreversible";
+                        tool_name: string;
+                    }[];
                     name?: string;
                     stdio?: {
                         args?: string[];
@@ -20640,6 +20777,31 @@ export interface operations {
                                 tool_count: number;
                                 tools_refreshed_at: number | null;
                             };
+                            metadata_overrides: {
+                                allowed_slots?: ("narrator" | "director" | "verifier" | "memory")[];
+                                parameter_schema?: {
+                                    properties?: {
+                                        [key: string]: {
+                                            default?: unknown;
+                                            description?: string;
+                                            enum?: string[];
+                                            items?: {
+                                                description?: string;
+                                                type?: string;
+                                            };
+                                            type: string;
+                                        };
+                                    };
+                                    required?: string[];
+                                    /** @enum {unknown} */
+                                    type: "object";
+                                };
+                                /** @enum {string} */
+                                replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                side_effect_level?: "none" | "sandbox" | "irreversible";
+                                tool_name: string;
+                            }[];
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -20795,6 +20957,31 @@ export interface operations {
                                 tool_count: number;
                                 tools_refreshed_at: number | null;
                             };
+                            metadata_overrides: {
+                                allowed_slots?: ("narrator" | "director" | "verifier" | "memory")[];
+                                parameter_schema?: {
+                                    properties?: {
+                                        [key: string]: {
+                                            default?: unknown;
+                                            description?: string;
+                                            enum?: string[];
+                                            items?: {
+                                                description?: string;
+                                                type?: string;
+                                            };
+                                            type: string;
+                                        };
+                                    };
+                                    required?: string[];
+                                    /** @enum {unknown} */
+                                    type: "object";
+                                };
+                                /** @enum {string} */
+                                replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                /** @enum {string} */
+                                side_effect_level?: "none" | "sandbox" | "irreversible";
+                                tool_name: string;
+                            }[];
                             name: string;
                             stdio?: {
                                 args?: string[];
@@ -28741,7 +28928,7 @@ export interface operations {
                             session_id: string;
                             tools: {
                                 allowed_slots: string[];
-                                allowed_slots_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
+                                allowed_slots_basis?: ("tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 /** @enum {string} */
                                 async_capability: "inline_only" | "deferred_ok";
                                 /** @enum {string} */
@@ -28750,19 +28937,45 @@ export interface operations {
                                 catalog_source?: ("live" | "cached" | "unavailable") | null;
                                 /** @enum {string} */
                                 default_delivery_mode: "inline" | "async_job";
+                                metadata_basis_detail?: {
+                                    allowed_slots?: {
+                                        /** @enum {string} */
+                                        basis: "tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection";
+                                        /** @enum {string} */
+                                        scope: "tool" | "server" | "platform" | "local" | "projection" | "inference";
+                                    };
+                                    parameter_schema?: {
+                                        /** @enum {string} */
+                                        basis: "tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection";
+                                        /** @enum {string} */
+                                        scope: "tool" | "server" | "platform" | "local" | "projection" | "inference";
+                                    };
+                                    replay_safety?: {
+                                        /** @enum {string} */
+                                        basis: "tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection";
+                                        /** @enum {string} */
+                                        scope: "tool" | "server" | "platform" | "local" | "projection" | "inference";
+                                    };
+                                    side_effect_level?: {
+                                        /** @enum {string} */
+                                        basis: "tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection";
+                                        /** @enum {string} */
+                                        scope: "tool" | "server" | "platform" | "local" | "projection" | "inference";
+                                    };
+                                } | null;
                                 name: string;
-                                parameter_schema_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
+                                parameter_schema_basis?: ("tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 provider_id: string;
                                 /** @enum {string} */
                                 provider_type: "builtin" | "preset" | "mcp";
                                 /** @enum {string} */
                                 replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
-                                replay_safety_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
+                                replay_safety_basis?: ("tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 /** @enum {string} */
                                 result_visibility: "immediate" | "deferred_receipt";
                                 /** @enum {string} */
                                 side_effect_level: "none" | "sandbox" | "irreversible";
-                                side_effect_level_basis?: ("tool_declared" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
+                                side_effect_level_basis?: ("tool_declared" | "account_override" | "server_default" | "platform_default" | "inferred_from_execution_policy" | "shallow_schema_projection") | null;
                                 /** @enum {string} */
                                 source: "builtin" | "resource" | "custom" | "preset" | "character" | "mcp";
                             }[];

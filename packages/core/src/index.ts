@@ -323,6 +323,7 @@ export type {
   PendingToolJobRequest,
   RuntimeToolDispatchResult,
   ToolCallResult,
+  StructuredToolExecutionOutcome,
   ToolCallStatus,
   ToolProvider,
   BufferedToolVariableMutation,

@@ -62,6 +62,7 @@ import {
 } from "./prompt-runtime-control-service.js";
 import { serializePromptRuntimeExplainSourceMapEnvelope } from "./prompt-runtime/explain-snapshot.js";
 import type { SessionStateService } from "../session-state/session-state-service.js";
+import { projectLegacyToolCallRecords } from "./tooling/shared/legacy-tool-call-projection.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -90,7 +91,18 @@ export interface TurnCommitInput {
   committedAt?: number;
   promptSnapshot?: PromptSnapshotRecord;
   promptRuntimeInspection?: PromptRuntimeInspectionResult;
+  /**
+   * 旧兼容输入。仅在没有 `toolExecutionRecords` 时作为 fallback 使用。
+   *
+   * 若同时提供 `toolExecutionRecords`，commit 阶段会忽略这里的内容，
+   * 并从真实执行日志派生 `tool_call_record` 兼容投影。
+   */
   toolCalls?: ToolCallRecord[];
+  /**
+   * 主执行审计输入。
+   *
+   * `tool_execution_record` + `runtime_job`（deferred 时）是本轮之后唯一主真相。
+   */
   toolExecutionRecords?: ExecutedToolCallRecord[];
   pendingToolJobs?: PendingToolJobRequest[];
   variableCommit?: VariableCommitOptions;
@@ -307,45 +319,6 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
   };
 }
 
-/**
- * 兼容投影：把 `ExecutedToolCallRecord` 压缩为 legacy `ToolCallRecord`。
- *
- * `tool_execution_record` 是工具执行的**主审计真相源**（primary tool execution journal）。
- * `tool_call_record` 仅作为 legacy-compatible projection 使用，
- * 旧 UI / 旧集成读取；新语义不应在此表扩展。
- *
- * 因此这里主动把 execution journal 中新增的状态（timeout / uncertain / blocked）
- * 压缩回 `success | error | denied | queued | running` 的兼容态。
- */
-function toLegacyToolCallRecord(
-  record: ExecutedToolCallRecord,
-  seq: number
-): ToolCallRecord {
-  let status: ToolCallRecord["status"];
-  if (record.status === "success") {
-    status = "success";
-  } else if (record.status === "denied" || record.status === "blocked") {
-    status = "denied";
-  } else if (record.status === "queued" || record.status === "running") {
-    status = record.status;
-  } else {
-    status = "error";
-  }
-
-  return {
-    id: record.id,
-    pageId: record.pageId ?? "",
-    seq,
-    callerSlot: record.callerSlot,
-    toolName: record.toolName,
-    argsJson: record.argsJson,
-    resultJson: record.resultJson,
-    status,
-    durationMs: record.durationMs,
-    createdAt: record.createdAt,
-  };
-}
-
 function createEmptyVariableCommitResult(input: TurnCommitInput): ReturnType<VariableCommitService["promoteAll"]> {
   return {
     pageId: input.variableCommit?.pageId,
@@ -483,10 +456,11 @@ export class TurnCommitService {
     ];
     const pendingToolJobs =
       input.pendingToolJobs ?? input.execution.pendingToolJobs ?? [];
-    const legacyToolCalls =
+    const explicitLegacyToolCalls =
       input.toolCalls
       ?? input.execution.toolCalls
-      ?? actualToolExecutionRecords.map((record, index) => toLegacyToolCallRecord(record, index + 1));
+      ?? [];
+    const hasPrimaryToolExecutionRecords = actualToolExecutionRecords.length > 0;
     const pendingEvents: PendingCoreEvent[] = [];
     const variableMutationBatch = this.variableCommitService.beginBatch();
 
@@ -541,13 +515,17 @@ export class TurnCommitService {
           committedAt
         );
 
+        const legacyToolCalls = hasPrimaryToolExecutionRecords
+          ? projectLegacyToolCallRecords(actualToolExecutionRecords, { pageId: assistantMessage.pageId })
+          : explicitLegacyToolCalls;
+
         if (legacyToolCalls.length > 0) {
           tx
             .insert(toolCallRecords)
             .values(
               legacyToolCalls.map((record, index) => ({
                 id: record.id,
-                pageId: assistantMessage.pageId,
+                pageId: hasPrimaryToolExecutionRecords ? record.pageId : assistantMessage.pageId,
                 seq: record.seq > 0 ? record.seq : index + 1,
                 callerSlot: record.callerSlot,
                 toolName: record.toolName,

@@ -85,6 +85,43 @@ describe('McpService', () => {
       expect(result.default_side_effect_level).toBe('none');
     });
 
+    it('创建时持久化 metadata_overrides', async () => {
+      const result = await service.createConfig(
+        makeHttpInput({
+          metadata_overrides: [{
+            tool_name: 'github_create_issue',
+            side_effect_level: 'irreversible',
+            allowed_slots: ['narrator'],
+            parameter_schema: {
+              type: 'object',
+              properties: {
+                title: { type: 'string' },
+              },
+              required: ['title'],
+            },
+            replay_safety: 'never_auto_replay',
+          }],
+        }),
+        DEFAULT_ADMIN_ACCOUNT_ID,
+      );
+
+      expect(result.metadata_overrides).toEqual([
+        {
+          tool_name: 'github_create_issue',
+          side_effect_level: 'irreversible',
+          allowed_slots: ['narrator'],
+          parameter_schema: {
+            type: 'object',
+            properties: {
+              title: { type: 'string' },
+            },
+            required: ['title'],
+          },
+          replay_safety: 'never_auto_replay',
+        },
+      ]);
+    });
+
     it('同一账号内 name 重复时抛出 name_conflict', async () => {
       await service.createConfig(makeStdioInput(), DEFAULT_ADMIN_ACCOUNT_ID);
 
@@ -318,6 +355,38 @@ describe('McpService', () => {
       );
 
       expect(updated!.stdio).toEqual({ command: 'python', args: ['mcp.py'] });
+    });
+
+    it('更新 metadata_overrides 并允许用空数组清空', async () => {
+      const created = await service.createConfig(makeHttpInput(), DEFAULT_ADMIN_ACCOUNT_ID);
+
+      const updated = await service.updateConfig(
+        created.id,
+        {
+          metadata_overrides: [{
+            tool_name: 'mcp_lookup',
+            side_effect_level: 'sandbox',
+            allowed_slots: ['narrator'],
+          }],
+        },
+        DEFAULT_ADMIN_ACCOUNT_ID,
+      );
+
+      expect(updated?.metadata_overrides).toEqual([
+        {
+          tool_name: 'mcp_lookup',
+          side_effect_level: 'sandbox',
+          allowed_slots: ['narrator'],
+        },
+      ]);
+
+      const cleared = await service.updateConfig(
+        created.id,
+        { metadata_overrides: [] },
+        DEFAULT_ADMIN_ACCOUNT_ID,
+      );
+
+      expect(cleared?.metadata_overrides).toEqual([]);
     });
 
     it('切换传输类型时校验配置一致性', async () => {

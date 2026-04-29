@@ -3,8 +3,8 @@ import type { FastifyInstance } from "fastify";
 
 import type { DatabaseConnection } from "../db/client";
 import type { ClientDataConfig } from "../client-data/client-data-service.js";
-import type { SessionToolRegistryService } from "../services/session-tool-registry-service.js";
-import type { McpConnectionManager } from "../mcp/mcp-connection-manager.js";
+import type { SessionToolRegistryService } from "../services/tooling/session-tool-registry-service.js";
+import type { McpConnectionManager } from "../services/tooling/mcp/mcp-connection-manager.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 import { registerCharacterRoutes } from "./characters";
 import { registerFloorRoutes } from "./floors";
@@ -19,12 +19,10 @@ import { registerChatTransferJobRoutes, type ChatTransferJobRoutesOptions } from
 import { registerLlmProfileRoutes } from "./llm-profiles";
 import { registerLlmInstanceRoutes } from "./llm-instances";
 import { registerSessionRoutes } from "./sessions";
-import { registerSessionRuntimeToolRoutes } from "./session-runtime-tools";
+import { registerMcpConfigRoutes, registerSessionRuntimeToolRoutes, registerToolRoutes } from "./tooling";
 import { registerVariableRoutes } from "./variables";
 import { registerAccountRoutes } from "./accounts";
 import { registerUserRoutes } from "./users";
-import { registerToolRoutes } from "./tools";
-import { registerMcpConfigRoutes } from "./mcp";
 import { registerExportRoutes } from "./exports";
 import { registerClientDataRoutes } from "../client-data/client-data-routes.js";
 import type { AccountMode } from "../accounts/constants.js";
