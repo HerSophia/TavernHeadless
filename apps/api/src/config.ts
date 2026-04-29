@@ -57,6 +57,7 @@
  * - AUTH_API_KEY_ACCOUNTS: 多账号 + API Key 模式下的账号映射（key:account_id，逗号分隔）
  * - AUTH_JWT_SECRET: JWT 模式下的签名密钥
  * - AUTH_JWT_ACCOUNT_CLAIM: 多账号 + JWT 模式的账号 claim 字段名（默认 account_id）
+ * - DATABASE_URL / DB_PATH: SQLite 数据库路径（DATABASE_URL 优先，DB_PATH 为兼容别名）
  * - ACCOUNT_MODE: 账号模式（single | multi，默认 single）
  * - CORS_ORIGINS / CORS_ORIGIN: 允许的跨域来源（逗号分隔，默认本地 Vite 地址）
  * - CORS_CREDENTIALS: 是否允许携带凭据（true | false，默认 false）
@@ -185,7 +186,7 @@ export interface AppConfig {
  */
 export function loadConfig(): AppConfig {
   const port = Number(process.env.PORT ?? 3000);
-  const databasePath = process.env.DATABASE_URL || undefined;
+  const databasePath = process.env.DATABASE_URL || process.env.DB_PATH || undefined;
   const enableWebSocket = process.env.ENABLE_WEBSOCKET !== "false";
   const chatHistoryMaxFloors = parsePositiveInt(process.env.CHAT_HISTORY_MAX_FLOORS);
   const enableMemory = process.env.ENABLE_MEMORY === "true";

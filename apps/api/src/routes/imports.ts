@@ -1233,6 +1233,7 @@ export async function registerImportRoutes(
 
     const characterProfile = normalizeImportedCharacterCard(characterCard);
     const snapshot = toSessionCharacterSnapshot(characterProfile);
+    const sourceArtifact = toCharacterSourceArtifact(characterCard);
 
     if (!parsed.data.create_session) {
       try {
@@ -1240,6 +1241,7 @@ export async function registerImportRoutes(
           name: characterProfile.core.name,
           accountId: auth.accountId,
           snapshot,
+          sourceArtifact,
           source: "sillytavern",
           now: Date.now(),
         }));
@@ -1266,6 +1268,7 @@ export async function registerImportRoutes(
         name: characterProfile.core.name,
         accountId: auth.accountId,
         snapshot,
+        sourceArtifact,
         source: "sillytavern",
         title: parsed.data.title ?? characterProfile.core.name,
         now: Date.now(),
@@ -2296,6 +2299,22 @@ function toCharacterResponse(profile: CharacterProfile) {
   };
 }
 
+interface CharacterSourceArtifact {
+  json: string;
+  format: ImportedCharacterCard["format"];
+  digest: string;
+}
+
+function toCharacterSourceArtifact(card: ImportedCharacterCard): CharacterSourceArtifact {
+  const json = stringifyJsonField(card.raw) ?? "{}";
+
+  return {
+    json,
+    format: card.format,
+    digest: createHash("sha256").update(json).digest("hex"),
+  };
+}
+
 function createCharacterFromImport(
   db: DatabaseConnection["db"],
   input: {
@@ -2303,6 +2322,7 @@ function createCharacterFromImport(
     accountId: string;
     source: string;
     snapshot: SessionCharacterSnapshot;
+    sourceArtifact: CharacterSourceArtifact;
     now: number;
   }
 ): CharacterBindingPayload {
@@ -2316,6 +2336,7 @@ function createCharacterWithSessionFromImport(
     accountId: string;
     source: string;
     snapshot: SessionCharacterSnapshot;
+    sourceArtifact: CharacterSourceArtifact;
     title: string;
     now: number;
   }
@@ -2326,6 +2347,7 @@ function createCharacterWithSessionFromImport(
       accountId: input.accountId,
       source: input.source,
       snapshot: input.snapshot,
+      sourceArtifact: input.sourceArtifact,
       now: input.now
     });
 
@@ -2347,6 +2369,7 @@ function createCharacterFromImportInternal(
     accountId: string;
     source: string;
     snapshot: SessionCharacterSnapshot;
+    sourceArtifact: CharacterSourceArtifact;
     now: number;
   }
 ): CharacterBindingPayload {
@@ -2374,6 +2397,9 @@ function createCharacterFromImportInternal(
     versionNo: 1,
     dataJson: snapshotJson,
     contentHash,
+    sourceArtifactJson: input.sourceArtifact.json,
+    sourceArtifactFormat: input.sourceArtifact.format,
+    sourceArtifactDigest: input.sourceArtifact.digest,
     createdAt: input.now
   }).run();
 

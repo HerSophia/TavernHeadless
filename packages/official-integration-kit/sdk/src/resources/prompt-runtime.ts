@@ -496,7 +496,7 @@ export type PromptRuntimeHistoricalExplain = {
   excludedSources: NonNullable<PromptRuntimeTrace["sourceSelection"]>["excludedSources"] | null;
   floor: PromptRuntimeHistoricalExplainFloor;
   limitations?: string[];
-  promptSnapshot: { presetId: string | null; presetUpdatedAt: number | null; presetVersion: number | null; worldbookId: string | null; worldbookUpdatedAt: number | null; worldbookVersion: number | null; regexProfileId: string | null; regexProfileUpdatedAt: number | null; regexProfileVersion: number | null; worldbookActivatedEntryUids: number[]; regexPreRuleNames: string[]; regexPostRuleNames: string[]; promptMode: "compat_strict" | "compat_plus" | "native"; promptDigest: string; tokenEstimate: number; };
+  promptSnapshot: PromptSnapshotPreview;
   resolvedPolicy: PromptRuntimeResolvedPolicy | null;
   governance: PromptRuntimeGovernanceView | null;
   result: PromptRuntimeHistoricalExplainCommittedResult;
@@ -1613,7 +1613,8 @@ function mapPromptRuntimeHistoricalExplain(value: unknown): PromptRuntimeHistori
   const assets = readRecord(record?.assets);
   const snapshot = readRecord(record?.prompt_snapshot);
   const result = readRecord(record?.result);
-  if (!record || !floor || !snapshot || !result) {
+  const promptSnapshot = mapPromptSnapshotPayload(snapshot);
+  if (!record || !floor || !snapshot || !result || !promptSnapshot) {
     return null;
   }
 
@@ -1637,23 +1638,7 @@ function mapPromptRuntimeHistoricalExplain(value: unknown): PromptRuntimeHistori
       state: "committed",
     },
     ...(record.limitations !== undefined ? { limitations: mapStringArray(record.limitations) } : {}),
-    promptSnapshot: {
-      presetId: readNullableString(snapshot.preset_id),
-      presetUpdatedAt: readNullableNumber(snapshot.preset_updated_at),
-      presetVersion: readNullableNumber(snapshot.preset_version),
-      worldbookId: readNullableString(snapshot.worldbook_id),
-      worldbookUpdatedAt: readNullableNumber(snapshot.worldbook_updated_at),
-      worldbookVersion: readNullableNumber(snapshot.worldbook_version),
-      regexProfileId: readNullableString(snapshot.regex_profile_id),
-      regexProfileUpdatedAt: readNullableNumber(snapshot.regex_profile_updated_at),
-      regexProfileVersion: readNullableNumber(snapshot.regex_profile_version),
-      worldbookActivatedEntryUids: readArray(snapshot.worldbook_activated_entry_uids).map((item) => readNumber(item)).filter((item) => Number.isFinite(item)),
-      regexPreRuleNames: mapStringArray(snapshot.regex_pre_rule_names),
-      regexPostRuleNames: mapStringArray(snapshot.regex_post_rule_names),
-      promptMode: (readOptionalString(snapshot.prompt_mode) === "native" ? "native" : readOptionalString(snapshot.prompt_mode) === "compat_plus" ? "compat_plus" : "compat_strict"),
-      promptDigest: readString(snapshot.prompt_digest),
-      tokenEstimate: readNumber(snapshot.token_estimate),
-    },
+    promptSnapshot,
     resolvedPolicy: record.resolved_policy === null ? null : mapPromptRuntimeResolvedPolicy(record.resolved_policy),
     governance: record.governance === null ? null : mapPromptRuntimeGovernanceView(record.governance),
     result: {

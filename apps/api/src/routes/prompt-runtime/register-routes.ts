@@ -39,6 +39,7 @@ import {
   type ResolvedPromptStructurePolicy,
 } from "../../services/prompt-runtime/control-service.js";
 import { ChatServiceError } from "../../services/chat/errors.js";
+import { isBranchLocalSnapshotMissingError } from "../../services/branch-local-variable-snapshot-service.js";
 import type {
   PromptRuntimePreviewRequest,
   PromptRuntimePreviewResult,
@@ -1033,6 +1034,27 @@ function mapAssetsViewToSnakeCase(assets: PromptRuntimeAssetsView): Record<strin
   };
 }
 
+function mapPromptSnapshotWorldbookActivationToSnakeCase(
+  activation: NonNullable<PromptRuntimeHistoricalExplain["promptSnapshot"]["worldbookActivatedEntries"]>[number],
+): Record<string, unknown> {
+  return {
+    uid: activation.uid,
+    activation_key: activation.activationKey,
+    source: {
+      kind: activation.source.kind,
+      worldbook_id: activation.source.worldbookId,
+      worldbook_name: activation.source.worldbookName,
+      asset_scope_id: activation.source.assetScopeId,
+    },
+    insertion: {
+      position: activation.insertion.position,
+      ...(activation.insertion.depth !== undefined ? { depth: activation.insertion.depth } : {}),
+      ...(activation.insertion.role ? { role: activation.insertion.role } : {}),
+      ...(activation.insertion.outletName ? { outlet_name: activation.insertion.outletName } : {}),
+    },
+  };
+}
+
 function mapPromptSnapshotToSnakeCase(snapshot: PromptRuntimeHistoricalExplain["promptSnapshot"]): Record<string, unknown> {
   return {
     preset_id: snapshot.presetId,
@@ -1044,10 +1066,16 @@ function mapPromptSnapshotToSnakeCase(snapshot: PromptRuntimeHistoricalExplain["
     regex_profile_id: snapshot.regexProfileId,
     regex_profile_updated_at: snapshot.regexProfileUpdatedAt,
     regex_profile_version: snapshot.regexProfileVersion,
+    character_id: snapshot.characterId ?? null,
+    character_version_id: snapshot.characterVersionId ?? null,
+    character_imported_format: snapshot.characterImportedFormat ?? null,
+    character_content_hash: snapshot.characterContentHash ?? null,
     worldbook_activated_entry_uids: snapshot.worldbookActivatedEntryUids,
+    worldbook_activated_entries: (snapshot.worldbookActivatedEntries ?? []).map(mapPromptSnapshotWorldbookActivationToSnakeCase),
     regex_pre_rule_names: snapshot.regexPreRuleNames,
     regex_post_rule_names: snapshot.regexPostRuleNames,
     prompt_mode: snapshot.promptMode,
+    asset_manifest_digest: snapshot.assetManifestDigest ?? null,
     prompt_digest: snapshot.promptDigest,
     token_estimate: snapshot.tokenEstimate,
   };
@@ -1329,6 +1357,10 @@ function sendPromptRuntimePreviewServiceError(
   reply: Parameters<typeof sendError>[0],
   error: unknown,
 ) {
+  if (isBranchLocalSnapshotMissingError(error)) {
+    return sendError(reply, 409, "branch_local_snapshot_missing", error.message);
+  }
+
   if (error instanceof ChatServiceError) {
     switch (error.code) {
       case "session_not_found":

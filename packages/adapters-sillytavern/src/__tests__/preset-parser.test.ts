@@ -49,7 +49,8 @@ describe('parsePreset', () => {
     expect(result.stream).toBe(true);
     expect(result.wiFormat).toBe('{0}');
     expect(result.newChatPrompt).toBe('[Start a new Chat]');
-    expect(result.importReport?.unsupportedFields).toContain('prompts[].system_prompt');
+    expect(result.prompts.find((entry) => entry.identifier === 'chatHistory')?.behavior?.semantics).toEqual({ systemPrompt: true });
+    expect(result.importReport?.unsupportedFields).not.toContain('prompts[].system_prompt');
   });
 
   it('filters disabled prompts from promptOrder', () => {
@@ -225,9 +226,9 @@ describe('parsePreset', () => {
       placement: { kind: 'in_chat', depth: 2, order: 3 },
       triggers: ['continue'],
     });
-    expect(result.importReport?.unsupportedFields).toEqual(expect.arrayContaining([
-      'prompts[].system_prompt',
-    ]));
+    expect(result.prompts.find((entry) => entry.identifier === 'chatHistory')?.behavior?.semantics).toEqual({ systemPrompt: true });
+    expect(result.importReport?.unsupportedFields).not.toContain('prompts[].system_prompt');
+    expect(result.importReport?.unsupportedFields).not.toContain('prompts[].forbid_overrides');
     expect(result.importReport?.unresolvedMarkers).toContain('customMarker');
     expect(result.importReport?.downgradedEntries).toEqual(expect.arrayContaining([
       expect.objectContaining({ identifier: 'customMarker' }),
@@ -264,6 +265,28 @@ describe('parsePreset', () => {
     expect(result.prompts[0]?.behavior).toEqual({
       placement: { kind: 'in_chat', depth: 1, order: 4 },
       triggers: ['continue', 'quiet'],
+    });
+    expect(result.importReport?.unsupportedFields).toEqual([]);
+  });
+
+  it('maps system_prompt and forbid_overrides into prompt semantics', () => {
+    const result = parsePreset({
+      ...minimalPreset,
+      prompts: [
+        {
+          identifier: 'main',
+          name: 'Main Prompt',
+          role: 'system',
+          content: 'Keep this system prompt.',
+          system_prompt: true,
+          forbid_overrides: true,
+        },
+      ],
+    });
+
+    expect(result.prompts[0]?.behavior?.semantics).toEqual({
+      systemPrompt: true,
+      forbidOverrides: true,
     });
     expect(result.importReport?.unsupportedFields).toEqual([]);
   });

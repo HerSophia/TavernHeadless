@@ -4,6 +4,7 @@ import {
   resolvePromptRuntimeSourceGovernanceLevel,
   type PromptRuntimeSourceGovernanceLevel,
 } from "./runtime-registry.js";
+import { PROMPT_ASSET_CHARACTER_BUDGET_GROUP, PROMPT_ASSET_CHARACTER_SOURCE_KIND } from "../prompt-assets/index.js";
 import type {
   IRSection,
   PromptRuntimeGovernancePolicy,
@@ -131,6 +132,11 @@ export function inferPromptRuntimeGovernanceSourceKind(
 
   if (budgetGroup === "examples" || section.name.toLowerCase().includes("example")) {
     return "examples";
+  }
+
+  const normalizedSectionName = section.name.toLowerCase();
+  if (budgetGroup === PROMPT_ASSET_CHARACTER_BUDGET_GROUP || normalizedSectionName.startsWith("character")) {
+    return PROMPT_ASSET_CHARACTER_SOURCE_KIND;
   }
 
   if (budgetGroup === "section:nativeSystem" || section.name === "nativeSystem") {

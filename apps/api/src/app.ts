@@ -45,6 +45,7 @@ import {
 import { ChatMessagePersistence } from "./services/chat-message-persistence.js";
 import { LlmInstanceService } from "./services/llm-instance-service";
 import { LlmProfileService, LlmProfileServiceError } from "./services/llm-profile-service";
+import { isBranchLocalSnapshotMissingError } from "./services/branch-local-variable-snapshot-service.js";
 import { registerOpenApi } from "./plugins/openapi";
 import { registerRequestLogging } from "./plugins/request-logging";
 import { registerAuth, type AuthConfig } from "./plugins/auth";
@@ -107,6 +108,11 @@ function toValidationDetails(error: { validation?: FastifyValidationIssue[] }) {
     message: issue.message ?? "Invalid value",
     code: issue.keyword ?? "validation"
   }));
+}
+
+function readOptionalRequestHeader(headers: { [key: string]: string | string[] | undefined }, name: string): string | undefined {
+  const value = headers[name];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function mapSqliteConstraintErrorCode(message: string): { code: string; publicMessage: string } | null {
@@ -345,6 +351,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
           route: request.routeOptions.url ?? request.url.split("?")[0] ?? "/",
           error_code: "native_pipeline_failed",
           node_name: nativePipelineError.nodeName,
+          smoke_run_id: readOptionalRequestHeader(request.headers, "x-smoke-run-id"),
+          smoke_request_id: readOptionalRequestHeader(request.headers, "x-smoke-request-id"),
           input_summary: nativePipelineError.inputSummary,
           state_summary: nativePipelineError.stateSummary,
           err: error,
@@ -355,6 +363,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
     const code = (error as { code?: string }).code;
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    if (isBranchLocalSnapshotMissingError(error)) {
+      return sendError(reply, 409, "branch_local_snapshot_missing", error.message);
+    }
 
     if (code?.startsWith("SQLITE_CONSTRAINT")) {
       const mappedConstraint = mapSqliteConstraintErrorCode(errorMessage);
@@ -389,6 +401,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     if (!nativePipelineError) {
       app.log.error({
         err: error,
+        request_id: request.id,
+        smoke_run_id: readOptionalRequestHeader(request.headers, "x-smoke-run-id"),
+        smoke_request_id: readOptionalRequestHeader(request.headers, "x-smoke-request-id"),
         message: errorMessage
       });
     }

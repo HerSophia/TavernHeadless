@@ -492,13 +492,17 @@ describe('triggerWorldBook', () => {
       expect(result.atDepth[0]!.role).toBe(WI_ROLE.USER);
     });
 
-    it('puts AN/EM positions into after bucket', () => {
+    it('keeps AN/EM positions in explicit buckets', () => {
       const entries = [
         makeEntry({ uid: 0, key: ['Alice'], position: WI_POSITION.AN_TOP, content: 'an' }),
         makeEntry({ uid: 1, key: ['Bob'], position: WI_POSITION.EM_BOTTOM, content: 'em' }),
       ];
       const result = triggerWorldBook(entries, defaultContext);
-      expect(result.after).toHaveLength(2);
+      expect(result.after).toHaveLength(0);
+      expect(result.anTop.map((entry) => entry.uid)).toEqual([0]);
+      expect(result.anBottom).toHaveLength(0);
+      expect(result.emTop).toHaveLength(0);
+      expect(result.emBottom.map((entry) => entry.uid)).toEqual([1]);
     });
 
     it('keeps outlet positions out of the after bucket', () => {

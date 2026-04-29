@@ -359,6 +359,9 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
         versionNo: 1,
         dataJson: snapshotJson,
         contentHash,
+        sourceArtifactJson: null,
+        sourceArtifactFormat: null,
+        sourceArtifactDigest: null,
         createdAt: now,
       })
       .run()
@@ -440,6 +443,9 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
         versionNo: newVersionNo,
         dataJson: snapshotJson,
         contentHash,
+        sourceArtifactJson: latestVersion.sourceArtifactJson,
+        sourceArtifactFormat: latestVersion.sourceArtifactFormat,
+        sourceArtifactDigest: latestVersion.sourceArtifactDigest,
         createdAt: now,
       })
       .run()

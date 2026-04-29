@@ -142,6 +142,35 @@ export interface AssembledPrompt {
  *
  * 用于记录某个 floor 在实际生成时冻结使用的 Prompt 资源版本与摘要信息。
  */
+export interface PromptSnapshotWorldbookActivationSource {
+  kind: 'session_worldbook' | 'character_book';
+  worldbookId: string | null;
+  worldbookName: string;
+  assetScopeId: string;
+}
+
+export interface PromptSnapshotWorldbookInsertion {
+  position:
+    | 'before'
+    | 'after'
+    | 'an_top'
+    | 'an_bottom'
+    | 'em_top'
+    | 'em_bottom'
+    | 'at_depth'
+    | 'outlet';
+  depth?: number;
+  role?: ChatRole;
+  outletName?: string;
+}
+
+export interface PromptSnapshotWorldbookActivation {
+  uid: number;
+  activationKey: string;
+  source: PromptSnapshotWorldbookActivationSource;
+  insertion: PromptSnapshotWorldbookInsertion;
+}
+
 export interface PromptSnapshotRecord {
   floorId: string;
   sessionId: string;
@@ -154,10 +183,16 @@ export interface PromptSnapshotRecord {
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
   regexProfileVersion: number | null;
+  characterId: string | null;
+  characterVersionId: string | null;
+  characterImportedFormat: string | null;
+  characterContentHash: string | null;
   worldbookActivatedEntryUids: number[];
+  worldbookActivatedEntries: PromptSnapshotWorldbookActivation[];
   regexPreRuleNames: string[];
   regexPostRuleNames: string[];
   promptMode: 'native' | 'compat_plus' | 'compat_strict';
+  assetManifestDigest: string | null;
   promptDigest: string;
   tokenEstimate: number;
   createdAt: number;
