@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SimpleTokenCounter, type TurnExecutionResult, type TurnOrchestrator } from "@tavern/core";
+import { eq } from "drizzle-orm";
+import { SimpleTokenCounter, type TurnExecutionResult, type TurnInput, type TurnOrchestrator } from "@tavern/core";
 import { nanoid } from "nanoid";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
@@ -8,6 +9,7 @@ import { ChatService, ChatServiceError } from "../chat-service.js";
 import { FirstPartyGameStateService } from "../../session-state/first-party-game-state-service.js";
 import { SessionStateCustomNamespaceService } from "../../session-state/session-state-custom-namespace-service.js";
 import { SessionStateService } from "../../session-state/session-state-service.js";
+import { SessionBranchRegistryService } from "../variables/host/session-branch-registry-service.js";
 
 const promptAssemblerMocks = vi.hoisted(() => ({
   assemblePrompt: vi.fn(),
@@ -109,6 +111,90 @@ describe("ChatService session-state replay gate", () => {
 
   afterEach(() => {
     database.close();
+  });
+
+  it("passes a rejected variable pageDecision when the source page disappears before commit", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_090_000;
+    let sourcePageId: string | undefined;
+
+    await seedSession(database, sessionId, now);
+
+    const executeTurnMock = orchestrator.executeTurn as unknown as ReturnType<typeof vi.fn>;
+    executeTurnMock.mockImplementationOnce(async (input: TurnInput) => {
+      expect(input.pageId).toBeDefined();
+      sourcePageId = input.pageId!;
+      await database.db.delete(messagePages).where(eq(messagePages.id, sourcePageId)).run();
+
+      return {
+        ...createTurnExecution(input.floorId, "Variable write after source page removal."),
+        bufferedVariableMutations: [
+          {
+            runId: "run-page-missing",
+            generationAttemptNo: 1,
+            scope: "page",
+            scopeId: sourcePageId,
+            key: "mood",
+            value: "guarded",
+            intent: "promote_to_floor_on_accept",
+            bufferedAt: now + 10,
+          },
+        ],
+      } as TurnExecutionResult;
+    });
+
+    await chatService.respond(sessionId, { message: "Continue the scene." }, {}, ACCOUNT_ID);
+
+    const commitInput = turnCommitMock.mock.calls[0]?.[0];
+    expect(commitInput?.variableCommit).toMatchObject({
+      pageId: sourcePageId,
+      pageDecision: {
+        status: "rejected",
+        decisionReason: "page_commit_gate_source_page_missing",
+      },
+    });
+  });
+
+  it("passes a discarded variable pageDecision when the source page is no longer active at commit time", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_095_000;
+    let sourcePageId: string | undefined;
+
+    await seedSession(database, sessionId, now);
+
+    const executeTurnMock = orchestrator.executeTurn as unknown as ReturnType<typeof vi.fn>;
+    executeTurnMock.mockImplementationOnce(async (input: TurnInput) => {
+      expect(input.pageId).toBeDefined();
+      sourcePageId = input.pageId!;
+      await database.db.update(messagePages).set({ isActive: false, updatedAt: now + 20 }).where(eq(messagePages.id, sourcePageId)).run();
+
+      return {
+        ...createTurnExecution(input.floorId, "Variable write after page deactivation."),
+        bufferedVariableMutations: [
+          {
+            runId: "run-page-inactive",
+            generationAttemptNo: 1,
+            scope: "page",
+            scopeId: sourcePageId,
+            key: "topic",
+            value: "storm",
+            intent: "promote_to_floor_on_accept",
+            bufferedAt: now + 10,
+          },
+        ],
+      } as TurnExecutionResult;
+    });
+
+    await chatService.respond(sessionId, { message: "Continue the scene." }, {}, ACCOUNT_ID);
+
+    const commitInput = turnCommitMock.mock.calls[0]?.[0];
+    expect(commitInput?.variableCommit).toMatchObject({
+      pageId: sourcePageId,
+      pageDecision: {
+        status: "discarded",
+        decisionReason: "page_not_active_at_commit",
+      },
+    });
   });
 
   it("requires explicit confirmation for session-state replay blockers", async () => {
@@ -897,6 +983,13 @@ async function seedSession(database: DatabaseConnection, sessionId: string, now:
     title: "Chat Service Session-State Replay Test",
     accountId: ACCOUNT_ID,
     status: "active",
+    createdAt: now,
+    updatedAt: now,
+  });
+  new SessionBranchRegistryService(database.db).ensure({
+    accountId: ACCOUNT_ID,
+    sessionId,
+    branchId: "main",
     createdAt: now,
     updatedAt: now,
   });

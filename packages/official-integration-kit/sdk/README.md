@@ -105,6 +105,41 @@ const rawSession = await client.request("GET", "/sessions/{id}", {
 
 下面用几个常见场景展示资源方法的用法。
 
+### Variables 的三个观察面
+
+变量资源现在同时提供三组方法：
+
+- `client.variables.upsert(...)` / `client.variables.list(...)` / `client.variables.getDetail(...)`
+  - 对应显式 durable write / durable read
+- `client.variables.resolveContext(...)`
+  - 只返回 durable truth
+  - 不会把 page staged write 和 promotion trace 混进去
+- `client.variables.getPageStagedWrites(...)`
+  - 读取某个 page 的 staged write ledger
+- `client.variables.getPagePromotions(...)`
+  - 读取某个 page 已发生的 durable promotion trace
+
+```ts
+const resolved = await client.variables.resolveContext({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  floorId: "floor-1",
+  pageId: "page-1",
+  includeLayers: true,
+});
+
+const staged = await client.variables.getPageStagedWrites({
+  accountId: "account-1",
+  pageId: "page-1",
+});
+
+const promotions = await client.variables.getPagePromotions({
+  accountId: "account-1",
+  pageId: "page-1",
+});
+```
+
 ### 客户端专属数据域
 
 ```ts

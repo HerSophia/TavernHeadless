@@ -1,6 +1,6 @@
 import type { ToolProvider, ToolDefinition, ToolCallResult, ToolExecutionContext } from './types.js';
 import type { InstanceSlot } from '../llm/types.js';
-import type { VariableStore } from '../variables/variable-store.js';
+import type { VariableStore, VariableWriteIntent } from '../variables/index.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 
 // ── 内置工具定义 ────────────────────────────────────────
@@ -14,7 +14,7 @@ const BUILTIN_COMMON = {
 const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'get_variable',
-    description: 'Get the value of a variable by key. Searches across all scopes (page → floor → chat → global) and returns the highest-priority match.',
+    description: 'Get the value of a variable by key. Reads durable truth in the order page → floor → branch → chat → global. During the active tool attempt, the current tool buffer may override the persisted page value.',
     parameters: {
       type: 'object',
       properties: {
@@ -27,12 +27,23 @@ const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'set_variable',
-    description: 'Set a variable value. Writes to the current page scope by default (sandbox). The change will be promoted to floor scope only when the floor is committed.',
+    description: 'Stage a variable write for the current page. The default intent is promote_to_floor_on_accept, which materializes on the accepted page and then promotes page → floor. Use page_only to keep the write at page scope only.',
     parameters: {
       type: 'object',
       properties: {
         key: { type: 'string', description: 'Variable key' },
-        value: { type: 'string', description: 'Value to set (stored as string)' },
+        value: { type: 'string', description: 'JSON-compatible value to stage for the current page write' },
+        intent: {
+          type: 'string',
+          description: 'Write intent. Defaults to promote_to_floor_on_accept.',
+          enum: ['promote_to_floor_on_accept', 'page_only'],
+          default: 'promote_to_floor_on_accept',
+        },
+        reason: {
+          type: 'string',
+          description: 'Optional reason recorded with the staged write. Defaults to builtin:set_variable.',
+          default: 'builtin:set_variable',
+        },
       },
       required: ['key', 'value'],
     },
@@ -132,6 +143,18 @@ function isToolAvailable(name: string, deps: BuiltinDeps): boolean {
   return true;
 }
 
+function normalizeVariableWriteIntent(value: unknown): VariableWriteIntent {
+  return value === 'page_only' ? 'page_only' : 'promote_to_floor_on_accept';
+}
+
+function normalizeVariableWriteReason(value: unknown): string {
+  if (typeof value !== 'string') {
+    return 'builtin:set_variable';
+  }
+
+  return value.trim() || 'builtin:set_variable';
+}
+
 const handlers: Record<string, ToolHandler> = {
   async get_variable(args, context, deps) {
     if (!deps.variableStore) {
@@ -152,8 +175,17 @@ const handlers: Record<string, ToolHandler> = {
     if (!key) return { error: 'Missing required parameter: key' };
 
     const value = args.value ?? '';
-    const entry = await deps.variableStore.set(key, value, context.variableContext);
-    return { data: { key: entry.key, value: entry.value, scope: entry.scope } };
+    const intent = normalizeVariableWriteIntent(args.intent);
+    const reason = normalizeVariableWriteReason(args.reason);
+    const entry = await deps.variableStore.set(key, value, context.variableContext, undefined, {
+      intent,
+      reason,
+      source: {
+        toolName: 'set_variable',
+        providerId: 'builtin',
+      },
+    });
+    return { data: { key: entry.key, value: entry.value, scope: entry.scope, intent, reason } };
   },
 
   async roll_dice(args) {

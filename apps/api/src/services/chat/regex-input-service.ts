@@ -1,7 +1,7 @@
 import { applyRegexScripts, REGEX_PLACEMENT, type RegexExecutionChannel } from "@tavern/adapters-sillytavern";
 import { createRegexMacroSubstituter, type SessionPromptInfo } from "../prompt-assembler.js";
 import { PromptResourceLoader } from "../prompt-resource-loader.js";
-import { VariableService } from "../variable-service.js";
+import { VariableService } from "../variables/variable-service.js";
 import { ChatMessagePersistence } from "../chat-message-persistence.js";
 import type { AppDb } from "../../db/client.js";
 

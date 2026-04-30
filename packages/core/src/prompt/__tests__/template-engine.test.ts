@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import type { VariableScope, VariableEntry } from '@tavern/shared';
 import type { VariableRepository, VariableRepositoryOptions } from '../../ports/index.js';
 import type { VariableContext } from '../../types.js';
-import { VariableResolver } from '../../variables/variable-resolver.js';
+import { VariableResolver } from '../../variables/resolver/variable-resolver.js';
 import { TemplateEngine, TemplateVariableError } from '../template-engine.js';
 
 // ─── In-memory VariableRepository ─────────────────────

@@ -219,6 +219,33 @@ const resolved = await resolveItemByPath(client, domainId, "settings", "theme.da
 
 ```
 
+## Variables 的接入建议
+
+变量相关的官方接入建议分成三层：
+
+1. 用 `client.variables.resolveContext(...)` 读取 durable truth
+2. 用 `client.variables.getPageStagedWrites(...)` 读取页级候选写入
+3. 用 `client.variables.getPagePromotions(...)` 读取 durable promotion 轨迹
+
+如果你需要把这些数据整理成 inspector 视图，再交给 `@tavern/client-helpers`：
+
+```ts
+import {
+  flattenPageStagedVariableWrites,
+  flattenVariableSnapshot,
+  groupVariablePromotionTrace,
+} from "@tavern/client-helpers";
+
+const resolvedRows = flattenVariableSnapshot(resolvedSnapshot);
+const stagedRows = flattenPageStagedVariableWrites(stagedSnapshot);
+const promotionGroups = groupVariablePromotionTrace(promotionSnapshot);
+```
+
+这里要注意两点：
+
+- `resolveContext(...)` 仍然是 durable-only
+- staged / promotion inspect 是额外观察面，不是 `resolveContext(...)` 的扩展字段
+
 ## SDK 资源覆盖范围
 
 目前 `@tavern/sdk` 已覆盖这些资源：

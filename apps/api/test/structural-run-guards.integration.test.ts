@@ -8,6 +8,7 @@ import { accounts, floorRunStates, floors, sessions } from "../src/db/schema.js"
 import { registerFloorRoutes } from "../src/routes/floors.js";
 import { registerSessionRoutes } from "../src/routes/sessions.js";
 import { registerDevelopmentTestAuth } from "./helpers/register-test-auth.js";
+import { SessionBranchRegistryService } from "../src/services/variables/host/session-branch-registry-service.js";
 
 type ErrorResponse = {
   error: {
@@ -70,6 +71,13 @@ describe("structural run guards", () => {
       createdAt: now,
       updatedAt: now,
     });
+    new SessionBranchRegistryService(database.db).ensure({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      createdAt: now,
+      updatedAt: now,
+    });
   }
 
   async function seedFloor(args: {
@@ -89,6 +97,13 @@ describe("structural run guards", () => {
       state: args.state ?? "generating",
       tokenIn: 0,
       tokenOut: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    new SessionBranchRegistryService(database.db).ensure({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId: args.sessionId,
+      branchId: args.branchId ?? "main",
       createdAt: now,
       updatedAt: now,
     });

@@ -11,8 +11,11 @@ import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination
 import { getRequestAuthContext } from "../plugins/auth";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
 import { OwnedFloorRepository, OwnedPageRepository } from "../services/owned-resource-repositories";
-import { deleteVariablesForPages } from "../services/variable-owned-resource-cleanup.js";
+import { deleteVariablesForPages } from "../services/variables/cleanup/variable-owned-resource-cleanup.js";
 import { PageActivationService } from "../services/page-activation-service";
+import { VariableStageInspectionService } from "../services/variables/inspect/variable-stage-inspection-service.js";
+import { VariablePromotionTraceService } from "../services/variables/inspect/variable-promotion-trace-service.js";
+import { VariableServiceError } from "../services/variable-service-errors.js";
 import {
   mapSqliteConstraintErrorToRouteError,
   type SqliteConstraintErrorMapping,
@@ -142,6 +145,92 @@ const deleteResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const pageVariableInspectionObjectJsonSchema = {
+  type: "object",
+  additionalProperties: true,
+} as const;
+
+const pageStagedVariableWriteJsonSchema = {
+  type: "object",
+  required: ["id", "key", "op", "value", "intent", "conflict_policy", "reason", "source", "evidence", "status", "created_at", "resolved_at"],
+  properties: {
+    id: { type: "string" },
+    key: { type: "string" },
+    op: { type: "string", enum: ["set", "delete"] },
+    value: {},
+    intent: { type: "string", enum: ["page_only", "promote_to_floor_on_accept"] },
+    conflict_policy: { type: "string", enum: ["replace", "if_absent"] },
+    reason: { type: "string" },
+    source: pageVariableInspectionObjectJsonSchema,
+    evidence: pageVariableInspectionObjectJsonSchema,
+    status: { type: "string", enum: ["staged", "accepted_page_only", "promoted", "rejected", "discarded", "rerouted_to_session_state"] },
+    decision_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    created_at: { type: "integer", minimum: 0 },
+    resolved_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
+const pageVariablePromotionTraceJsonSchema = {
+  type: "object",
+  required: ["id", "staged_write_id", "key", "from_scope", "from_scope_id", "to_scope", "to_scope_id", "conflict_policy", "value", "created_at"],
+  properties: {
+    id: { type: "string" },
+    staged_write_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    key: { type: "string" },
+    from_scope: { type: "string", enum: ["page", "floor", "branch", "chat"] },
+    from_scope_id: { type: "string" },
+    to_scope: { type: "string", enum: ["floor", "branch", "chat", "global"] },
+    to_scope_id: { type: "string" },
+    conflict_policy: { type: "string", enum: ["replace", "if_absent"] },
+    source_variable_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    target_variable_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    value: {},
+    created_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const pageStagedVariablesResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["page_id", "floor_id", "session_id", "branch_id", "items"],
+      properties: {
+        page_id: { type: "string" },
+        floor_id: { type: "string" },
+        session_id: { type: "string" },
+        branch_id: { type: "string" },
+        items: { type: "array", items: pageStagedVariableWriteJsonSchema },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const pagePromotionsResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["page_id", "floor_id", "session_id", "branch_id", "items"],
+      properties: {
+        page_id: { type: "string" },
+        floor_id: { type: "string" },
+        session_id: { type: "string" },
+        branch_id: { type: "string" },
+        items: { type: "array", items: pageVariablePromotionTraceJsonSchema },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
 type PageRowLike = {
   id: string;
   floorId: string;
@@ -165,6 +254,68 @@ function toPageResponse(row: PageRowLike) {
     checksum: row.checksum,
     created_at: row.createdAt,
     updated_at: row.updatedAt
+  };
+}
+
+function toPageStagedVariableWriteResponse(item: {
+  id: string;
+  key: string;
+  op: string;
+  value: unknown;
+  intent: string;
+  conflictPolicy: string;
+  reason: string;
+  source: unknown;
+  evidence: unknown;
+  status: string;
+  decisionReason: string | null;
+  createdAt: number;
+  resolvedAt: number | null;
+}) {
+  return {
+    id: item.id,
+    key: item.key,
+    op: item.op,
+    value: item.value,
+    intent: item.intent,
+    conflict_policy: item.conflictPolicy,
+    reason: item.reason,
+    source: item.source,
+    evidence: item.evidence,
+    status: item.status,
+    decision_reason: item.decisionReason,
+    created_at: item.createdAt,
+    resolved_at: item.resolvedAt,
+  };
+}
+
+function toPageVariablePromotionTraceResponse(item: {
+  id: string;
+  stagedWriteId: string | null;
+  key: string;
+  fromScope: string;
+  fromScopeId: string;
+  toScope: string;
+  toScopeId: string;
+  conflictPolicy: string;
+  sourceVariableId: string | null;
+  targetVariableId: string | null;
+  value: unknown;
+  createdAt: number;
+}) {
+  return {
+    id: item.id,
+    staged_write_id: item.stagedWriteId,
+    key: item.key,
+    from_scope: item.fromScope,
+    from_scope_id: item.fromScopeId,
+    to_scope: item.toScope,
+    to_scope_id: item.toScopeId,
+    conflict_policy: item.conflictPolicy,
+    source_variable_id: item.sourceVariableId,
+    target_variable_id: item.targetVariableId,
+    value: item.value,
+    created_at: item.createdAt,
   };
 }
 
@@ -199,6 +350,8 @@ export async function registerMessagePageRoutes(
   const ownedFloors = new OwnedFloorRepository(db);
   const ownedPages = new OwnedPageRepository(db);
   const pageActivationService = new PageActivationService(db);
+  const variableStageInspectionService = new VariableStageInspectionService(db);
+  const variablePromotionTraceService = new VariablePromotionTraceService(db);
 
   app.post("/pages", {
     schema: {
@@ -403,6 +556,84 @@ export async function registerMessagePageRoutes(
 
 
     return reply.send({ data: toPageResponse(row) });
+  });
+
+  app.get("/pages/:id/variables/staged", {
+    schema: {
+      tags: ["pages"],
+      summary: "List staged variable writes for a page",
+      operationId: "listPageStagedVariableWrites",
+      params: idParamsJsonSchema,
+      response: {
+        200: pageStagedVariablesResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(pageParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+
+    try {
+      const snapshot = variableStageInspectionService.getPageSnapshot(auth.accountId, parsedParams.data.id);
+      return reply.send({
+        data: {
+          page_id: snapshot.pageId,
+          floor_id: snapshot.floorId,
+          session_id: snapshot.sessionId,
+          branch_id: snapshot.branchId,
+          items: snapshot.items.map(toPageStagedVariableWriteResponse),
+        },
+      });
+    } catch (error) {
+      if (error instanceof VariableServiceError && error.code === "variable_host_not_found") {
+        return sendError(reply, 404, "not_found", "Message page not found");
+      }
+
+      throw error;
+    }
+  });
+
+  app.get("/pages/:id/variables/promotions", {
+    schema: {
+      tags: ["pages"],
+      summary: "List durable variable promotions for a page",
+      operationId: "listPageVariablePromotions",
+      params: idParamsJsonSchema,
+      response: {
+        200: pagePromotionsResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(pageParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+
+    try {
+      const snapshot = variablePromotionTraceService.getPageSnapshot(auth.accountId, parsedParams.data.id);
+      return reply.send({
+        data: {
+          page_id: snapshot.pageId,
+          floor_id: snapshot.floorId,
+          session_id: snapshot.sessionId,
+          branch_id: snapshot.branchId,
+          items: snapshot.items.map(toPageVariablePromotionTraceResponse),
+        },
+      });
+    } catch (error) {
+      if (error instanceof VariableServiceError && error.code === "variable_host_not_found") {
+        return sendError(reply, 404, "not_found", "Message page not found");
+      }
+
+      throw error;
+    }
   });
 
   app.patch("/pages/:id", {

@@ -53,7 +53,7 @@ import {
   type LoadedPromptRegexProfile,
   type LoadedPromptWorldbook,
 } from "./prompt-resource-loader.js";
-import { VariableService } from "./variable-service.js";
+import { VariableService } from "./variables/variable-service.js";
 import {
   evaluateStMacros,
   type StMacroEvalResult,

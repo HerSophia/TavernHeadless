@@ -7,7 +7,7 @@ import {
 import { PROMPT_RUNTIME_PREVIEW_LIMITATIONS, type PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
 import type { AppDb } from "../../db/client.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
-import { VariableService } from "../variable-service.js";
+import { VariableService } from "../variables/variable-service.js";
 import {
   BranchLocalVariableSnapshotService,
   isBranchLocalSnapshotMissingError,

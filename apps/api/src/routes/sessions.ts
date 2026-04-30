@@ -22,7 +22,8 @@ import {
   sessionCharacterSnapshotSchema as characterSnapshotSchema,
   type SessionCharacterSnapshot,
 } from "../lib/character-snapshot.js";
-import { deleteVariablesForSession } from "../services/variable-owned-resource-cleanup.js";
+import { deleteVariablesForSession } from "../services/variables/cleanup/variable-owned-resource-cleanup.js";
+import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
@@ -1185,6 +1186,14 @@ export async function registerSessionRoutes(
         .all();
 
       const createdSession = requireRow(insertedSession, "Failed to create session");
+
+      new SessionBranchRegistryService(tx).ensure({
+        accountId: auth.accountId,
+        sessionId: createdSession.id,
+        branchId: "main",
+        createdAt: now,
+        updatedAt: now,
+      });
 
       if (greetingCandidates.length > 0) {
         const greeting = greetingCandidates[0]!;

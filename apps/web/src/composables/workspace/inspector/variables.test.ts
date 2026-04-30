@@ -134,6 +134,105 @@ describe("useWorkspaceInspectorVariables", () => {
     scope.stop();
   });
 
+  it("loads staged writes and promotion groups when the page inspection APIs are available", async () => {
+    const accountId = ref("acc-1");
+    const sessionId = ref("session-1");
+    const timeline = ref([
+      {
+        at: 1,
+        floorId: "floor-1",
+        id: "remote-1",
+        pageId: "page-1",
+        persisted: true,
+        seq: 1,
+      },
+    ]);
+    const resolveContext = vi.fn().mockResolvedValue({
+      context: {
+        accountId: "acc-1",
+        floorId: "floor-1",
+        globalScopeId: "global",
+        pageId: "page-1",
+        sessionId: "session-1",
+      },
+      resolved: [
+        {
+          key: "mood",
+          sourceScope: "page",
+          sourceScopeId: "page-1",
+          updatedAt: 200,
+          value: "steady",
+        },
+      ],
+    } satisfies ResolvedVariablesSnapshot);
+    const getPageStagedWrites = vi.fn().mockResolvedValue({
+      pageId: "page-1",
+      floorId: "floor-1",
+      sessionId: "session-1",
+      branchId: "main",
+      items: [
+        {
+          id: "staged-1",
+          key: "mood",
+          op: "set",
+          value: "steady",
+          intent: "promote_to_floor_on_accept",
+          conflictPolicy: "replace",
+          reason: "builtin:set_variable",
+          source: { toolName: "set_variable" },
+          evidence: { runId: "run-1" },
+          status: "promoted",
+          decisionReason: null,
+          createdAt: 100,
+          resolvedAt: 101,
+        },
+      ],
+    });
+    const getPagePromotions = vi.fn().mockResolvedValue({
+      pageId: "page-1",
+      floorId: "floor-1",
+      sessionId: "session-1",
+      branchId: "main",
+      items: [
+        {
+          id: "trace-1",
+          stagedWriteId: "staged-1",
+          key: "mood",
+          fromScope: "page",
+          fromScopeId: "page-1",
+          toScope: "floor",
+          toScopeId: "floor-1",
+          conflictPolicy: "replace",
+          sourceVariableId: "var-page-1",
+          targetVariableId: "var-floor-1",
+          value: "steady",
+          createdAt: 102,
+        },
+      ],
+    });
+
+    const scope = effectScope();
+    const state = scope.run(() => useWorkspaceInspectorVariables({
+      accountId,
+      resource: { resolveContext, getPageStagedWrites, getPagePromotions },
+      sessionId,
+      timeline,
+    }));
+
+    await flushAsyncWork();
+
+    expect(getPageStagedWrites).toHaveBeenCalledWith({ accountId: "acc-1", pageId: "page-1" });
+    expect(getPagePromotions).toHaveBeenCalledWith({ accountId: "acc-1", pageId: "page-1" });
+    expect(state?.stagedWrites.value).toEqual([
+      expect.objectContaining({ id: "staged-1", key: "mood", preview: '"steady"', status: "promoted" }),
+    ]);
+    expect(state?.promotionGroups.value).toEqual([
+      expect.objectContaining({ key: "mood", latestCreatedAt: 102 }),
+    ]);
+
+    scope.stop();
+  });
+
   it("bypasses the cache on forced refresh and clears state when the session disappears", async () => {
     const accountId = ref("acc-1");
     const sessionId = ref<string | null>("session-1");
