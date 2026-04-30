@@ -48,6 +48,8 @@ TavernHeadless 官方接入的语义层。
 | `getDisplayPage` | 优先使用运行中的候选输出，否则回退到 active page |
 | `getActivePage` | 从楼层中选出当前活动页 |
 | `flattenVariableSnapshot` | 把 resolved variable snapshot 整理成 inspector 可用行 |
+| `flattenPageStagedVariableWrites` | 把 page staged write ledger 整理成 inspector 可用行 |
+| `groupVariablePromotionTrace` | 把 page variable promotion trace 按 key 分组 |
 | `sortVariableInspectorRows` | 对变量 inspector 行做稳定排序 |
 | `formatVariablePreview` | 把变量值格式化成适合界面展示的预览字符串 |
 | `mapApiErrorToUiState` | 把 API 错误转换成界面可用的错误状态 |
@@ -128,6 +130,27 @@ console.log(item?.valueJson);
 - itemKey
 
 这一组三段路径直接收敛成一次读取动作。
+
+### Variables inspect helpers
+
+```ts
+import {
+  flattenPageStagedVariableWrites,
+  flattenVariableSnapshot,
+  groupVariablePromotionTrace,
+} from "@tavern/client-helpers";
+
+const resolvedRows = flattenVariableSnapshot(resolvedSnapshot);
+const stagedRows = flattenPageStagedVariableWrites(stagedSnapshot);
+const promotionGroups = groupVariablePromotionTrace(promotionSnapshot);
+```
+
+这组 helper 的边界是：
+
+- `flattenVariableSnapshot(...)` 只处理 durable resolve snapshot
+- `flattenPageStagedVariableWrites(...)` 只处理 page staged ledger
+- `groupVariablePromotionTrace(...)` 只处理 page promotion trace
+- 它们不会把三种观察面混成一份数据
 
 ## 设计边界
 

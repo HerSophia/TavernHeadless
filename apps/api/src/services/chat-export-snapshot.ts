@@ -20,7 +20,7 @@ import {
   sessions,
 } from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
-import { VariableService } from "./variable-service.js";
+import { VariableService } from "./variables/variable-service.js";
 import {
   BranchLocalVariableSnapshotService,
   type BranchLocalVariableProvenanceMap,

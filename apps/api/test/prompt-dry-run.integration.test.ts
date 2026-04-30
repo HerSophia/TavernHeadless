@@ -23,6 +23,7 @@ import {
 import { SimpleTokenCounter, type TurnOrchestrator } from "@tavern/core";
 import { buildBranchVariableScopeId } from "@tavern/shared";
 import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
+import { SessionBranchRegistryService } from "../src/services/variables/host/session-branch-registry-service.js";
 
 interface ChatServiceStub {
   respond: ReturnType<typeof vi.fn>;
@@ -713,6 +714,13 @@ describe("ChatService.dryRun", () => {
       title: "Dry Run Session",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    new SessionBranchRegistryService(database.db).ensure({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
       createdAt: now,
       updatedAt: now,
     });

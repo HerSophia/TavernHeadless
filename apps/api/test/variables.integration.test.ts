@@ -401,6 +401,42 @@ describe("variables routes", () => {
       expect(branchRes.json<ErrorResponse>().error.code).toBe("variable_host_not_found");
     });
 
+    it("allows branch durable writes on reserved registry hosts and on the empty main branch", async () => {
+      const sessionId = await createSession(app);
+
+      const mainWrite = await upsertVar(app, {
+        scope: "branch",
+        sessionId,
+        branchId: "main",
+        key: "route",
+        value: "reserved-main",
+      });
+      expect(mainWrite.scope).toBe("branch");
+      expect(mainWrite.scope_ref).toEqual({ session_id: sessionId, branch_id: "main" });
+
+      const sourceFloorId = await createFloor(app, {
+        sessionId,
+        floorNo: 0,
+        branchId: "main",
+        state: "committed",
+      });
+      const reserveBranchResponse = await app.inject({
+        method: "POST",
+        url: `/floors/${encodeURIComponent(sourceFloorId)}/branch`,
+        payload: { branch_id: "alt-1" },
+      });
+      expect(reserveBranchResponse.statusCode, reserveBranchResponse.body).toBe(201);
+
+      const altWrite = await upsertVar(app, {
+        scope: "branch",
+        sessionId,
+        branchId: "alt-1",
+        key: "route",
+        value: "reserved-alt",
+      });
+      expect(altWrite.scope_ref).toEqual({ session_id: sessionId, branch_id: "alt-1" });
+    });
+
     it("returns 404 for missing variable detail and delete targets", async () => {
       const getRes = await app.inject({ method: "GET", url: "/variables/nonexistent" });
       expect(getRes.statusCode).toBe(404);

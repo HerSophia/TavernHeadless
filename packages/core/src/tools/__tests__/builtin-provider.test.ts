@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BuiltinToolProvider } from '../builtin-provider.js';
 import type { ToolExecutionContext } from '../types.js';
-import type { VariableStore } from '../../variables/variable-store.js';
+import type { VariableStore } from '../../variables/store/variable-store.js';
 import type { MemoryStore } from '../../memory/memory-store.js';
 
 // ── Mock 工具 ─────────────────────────────────────────
@@ -245,9 +245,14 @@ describe('BuiltinToolProvider', () => {
       const result = await provider.executeTool('set_variable', { key: 'hp', value: '100' }, makeContext());
 
       const data = result.data as any;
-      expect(data.key).toBe('hp');
-      expect(data.value).toBe('100');
-      expect(vs.set).toHaveBeenCalledWith('hp', '100', expect.any(Object));
+      expect(data).toEqual({
+        key: 'hp',
+        value: '100',
+        scope: 'page',
+        intent: 'promote_to_floor_on_accept',
+        reason: 'builtin:set_variable',
+      });
+      expect(vs.set).toHaveBeenCalledWith('hp', '100', expect.any(Object), undefined, expect.objectContaining({ intent: 'promote_to_floor_on_accept', reason: 'builtin:set_variable', source: { toolName: 'set_variable', providerId: 'builtin' } }));
     });
 
     it('未提供 VariableStore 时返回错误', async () => {

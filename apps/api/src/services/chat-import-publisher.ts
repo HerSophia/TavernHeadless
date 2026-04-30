@@ -19,7 +19,8 @@ import {
 } from "../db/schema.js";
 import { stringifyJsonField } from "../lib/http.js";
 import { executeWithSqliteBusyRetry } from "../lib/retry.js";
-import { VariableService } from "./variable-service.js";
+import { VariableService } from "./variables/variable-service.js";
+import { SessionBranchRegistryService } from "./variables/host/session-branch-registry-service.js";
 import { MEMORY_RUNTIME_SCOPE_TYPE, buildMemoryRuntimeScopeKey } from "./memory-runtime-job-definitions.js";
 import type {
   ChatImportManifest,
@@ -145,6 +146,14 @@ function publishStJsonlManifest(
     updatedAt: manifest.importedAt,
   }).run();
 
+  new SessionBranchRegistryService(tx).ensure({
+    accountId: manifest.accountId,
+    sessionId,
+    branchId: "main",
+    createdAt: manifest.importedAt,
+    updatedAt: manifest.importedAt,
+  });
+
   for (const group of manifest.floorGroups) {
     const floorId = nanoid();
     let floorTokenIn = 0;
@@ -163,6 +172,14 @@ function publishStJsonlManifest(
       createdAt: manifest.importedAt,
       updatedAt: manifest.importedAt,
     }).run();
+
+    new SessionBranchRegistryService(tx).ensure({
+      accountId: manifest.accountId,
+      sessionId,
+      branchId: "main",
+      createdAt: manifest.importedAt,
+      updatedAt: manifest.importedAt,
+    });
 
     for (const message of group.messages) {
       if (message.swipes && message.swipes.length > 1) {
@@ -304,6 +321,14 @@ function publishThChatManifest(
     updatedAt: manifest.importedAt,
   }).run();
 
+  new SessionBranchRegistryService(tx).ensure({
+    accountId: manifest.accountId,
+    sessionId,
+    branchId: "main",
+    createdAt: manifest.importedAt,
+    updatedAt: manifest.importedAt,
+  });
+
   for (const floor of data.floors) {
     const floorId = manifest.idMap[floor._original_id]!;
     const parentFloorId = floor.parent_floor_id_ref
@@ -323,6 +348,15 @@ function publishThChatManifest(
       createdAt: floor.created_at,
       updatedAt: floor.updated_at,
     }).run();
+
+    new SessionBranchRegistryService(tx).ensure({
+      accountId: manifest.accountId,
+      sessionId,
+      branchId: floor.branch_id,
+      createdAt: floor.created_at,
+      updatedAt: floor.updated_at,
+      sourceFloorId: parentFloorId,
+    });
 
     for (const page of floor.pages) {
       const pageId = manifest.idMap[page._original_id]!;
