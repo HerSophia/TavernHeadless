@@ -4,7 +4,7 @@ import type { FloorEntity, VariableContext } from '../types.js';
 import type { FloorRepository } from '../ports/index.js';
 import { FloorNotFoundError } from '../errors.js';
 import { FloorStateMachine } from './floor-state-machine.js';
-import { VariableStore } from '../variables/variable-store.js';
+import { VariableStore } from '../variables/store/variable-store.js';
 
 /**
  * 楼层生命周期管理

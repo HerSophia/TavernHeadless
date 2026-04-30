@@ -9236,6 +9236,40 @@ export interface paths {
         patch: operations["activatePage"];
         trace?: never;
     };
+    "/pages/{id}/variables/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List durable variable promotions for a page */
+        get: operations["listPageVariablePromotions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/variables/staged": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List staged variable writes for a page */
+        get: operations["listPageStagedVariableWrites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/batch/delete": {
         parameters: {
             query?: never;
@@ -23185,6 +23219,138 @@ export interface operations {
             };
             /** @description Default Response */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listPageVariablePromotions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            floor_id: string;
+                            items: {
+                                /** @enum {string} */
+                                conflict_policy: "replace" | "if_absent";
+                                created_at: number;
+                                /** @enum {string} */
+                                from_scope: "page" | "floor" | "branch" | "chat";
+                                from_scope_id: string;
+                                id: string;
+                                key: string;
+                                source_variable_id?: string | null;
+                                staged_write_id: string | null;
+                                target_variable_id?: string | null;
+                                /** @enum {string} */
+                                to_scope: "floor" | "branch" | "chat" | "global";
+                                to_scope_id: string;
+                                value: unknown;
+                            }[];
+                            page_id: string;
+                            session_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listPageStagedVariableWrites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            floor_id: string;
+                            items: {
+                                /** @enum {string} */
+                                conflict_policy: "replace" | "if_absent";
+                                created_at: number;
+                                decision_reason?: string | null;
+                                evidence: {
+                                    [key: string]: unknown;
+                                };
+                                id: string;
+                                /** @enum {string} */
+                                intent: "page_only" | "promote_to_floor_on_accept";
+                                key: string;
+                                /** @enum {string} */
+                                op: "set" | "delete";
+                                reason: string;
+                                resolved_at: number | null;
+                                source: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                status: "staged" | "accepted_page_only" | "promoted" | "rejected" | "discarded" | "rerouted_to_session_state";
+                                value: unknown;
+                            }[];
+                            page_id: string;
+                            session_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

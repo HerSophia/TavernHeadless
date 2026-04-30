@@ -4,8 +4,8 @@ import type { FloorEntity, VariableContext } from '../../types.js';
 import type { FloorRepository } from '../../ports/floor-repository.js';
 import type { VariableRepository, VariableRepositoryOptions } from '../../ports/variable-repository.js';
 import { createEventBus, type CoreEventBus } from '../../events/index.js';
-import { VariableResolver } from '../../variables/variable-resolver.js';
-import { VariableStore } from '../../variables/variable-store.js';
+import { VariableResolver } from '../../variables/resolver/variable-resolver.js';
+import { VariableStore } from '../../variables/store/variable-store.js';
 import { FloorLifecycle } from '../floor-lifecycle.js';
 import { FloorNotFoundError, InvalidStateTransitionError } from '../../errors.js';
 

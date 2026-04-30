@@ -3,6 +3,8 @@ import {
   buildQueryString,
   readArray,
   readBoolean,
+  readNullableNumber,
+  readNullableString,
   readNumber,
   readOptionalString,
   readRecord,
@@ -57,6 +59,59 @@ export type ResolvedVariablesSnapshot = {
   resolved: ResolvedVariableRecord[];
 };
 
+export type PageStagedVariableWriteRecord = {
+  id: string;
+  key: string;
+  op: "set" | "delete";
+  value: unknown | null;
+  intent: "page_only" | "promote_to_floor_on_accept";
+  conflictPolicy: "replace" | "if_absent";
+  reason: string;
+  source: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  status:
+    | "staged"
+    | "accepted_page_only"
+    | "promoted"
+    | "rejected"
+    | "discarded"
+    | "rerouted_to_session_state";
+  decisionReason: string | null;
+  createdAt: number;
+  resolvedAt: number | null;
+};
+
+export type PageStagedVariableWriteSnapshot = {
+  pageId: string;
+  floorId: string;
+  sessionId: string;
+  branchId: string;
+  items: PageStagedVariableWriteRecord[];
+};
+
+export type VariablePromotionTraceRecord = {
+  id: string;
+  stagedWriteId: string | null;
+  key: string;
+  fromScope: "page" | "floor" | "branch" | "chat";
+  fromScopeId: string;
+  toScope: "floor" | "branch" | "chat" | "global";
+  toScopeId: string;
+  conflictPolicy: "replace" | "if_absent";
+  sourceVariableId: string | null;
+  targetVariableId: string | null;
+  value: unknown;
+  createdAt: number;
+};
+
+export type PageVariablePromotionTraceSnapshot = {
+  pageId: string;
+  floorId: string;
+  sessionId: string;
+  branchId: string;
+  items: VariablePromotionTraceRecord[];
+};
+
 export type VariablesUpsertManyResult = {
   meta: {
     created: number;
@@ -72,6 +127,8 @@ export type VariablesUpsertManyResult = {
 
 export type VariablesResource = {
   getDetail(options: { accountId?: AccountIdHint; variableId: string }): Promise<VariableRecord>;
+  getPagePromotions(options: { accountId?: AccountIdHint; pageId: string }): Promise<PageVariablePromotionTraceSnapshot>;
+  getPageStagedWrites(options: { accountId?: AccountIdHint; pageId: string }): Promise<PageStagedVariableWriteSnapshot>;
   list(options?: {
     accountId?: AccountIdHint;
     key?: string;
@@ -94,21 +151,21 @@ export type VariablesResource = {
   }): Promise<ResolvedVariablesSnapshot>;
   remove(options: { accountId?: AccountIdHint; variableId: string }): Promise<boolean>;
   /**
-   * `branch` 变量要求目标分支已经被至少一个 floor 物化。
-   * 如果该 branch 还没有任何 floor，服务端会返回 `variable_host_not_found`。
+   * `branch` 变量要求目标分支已经被注册为 first-class branch host。
+   * 只要 branch registry 已存在，就允许对空 branch 直接做 durable 写入。
    */
   upsert(options: {
     accountId?: AccountIdHint;
     key: string;
     scope: VariableScope;
     scopeId?: string;
-    sessionId?: string;
     branchId?: string;
+    sessionId?: string;
     value: unknown;
   }): Promise<VariableRecord>;
   /**
-   * `branch` 变量要求目标分支已经被至少一个 floor 物化。
-   * 如果该 branch 还没有任何 floor，服务端会返回 `variable_host_not_found`。
+   * `branch` 变量要求目标分支已经被注册为 first-class branch host。
+   * 只要 branch registry 已存在，就允许对空 branch 直接做 durable 写入。
    */
   upsertMany(options: {
     accountId?: AccountIdHint;
@@ -134,6 +191,32 @@ export function createVariablesResource(client: TransportClient): VariablesResou
       const payload = mapVariableRecord(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Variable detail returned an invalid payload");
+      }
+
+      return payload;
+    },
+    async getPageStagedWrites(options): Promise<PageStagedVariableWriteSnapshot> {
+      const response = await client.fetchJson<Record<string, unknown>>(`/pages/${encodeURIComponent(options.pageId)}/variables/staged`, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+
+      const payload = mapPageStagedVariableWriteSnapshot(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Page staged variable writes returned an invalid payload");
+      }
+
+      return payload;
+    },
+    async getPagePromotions(options): Promise<PageVariablePromotionTraceSnapshot> {
+      const response = await client.fetchJson<Record<string, unknown>>(`/pages/${encodeURIComponent(options.pageId)}/variables/promotions`, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+
+      const payload = mapPageVariablePromotionTraceSnapshot(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Page variable promotions returned an invalid payload");
       }
 
       return payload;
@@ -252,6 +335,101 @@ function mapVariableRecord(value: unknown): VariableRecord | null {
     ...(scopeRef ? { scopeRef } : {}),
     updatedAt: readNumber(record.updated_at),
     value: record.value,
+  };
+}
+
+function mapPageStagedVariableWriteSnapshot(value: unknown): PageStagedVariableWriteSnapshot | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const pageId = readOptionalString(record.page_id);
+  const floorId = readOptionalString(record.floor_id);
+  const sessionId = readOptionalString(record.session_id);
+  const branchId = readOptionalString(record.branch_id);
+  if (!pageId || !floorId || !sessionId || !branchId) {
+    return null;
+  }
+
+  return {
+    pageId,
+    floorId,
+    sessionId,
+    branchId,
+    items: readArray(record.items)
+      .map(mapPageStagedVariableWriteRecord)
+      .filter((item): item is PageStagedVariableWriteRecord => item !== null),
+  };
+}
+
+function mapPageStagedVariableWriteRecord(value: unknown): PageStagedVariableWriteRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: readString(record.id),
+    key: readString(record.key),
+    op: readString(record.op, "set") as PageStagedVariableWriteRecord["op"],
+    value: Object.prototype.hasOwnProperty.call(record, "value") ? record.value : null,
+    intent: readString(record.intent, "promote_to_floor_on_accept") as PageStagedVariableWriteRecord["intent"],
+    conflictPolicy: readString(record.conflict_policy, "replace") as PageStagedVariableWriteRecord["conflictPolicy"],
+    reason: readString(record.reason),
+    source: readRecord(record.source) ?? {},
+    evidence: readRecord(record.evidence) ?? {},
+    status: readString(record.status, "staged") as PageStagedVariableWriteRecord["status"],
+    decisionReason: readNullableString(record.decision_reason),
+    createdAt: readNumber(record.created_at),
+    resolvedAt: readNullableNumber(record.resolved_at),
+  };
+}
+
+function mapPageVariablePromotionTraceSnapshot(value: unknown): PageVariablePromotionTraceSnapshot | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const pageId = readOptionalString(record.page_id);
+  const floorId = readOptionalString(record.floor_id);
+  const sessionId = readOptionalString(record.session_id);
+  const branchId = readOptionalString(record.branch_id);
+  if (!pageId || !floorId || !sessionId || !branchId) {
+    return null;
+  }
+
+  return {
+    pageId,
+    floorId,
+    sessionId,
+    branchId,
+    items: readArray(record.items)
+      .map(mapVariablePromotionTraceRecord)
+      .filter((item): item is VariablePromotionTraceRecord => item !== null),
+  };
+}
+
+function mapVariablePromotionTraceRecord(value: unknown): VariablePromotionTraceRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: readString(record.id),
+    stagedWriteId: readNullableString(record.staged_write_id),
+    key: readString(record.key),
+    fromScope: readString(record.from_scope, "page") as VariablePromotionTraceRecord["fromScope"],
+    fromScopeId: readString(record.from_scope_id),
+    toScope: readString(record.to_scope, "floor") as VariablePromotionTraceRecord["toScope"],
+    toScopeId: readString(record.to_scope_id),
+    conflictPolicy: readString(record.conflict_policy, "replace") as VariablePromotionTraceRecord["conflictPolicy"],
+    sourceVariableId: readNullableString(record.source_variable_id),
+    targetVariableId: readNullableString(record.target_variable_id),
+    value: record.value,
+    createdAt: readNumber(record.created_at),
   };
 }
 
