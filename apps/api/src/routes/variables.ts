@@ -14,7 +14,7 @@ import {
   type VariableLayerSnapshot,
   type ResolvedVariableRecord,
   type ResolvedVariablesSnapshot,
-} from "../services/variable-service.js";
+} from "../services/variables/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 

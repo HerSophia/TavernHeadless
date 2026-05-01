@@ -38,6 +38,7 @@ import {
   type GenerationCoordinator,
 } from "../generation-guard-service.js";
 import { TurnCommitService } from "../turn-commit-service.js";
+import { PageVariableDecisionService } from "../variables/commit/page-variable-decision-service.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 import {
   BranchLocalVariableSnapshotService,
@@ -313,6 +314,7 @@ export class ChatService {
         try {
           ({ userMessageRef } = this.draftFloorService.createDraftFloorWithUserMessage({
             floorId,
+            accountId: resolvedAccountId,
             sessionId,
             floorNo: nextFloorNo,
             branchId,
@@ -321,6 +323,8 @@ export class ChatService {
             userId: session.userId,
             userSnapshotJson: session.userSnapshotJson,
             now,
+            sourceFloorId: branchContext.inheritanceSource?.floorId,
+            sourceBranchId: branchContext.inheritanceSource?.branchId,
             afterCreate: branchContext.inheritanceSource
               ? (tx) => {
                   new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
@@ -500,6 +504,7 @@ export class ChatService {
       const now = Date.now();
       const { userMessageRef } = this.draftFloorService.createDraftFloorWithUserMessage({
         floorId: newFloorId,
+        accountId: resolvedAccountId,
         sessionId,
         floorNo: targetFloor.floorNo,
         branchId: targetFloor.branchId,
@@ -754,6 +759,7 @@ export class ChatService {
       try {
         ({ userMessageRef } = this.draftFloorService.createDraftFloorWithUserMessage({
           floorId: newFloorId,
+          accountId: resolvedAccountId,
           sessionId: source.sessionId,
           floorNo: source.floorNo + 1,
           branchId: newBranchId,
@@ -762,6 +768,8 @@ export class ChatService {
           userId: session.userId,
           userSnapshotJson: session.userSnapshotJson,
           now,
+          sourceFloorId: source.floorId,
+          sourceBranchId: source.branchId,
           afterCreate: (tx) => {
             new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
               accountId: resolvedAccountId,
@@ -1112,6 +1120,11 @@ export class ChatService {
 
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "transaction_prepared");
 
+    const pageDecision = new PageVariableDecisionService(this.db).resolveForCommit({
+      floorId: args.floorId,
+      pageId: turnInput.pageId,
+    });
+
     const commitInput = {
       accountId: args.accountId,
       floorId: args.floorId,
@@ -1120,6 +1133,7 @@ export class ChatService {
       execution,
       variableCommit: {
         pageId: turnInput.pageId,
+        ...(pageDecision ? { pageDecision } : {}),
       },
       promptSnapshot: args.promptSnapshot,
       promptRuntimeInspection: args.promptRuntimeInspection,

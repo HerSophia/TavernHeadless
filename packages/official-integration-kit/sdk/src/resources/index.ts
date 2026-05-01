@@ -376,9 +376,13 @@ export { createUsersResource, type UserDetail, type UserRecord, type UsersResour
 export {
   createVariablesResource,
   type BranchVariableScopeRef,
+  type PageStagedVariableWriteRecord,
+  type PageStagedVariableWriteSnapshot,
+  type PageVariablePromotionTraceSnapshot,
   type ResolvedVariableRecord,
   type ResolvedVariablesSnapshot,
   type VariableRecord,
+  type VariablePromotionTraceRecord,
   type VariableLayerSnapshot,
   type VariablesResource,
   type VariableScope,

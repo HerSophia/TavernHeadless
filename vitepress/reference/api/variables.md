@@ -65,9 +65,25 @@ curl "http://localhost:3000/variables/resolve?session_id=sess_001&branch_id=main
 
 `branch` 的宿主由 `session_id + branch_id` 共同确定。对 `branch` 来说，`scope_id` 是服务端内部使用的规范化字符串。调用方更适合使用 `scope_ref`、`session_id` 和 `branch_id`。
 
-`branch` 写入还有一个前置条件：目标 branch 必须已经被至少一个 floor 物化。也就是说，如果该 branch 还没有任何 floor，服务端会返回 `variable_host_not_found`。
+`branch` 写入的前置条件是：目标 branch 必须已经被注册为 branch host。通常在创建 session、创建 floor、预留分支或导入聊天时，服务端会自动维护这个 registry。只要 branch host 已存在，即使该分支当前还没有 floor，也允许直接写入 branch 变量。
 
 当 `session`、`floor`、`page` 等宿主被删除时，对应作用域变量会一起清理。`/variables` 列表和详情不会继续暴露宿主已经失效的孤儿变量。
+
+## 三个观察面
+
+变量系统现在同时提供三个观察面：
+
+1. `PUT /variables`、`GET /variables`、`GET /variables/resolve`
+   - 这是显式 durable write / durable read
+   - `GET /variables/resolve` 仍然只返回 durable truth
+2. `GET /pages/:pageId/variables/staged`
+   - 这是当前页的候选写入检查面
+   - 只读，不改变 durable truth
+3. `GET /pages/:pageId/variables/promotions`
+   - 这是当前页已经发生的 durable promotion 轨迹
+   - 只读，不改变 durable truth
+
+这三组接口要分开理解。`/variables/resolve` 不会把 staged write 和 promotion trace 混进去。
 
 ## 与宏兼容层的关系
 
@@ -470,7 +486,103 @@ GET /variables/resolve
 | `400` | 查询参数不合法，或 `session_id / branch_id / floor_id / page_id` 上下文不一致 |
 | `404` | 目标宿主不存在，或当前账号不可访问 |
 
+### 兼容规则
+
+`GET /variables/resolve` 只返回 durable truth。
+
+它不会：
+
+- 读取当前 turn 的 tool buffer
+- 读取 `page_staged_variable_write`
+- 读取 `variable_promotion_trace`
+
+如果你要看页级候选写入或 promotion 轨迹，需要使用下面两个只读 inspect 接口。
+
+## 查看页级候选变量写入
+
+```http
+GET /pages/:pageId/variables/staged
+```
+
+这个接口返回某个 page 上已经持久化的 staged write ledger。
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "page_id": "page-a",
+    "floor_id": "floor-a",
+    "session_id": "session-a",
+    "branch_id": "main",
+    "items": [
+      {
+        "id": "staged_001",
+        "key": "mood",
+        "op": "set",
+        "value": "steady",
+        "intent": "promote_to_floor_on_accept",
+        "conflict_policy": "replace",
+        "reason": "builtin:set_variable",
+        "source": { "toolName": "set_variable", "providerId": "builtin" },
+        "evidence": { "runId": "run-1", "generationAttemptNo": 1 },
+        "status": "promoted",
+        "decision_reason": null,
+        "created_at": 1735689720000,
+        "resolved_at": 1735689720100
+      }
+    ]
+  }
+}
+```
+
+### 说明
+
+- `status=staged` 表示已经入 ledger，但还没有走到 accepted page materialization / promotion 终态。
+- `status=accepted_page_only` 表示该条目已经物化到 `variable(scope='page')`，但没有进入 `page -> floor` promotion。
+- `status=promoted` 表示该条目已经完成 `page -> floor` promotion。
+
+## 查看页级变量提升轨迹
+
+```http
+GET /pages/:pageId/variables/promotions
+```
+
+这个接口只返回真正已经发生的 durable promotion。
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "page_id": "page-a",
+    "floor_id": "floor-a",
+    "session_id": "session-a",
+    "branch_id": "main",
+    "items": [
+      {
+        "id": "trace_001",
+        "staged_write_id": "staged_001",
+        "key": "mood",
+        "from_scope": "page",
+        "from_scope_id": "page-a",
+        "to_scope": "floor",
+        "to_scope_id": "floor-a",
+        "conflict_policy": "replace",
+        "source_variable_id": "var_page_001",
+        "target_variable_id": "var_floor_001",
+        "value": "steady",
+        "created_at": 1735689720100
+      }
+    ]
+  }
+}
+```
+
+这条轨迹当前只记录 `page -> floor`。更高层级 promotion 没有在本轮开放执行入口。
+
 ## 官方集成层对应方法
 
 - `@tavern/sdk`：`client.variables.resolveContext(...)`
-- `@tavern/client-helpers`：`flattenVariableSnapshot(...)`、`sortVariableInspectorRows(...)`
+- `@tavern/sdk`：`client.variables.getPageStagedWrites(...)`、`client.variables.getPagePromotions(...)`
+- `@tavern/client-helpers`：`flattenVariableSnapshot(...)`、`sortVariableInspectorRows(...)`、`flattenPageStagedVariableWrites(...)`、`groupVariablePromotionTrace(...)`

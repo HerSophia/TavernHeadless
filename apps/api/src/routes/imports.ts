@@ -90,8 +90,9 @@ import {
   buildRawWorldbookEntryPayload,
   buildWorldbookEntryInsertValues,
 } from "../lib/worldbook-utils.js";
-import { VariableService } from "../services/variable-service.js";
+import { VariableService } from "../services/variables/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
+import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
 import { LocalChatTransferArtifactStore } from "../services/chat-transfer-artifacts.js";
 import { ChatTransferJobScheduler } from "../services/chat-transfer-job-scheduler.js";
 import { MEMORY_RUNTIME_SCOPE_TYPE, buildMemoryRuntimeScopeKey } from "../services/memory-runtime-job-definitions.js";
@@ -2409,6 +2410,14 @@ function createSessionFromCharacterImportInternal(
     updatedAt: input.now
   }).run();
 
+  new SessionBranchRegistryService(db).ensure({
+    accountId: input.accountId,
+    sessionId,
+    branchId: "main",
+    createdAt: input.now,
+    updatedAt: input.now,
+  });
+
   const snapshot = parseSessionCharacterSnapshot(input.characterBinding.characterSnapshotJson);
   const greetingCandidates = getGreetingCandidates(snapshot);
   const greeting = greetingCandidates[0];
@@ -2430,6 +2439,14 @@ function createSessionFromCharacterImportInternal(
       createdAt: input.now,
       updatedAt: input.now
     }).run();
+
+    new SessionBranchRegistryService(db).ensure({
+      accountId: input.accountId,
+      sessionId,
+      branchId: "main",
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
 
     for (let index = 0; index < greetingCandidates.length; index += 1) {
       const pageId = nanoid();
@@ -2525,6 +2542,14 @@ function createSessionFromChatImport(
       updatedAt: input.now,
     }).run();
 
+    new SessionBranchRegistryService(tx).ensure({
+      accountId: input.accountId,
+      sessionId,
+      branchId: "main",
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
+
     let totalMessageCount = 0;
     let totalSwipeCount = 0;
 
@@ -2547,6 +2572,14 @@ function createSessionFromChatImport(
         createdAt: input.now,
         updatedAt: input.now,
       }).run();
+
+      new SessionBranchRegistryService(tx).ensure({
+        accountId: input.accountId,
+        sessionId,
+        branchId: "main",
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
 
       // 3. 遍历每条消息
       for (const msg of group.messages) {
@@ -2972,6 +3005,14 @@ function createSessionFromThChatImport(
       updatedAt: input.now,
     }).run();
 
+    new SessionBranchRegistryService(tx).ensure({
+      accountId: input.accountId,
+      sessionId,
+      branchId: "main",
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
+
     let totalPageCount = 0;
     let totalMessageCount = 0;
 
@@ -3001,6 +3042,15 @@ function createSessionFromThChatImport(
         createdAt: floor.created_at,
         updatedAt: floor.updated_at,
       }).run();
+
+      new SessionBranchRegistryService(tx).ensure({
+        accountId: input.accountId,
+        sessionId,
+        branchId: floor.branch_id,
+        createdAt: floor.created_at,
+        updatedAt: floor.updated_at,
+        sourceFloorId: parentFloorId,
+      });
 
       // 3. 遍历 pages
       for (const page of floor.pages) {

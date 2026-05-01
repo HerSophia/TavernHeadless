@@ -36076,6 +36076,389 @@
         ]
       }
     },
+    "/pages/{id}/variables/promotions": {
+      "get": {
+        "operationId": "listPageVariablePromotions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "branch_id": {
+                          "type": "string"
+                        },
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "items": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "conflict_policy": {
+                                "enum": [
+                                  "replace",
+                                  "if_absent"
+                                ],
+                                "type": "string"
+                              },
+                              "created_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "from_scope": {
+                                "enum": [
+                                  "page",
+                                  "floor",
+                                  "branch",
+                                  "chat"
+                                ],
+                                "type": "string"
+                              },
+                              "from_scope_id": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "source_variable_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "staged_write_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "target_variable_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "to_scope": {
+                                "enum": [
+                                  "floor",
+                                  "branch",
+                                  "chat",
+                                  "global"
+                                ],
+                                "type": "string"
+                              },
+                              "to_scope_id": {
+                                "type": "string"
+                              },
+                              "value": {}
+                            },
+                            "required": [
+                              "id",
+                              "staged_write_id",
+                              "key",
+                              "from_scope",
+                              "from_scope_id",
+                              "to_scope",
+                              "to_scope_id",
+                              "conflict_policy",
+                              "value",
+                              "created_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "page_id": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "page_id",
+                        "floor_id",
+                        "session_id",
+                        "branch_id",
+                        "items"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List durable variable promotions for a page",
+        "tags": [
+          "pages"
+        ]
+      }
+    },
+    "/pages/{id}/variables/staged": {
+      "get": {
+        "operationId": "listPageStagedVariableWrites",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "branch_id": {
+                          "type": "string"
+                        },
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "items": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "conflict_policy": {
+                                "enum": [
+                                  "replace",
+                                  "if_absent"
+                                ],
+                                "type": "string"
+                              },
+                              "created_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "decision_reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "evidence": {
+                                "additionalProperties": true,
+                                "type": "object"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "intent": {
+                                "enum": [
+                                  "page_only",
+                                  "promote_to_floor_on_accept"
+                                ],
+                                "type": "string"
+                              },
+                              "key": {
+                                "type": "string"
+                              },
+                              "op": {
+                                "enum": [
+                                  "set",
+                                  "delete"
+                                ],
+                                "type": "string"
+                              },
+                              "reason": {
+                                "type": "string"
+                              },
+                              "resolved_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "source": {
+                                "additionalProperties": true,
+                                "type": "object"
+                              },
+                              "status": {
+                                "enum": [
+                                  "staged",
+                                  "accepted_page_only",
+                                  "promoted",
+                                  "rejected",
+                                  "discarded",
+                                  "rerouted_to_session_state"
+                                ],
+                                "type": "string"
+                              },
+                              "value": {}
+                            },
+                            "required": [
+                              "id",
+                              "key",
+                              "op",
+                              "value",
+                              "intent",
+                              "conflict_policy",
+                              "reason",
+                              "source",
+                              "evidence",
+                              "status",
+                              "created_at",
+                              "resolved_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "page_id": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "page_id",
+                        "floor_id",
+                        "session_id",
+                        "branch_id",
+                        "items"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List staged variable writes for a page",
+        "tags": [
+          "pages"
+        ]
+      }
+    },
     "/pages/batch/delete": {
       "post": {
         "operationId": "batchDeletePages",
