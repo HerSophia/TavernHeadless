@@ -890,6 +890,8 @@ describe("Import Routes", () => {
         prompt_executable_count: 1,
         persist_executable_count: 1,
         display_only_count: 0,
+        retained_non_executable_count: 0,
+        reserved_world_info_count: 0,
         unsupported_runtime_count: 0,
         contains_prompt_only: 0,
         contains_run_on_edit: 0,
@@ -910,18 +912,21 @@ describe("Import Routes", () => {
             { id: "r3", scriptName: "Display Rule", findRegex: "md", replaceString: "display", placement: [0], disabled: false, markdownOnly: true },
             { id: "r4", scriptName: "Reasoning Rule", findRegex: "think", replaceString: "reason", placement: [6], disabled: false },
             { id: "r5", scriptName: "Slash Rule", findRegex: "slash", replaceString: "cmd", placement: [3], disabled: false, runOnEdit: true },
+            { id: "r6", scriptName: "World Rule", findRegex: "lore", replaceString: "story", placement: [5], disabled: false },
           ],
         },
       });
 
       expect(res.statusCode).toBe(201);
       const body = res.json() as ImportResponse;
-      expect(body.data.script_count).toBe(5);
+      expect(body.data.script_count).toBe(6);
       expect(body.data.compat_report).toEqual({
-        stored_count: 5,
+        stored_count: 6,
         prompt_executable_count: 2,
         persist_executable_count: 1,
         display_only_count: 1,
+        retained_non_executable_count: 3,
+        reserved_world_info_count: 1,
         unsupported_runtime_count: 2,
         contains_prompt_only: 1,
         contains_run_on_edit: 1,
@@ -937,6 +942,7 @@ describe("Import Routes", () => {
         expect.objectContaining({ id: "r2", promptOnly: true }),
         expect.objectContaining({ id: "r3", markdownOnly: true }),
         expect.objectContaining({ id: "r5", runOnEdit: true, placement: [3] }),
+        expect.objectContaining({ id: "r6", placement: [5] }),
         expect.objectContaining({ id: "r4", placement: [6] }),
       ]));
     });

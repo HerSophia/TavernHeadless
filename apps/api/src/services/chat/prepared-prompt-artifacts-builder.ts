@@ -7,7 +7,11 @@ import type {
   TurnConfig,
 } from "@tavern/core";
 
-import { assemblePrompt, type SessionPromptInfo } from "../prompt-assembler.js";
+import {
+  assemblePrompt,
+  type PromptRuntimeTrace,
+  type SessionPromptInfo,
+} from "../prompt-assembler.js";
 import {
   buildPromptRuntimeExecutionResult,
   type PromptRuntimeResolvedContext,
@@ -25,7 +29,10 @@ import type {
 import { PromptPreparationService } from "./prompt-preparation-service.js";
 import { TurnModelService } from "./turn-model-service.js";
 import { TurnMemoryService } from "./turn-memory-service.js";
-import { RegexInputService } from "./regex-input-service.js";
+import {
+  RegexInputService,
+  type PersistedUserInputRegexResult,
+} from "./regex-input-service.js";
 import { FirstPartyStateContextService } from "./first-party-state-context-service.js";
 
 interface PreparedPromptArtifactsSessionShape {
@@ -72,6 +79,7 @@ export interface PreparePromptArtifactsArgs {
   firstPartyStateContext?: FirstPartyStateContext;
   extraDiagnostics?: PromptRuntimeDiagnostic[];
   includeRuntimeTrace?: boolean;
+  baseRuntimeTrace?: PromptRuntimeTrace;
 }
 
 export class PreparedPromptArtifactsBuilder {
@@ -92,18 +100,25 @@ export class PreparedPromptArtifactsBuilder {
       args.firstPartyStateContext,
     );
 
-    const preprocessedUserMessage = args.preprocessedUserMessage
-      ?? await this.resolveUserMessage({
-        accountId: args.accountId,
-        sessionId: args.sessionId,
-        branchId: args.branchId,
-        floorId: args.floorId,
-        pageId: args.pageId,
-        rawUserMessage: args.rawUserMessage,
-        regexChannel: args.regexChannel,
-        session: args.session,
-        sessionInfo,
-      });
+    const userMessageState = args.preprocessedUserMessage !== undefined
+      ? {
+          text: args.preprocessedUserMessage,
+          runtimeTrace: args.baseRuntimeTrace?.regex,
+        }
+      : await this.resolveUserMessage({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          branchId: args.branchId,
+          floorId: args.floorId,
+          pageId: args.pageId,
+          rawUserMessage: args.rawUserMessage,
+          regexChannel: args.regexChannel,
+          session: args.session,
+          sessionInfo,
+        });
+    const preprocessedUserMessage = userMessageState.text;
+    const baseRuntimeTrace = args.baseRuntimeTrace
+      ?? (userMessageState.runtimeTrace ? { regex: userMessageState.runtimeTrace } : undefined);
 
     const historyState = await this.resolveHistoryArtifacts({
       sessionId: args.sessionId,
@@ -199,6 +214,7 @@ export class PreparedPromptArtifactsBuilder {
         assembled,
         materialized,
         visibilityTrace: historyState.visibilityTrace,
+        ...(baseRuntimeTrace ? { baseRuntimeTrace } : {}),
       },
     });
 
@@ -251,9 +267,9 @@ export class PreparedPromptArtifactsBuilder {
     regexChannel?: RegexExecutionChannel;
     session: PreparedPromptArtifactsSessionShape;
     sessionInfo: SessionPromptInfo;
-  }): Promise<string> {
+  }): Promise<PersistedUserInputRegexResult> {
     if (!args.regexChannel) {
-      return args.rawUserMessage;
+      return { text: args.rawUserMessage };
     }
 
     return this.regexInputService.applyPersistedUserInputRegex({

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyRegexScripts } from '../regex/regex-engine.js';
+import { applyRegexScripts, applyRegexScriptsWithTrace } from '../regex/regex-engine.js';
 import type { RegexContext } from '../regex/regex-engine.js';
 import type { STRegexScript } from '../types/regex.js';
 import { REGEX_PLACEMENT, SUBSTITUTE_REGEX } from '../types/regex.js';
@@ -184,6 +184,31 @@ describe('applyRegexScripts', () => {
         REGEX_PLACEMENT.AI_OUTPUT,
         { channel: 'edit' },
       )).toBe('world');
+    });
+
+    it('returns rule-level trace with matched and skipped reasons', () => {
+      const durableRule = makeScript({
+        id: 'durable',
+        scriptName: 'Durable Input',
+        findRegex: '/hello/g',
+        replaceString: 'world',
+        placement: [REGEX_PLACEMENT.USER_INPUT],
+      });
+      const promptOnlyRule = makeScript({
+        id: 'prompt-only',
+        scriptName: 'Prompt Only Input',
+        findRegex: '/world/g',
+        replaceString: 'prompt',
+        placement: [REGEX_PLACEMENT.USER_INPUT],
+        promptOnly: true,
+      });
+
+      expect(applyRegexScriptsWithTrace('hello world', [durableRule, promptOnlyRule], REGEX_PLACEMENT.USER_INPUT, { channel: 'prompt' })).toEqual({
+        text: 'hello prompt',
+        candidateRuleNames: ['Durable Input', 'Prompt Only Input'],
+        matchedRuleNames: ['Prompt Only Input'],
+        skippedRules: [{ ruleName: 'Durable Input', reason: 'channel_filtered' }],
+      });
     });
   });
 

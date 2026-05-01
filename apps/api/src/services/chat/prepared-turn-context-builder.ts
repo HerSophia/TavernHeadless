@@ -43,6 +43,8 @@ export class PreparedTurnContextBuilder {
     };
     sessionInfo?: import("../prompt-assembler.js").SessionPromptInfo;
     userMessage: string;
+    rawUserMessage?: string;
+    baseRuntimeTrace?: import("../prompt-assembler.js").PromptRuntimeTrace;
     request: {
       config?: TurnConfig;
       generationParams?: Partial<GenerationParams>;
@@ -68,7 +70,7 @@ export class PreparedTurnContextBuilder {
       accountId: args.accountId,
       session: args.session,
       sessionInfo: args.sessionInfo,
-      rawUserMessage: args.userMessage,
+      rawUserMessage: args.rawUserMessage ?? args.userMessage,
       preprocessedUserMessage: args.userMessage,
       request: args.request,
       executionContext: args.executionContext,
@@ -77,6 +79,7 @@ export class PreparedTurnContextBuilder {
       resolvedTurnModels: args.resolvedTurnModels,
       firstPartyStateContext: args.firstPartyStateContext,
       includeRuntimeTrace: args.request.debugOptions?.includeRuntimeTrace === true,
+      baseRuntimeTrace: args.baseRuntimeTrace,
     });
     const inspection = {
       ...artifacts.inspection,

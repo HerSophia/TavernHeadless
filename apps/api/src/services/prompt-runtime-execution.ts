@@ -18,6 +18,7 @@ import {
   type PromptSourceSelectionPolicy,
   type PromptStructurePolicy,
 } from "./prompt-assembler.js";
+import { mergePromptRuntimeRegexTrace } from "./prompt-runtime/regex/index.js";
 import {
   buildResolvedPromptRuntimePolicy,
   mergePromptRuntimePersistentPolicies,
@@ -169,6 +170,10 @@ export function buildPromptRuntimeExecutionTrace(
       })
     : undefined;
   const visibilityTrace = toPromptRuntimeVisibilityTrace(artifacts.visibilityTrace);
+  const mergedRegexTrace = mergePromptRuntimeRegexTrace(
+    artifacts.baseRuntimeTrace?.regex,
+    assembledTrace?.regex,
+  );
 
   const trace: PromptRuntimeTrace = {
     ...(artifacts.baseRuntimeTrace ?? {}),
@@ -177,6 +182,7 @@ export function buildPromptRuntimeExecutionTrace(
       ? { sourceSelection: { excludedSources: artifacts.inspection.excludedSources } }
       : {}),
     ...(assembledTrace ?? {}),
+    ...(mergedRegexTrace ? { regex: mergedRegexTrace } : {}),
     ...(artifacts.materialized?.structureTrace ? { structure: artifacts.materialized.structureTrace } : {}),
     ...(artifacts.materialized?.deliveryTrace ? { delivery: artifacts.materialized.deliveryTrace } : {}),
     ...(visibilityTrace ? { visibility: visibilityTrace } : {}),
@@ -289,6 +295,10 @@ function resolvePreprocessedUserMessage(
   assembled: AssembleResult,
   userMessage: string,
 ): string | undefined {
+  if (typeof assembled.runtimeTraceSeed.regexPromptUserInputText === "string") {
+    return assembled.runtimeTraceSeed.regexPromptUserInputText;
+  }
+
   return assembled.preProcess
     ? assembled.preProcess([{ role: "user", content: userMessage }])[0]?.content
     : userMessage;

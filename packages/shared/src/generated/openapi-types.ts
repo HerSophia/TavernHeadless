@@ -4345,7 +4345,50 @@ export interface paths {
                          *           },
                          *           "regex": {
                          *             "ai_output_rules": [],
+                         *             "phases": [
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "changed": true,
+                         *                 "channel": "prompt",
+                         *                 "depth": 3,
+                         *                 "input_text_hash": "sha256:regex-live-input-before",
+                         *                 "matched_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "output_text_hash": "sha256:regex-live-input-after",
+                         *                 "phase_id": "prompt.user_input",
+                         *                 "placement": 1,
+                         *                 "skipped_rules": [],
+                         *                 "status": "executed"
+                         *               },
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "world_info_rule"
+                         *                 ],
+                         *                 "changed": false,
+                         *                 "channel": "prompt",
+                         *                 "depth": null,
+                         *                 "input_text_hash": null,
+                         *                 "matched_rule_names": [],
+                         *                 "output_text_hash": null,
+                         *                 "phase_id": "prompt.world_info.reserved",
+                         *                 "placement": 5,
+                         *                 "skipped_rules": [
+                         *                   {
+                         *                     "reason": "reserved_non_executable",
+                         *                     "rule_name": "world_info_rule"
+                         *                   }
+                         *                 ],
+                         *                 "status": "reserved"
+                         *               }
+                         *             ],
                          *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "reserved_placements": [
+                         *               5
+                         *             ],
+                         *             "substitution_mode": "bare_variable_only",
                          *             "user_input_rules": [
                          *               "trim_whitespace"
                          *             ]
@@ -4536,7 +4579,50 @@ export interface paths {
                              *         },
                              *         "regex": {
                              *           "ai_output_rules": [],
+                             *           "phases": [
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "changed": true,
+                             *               "channel": "prompt",
+                             *               "depth": 3,
+                             *               "input_text_hash": "sha256:regex-live-input-before",
+                             *               "matched_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "output_text_hash": "sha256:regex-live-input-after",
+                             *               "phase_id": "prompt.user_input",
+                             *               "placement": 1,
+                             *               "skipped_rules": [],
+                             *               "status": "executed"
+                             *             },
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "world_info_rule"
+                             *               ],
+                             *               "changed": false,
+                             *               "channel": "prompt",
+                             *               "depth": null,
+                             *               "input_text_hash": null,
+                             *               "matched_rule_names": [],
+                             *               "output_text_hash": null,
+                             *               "phase_id": "prompt.world_info.reserved",
+                             *               "placement": 5,
+                             *               "skipped_rules": [
+                             *                 {
+                             *                   "reason": "reserved_non_executable",
+                             *                   "rule_name": "world_info_rule"
+                             *                 }
+                             *               ],
+                             *               "status": "reserved"
+                             *             }
+                             *           ],
                              *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "reserved_placements": [
+                             *             5
+                             *           ],
+                             *           "substitution_mode": "bare_variable_only",
                              *           "user_input_rules": [
                              *             "trim_whitespace"
                              *           ]
@@ -4778,7 +4864,50 @@ export interface paths {
                                  *       },
                                  *       "regex": {
                                  *         "ai_output_rules": [],
+                                 *         "phases": [
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "changed": true,
+                                 *             "channel": "prompt",
+                                 *             "depth": 3,
+                                 *             "input_text_hash": "sha256:regex-live-input-before",
+                                 *             "matched_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "output_text_hash": "sha256:regex-live-input-after",
+                                 *             "phase_id": "prompt.user_input",
+                                 *             "placement": 1,
+                                 *             "skipped_rules": [],
+                                 *             "status": "executed"
+                                 *           },
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "world_info_rule"
+                                 *             ],
+                                 *             "changed": false,
+                                 *             "channel": "prompt",
+                                 *             "depth": null,
+                                 *             "input_text_hash": null,
+                                 *             "matched_rule_names": [],
+                                 *             "output_text_hash": null,
+                                 *             "phase_id": "prompt.world_info.reserved",
+                                 *             "placement": 5,
+                                 *             "skipped_rules": [
+                                 *               {
+                                 *                 "reason": "reserved_non_executable",
+                                 *                 "rule_name": "world_info_rule"
+                                 *               }
+                                 *             ],
+                                 *             "status": "reserved"
+                                 *           }
+                                 *         ],
                                  *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "reserved_placements": [
+                                 *           5
+                                 *         ],
+                                 *         "substitution_mode": "bare_variable_only",
                                  *         "user_input_rules": [
                                  *           "trim_whitespace"
                                  *         ]
@@ -4930,7 +5059,29 @@ export interface paths {
                                     };
                                     regex?: {
                                         ai_output_rules: string[];
+                                        phases?: {
+                                            candidate_rule_names: string[];
+                                            changed: boolean;
+                                            channel: ("persist" | "prompt" | "display" | "edit") | null;
+                                            depth: number | null;
+                                            input_text_hash: string | null;
+                                            matched_rule_names: string[];
+                                            output_text_hash: string | null;
+                                            /** @enum {string} */
+                                            phase_id: "persist.user_input" | "prompt.user_input" | "persist.ai_output" | "prompt.world_info.reserved";
+                                            placement: number;
+                                            skipped_rules: {
+                                                /** @enum {string} */
+                                                reason: "channel_filtered" | "depth_filtered" | "invalid_regex" | "no_match" | "reserved_non_executable";
+                                                rule_name: string;
+                                            }[];
+                                            /** @enum {string} */
+                                            status: "executed" | "reserved";
+                                        }[];
                                         preprocessed_user_message: string | null;
+                                        reserved_placements?: number[];
+                                        /** @enum {string} */
+                                        substitution_mode?: "bare_variable_only";
                                         user_input_rules: string[];
                                     };
                                     source_selection?: {
@@ -8308,7 +8459,50 @@ export interface paths {
                          *           },
                          *           "regex": {
                          *             "ai_output_rules": [],
+                         *             "phases": [
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "changed": true,
+                         *                 "channel": "prompt",
+                         *                 "depth": 3,
+                         *                 "input_text_hash": "sha256:regex-live-input-before",
+                         *                 "matched_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "output_text_hash": "sha256:regex-live-input-after",
+                         *                 "phase_id": "prompt.user_input",
+                         *                 "placement": 1,
+                         *                 "skipped_rules": [],
+                         *                 "status": "executed"
+                         *               },
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "world_info_rule"
+                         *                 ],
+                         *                 "changed": false,
+                         *                 "channel": "prompt",
+                         *                 "depth": null,
+                         *                 "input_text_hash": null,
+                         *                 "matched_rule_names": [],
+                         *                 "output_text_hash": null,
+                         *                 "phase_id": "prompt.world_info.reserved",
+                         *                 "placement": 5,
+                         *                 "skipped_rules": [
+                         *                   {
+                         *                     "reason": "reserved_non_executable",
+                         *                     "rule_name": "world_info_rule"
+                         *                   }
+                         *                 ],
+                         *                 "status": "reserved"
+                         *               }
+                         *             ],
                          *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "reserved_placements": [
+                         *               5
+                         *             ],
+                         *             "substitution_mode": "bare_variable_only",
                          *             "user_input_rules": [
                          *               "trim_whitespace"
                          *             ]
@@ -8501,7 +8695,50 @@ export interface paths {
                              *         },
                              *         "regex": {
                              *           "ai_output_rules": [],
+                             *           "phases": [
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "changed": true,
+                             *               "channel": "prompt",
+                             *               "depth": 3,
+                             *               "input_text_hash": "sha256:regex-live-input-before",
+                             *               "matched_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "output_text_hash": "sha256:regex-live-input-after",
+                             *               "phase_id": "prompt.user_input",
+                             *               "placement": 1,
+                             *               "skipped_rules": [],
+                             *               "status": "executed"
+                             *             },
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "world_info_rule"
+                             *               ],
+                             *               "changed": false,
+                             *               "channel": "prompt",
+                             *               "depth": null,
+                             *               "input_text_hash": null,
+                             *               "matched_rule_names": [],
+                             *               "output_text_hash": null,
+                             *               "phase_id": "prompt.world_info.reserved",
+                             *               "placement": 5,
+                             *               "skipped_rules": [
+                             *                 {
+                             *                   "reason": "reserved_non_executable",
+                             *                   "rule_name": "world_info_rule"
+                             *                 }
+                             *               ],
+                             *               "status": "reserved"
+                             *             }
+                             *           ],
                              *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "reserved_placements": [
+                             *             5
+                             *           ],
+                             *           "substitution_mode": "bare_variable_only",
                              *           "user_input_rules": [
                              *             "trim_whitespace"
                              *           ]
@@ -8745,7 +8982,50 @@ export interface paths {
                                  *       },
                                  *       "regex": {
                                  *         "ai_output_rules": [],
+                                 *         "phases": [
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "changed": true,
+                                 *             "channel": "prompt",
+                                 *             "depth": 3,
+                                 *             "input_text_hash": "sha256:regex-live-input-before",
+                                 *             "matched_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "output_text_hash": "sha256:regex-live-input-after",
+                                 *             "phase_id": "prompt.user_input",
+                                 *             "placement": 1,
+                                 *             "skipped_rules": [],
+                                 *             "status": "executed"
+                                 *           },
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "world_info_rule"
+                                 *             ],
+                                 *             "changed": false,
+                                 *             "channel": "prompt",
+                                 *             "depth": null,
+                                 *             "input_text_hash": null,
+                                 *             "matched_rule_names": [],
+                                 *             "output_text_hash": null,
+                                 *             "phase_id": "prompt.world_info.reserved",
+                                 *             "placement": 5,
+                                 *             "skipped_rules": [
+                                 *               {
+                                 *                 "reason": "reserved_non_executable",
+                                 *                 "rule_name": "world_info_rule"
+                                 *               }
+                                 *             ],
+                                 *             "status": "reserved"
+                                 *           }
+                                 *         ],
                                  *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "reserved_placements": [
+                                 *           5
+                                 *         ],
+                                 *         "substitution_mode": "bare_variable_only",
                                  *         "user_input_rules": [
                                  *           "trim_whitespace"
                                  *         ]
@@ -8897,7 +9177,29 @@ export interface paths {
                                     };
                                     regex?: {
                                         ai_output_rules: string[];
+                                        phases?: {
+                                            candidate_rule_names: string[];
+                                            changed: boolean;
+                                            channel: ("persist" | "prompt" | "display" | "edit") | null;
+                                            depth: number | null;
+                                            input_text_hash: string | null;
+                                            matched_rule_names: string[];
+                                            output_text_hash: string | null;
+                                            /** @enum {string} */
+                                            phase_id: "persist.user_input" | "prompt.user_input" | "persist.ai_output" | "prompt.world_info.reserved";
+                                            placement: number;
+                                            skipped_rules: {
+                                                /** @enum {string} */
+                                                reason: "channel_filtered" | "depth_filtered" | "invalid_regex" | "no_match" | "reserved_non_executable";
+                                                rule_name: string;
+                                            }[];
+                                            /** @enum {string} */
+                                            status: "executed" | "reserved";
+                                        }[];
                                         preprocessed_user_message: string | null;
+                                        reserved_placements?: number[];
+                                        /** @enum {string} */
+                                        substitution_mode?: "bare_variable_only";
                                         user_input_rules: string[];
                                     };
                                     source_selection?: {
@@ -11257,7 +11559,50 @@ export interface paths {
                          *           },
                          *           "regex": {
                          *             "ai_output_rules": [],
+                         *             "phases": [
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "changed": true,
+                         *                 "channel": "prompt",
+                         *                 "depth": 3,
+                         *                 "input_text_hash": "sha256:regex-live-input-before",
+                         *                 "matched_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "output_text_hash": "sha256:regex-live-input-after",
+                         *                 "phase_id": "prompt.user_input",
+                         *                 "placement": 1,
+                         *                 "skipped_rules": [],
+                         *                 "status": "executed"
+                         *               },
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "world_info_rule"
+                         *                 ],
+                         *                 "changed": false,
+                         *                 "channel": "prompt",
+                         *                 "depth": null,
+                         *                 "input_text_hash": null,
+                         *                 "matched_rule_names": [],
+                         *                 "output_text_hash": null,
+                         *                 "phase_id": "prompt.world_info.reserved",
+                         *                 "placement": 5,
+                         *                 "skipped_rules": [
+                         *                   {
+                         *                     "reason": "reserved_non_executable",
+                         *                     "rule_name": "world_info_rule"
+                         *                   }
+                         *                 ],
+                         *                 "status": "reserved"
+                         *               }
+                         *             ],
                          *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "reserved_placements": [
+                         *               5
+                         *             ],
+                         *             "substitution_mode": "bare_variable_only",
                          *             "user_input_rules": [
                          *               "trim_whitespace"
                          *             ]
@@ -11448,7 +11793,50 @@ export interface paths {
                              *         },
                              *         "regex": {
                              *           "ai_output_rules": [],
+                             *           "phases": [
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "changed": true,
+                             *               "channel": "prompt",
+                             *               "depth": 3,
+                             *               "input_text_hash": "sha256:regex-live-input-before",
+                             *               "matched_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "output_text_hash": "sha256:regex-live-input-after",
+                             *               "phase_id": "prompt.user_input",
+                             *               "placement": 1,
+                             *               "skipped_rules": [],
+                             *               "status": "executed"
+                             *             },
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "world_info_rule"
+                             *               ],
+                             *               "changed": false,
+                             *               "channel": "prompt",
+                             *               "depth": null,
+                             *               "input_text_hash": null,
+                             *               "matched_rule_names": [],
+                             *               "output_text_hash": null,
+                             *               "phase_id": "prompt.world_info.reserved",
+                             *               "placement": 5,
+                             *               "skipped_rules": [
+                             *                 {
+                             *                   "reason": "reserved_non_executable",
+                             *                   "rule_name": "world_info_rule"
+                             *                 }
+                             *               ],
+                             *               "status": "reserved"
+                             *             }
+                             *           ],
                              *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "reserved_placements": [
+                             *             5
+                             *           ],
+                             *           "substitution_mode": "bare_variable_only",
                              *           "user_input_rules": [
                              *             "trim_whitespace"
                              *           ]
@@ -11690,7 +12078,50 @@ export interface paths {
                                  *       },
                                  *       "regex": {
                                  *         "ai_output_rules": [],
+                                 *         "phases": [
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "changed": true,
+                                 *             "channel": "prompt",
+                                 *             "depth": 3,
+                                 *             "input_text_hash": "sha256:regex-live-input-before",
+                                 *             "matched_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "output_text_hash": "sha256:regex-live-input-after",
+                                 *             "phase_id": "prompt.user_input",
+                                 *             "placement": 1,
+                                 *             "skipped_rules": [],
+                                 *             "status": "executed"
+                                 *           },
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "world_info_rule"
+                                 *             ],
+                                 *             "changed": false,
+                                 *             "channel": "prompt",
+                                 *             "depth": null,
+                                 *             "input_text_hash": null,
+                                 *             "matched_rule_names": [],
+                                 *             "output_text_hash": null,
+                                 *             "phase_id": "prompt.world_info.reserved",
+                                 *             "placement": 5,
+                                 *             "skipped_rules": [
+                                 *               {
+                                 *                 "reason": "reserved_non_executable",
+                                 *                 "rule_name": "world_info_rule"
+                                 *               }
+                                 *             ],
+                                 *             "status": "reserved"
+                                 *           }
+                                 *         ],
                                  *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "reserved_placements": [
+                                 *           5
+                                 *         ],
+                                 *         "substitution_mode": "bare_variable_only",
                                  *         "user_input_rules": [
                                  *           "trim_whitespace"
                                  *         ]
@@ -11842,7 +12273,29 @@ export interface paths {
                                     };
                                     regex?: {
                                         ai_output_rules: string[];
+                                        phases?: {
+                                            candidate_rule_names: string[];
+                                            changed: boolean;
+                                            channel: ("persist" | "prompt" | "display" | "edit") | null;
+                                            depth: number | null;
+                                            input_text_hash: string | null;
+                                            matched_rule_names: string[];
+                                            output_text_hash: string | null;
+                                            /** @enum {string} */
+                                            phase_id: "persist.user_input" | "prompt.user_input" | "persist.ai_output" | "prompt.world_info.reserved";
+                                            placement: number;
+                                            skipped_rules: {
+                                                /** @enum {string} */
+                                                reason: "channel_filtered" | "depth_filtered" | "invalid_regex" | "no_match" | "reserved_non_executable";
+                                                rule_name: string;
+                                            }[];
+                                            /** @enum {string} */
+                                            status: "executed" | "reserved";
+                                        }[];
                                         preprocessed_user_message: string | null;
+                                        reserved_placements?: number[];
+                                        /** @enum {string} */
+                                        substitution_mode?: "bare_variable_only";
                                         user_input_rules: string[];
                                     };
                                     source_selection?: {
@@ -12388,7 +12841,50 @@ export interface paths {
                          *           },
                          *           "regex": {
                          *             "ai_output_rules": [],
+                         *             "phases": [
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "changed": true,
+                         *                 "channel": "prompt",
+                         *                 "depth": 3,
+                         *                 "input_text_hash": "sha256:regex-live-input-before",
+                         *                 "matched_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "output_text_hash": "sha256:regex-live-input-after",
+                         *                 "phase_id": "prompt.user_input",
+                         *                 "placement": 1,
+                         *                 "skipped_rules": [],
+                         *                 "status": "executed"
+                         *               },
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "world_info_rule"
+                         *                 ],
+                         *                 "changed": false,
+                         *                 "channel": "prompt",
+                         *                 "depth": null,
+                         *                 "input_text_hash": null,
+                         *                 "matched_rule_names": [],
+                         *                 "output_text_hash": null,
+                         *                 "phase_id": "prompt.world_info.reserved",
+                         *                 "placement": 5,
+                         *                 "skipped_rules": [
+                         *                   {
+                         *                     "reason": "reserved_non_executable",
+                         *                     "rule_name": "world_info_rule"
+                         *                   }
+                         *                 ],
+                         *                 "status": "reserved"
+                         *               }
+                         *             ],
                          *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "reserved_placements": [
+                         *               5
+                         *             ],
+                         *             "substitution_mode": "bare_variable_only",
                          *             "user_input_rules": [
                          *               "trim_whitespace"
                          *             ]
@@ -12579,7 +13075,50 @@ export interface paths {
                              *         },
                              *         "regex": {
                              *           "ai_output_rules": [],
+                             *           "phases": [
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "changed": true,
+                             *               "channel": "prompt",
+                             *               "depth": 3,
+                             *               "input_text_hash": "sha256:regex-live-input-before",
+                             *               "matched_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "output_text_hash": "sha256:regex-live-input-after",
+                             *               "phase_id": "prompt.user_input",
+                             *               "placement": 1,
+                             *               "skipped_rules": [],
+                             *               "status": "executed"
+                             *             },
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "world_info_rule"
+                             *               ],
+                             *               "changed": false,
+                             *               "channel": "prompt",
+                             *               "depth": null,
+                             *               "input_text_hash": null,
+                             *               "matched_rule_names": [],
+                             *               "output_text_hash": null,
+                             *               "phase_id": "prompt.world_info.reserved",
+                             *               "placement": 5,
+                             *               "skipped_rules": [
+                             *                 {
+                             *                   "reason": "reserved_non_executable",
+                             *                   "rule_name": "world_info_rule"
+                             *                 }
+                             *               ],
+                             *               "status": "reserved"
+                             *             }
+                             *           ],
                              *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "reserved_placements": [
+                             *             5
+                             *           ],
+                             *           "substitution_mode": "bare_variable_only",
                              *           "user_input_rules": [
                              *             "trim_whitespace"
                              *           ]
@@ -12821,7 +13360,50 @@ export interface paths {
                                  *       },
                                  *       "regex": {
                                  *         "ai_output_rules": [],
+                                 *         "phases": [
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "changed": true,
+                                 *             "channel": "prompt",
+                                 *             "depth": 3,
+                                 *             "input_text_hash": "sha256:regex-live-input-before",
+                                 *             "matched_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "output_text_hash": "sha256:regex-live-input-after",
+                                 *             "phase_id": "prompt.user_input",
+                                 *             "placement": 1,
+                                 *             "skipped_rules": [],
+                                 *             "status": "executed"
+                                 *           },
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "world_info_rule"
+                                 *             ],
+                                 *             "changed": false,
+                                 *             "channel": "prompt",
+                                 *             "depth": null,
+                                 *             "input_text_hash": null,
+                                 *             "matched_rule_names": [],
+                                 *             "output_text_hash": null,
+                                 *             "phase_id": "prompt.world_info.reserved",
+                                 *             "placement": 5,
+                                 *             "skipped_rules": [
+                                 *               {
+                                 *                 "reason": "reserved_non_executable",
+                                 *                 "rule_name": "world_info_rule"
+                                 *               }
+                                 *             ],
+                                 *             "status": "reserved"
+                                 *           }
+                                 *         ],
                                  *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "reserved_placements": [
+                                 *           5
+                                 *         ],
+                                 *         "substitution_mode": "bare_variable_only",
                                  *         "user_input_rules": [
                                  *           "trim_whitespace"
                                  *         ]
@@ -12973,7 +13555,29 @@ export interface paths {
                                     };
                                     regex?: {
                                         ai_output_rules: string[];
+                                        phases?: {
+                                            candidate_rule_names: string[];
+                                            changed: boolean;
+                                            channel: ("persist" | "prompt" | "display" | "edit") | null;
+                                            depth: number | null;
+                                            input_text_hash: string | null;
+                                            matched_rule_names: string[];
+                                            output_text_hash: string | null;
+                                            /** @enum {string} */
+                                            phase_id: "persist.user_input" | "prompt.user_input" | "persist.ai_output" | "prompt.world_info.reserved";
+                                            placement: number;
+                                            skipped_rules: {
+                                                /** @enum {string} */
+                                                reason: "channel_filtered" | "depth_filtered" | "invalid_regex" | "no_match" | "reserved_non_executable";
+                                                rule_name: string;
+                                            }[];
+                                            /** @enum {string} */
+                                            status: "executed" | "reserved";
+                                        }[];
                                         preprocessed_user_message: string | null;
+                                        reserved_placements?: number[];
+                                        /** @enum {string} */
+                                        substitution_mode?: "bare_variable_only";
                                         user_input_rules: string[];
                                     };
                                     source_selection?: {
@@ -13569,7 +14173,50 @@ export interface paths {
                          *           },
                          *           "regex": {
                          *             "ai_output_rules": [],
+                         *             "phases": [
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "changed": true,
+                         *                 "channel": "prompt",
+                         *                 "depth": 3,
+                         *                 "input_text_hash": "sha256:regex-dry-run-input-before",
+                         *                 "matched_rule_names": [
+                         *                   "trim_whitespace"
+                         *                 ],
+                         *                 "output_text_hash": "sha256:regex-dry-run-input-after",
+                         *                 "phase_id": "prompt.user_input",
+                         *                 "placement": 1,
+                         *                 "skipped_rules": [],
+                         *                 "status": "executed"
+                         *               },
+                         *               {
+                         *                 "candidate_rule_names": [
+                         *                   "world_info_rule"
+                         *                 ],
+                         *                 "changed": false,
+                         *                 "channel": "prompt",
+                         *                 "depth": null,
+                         *                 "input_text_hash": null,
+                         *                 "matched_rule_names": [],
+                         *                 "output_text_hash": null,
+                         *                 "phase_id": "prompt.world_info.reserved",
+                         *                 "placement": 5,
+                         *                 "skipped_rules": [
+                         *                   {
+                         *                     "reason": "reserved_non_executable",
+                         *                     "rule_name": "world_info_rule"
+                         *                   }
+                         *                 ],
+                         *                 "status": "reserved"
+                         *               }
+                         *             ],
                          *             "preprocessed_user_message": "Please continue the campfire scene.",
+                         *             "reserved_placements": [
+                         *               5
+                         *             ],
+                         *             "substitution_mode": "bare_variable_only",
                          *             "user_input_rules": [
                          *               "trim_whitespace"
                          *             ]
@@ -13847,7 +14494,50 @@ export interface paths {
                              *         },
                              *         "regex": {
                              *           "ai_output_rules": [],
+                             *           "phases": [
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "changed": true,
+                             *               "channel": "prompt",
+                             *               "depth": 3,
+                             *               "input_text_hash": "sha256:regex-dry-run-input-before",
+                             *               "matched_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "output_text_hash": "sha256:regex-dry-run-input-after",
+                             *               "phase_id": "prompt.user_input",
+                             *               "placement": 1,
+                             *               "skipped_rules": [],
+                             *               "status": "executed"
+                             *             },
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "world_info_rule"
+                             *               ],
+                             *               "changed": false,
+                             *               "channel": "prompt",
+                             *               "depth": null,
+                             *               "input_text_hash": null,
+                             *               "matched_rule_names": [],
+                             *               "output_text_hash": null,
+                             *               "phase_id": "prompt.world_info.reserved",
+                             *               "placement": 5,
+                             *               "skipped_rules": [
+                             *                 {
+                             *                   "reason": "reserved_non_executable",
+                             *                   "rule_name": "world_info_rule"
+                             *                 }
+                             *               ],
+                             *               "status": "reserved"
+                             *             }
+                             *           ],
                              *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "reserved_placements": [
+                             *             5
+                             *           ],
+                             *           "substitution_mode": "bare_variable_only",
                              *           "user_input_rules": [
                              *             "trim_whitespace"
                              *           ]
@@ -14191,7 +14881,29 @@ export interface paths {
                                     };
                                     regex?: {
                                         ai_output_rules: string[];
+                                        phases?: {
+                                            candidate_rule_names: string[];
+                                            changed: boolean;
+                                            channel: ("persist" | "prompt" | "display" | "edit") | null;
+                                            depth: number | null;
+                                            input_text_hash: string | null;
+                                            matched_rule_names: string[];
+                                            output_text_hash: string | null;
+                                            /** @enum {string} */
+                                            phase_id: "persist.user_input" | "prompt.user_input" | "persist.ai_output" | "prompt.world_info.reserved";
+                                            placement: number;
+                                            skipped_rules: {
+                                                /** @enum {string} */
+                                                reason: "channel_filtered" | "depth_filtered" | "invalid_regex" | "no_match" | "reserved_non_executable";
+                                                rule_name: string;
+                                            }[];
+                                            /** @enum {string} */
+                                            status: "executed" | "reserved";
+                                        }[];
                                         preprocessed_user_message: string | null;
+                                        reserved_placements?: number[];
+                                        /** @enum {string} */
+                                        substitution_mode?: "bare_variable_only";
                                         user_input_rules: string[];
                                     };
                                     source_selection?: {
@@ -19342,6 +20054,8 @@ export interface operations {
                      *           "display_only_count": 0,
                      *           "persist_executable_count": 1,
                      *           "prompt_executable_count": 1,
+                     *           "reserved_world_info_count": 0,
+                     *           "retained_non_executable_count": 0,
                      *           "stored_count": 1,
                      *           "unsupported_runtime_count": 0
                      *         },
@@ -19362,6 +20076,8 @@ export interface operations {
                                 display_only_count: number;
                                 persist_executable_count: number;
                                 prompt_executable_count: number;
+                                reserved_world_info_count: number;
+                                retained_non_executable_count: number;
                                 stored_count: number;
                                 unsupported_runtime_count: number;
                             };
@@ -27930,7 +28646,29 @@ export interface operations {
                                     };
                                     regex?: {
                                         ai_output_rules: string[];
+                                        phases?: {
+                                            candidate_rule_names: string[];
+                                            changed: boolean;
+                                            channel: ("persist" | "prompt" | "display" | "edit") | null;
+                                            depth: number | null;
+                                            input_text_hash: string | null;
+                                            matched_rule_names: string[];
+                                            output_text_hash: string | null;
+                                            /** @enum {string} */
+                                            phase_id: "persist.user_input" | "prompt.user_input" | "persist.ai_output" | "prompt.world_info.reserved";
+                                            placement: number;
+                                            skipped_rules: {
+                                                /** @enum {string} */
+                                                reason: "channel_filtered" | "depth_filtered" | "invalid_regex" | "no_match" | "reserved_non_executable";
+                                                rule_name: string;
+                                            }[];
+                                            /** @enum {string} */
+                                            status: "executed" | "reserved";
+                                        }[];
                                         preprocessed_user_message: string | null;
+                                        reserved_placements?: number[];
+                                        /** @enum {string} */
+                                        substitution_mode?: "bare_variable_only";
                                         user_input_rules: string[];
                                     };
                                     source_selection?: {

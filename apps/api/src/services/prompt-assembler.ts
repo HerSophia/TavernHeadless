@@ -17,7 +17,6 @@ import {
   type PromptRuntimeDeliveryTrace as CorePromptRuntimeDeliveryTrace,
   type PromptRuntimeMemoryTrace as CorePromptRuntimeMemoryTrace,
   type PromptRuntimePresetTrace as CorePromptRuntimePresetTrace,
-  type PromptRuntimeRegexTrace as CorePromptRuntimeRegexTrace,
   type PromptRuntimeStructureTrace as CorePromptRuntimeStructureTrace,
   type PromptSourceExclusionReason as CorePromptSourceExclusionReason,
   type PromptRuntimeSourceSelectionTrace as CorePromptRuntimeSourceSelectionTrace,
@@ -39,7 +38,6 @@ import {
   type TriggerMatchSourceKind,
   type TriggerResult,
   triggerWorldBook,
-  applyRegexScripts,
   REGEX_PLACEMENT,
   type STRegexScript,
   type STWorldBook,
@@ -55,16 +53,33 @@ import {
 } from "./prompt-resource-loader.js";
 import { VariableService } from "./variable-service.js";
 import {
-  evaluateStMacros,
   type StMacroEvalResult,
+  type StMacroJsonValue,
   type StMacroMutationPreview,
   type StMacroStagedMutation,
   type StMacroTraceEntry,
-  type StMacroJsonValue,
   type StMacroVariableSnapshot,
   type StMacroWarning,
 } from "./st-macros/index.js";
 import { stringifyStMacroValue } from "./st-macros/variable-path.js";
+import {
+  buildStMacroValues as buildStMacroValuesFromContextBuilder,
+  buildVisibleRecentMacroMessages as buildVisibleRecentMacroMessagesFromContextBuilder,
+  buildPromptRuntimeMacroTrace as buildPromptRuntimeMacroTraceFromProjector,
+  evaluatePromptMacroValues as evaluatePromptMacroValuesFromFacade,
+  shouldIncludeCurrentUserMessageInRecentMacros as shouldIncludeCurrentUserMessageInRecentMacrosFromContextBuilder,
+} from "./prompt-runtime/macro/index.js";
+import {
+  buildPromptRuntimeRegexTrace,
+  buildRegexSubstitutionContext,
+  buildReservedWorldInfoRegexPhase,
+  collectRegexRuleNames as collectRegexRuleNamesFromSupportMatrix,
+  createRegexMacroSubstituter as createRegexMacroSubstituterFromFacade,
+  executePromptRuntimeRegexPhase,
+  listRuntimeRegexReservedPlacements,
+  PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE,
+  type PromptRuntimeRegexPhaseRuntimeResult,
+} from "./prompt-runtime/regex/index.js";
 
 import {
   resolvePromptSourceGates,
@@ -115,31 +130,6 @@ export interface SessionMetadata {
 
 const RESERVED_PROMPT_ALIAS_KEYS = ["char", "user"] as const;
 type ReservedPromptAlias = (typeof RESERVED_PROMPT_ALIAS_KEYS)[number];
-
-const READONLY_PROMPT_MACRO_KEYS = [
-  "userName",
-  "assistantName",
-  "systemPrompt",
-  "authorsNote",
-  "defaultAuthorsNote",
-  "charPrompt",
-  "charInstruction",
-  "charDepthPrompt",
-  "mesExamples",
-  "mesExamplesRaw",
-  "model",
-  "runKind",
-  "promptMode",
-  "isodate",
-  "isotime",
-  "summary",
-  "lastMessage",
-  "lastUserMessage",
-  "lastCharMessage",
-  "lastGenerationType",
-] as const;
-
-type ReadonlyPromptMacroKey = (typeof READONLY_PROMPT_MACRO_KEYS)[number];
 
 /**
  * Assembly-phase snapshot preview.
@@ -307,7 +297,50 @@ export type PromptRuntimePresetTrace = CorePromptRuntimePresetTrace;
 
 export type PromptRuntimeWorldbookTrace = CorePromptRuntimeWorldbookTrace<WorldbookMatchDetail>;
 
-export type PromptRuntimeRegexTrace = CorePromptRuntimeRegexTrace;
+export type PromptRuntimeRegexPhaseId =
+  | "persist.user_input"
+  | "prompt.user_input"
+  | "persist.ai_output"
+  | "prompt.world_info.reserved";
+
+export type PromptRuntimeRegexPhaseStatus = "executed" | "reserved";
+
+export type PromptRuntimeRegexSkipReason =
+  | "channel_filtered"
+  | "depth_filtered"
+  | "invalid_regex"
+  | "no_match"
+  | "reserved_non_executable";
+
+export type PromptRuntimeRegexSubstitutionMode = "bare_variable_only";
+
+export interface PromptRuntimeRegexSkippedRule {
+  ruleName: string;
+  reason: PromptRuntimeRegexSkipReason;
+}
+
+export interface PromptRuntimeRegexPhaseTrace {
+  phaseId: PromptRuntimeRegexPhaseId;
+  placement: number;
+  channel: "persist" | "prompt" | "display" | "edit" | null;
+  status: PromptRuntimeRegexPhaseStatus;
+  changed: boolean;
+  depth: number | null;
+  inputTextHash: string | null;
+  outputTextHash: string | null;
+  candidateRuleNames: string[];
+  matchedRuleNames: string[];
+  skippedRules: PromptRuntimeRegexSkippedRule[];
+}
+
+export interface PromptRuntimeRegexTrace {
+  userInputRules: string[];
+  aiOutputRules: string[];
+  preprocessedUserMessage?: string;
+  phases?: PromptRuntimeRegexPhaseTrace[];
+  reservedPlacements?: number[];
+  substitutionMode?: PromptRuntimeRegexSubstitutionMode;
+}
 
 export type PromptRuntimeBudgetTrace = CorePromptRuntimeBudgetTrace;
 
@@ -408,6 +441,7 @@ export interface PromptRuntimeMacroTrace {
 }
 
 export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatchDetail> {
+  regex?: PromptRuntimeRegexTrace;
   macro?: PromptRuntimeMacroTrace;
 }
 
@@ -430,6 +464,10 @@ export interface PromptRuntimeTraceSeed {
   triggerFilteredEntryIds: string[];
   inChatInsertedEntryIds: string[];
   worldbookMatches?: WorldbookMatchDetail[];
+  regexPhases?: PromptRuntimeRegexTrace["phases"];
+  regexReservedPlacements?: PromptRuntimeRegexTrace["reservedPlacements"];
+  regexSubstitutionMode?: PromptRuntimeRegexTrace["substitutionMode"];
+  regexPromptUserInputText?: string;
   macroWarnings?: StMacroWarning[];
   macroUsedNames?: string[];
   macroMutationPreview?: StMacroMutationPreview[];
@@ -562,10 +600,6 @@ export interface AssemblePromptOptions {
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
 const DEFAULT_MAX_TOKENS = 1000;
-const DEFAULT_MACRO_MAX_DEPTH = 16;
-const DEFAULT_MACRO_MAX_STEPS = 256;
-const DEFAULT_MACRO_MAX_EXPANDED_LENGTH = 32_768;
-const DEFAULT_MACRO_MAX_MUTATION_COUNT = 128;
 
 export function resolveEffectivePromptBudget(args: {
   budget?: PromptBudgetPolicy;
@@ -950,29 +984,46 @@ export async function assemblePrompt(
 
   let preProcess: AssembleResult["preProcess"];
   let postProcess: AssembleResult["postProcess"];
-  const substituteRegexParams = createRegexMacroSubstituter(promptSnapshot.variables);
-  const regexContextBase = {
-    substituteFindParams: substituteRegexParams,
-    substituteReplaceParams: substituteRegexParams,
-  };
+  const regexSubstitutionContext = buildRegexSubstitutionContext(promptSnapshot.variables);
+  const regexReservedPlacements = enabledRegexScripts.length > 0
+    ? listRuntimeRegexReservedPlacements(enabledRegexScripts)
+    : [];
+  const regexPhases: PromptRuntimeRegexPhaseRuntimeResult[] = [];
+  let regexPromptUserInputText: string | undefined;
 
   if (enabledRegexScripts.length > 0) {
+    const currentUserPromptRegexPhase = buildCurrentUserPromptRegexPhase({
+      candidateMessages: messages,
+      scripts: enabledRegexScripts,
+      substitutionContext: regexSubstitutionContext,
+    });
+    const reservedWorldInfoRegexPhase = buildReservedWorldInfoRegexPhase(enabledRegexScripts);
+
+    if (currentUserPromptRegexPhase) {
+      regexPhases.push(currentUserPromptRegexPhase);
+      regexPromptUserInputText = currentUserPromptRegexPhase.text;
+    }
+
+    if (reservedWorldInfoRegexPhase) {
+      regexPhases.push(reservedWorldInfoRegexPhase);
+    }
+
     preProcess = (candidateMessages: ChatMessage[]): ChatMessage[] => {
       const depthByMessageIndex = buildRegexDepthByMessageIndex(candidateMessages);
 
       return candidateMessages.map((message, index) => {
         if (message.role === "user") {
+          const result = executePromptRuntimeRegexPhase({
+            phaseId: "prompt.user_input",
+            text: message.content,
+            scripts: enabledRegexScripts,
+            depth: depthByMessageIndex[index] ?? 0,
+            substitutionContext: regexSubstitutionContext,
+          });
+
           return {
             ...message,
-            content: applyRegexScripts(
-              message.content,
-              enabledRegexScripts,
-              REGEX_PLACEMENT.USER_INPUT,
-              {
-                ...regexContextBase,
-                depth: depthByMessageIndex[index] ?? 0,
-              },
-            ),
+            content: result.text,
           };
         }
 
@@ -981,10 +1032,13 @@ export async function assemblePrompt(
     };
 
     postProcess = (text: string): string => {
-      return applyRegexScripts(text, enabledRegexScripts, REGEX_PLACEMENT.AI_OUTPUT, {
-        ...regexContextBase,
+      return executePromptRuntimeRegexPhase({
+        phaseId: "persist.ai_output",
+        text,
+        scripts: enabledRegexScripts,
         depth: 0,
-      });
+        substitutionContext: regexSubstitutionContext,
+      }).text;
     };
   }
 
@@ -1010,6 +1064,12 @@ export async function assemblePrompt(
         namesBehaviorApplied: resolveNamesBehavior(presetData?.namesBehavior),
         triggerFilteredEntryIds: presetData ? collectTriggerFilteredEntryIds(presetData, promptIntent) : [],
         inChatInsertedEntryIds: presetData ? collectInChatInsertedEntryIds(presetData, promptIntent) : [],
+        ...(regexPhases.length > 0 ? { regexPhases } : {}),
+        ...(regexReservedPlacements.length > 0 ? { regexReservedPlacements } : {}),
+        ...(enabledRegexScripts.length > 0
+          ? { regexSubstitutionMode: PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE }
+          : {}),
+        regexPromptUserInputText,
         ...(worldbookMatches ? { worldbookMatches } : {}),
         macroWarnings: aggregatedMacroWarnings,
         macroUsedNames: aggregatedMacroUsedNames,
@@ -1262,9 +1322,7 @@ function createCompatPlusMemoryInjection(
 }
 
 function collectRegexRuleNames(scripts: STRegexScript[], placement: number): string[] {
-  return scripts
-    .filter((script) => !script.disabled && script.placement.includes(placement))
-    .map((script) => script.scriptName);
+  return collectRegexRuleNamesFromSupportMatrix(scripts, placement);
 }
 
 function createPromptDigest(messages: ChatMessage[]): string {
@@ -1276,18 +1334,6 @@ function createPromptDigest(messages: ChatMessage[]): string {
     hash.update("\u0001");
   }
   return hash.digest("hex");
-}
-
-function padDateTimeSegment(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function formatMacroIsoDate(date: Date): string {
-  return `${date.getFullYear()}-${padDateTimeSegment(date.getMonth() + 1)}-${padDateTimeSegment(date.getDate())}`;
-}
-
-function formatMacroIsoTime(date: Date): string {
-  return `${padDateTimeSegment(date.getHours())}:${padDateTimeSegment(date.getMinutes())}`;
 }
 
 function buildStMacroValues(args: {
@@ -1303,206 +1349,20 @@ function buildStMacroValues(args: {
   maxPrompt: number;
   runKind: PromptMacroRunKind;
 }): { values: Record<string, string>; variableSnapshot: StMacroVariableSnapshot; warnings: StMacroWarning[] } {
-  const warnings: StMacroWarning[] = [];
-
-  const metadata = parseSessionMetadata(args.session.metadataJson);
-  const metadataText = (key: string): string | undefined => {
-    const value = metadata[key];
-    return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-  };
-
-  const resolveFirstNonEmpty = (...candidates: Array<string | undefined>): string | undefined => {
-    for (const candidate of candidates) {
-      if (typeof candidate === "string" && candidate.trim().length > 0) {
-        return candidate.trim();
-      }
-    }
-    return undefined;
-  };
-
-  const resolveOptionalMacroValue = (args: {
-    macroName: string;
-    value: string | undefined;
-    warningMessage: string;
-  }): string => {
-    if (typeof args.value === "string" && args.value.length > 0) {
-      return args.value;
-    }
-
-    warnings.push({
-      code: "macro_value_missing",
-      message: args.warningMessage,
-      macroName: args.macroName,
-    });
-    return "";
-  };
-
-  const recentMessages = resolveRecentMessageMacroValues({
-    visibleMessages: args.chatHistory,
+  return buildStMacroValuesFromContextBuilder({
+    metadata: parseSessionMetadata(args.session.metadataJson),
+    sessionPromptMode: args.session.promptMode,
+    preset: args.preset,
+    chatHistory: args.chatHistory,
+    character: args.character,
+    persona: args.persona,
+    userSnapshot: args.userSnapshot,
+    ordinaryVariables: args.ordinaryVariables,
+    variableSnapshot: args.variableSnapshot,
+    memorySummary: args.memorySummary,
+    maxPrompt: args.maxPrompt,
+    runKind: args.runKind,
   });
-  const ordinaryStringVariables = Object.fromEntries(
-    Object.entries(args.ordinaryVariables).map(([key, value]) => [key, stringifyPromptVariableValue(value)]),
-  );
-  const resolvedPromptMode = resolvePromptMode(args.session, metadata);
-  const macroNow = new Date();
-  const resolvedUserName = args.userSnapshot?.name ?? args.persona?.name ?? ordinaryStringVariables.user ?? "";
-  const resolvedAssistantName = args.character?.name ?? ordinaryStringVariables.char ?? "";
-  const resolvedRunKind = args.runKind;
-
-  const presetPromptByIdentifier = (identifier: string): string | undefined => {
-    const prompt = args.preset?.preset.prompts.find((entry) => entry.identifier === identifier);
-    return typeof prompt?.content === "string" && prompt.content.trim().length > 0 ? prompt.content.trim() : undefined;
-  };
-  const presetMainPrompt = presetPromptByIdentifier("main");
-  const presetJailbreakPrompt = presetPromptByIdentifier("jailbreak");
-  const presetNsfwPrompt = presetPromptByIdentifier("nsfw");
-  const presetContinueNudgePrompt = typeof args.preset?.preset.continueNudgePrompt === "string"
-    && args.preset.preset.continueNudgePrompt.trim().length > 0
-    ? args.preset.preset.continueNudgePrompt.trim()
-    : undefined;
-  const presetNewChatPrompt = typeof args.preset?.preset.newChatPrompt === "string"
-    && args.preset.preset.newChatPrompt.trim().length > 0
-    ? args.preset.preset.newChatPrompt.trim()
-    : undefined;
-  const presetAssistantPrefill = typeof args.preset?.preset.assistantPrefill === "string"
-    && args.preset.preset.assistantPrefill.trim().length > 0
-    ? args.preset.preset.assistantPrefill.trim()
-    : undefined;
-  const presetAuthorsNoteCandidate = resolveFirstNonEmpty(
-    presetJailbreakPrompt,
-    presetNsfwPrompt,
-  );
-  const fallbackSessionModelName = typeof args.session.metadataJson === "string"
-    ? (() => {
-        const metadata = parseSessionMetadata(args.session.metadataJson);
-        const sessionModel = metadata.model;
-        return typeof sessionModel === "string" && sessionModel.trim().length > 0 ? sessionModel.trim() : undefined;
-      })()
-    : undefined;
-  const resolvedModelName = fallbackSessionModelName;
-
-  const resolvedSystemPrompt = resolveFirstNonEmpty(
-    metadataText("systemPrompt"),
-    metadataText("system_prompt"),
-    presetMainPrompt,
-    args.character?.systemPrompt,
-  );
-  const resolvedAuthorsNote = resolveFirstNonEmpty(
-    metadataText("authorsNote"),
-    metadataText("authors_note"),
-    presetAuthorsNoteCandidate,
-    args.character?.creatorNotes,
-  );
-  const resolvedDefaultAuthorsNote = resolveFirstNonEmpty(
-    metadataText("defaultAuthorsNote"),
-    metadataText("default_authors_note"),
-  );
-  const resolvedCharPrompt = resolveFirstNonEmpty(
-    args.character?.systemPrompt,
-    presetMainPrompt,
-  );
-  const resolvedCharInstruction = resolveFirstNonEmpty(
-    args.character?.postHistoryInstructions,
-    presetContinueNudgePrompt,
-    presetAssistantPrefill,
-  );
-  const resolvedCharDepthPrompt = resolveFirstNonEmpty(
-    args.character?.postHistoryInstructions,
-    presetContinueNudgePrompt,
-  );
-
-  for (const key of READONLY_PROMPT_MACRO_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(ordinaryStringVariables, key)) {
-      warnings.push({
-        code: "macro_readonly_name_conflict",
-        message: `Ordinary variable '${key}' collides with readonly macro '${key}'. The readonly macro value takes precedence.`,
-        macroName: key,
-      });
-    }
-  }
-
-  const readonlyValues: Record<string, string> = {
-    user: resolvedUserName,
-    userName: resolvedUserName,
-    char: resolvedAssistantName,
-    assistantName: resolvedAssistantName,
-    description: args.character?.description ?? "",
-    personality: args.character?.personality ?? "",
-    scenario: args.character?.scenario ?? "",
-    persona: args.persona?.description ?? args.userSnapshot?.description ?? presetNewChatPrompt ?? "",
-    systemPrompt: resolveOptionalMacroValue({
-      macroName: "systemPrompt",
-      value: resolvedSystemPrompt,
-      warningMessage: "Macro systemPrompt has no resolved value and fell back to empty string.",
-    }),
-    defaultSystemPrompt: DEFAULT_SYSTEM_PROMPT,
-    charPrompt: resolveOptionalMacroValue({
-      macroName: "charPrompt",
-      // 当前 Beta3 只做最小兼容：优先角色卡 systemPrompt，缺失时近似回退到 preset main prompt。
-      value: resolvedCharPrompt,
-      warningMessage: "Macro charPrompt has no resolved value and fell back to empty string.",
-    }),
-    charInstruction: resolveOptionalMacroValue({
-      macroName: "charInstruction",
-      // 当前数据模型没有与 ST 一一对应的独立 charInstruction 字段。
-      // 因此先优先使用角色卡 postHistoryInstructions，再近似回退到 continue nudge / assistant prefill。
-      value: resolvedCharInstruction,
-      warningMessage: "Macro charInstruction has no resolved value and fell back to empty string.",
-    }),
-    charDepthPrompt: resolveOptionalMacroValue({
-      macroName: "charDepthPrompt",
-      // 当前数据模型没有独立 depth prompt 源，先优先使用角色卡 postHistoryInstructions，
-      // 缺失时仅近似回退到 continue nudge，不伪造其他来源。
-      value: resolvedCharDepthPrompt,
-      warningMessage: "Macro charDepthPrompt has no resolved value and fell back to empty string.",
-    }),
-    mesExamples: resolveOptionalMacroValue({
-      macroName: "mesExamples",
-      value: args.character?.exampleDialogue,
-      warningMessage: "Macro mesExamples has no resolved value and fell back to empty string.",
-    }),
-    mesExamplesRaw: resolveOptionalMacroValue({
-      macroName: "mesExamplesRaw",
-      value: args.character?.exampleDialogue,
-      warningMessage: "Macro mesExamplesRaw has no resolved value and fell back to empty string.",
-    }),
-    charAuthorsNote: args.character?.creatorNotes ?? "",
-    authorsNote: resolveOptionalMacroValue({
-      macroName: "authorsNote",
-      value: resolvedAuthorsNote,
-      warningMessage: "Macro authorsNote has no resolved value and fell back to empty string.",
-    }),
-    defaultAuthorsNote: resolveOptionalMacroValue({
-      macroName: "defaultAuthorsNote",
-      value: resolvedDefaultAuthorsNote,
-      warningMessage: "Macro defaultAuthorsNote has no resolved value and fell back to empty string.",
-    }),
-    model: resolveOptionalMacroValue({
-      macroName: "model",
-      value: resolvedModelName,
-      warningMessage: "Macro model has no resolved value and fell back to empty string.",
-    }),
-    runKind: resolvedRunKind,
-    promptMode: resolvedPromptMode,
-    isodate: formatMacroIsoDate(macroNow),
-    isotime: formatMacroIsoTime(macroNow),
-    maxPrompt: String(args.maxPrompt),
-    summary: args.memorySummary ?? "",
-    lastMessage: recentMessages.lastMessage,
-    lastUserMessage: recentMessages.lastUserMessage,
-    lastCharMessage: recentMessages.lastCharMessage,
-    lastGenerationType: resolvedRunKind,
-  };
-
-  const variableSnapshot: StMacroVariableSnapshot = {
-    local: { ...args.variableSnapshot.local },
-    global: { ...args.variableSnapshot.global },
-    plain: { ...ordinaryStringVariables, ...readonlyValues },
-  };
-
-  const values = { ...ordinaryStringVariables, ...readonlyValues };
-
-  return { values, variableSnapshot, warnings };
 }
 
 function resolvePromptRunKind(options: AssemblePromptOptions): PromptMacroRunKind {
@@ -1513,62 +1373,15 @@ function shouldIncludeCurrentUserMessageInRecentMacros(args: {
   runKind: PromptMacroRunKind;
   currentUserMessage?: string;
 }): boolean {
-  if (!args.currentUserMessage || args.currentUserMessage.trim().length === 0) {
-    return false;
-  }
-
-  return args.runKind === "dry_run"
-    || args.runKind === "respond"
-    || args.runKind === "regenerate"
-    || args.runKind === "retry";
+  return shouldIncludeCurrentUserMessageInRecentMacrosFromContextBuilder(args);
 }
 
 function buildVisibleRecentMacroMessages(args: {
-  committedHistory: ChatMessage[];
+  committedHistory: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   currentUserMessage?: string;
   includeCurrentUserMessage: boolean;
 }): Array<{ role: "user" | "assistant"; content: string }> {
-  // recent message 宏只消费“当前宏求值可见”的 user / assistant 消息。
-  // 这里不负责从数据库加载历史，只负责把调用方已经选定的 committed history
-  // 与当前入口可能附带的临时 user 输入组装成显式的可见消息集。
-  // system message 不进入 recent message 候选。
-  // respond / dry-run 会追加当前 user 输入；regenerate / retry 会把当前 turn 的 user 输入显式补回，
-  // 但不会伪造尚未提交的 assistant 输出。
-  const committedVisibleMessages = args.committedHistory
-    .filter((message) => (message.role === "user" || message.role === "assistant") && message.content.trim().length > 0)
-    .map((message) => ({
-      role: message.role as "user" | "assistant",
-      content: message.content,
-    }));
-
-  if (!args.includeCurrentUserMessage || !args.currentUserMessage || args.currentUserMessage.trim().length === 0) {
-    return committedVisibleMessages;
-  }
-
-  return [
-    ...committedVisibleMessages,
-    { role: "user", content: args.currentUserMessage },
-  ];
-}
-
-function resolveRecentMessageMacroValues(args: {
-  visibleMessages: Array<{ role: "user" | "assistant"; content: string }>;
-}): {
-  lastMessage: string;
-  lastUserMessage: string;
-  lastCharMessage: string;
-} {
-  // 输入必须已经是 recent message 宏可见的消息集。
-  // 该 helper 不再负责区分 committed / 当前输入，也不再处理 system/hidden/page/branch 过滤。
-  const visibleMessages = args.visibleMessages.filter((message) => message.content.trim().length > 0);
-  const lastMessage = [...visibleMessages].reverse()[0]?.content ?? "";
-  const lastUserMessage = [...visibleMessages].reverse().find((message) => message.role === "user")?.content ?? "";
-  const lastCharMessage = [...visibleMessages].reverse().find((message) => message.role === "assistant")?.content ?? "";
-  return {
-    lastMessage,
-    lastUserMessage,
-    lastCharMessage,
-  };
+  return buildVisibleRecentMacroMessagesFromContextBuilder(args);
 }
 
 export function evaluatePromptMacroValues(args: {
@@ -1577,15 +1390,7 @@ export function evaluatePromptMacroValues(args: {
   variableSnapshot?: StMacroVariableSnapshot;
   sampleText: string;
 }): StMacroEvalResult {
-  return evaluateStMacros(args.sampleText, {
-    phase: args.phase,
-    values: args.values,
-    variableSnapshot: args.variableSnapshot,
-    maxDepth: DEFAULT_MACRO_MAX_DEPTH,
-    maxSteps: DEFAULT_MACRO_MAX_STEPS,
-    maxExpandedLength: DEFAULT_MACRO_MAX_EXPANDED_LENGTH,
-    maxMutationCount: DEFAULT_MACRO_MAX_MUTATION_COUNT,
-  });
+  return evaluatePromptMacroValuesFromFacade(args);
 }
 
 export function previewPromptMacroText(args: {
@@ -1667,20 +1472,7 @@ function buildFullHistory(
 }
 
 export function createRegexMacroSubstituter(variables: Record<string, unknown>) {
-  return (text: string): string => text.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (_match, key: string) => {
-    const normalizedKey = key.trim();
-    if (!normalizedKey) {
-      return "";
-    }
-
-    if (!Object.prototype.hasOwnProperty.call(variables, normalizedKey)) {
-      return `{{${normalizedKey}}}`;
-    }
-
-    const value = variables[normalizedKey];
-    if (value === null || value === undefined) return "";
-    return String(value);
-  });
+  return createRegexMacroSubstituterFromFacade(variables);
 }
 
 function resolvePromptMode(session: SessionPromptInfo, metadata: SessionMetadata): PromptMode {
@@ -2265,6 +2057,34 @@ function buildRegexDepthByMessageIndex(messages: ChatMessage[]): number[] {
   return messages.map((_message, index) => index);
 }
 
+function buildCurrentUserPromptRegexPhase(args: {
+  candidateMessages: ChatMessage[];
+  scripts: STRegexScript[];
+  substitutionContext: ReturnType<typeof buildRegexSubstitutionContext>;
+}): PromptRuntimeRegexPhaseRuntimeResult | undefined {
+  if (args.scripts.length === 0) {
+    return undefined;
+  }
+
+  const depthByMessageIndex = buildRegexDepthByMessageIndex(args.candidateMessages);
+  for (let index = args.candidateMessages.length - 1; index >= 0; index -= 1) {
+    const message = args.candidateMessages[index];
+    if (message?.role !== "user") {
+      continue;
+    }
+
+    return executePromptRuntimeRegexPhase({
+      phaseId: "prompt.user_input",
+      text: message.content,
+      scripts: args.scripts,
+      depth: depthByMessageIndex[index] ?? 0,
+      substitutionContext: args.substitutionContext,
+    });
+  }
+
+  return undefined;
+}
+
 function buildWorldbookMatchDetails(result: PromptWorldbookTriggerResult | undefined): WorldbookMatchDetail[] {
   if (!result) {
     return [];
@@ -2465,57 +2285,7 @@ function buildPromptRuntimeMacroTrace(args: {
   stagedMutations?: StMacroStagedMutation[];
   traces?: StMacroTraceEntry[];
 }): PromptRuntimeTrace["macro"] {
-  const warnings = args.warnings ?? [];
-  const usedNames = args.usedNames ?? [];
-  const mutationPreview = args.mutationPreview ?? [];
-  const stagedMutations = args.stagedMutations ?? [];
-  const traces = args.traces ?? [];
-
-  if (
-    warnings.length === 0
-    && usedNames.length === 0
-    && mutationPreview.length === 0
-    && stagedMutations.length === 0
-    && traces.length === 0
-  ) {
-    return undefined;
-  }
-
-  const mappedWarnings = warnings.map((warning) => ({
-    code: warning.code,
-    message: warning.message,
-    ...(warning.macroName ? { macroName: warning.macroName } : {}),
-    ...(warning.rawText ? { rawText: warning.rawText } : {}),
-  }));
-  const mappedMutationPreview = mutationPreview.map((item) => ({
-    kind: item.kind,
-    scope: item.scope,
-    key: item.key,
-    ...(item.value !== undefined ? { value: stringifyPromptVariableValue(item.value) } : {}),
-  }));
-  const mappedStagedMutations = stagedMutations.map((item) => ({
-    kind: item.kind,
-    scope: item.scope,
-    key: item.key,
-    ...(item.value !== undefined ? { value: stringifyPromptVariableValue(item.value) } : {}),
-    sourceMacro: item.sourceMacro,
-  }));
-  const mappedTraces = traces.map((trace) => ({
-    macroName: trace.macroName,
-    rawText: trace.rawText,
-    resolvedText: trace.resolvedText,
-    ...(trace.phase ? { phase: trace.phase } : {}),
-    ...(trace.sourceKind ? { sourceKind: trace.sourceKind } : {}),
-    ...(trace.selectedBranch ? { selectedBranch: trace.selectedBranch } : {}),
-  }));
-
-  return {
-    warnings: mappedWarnings,
-    usedNames,
-    mutationPreview: mappedMutationPreview,
-    stagedMutations: mappedStagedMutations,
-    traces: mappedTraces,
-  };
+  return buildPromptRuntimeMacroTraceFromProjector(args);
 }
 
 export function buildPromptRuntimeTrace(args: {
@@ -2528,6 +2298,14 @@ export function buildPromptRuntimeTrace(args: {
     mutationPreview: args.traceSeed.macroMutationPreview,
     stagedMutations: args.traceSeed.macroStagedMutations,
     traces: args.traceSeed.macroTraces,
+  });
+  const regex = buildPromptRuntimeRegexTrace({
+    userInputRules: args.traceSeed.regexPreRules,
+    aiOutputRules: args.traceSeed.regexPostRules,
+    preprocessedUserMessage: args.preprocessedUserMessage ?? args.traceSeed.regexPromptUserInputText,
+    phases: args.traceSeed.regexPhases,
+    reservedPlacements: args.traceSeed.regexReservedPlacements,
+    substitutionMode: args.traceSeed.regexSubstitutionMode,
   });
 
   return {
@@ -2548,11 +2326,7 @@ export function buildPromptRuntimeTrace(args: {
       hitCount: args.traceSeed.worldbookHits,
       ...(args.traceSeed.worldbookMatches ? { matches: args.traceSeed.worldbookMatches } : {}),
     },
-    regex: {
-      userInputRules: args.traceSeed.regexPreRules,
-      aiOutputRules: args.traceSeed.regexPostRules,
-      preprocessedUserMessage: args.preprocessedUserMessage,
-    },
+    ...(regex ? { regex } : {}),
     memory: {
       summaryInjected: args.traceSeed.memorySummaryInjected,
     },

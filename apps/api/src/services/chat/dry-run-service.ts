@@ -74,7 +74,7 @@ export class DryRunService {
       accountId,
       sessionInfo,
       history,
-      persistedUserMessage,
+      persistedUserMessage.text,
       this.tokenCounter,
       effectiveMemorySummary,
       {
@@ -111,13 +111,14 @@ export class DryRunService {
     });
     const execution = buildPromptRuntimeExecutionResult({
       tokenCounter: this.tokenCounter,
-      userMessage: persistedUserMessage,
+      userMessage: persistedUserMessage.text,
       includeRuntimeTrace: true,
       artifacts: {
         inspection,
         assembled,
         materialized,
         visibilityTrace,
+        ...(persistedUserMessage.runtimeTrace ? { baseRuntimeTrace: { regex: persistedUserMessage.runtimeTrace } } : {}),
       },
     });
 

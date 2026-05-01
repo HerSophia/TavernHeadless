@@ -151,10 +151,49 @@ export type PromptRuntimeWorldbookTrace = {
   matches?: PromptRuntimeWorldbookMatchDetail[];
 };
 
+export type PromptRuntimeRegexPhaseId =
+  | "persist.user_input"
+  | "prompt.user_input"
+  | "persist.ai_output"
+  | "prompt.world_info.reserved";
+
+export type PromptRuntimeRegexPhaseStatus = "executed" | "reserved";
+
+export type PromptRuntimeRegexSkipReason =
+  | "channel_filtered"
+  | "depth_filtered"
+  | "invalid_regex"
+  | "no_match"
+  | "reserved_non_executable";
+
+export type PromptRuntimeRegexSubstitutionMode = "bare_variable_only";
+
+export type PromptRuntimeRegexSkippedRule = {
+  ruleName: string;
+  reason: PromptRuntimeRegexSkipReason;
+};
+
+export type PromptRuntimeRegexPhaseTrace = {
+  phaseId: PromptRuntimeRegexPhaseId;
+  placement: number;
+  channel: "persist" | "prompt" | "display" | "edit" | null;
+  status: PromptRuntimeRegexPhaseStatus;
+  changed: boolean;
+  depth: number | null;
+  inputTextHash: string | null;
+  outputTextHash: string | null;
+  candidateRuleNames: string[];
+  matchedRuleNames: string[];
+  skippedRules: PromptRuntimeRegexSkippedRule[];
+};
+
 export type PromptRuntimeRegexTrace = {
   aiOutputRules: string[];
   preprocessedUserMessage: string | null;
   userInputRules: string[];
+  phases?: PromptRuntimeRegexPhaseTrace[];
+  reservedPlacements?: number[];
+  substitutionMode?: PromptRuntimeRegexSubstitutionMode;
 };
 
 export type PromptRuntimeBudgetGroupTrace = {
@@ -443,7 +482,16 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
       ? {
           regex: {
             aiOutputRules: mapStringArray(regex.ai_output_rules),
+            ...(regex.phases !== undefined
+              ? {
+                  phases: readArray(regex.phases).map(mapPromptRuntimeRegexPhaseTrace).filter((item): item is PromptRuntimeRegexPhaseTrace => item !== null),
+                }
+              : {}),
             preprocessedUserMessage: readNullableString(regex.preprocessed_user_message),
+            ...(regex.reserved_placements !== undefined ? { reservedPlacements: mapNumberArray(regex.reserved_placements) } : {}),
+            ...(regex.substitution_mode !== undefined
+              ? { substitutionMode: readNullablePromptRuntimeRegexSubstitutionMode(regex.substitution_mode) ?? undefined }
+              : {}),
             userInputRules: mapStringArray(regex.user_input_rules),
           },
         }
@@ -812,6 +860,83 @@ function readPromptWorldbookInsertionPosition(
     : "after";
 }
 
+function mapPromptRuntimeRegexPhaseTrace(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const phaseId = readNullablePromptRuntimeRegexPhaseId(record.phase_id);
+  const status = readNullablePromptRuntimeRegexPhaseStatus(record.status);
+  if (!phaseId || !status) {
+    return null;
+  }
+
+  return {
+    phaseId,
+    placement: readNumber(record.placement),
+    channel: readNullablePromptRuntimeRegexChannel(record.channel),
+    status,
+    changed: readBoolean(record.changed),
+    depth: readNullableNumber(record.depth),
+    inputTextHash: readNullableString(record.input_text_hash),
+    outputTextHash: readNullableString(record.output_text_hash),
+    candidateRuleNames: mapStringArray(record.candidate_rule_names),
+    matchedRuleNames: mapStringArray(record.matched_rule_names),
+    skippedRules: readArray(record.skipped_rules)
+      .map(mapPromptRuntimeRegexSkippedRule)
+      .filter((item): item is PromptRuntimeRegexSkippedRule => item !== null),
+  };
+}
+
+function mapPromptRuntimeRegexSkippedRule(
+  value: unknown,
+): PromptRuntimeRegexSkippedRule | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const reason = readNullablePromptRuntimeRegexSkipReason(record.reason);
+  if (!reason) {
+    return null;
+  }
+
+  return {
+    ruleName: readString(record.rule_name),
+    reason,
+  };
+}
+
+function readNullablePromptRuntimeRegexPhaseId(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace["phaseId"] | null {
+  const phaseId = readOptionalString(value);
+  if (
+    phaseId === "persist.user_input"
+    || phaseId === "prompt.user_input"
+    || phaseId === "persist.ai_output"
+    || phaseId === "prompt.world_info.reserved"
+  ) {
+    return phaseId;
+  }
+
+  return null;
+}
+
+function readNullablePromptRuntimeRegexPhaseStatus(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace["status"] | null {
+  const status = readOptionalString(value);
+  if (status === "executed" || status === "reserved") {
+    return status;
+  }
+
+  return null;
+}
+
 function readNullablePromptAssistantRewriteStrategy(
   value: unknown,
 ): PromptRuntimeStructureTrace["assistantRewriteStrategy"] {
@@ -858,6 +983,41 @@ function readNullablePromptMessageRole(value: unknown): PromptRuntimeDeliveryTra
   }
 
   return null;
+}
+
+function readNullablePromptRuntimeRegexChannel(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace["channel"] {
+  const channel = readNullableString(value);
+  if (channel === "persist" || channel === "prompt" || channel === "display" || channel === "edit") {
+    return channel;
+  }
+
+  return null;
+}
+
+function readNullablePromptRuntimeRegexSkipReason(
+  value: unknown,
+): PromptRuntimeRegexSkippedRule["reason"] | null {
+  const reason = readOptionalString(value);
+  if (
+    reason === "channel_filtered"
+    || reason === "depth_filtered"
+    || reason === "invalid_regex"
+    || reason === "no_match"
+    || reason === "reserved_non_executable"
+  ) {
+    return reason;
+  }
+
+  return null;
+}
+
+function readNullablePromptRuntimeRegexSubstitutionMode(
+  value: unknown,
+): PromptRuntimeRegexTrace["substitutionMode"] | null {
+  const mode = readOptionalString(value);
+  return mode === "bare_variable_only" ? mode : null;
 }
 
 function readOptionalPromptMessageRole(

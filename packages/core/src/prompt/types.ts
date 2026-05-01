@@ -219,10 +219,49 @@ export interface PromptRuntimeWorldbookTrace<TWorldbookMatch = unknown> {
   matches?: TWorldbookMatch[];
 }
 
+export type PromptRuntimeRegexPhaseId =
+  | 'persist.user_input'
+  | 'prompt.user_input'
+  | 'persist.ai_output'
+  | 'prompt.world_info.reserved';
+
+export type PromptRuntimeRegexPhaseStatus = 'executed' | 'reserved';
+
+export type PromptRuntimeRegexSkipReason =
+  | 'channel_filtered'
+  | 'depth_filtered'
+  | 'invalid_regex'
+  | 'no_match'
+  | 'reserved_non_executable';
+
+export type PromptRuntimeRegexSubstitutionMode = 'bare_variable_only';
+
+export interface PromptRuntimeRegexSkippedRule {
+  ruleName: string;
+  reason: PromptRuntimeRegexSkipReason;
+}
+
+export interface PromptRuntimeRegexPhaseTrace {
+  phaseId: PromptRuntimeRegexPhaseId;
+  placement: number;
+  channel: 'persist' | 'prompt' | 'display' | 'edit' | null;
+  status: PromptRuntimeRegexPhaseStatus;
+  changed: boolean;
+  depth: number | null;
+  inputTextHash: string | null;
+  outputTextHash: string | null;
+  candidateRuleNames: string[];
+  matchedRuleNames: string[];
+  skippedRules: PromptRuntimeRegexSkippedRule[];
+}
+
 export interface PromptRuntimeRegexTrace {
   userInputRules: string[];
   aiOutputRules: string[];
   preprocessedUserMessage?: string;
+  phases?: PromptRuntimeRegexPhaseTrace[];
+  reservedPlacements?: number[];
+  substitutionMode?: PromptRuntimeRegexSubstitutionMode;
 }
 
 export interface PromptRuntimeBudgetGroupTrace {

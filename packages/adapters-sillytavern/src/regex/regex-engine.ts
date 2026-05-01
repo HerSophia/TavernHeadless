@@ -33,6 +33,24 @@ export interface RegexContext {
 
 const DEFAULT_CHANNEL: RegexExecutionChannel = 'persist';
 
+export type RegexTraceSkipReason =
+  | 'channel_filtered'
+  | 'depth_filtered'
+  | 'invalid_regex'
+  | 'no_match';
+
+export interface RegexTraceSkippedRule {
+  ruleName: string;
+  reason: RegexTraceSkipReason;
+}
+
+export interface RegexExecutionTraceResult {
+  text: string;
+  candidateRuleNames: string[];
+  matchedRuleNames: string[];
+  skippedRules: RegexTraceSkippedRule[];
+}
+
 // ── 内部工具 ──────────────────────────────────────────
 
 /**
@@ -180,6 +198,11 @@ function buildReplacementString(
   return substituteReplaceParams ? substituteReplaceParams(replacementWithGroups) : replacementWithGroups;
 }
 
+function resolveRegexTraceRuleName(script: STRegexScript): string {
+  const trimmedScriptName = script.scriptName.trim();
+  return trimmedScriptName.length > 0 ? trimmedScriptName : script.id.trim() || 'unnamed_regex_rule';
+}
+
 // ── 主函数 ────────────────────────────────────────────
 
 /**
@@ -204,14 +227,52 @@ export function applyRegexScripts(
   placement: number,
   context?: RegexContext,
 ): string {
+  return executeRegexScripts(text, scripts, placement, context).text;
+}
+
+export function applyRegexScriptsWithTrace(
+  text: string,
+  scripts: STRegexScript[],
+  placement: number,
+  context?: RegexContext,
+): RegexExecutionTraceResult {
+  const result = executeRegexScripts(text, scripts, placement, context);
+
+  return {
+    text: result.text,
+    candidateRuleNames: result.candidateRuleNames,
+    matchedRuleNames: result.matchedRuleNames,
+    skippedRules: result.skippedRules,
+  };
+}
+
+function executeRegexScripts(
+  text: string,
+  scripts: STRegexScript[],
+  placement: number,
+  context?: RegexContext,
+): RegexExecutionTraceResult {
   let result = text;
   const channel = resolveChannel(context);
+  const candidateRuleNames: string[] = [];
+  const matchedRuleNames: string[] = [];
+  const skippedRules: RegexTraceSkippedRule[] = [];
 
   for (const script of scripts) {
     if (script.disabled) continue;
     if (!script.placement.includes(placement)) continue;
-    if (!shouldRunForChannel(script, channel)) continue;
-    if (!shouldRunForDepth(script, context?.depth)) continue;
+
+    const ruleName = resolveRegexTraceRuleName(script);
+    candidateRuleNames.push(ruleName);
+
+    if (!shouldRunForChannel(script, channel)) {
+      skippedRules.push({ ruleName, reason: 'channel_filtered' });
+      continue;
+    }
+    if (!shouldRunForDepth(script, context?.depth)) {
+      skippedRules.push({ ruleName, reason: 'depth_filtered' });
+      continue;
+    }
 
     const processedFind = substituteRegexPattern(
       script.findRegex,
@@ -220,14 +281,30 @@ export function applyRegexScripts(
     );
 
     const regex = parseRegexString(processedFind);
-    if (!regex) continue;
+    if (!regex) {
+      skippedRules.push({ ruleName, reason: 'invalid_regex' });
+      continue;
+    }
 
-    result = result.replace(regex, (...args) => buildReplacementString(
+    const nextResult = result.replace(regex, (...args) => buildReplacementString(
       script,
       args,
       context?.substituteReplaceParams,
     ));
+
+    if (nextResult === result) {
+      skippedRules.push({ ruleName, reason: 'no_match' });
+      continue;
+    }
+
+    matchedRuleNames.push(ruleName);
+    result = nextResult;
   }
 
-  return result;
+  return {
+    text: result,
+    candidateRuleNames,
+    matchedRuleNames,
+    skippedRules,
+  };
 }
