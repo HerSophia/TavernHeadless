@@ -150,6 +150,36 @@ export const liveRuntimeTraceExample = {
     user_input_rules: ["trim_whitespace"],
     ai_output_rules: [],
     preprocessed_user_message: "Please continue the campfire scene.",
+    phases: [
+      {
+        phase_id: "prompt.user_input",
+        placement: 1,
+        channel: "prompt",
+        status: "executed",
+        changed: true,
+        depth: 3,
+        input_text_hash: "sha256:regex-live-input-before",
+        output_text_hash: "sha256:regex-live-input-after",
+        candidate_rule_names: ["trim_whitespace"],
+        matched_rule_names: ["trim_whitespace"],
+        skipped_rules: [],
+      },
+      {
+        phase_id: "prompt.world_info.reserved",
+        placement: 5,
+        channel: "prompt",
+        status: "reserved",
+        changed: false,
+        depth: null,
+        input_text_hash: null,
+        output_text_hash: null,
+        candidate_rule_names: ["world_info_rule"],
+        matched_rule_names: [],
+        skipped_rules: [{ rule_name: "world_info_rule", reason: "reserved_non_executable" }],
+      },
+    ],
+    reserved_placements: [5],
+    substitution_mode: "bare_variable_only",
   },
   budgets: {
     by_group: [
@@ -462,6 +492,36 @@ export const dryRunSuccessResponseExample = {
         user_input_rules: ["trim_whitespace"],
         ai_output_rules: [],
         preprocessed_user_message: "Please continue the campfire scene.",
+        phases: [
+          {
+            phase_id: "prompt.user_input",
+            placement: 1,
+            channel: "prompt",
+            status: "executed",
+            changed: true,
+            depth: 3,
+            input_text_hash: "sha256:regex-dry-run-input-before",
+            output_text_hash: "sha256:regex-dry-run-input-after",
+            candidate_rule_names: ["trim_whitespace"],
+            matched_rule_names: ["trim_whitespace"],
+            skipped_rules: [],
+          },
+          {
+            phase_id: "prompt.world_info.reserved",
+            placement: 5,
+            channel: "prompt",
+            status: "reserved",
+            changed: false,
+            depth: null,
+            input_text_hash: null,
+            output_text_hash: null,
+            candidate_rule_names: ["world_info_rule"],
+            matched_rule_names: [],
+            skipped_rules: [{ rule_name: "world_info_rule", reason: "reserved_non_executable" }],
+          },
+        ],
+        reserved_placements: [5],
+        substitution_mode: "bare_variable_only",
       },
       budgets: {
         by_group: [
@@ -891,6 +951,50 @@ const runtimeTraceWorldbookJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeTraceRegexSkippedRuleJsonSchema = {
+  type: "object",
+  required: ["rule_name", "reason"],
+  properties: {
+    rule_name: { type: "string" },
+    reason: {
+      type: "string",
+      enum: ["channel_filtered", "depth_filtered", "invalid_regex", "no_match", "reserved_non_executable"],
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceRegexPhaseJsonSchema = {
+  type: "object",
+  required: [
+    "phase_id",
+    "placement",
+    "channel",
+    "status",
+    "changed",
+    "depth",
+    "input_text_hash",
+    "output_text_hash",
+    "candidate_rule_names",
+    "matched_rule_names",
+    "skipped_rules",
+  ],
+  properties: {
+    phase_id: { type: "string", enum: ["persist.user_input", "prompt.user_input", "persist.ai_output", "prompt.world_info.reserved"] },
+    placement: { type: "integer" },
+    channel: { anyOf: [{ type: "string", enum: ["persist", "prompt", "display", "edit"] }, { type: "null" }] },
+    status: { type: "string", enum: ["executed", "reserved"] },
+    changed: { type: "boolean" },
+    depth: { anyOf: [{ type: "integer" }, { type: "null" }] },
+    input_text_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    output_text_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    candidate_rule_names: { type: "array", items: { type: "string" } },
+    matched_rule_names: { type: "array", items: { type: "string" } },
+    skipped_rules: { type: "array", items: runtimeTraceRegexSkippedRuleJsonSchema },
+  },
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceRegexJsonSchema = {
   type: "object",
   required: ["user_input_rules", "ai_output_rules", "preprocessed_user_message"],
@@ -898,6 +1002,9 @@ const runtimeTraceRegexJsonSchema = {
     user_input_rules: { type: "array", items: { type: "string" } },
     ai_output_rules: { type: "array", items: { type: "string" } },
     preprocessed_user_message: { anyOf: [{ type: "string" }, { type: "null" }] },
+    phases: { type: "array", items: runtimeTraceRegexPhaseJsonSchema },
+    reserved_placements: { type: "array", items: { type: "integer" } },
+    substitution_mode: { type: "string", enum: ["bare_variable_only"] },
   },
   additionalProperties: false,
 } as const;

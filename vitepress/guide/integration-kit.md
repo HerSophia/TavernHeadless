@@ -415,6 +415,12 @@ console.log(diff.governanceChanges);
 | `memorySummaryInjected` | `runtimeTrace.memory.summaryInjected` | 记忆摘要是否注入 |
 | `selectedPromptOrderCharacterId` / `ignoredPromptOrderCharacterIds` / `continueNudgeApplied` / `continueNudgeText` / `namesBehaviorApplied` | `runtimeTrace.preset` | 预设运行事实与降级说明 |
 
+对于 regex，SDK 现在还会继续解析 `runtimeTrace.regex.phases`、`runtimeTrace.regex.reservedPlacements` 和 `runtimeTrace.regex.substitutionMode`。
+
+- `phases` 用来表达每个 regex phase 的真实执行、跳过或 reserved 状态。
+- `reservedPlacements` 用来表达当前仅保留、不执行的 placement，例如 `WORLD_INFO`。
+- `substitutionMode` 用来表达当前 regex substitute 的正式语义边界。
+
 同时要区分两类名字：
 
 - `runtimeTrace.budgets.byGroup[].group` 与 `runtimeTrace.budgets.trimReasons[].group` 是 budget group 标签，可以出现具体 section 标签，例如 `section:main`

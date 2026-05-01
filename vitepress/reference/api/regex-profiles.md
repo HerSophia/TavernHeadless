@@ -33,7 +33,7 @@ curl http://localhost:3000/regex-profiles/regex_001
 
 
 
-每个 Regex Profile 包含一组正则脚本，可用于 `user_input`、`ai_output`、`world_info` 等不同 placement。是否真正执行，取决于当前后端支持范围。
+每个 Regex Profile 包含一组正则脚本，可用于 `user_input`、`ai_output`、`world_info` 等不同 placement。当前后端会保留这些 placement 的原始兼容字段，但只有已正式进入运行时 contract 的 placement 才会真实执行。
 
 ## 列出 Regex Profiles
 
@@ -142,7 +142,7 @@ PUT /regex-profiles/:id
 - `5`：`world_info`
 - `6`：`reasoning`
 
-当前后端正式执行的主链 placement 仍以 `USER_INPUT`、`AI_OUTPUT`、`WORLD_INFO` 为主；其余 placement 会保留，但不保证当前版本实际执行。
+当前后端正式执行的主链 placement 以 `USER_INPUT`、`AI_OUTPUT` 为主。`WORLD_INFO`（`5`）当前会保留导入与存储，但不会在生成主链中执行；其余 placement 也会保留，但不保证当前版本实际执行。
 
 ### 请求示例
 
@@ -168,9 +168,12 @@ PUT /regex-profiles/:id
 
 运行时说明：
 
-- `runOnEdit` 现在会进入真实主链：`edit-and-regenerate` 会按 `channel="edit"` 执行 USER_INPUT 正则。
-- `minDepth` / `maxDepth` 现在会进入主 prompt 链路上下文，用于 USER_INPUT、AI_OUTPUT 以及 at-depth WORLD_INFO 的规则过滤。
+- `USER_INPUT` 会区分持久化阶段与 prompt 阶段：持久化入口使用 `channel="persist"`，prompt 入口使用 `channel="prompt"`。
+- `AI_OUTPUT` 会在持久化输出阶段按 `channel="persist"` 执行。
+- `runOnEdit` 现有业务入口仍会在 `edit-and-regenerate` 时按 `channel="edit"` 应用 `USER_INPUT` 正则，但它不属于当前正式 prompt-runtime phase contract 的主集合。
+- `minDepth` / `maxDepth` 现在会进入 `USER_INPUT` 与 `AI_OUTPUT` 的运行时过滤。
 - `promptOnly` / `markdownOnly` / `runOnEdit` / depth 字段都会按当前执行通道共同参与门控，而不再只是保留导入。
+- `WORLD_INFO` 当前仅作为保留的兼容 placement 存在，不会被静默当作已执行能力对外承诺。
 
 ### 响应 `200`
 
