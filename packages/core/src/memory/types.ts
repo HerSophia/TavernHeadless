@@ -205,6 +205,37 @@ export interface MemoryCompactionOutput {
   sourceMicroIds: string[];
 }
 
+/**
+ * 记忆运行模式。
+ *
+ * - disabled：当前回合不提供记忆读取或写入主链
+ * - legacy_sync：沿用同步 consolidator 主链
+ * - async_primary：读取保留，写入由异步 worker 主链承接
+ */
+export type MemoryRuntimeMode = 'disabled' | 'legacy_sync' | 'async_primary';
+
+/**
+ * page-local 记忆提案批次。
+ *
+ * Phase 1 先锁定稳定类型边界，后续由 page-aware proposal job 链路填充真实载体。
+ */
+export interface MemoryProposalBatch {
+  proposalBatchId: string;
+  floorId: string;
+  pageId: string;
+  branchId?: string;
+  assistantMessageId: string;
+  userInputDigest: string;
+  runtimeMode: Exclude<MemoryRuntimeMode, 'disabled'>;
+  status: 'proposed' | 'promoted' | 'rejected' | 'superseded';
+  mutations: Array<{
+    action: 'add_fact' | 'update_fact' | 'deprecate_fact' | 'add_open_loop' | 'resolve_open_loop' | 'refresh_summary';
+    targetScope: MemoryScope;
+    targetMemoryId?: string;
+    payload: Record<string, unknown>;
+  }>;
+}
+
 export type MemoryInjectionStrategy = 'legacy' | 'dual_summary';
 
 /**

@@ -1,5 +1,7 @@
 // ── Chat Role ─────────────────────────────────────────
 
+import type { MemoryRuntimeMode } from '../memory/types.js';
+
 /** LLM 消息角色 */
 export type ChatRole = 'system' | 'user' | 'assistant';
 
@@ -311,8 +313,81 @@ export interface PromptRuntimeBudgetTrace {
   trimReasons?: PromptTrimReason[];
 }
 
+export type PromptRuntimeMemoryStrategy = 'none' | 'single_summary' | 'dual_summary' | 'direct_items';
+
+export interface PromptRuntimeMemorySelectedItemTrace {
+  memoryId: string;
+  scope: 'global' | 'chat' | 'branch' | 'floor';
+  scopeId: string;
+  branchId?: string | null;
+  kind: 'fact' | 'micro_summary' | 'macro_summary' | 'summary' | 'open_loop';
+  source?: 'store' | 'summary' | 'open_loop' | 'fallback';
+  score?: number | null;
+  tokenCount?: number | null;
+  selectedReason?: string | null;
+}
+
+export interface PromptRuntimeMemoryTokenStats {
+  budget?: number | null;
+  used: number;
+  microSummary: number;
+  macroSummary: number;
+  directItems: number;
+}
+
+export interface PromptRuntimeMemoryScopeResolutionTrace {
+  mode: 'branch_aware' | 'explicit_scope' | 'fallback' | 'strict_empty' | 'resolver_error' | 'legacy_direct';
+  strict?: boolean;
+  requestedScopes: Array<'global' | 'chat' | 'branch' | 'floor'>;
+  resolvedScopes: Array<'global' | 'chat' | 'branch' | 'floor'>;
+  requestedBranchId?: string | null;
+  resolvedBranchId?: string | null;
+  fallbackReason?: string | null;
+}
+
+export type PromptRuntimeMemoryProposalStatus =
+  | 'not_requested'
+  | 'skipped_by_request'
+  | 'proposed'
+  | 'promoted'
+  | 'rejected'
+  | 'superseded';
+
+export type PromptRuntimeMemoryPromotionStatus =
+  | 'not_requested'
+  | 'promoted'
+  | 'rejected'
+  | 'superseded';
+
 export interface PromptRuntimeMemoryTrace {
+  /** 本轮最终是否真的把 memory summary 注入到了 prompt 中。 */
   summaryInjected: boolean;
+  /** 当前回合落到哪条记忆写入主链。 */
+  runtimeMode?: MemoryRuntimeMode;
+  /** 当前请求是否要求产生记忆写入。 */
+  requestedWrite?: boolean;
+  /** 当前请求在现有主链与开关下，最终是否会产生真实写入。 */
+  effectiveWrite?: boolean;
+  /** 当前注入策略的外部可见说明。 */
+  strategy?: PromptRuntimeMemoryStrategy;
+  /** 兼容 `memorySummary` 的结构化别名。 */
+  summaryText?: string;
+  /** 注入摘要文本的稳定 hash。 */
+  summaryTextHash?: string | null;
+  /** 本轮实际进入注入块的记忆条目。 */
+  selectedItems?: PromptRuntimeMemorySelectedItemTrace[];
+  /** 注入预算与各类汇总占用。 */
+  tokenStats?: PromptRuntimeMemoryTokenStats;
+  /** 可见 scope 解析与 fallback 诊断。 */
+  scopeResolution?: PromptRuntimeMemoryScopeResolutionTrace;
+  /** 当前 proposal / promotion 关联的 pageId（若有）。 */
+  pageId?: string;
+  /** 当前 proposal batch id（若有）。 */
+  proposalBatchId?: string;
+  /** proposal 生命周期状态。 */
+  proposalStatus?: PromptRuntimeMemoryProposalStatus;
+  /** promotion 生命周期状态。 */
+  promotionStatus?: PromptRuntimeMemoryPromotionStatus;
 }
 
 export interface PromptRuntimeMacroWarning {

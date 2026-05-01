@@ -202,7 +202,10 @@ describe("prompt runtime routes", () => {
           message: "compat warning",
           severity: "warning",
         }],
-        limitations: ["memory remains shared"],
+        limitations: [
+          "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
+          "Variable commit remains page -> floor. Branch promotion is not automatic.",
+        ],
       })),
     });
 
@@ -282,7 +285,10 @@ describe("prompt runtime routes", () => {
         },
         warnings: ["compat warning"],
         diagnostics: [{ code: "derived_no_assistant_structure", message: "compat warning", severity: "warning" }],
-        limitations: ["memory remains shared"],
+        limitations: [
+          "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
+          "Variable commit remains page -> floor. Branch promotion is not automatic.",
+        ],
       },
     });
 
@@ -704,7 +710,10 @@ describe("prompt runtime routes", () => {
         },
         sourceMap: { delivery: { noAssistant: "request_override" }, budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" }, sourceSelection: { history: { mode: "request_override", maxMessages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } }, visibility: { mode: "request_override", hiddenFloorRanges: "request_override" }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
         diagnostics: [{ code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" }],
-        limitations: ["memory remains shared"],
+        limitations: [
+          "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
+          "Variable commit remains page -> floor. Branch promotion is not automatic.",
+        ],
         text: "3",
         runtimeTrace: {
           sourceSelection: { excludedSources: [{ source: "history", reason: "visibility_filtered", detail: "Visibility filtered 2 floor(s) from the available history window." }] },
@@ -782,7 +791,10 @@ describe("prompt runtime routes", () => {
           history: { source_branch_id: "fork-branch", source_mode: "source_floor_branch" },
         },
         diagnostics: [{ code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" }],
-        limitations: ["memory remains shared"],
+        limitations: [
+          "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
+          "Variable commit remains page -> floor. Branch promotion is not automatic.",
+        ],
         text: "3",
         runtime_trace: {
           macro: {
@@ -1172,6 +1184,7 @@ describe("prompt runtime routes", () => {
         },
         resolvedPolicy: null,
         governance: null,
+        memory: null,
         sourceMap: { history: { sourceBranchId: "main", sourceMode: "existing_branch" } },
         trimReasons: [{
           group: "section:main",
@@ -1259,6 +1272,7 @@ describe("prompt runtime routes", () => {
         },
         resolved_policy: null,
         governance: null,
+        memory: null,
         source_map: {
           history: { source_branch_id: "main", source_mode: "existing_branch" },
         },

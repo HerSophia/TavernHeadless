@@ -132,6 +132,7 @@ export interface PromptRuntimePreviewResult {
   diagnostics: PromptRuntimeDiagnostic[];
   limitations: string[];
   text: string;
+  memory?: PromptRuntimeTrace["memory"];
   runtimeTrace: PromptRuntimePreviewTrace;
 }
 

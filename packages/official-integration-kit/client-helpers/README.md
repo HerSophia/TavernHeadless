@@ -184,4 +184,4 @@ const promotionGroups = groupVariablePromotionTrace(promotionSnapshot);
 
 ## 当前状态
 
-`apps/web` 现在已经直接使用这里的 timeline、变量快照、流式 reducer、工具事件分组和错误映射逻辑来支撑 inspector、重放确认和管理界面。Client Data 第二期已经补入 owner 构造、按 collection 分组、嵌套映射和路径读取 helper。Memory V2 的条目、任务和 scope 数据目前保持在 SDK 资源层暴露。后续会继续按这个原则扩展，但不会引入框架绑定层。
+`apps/web` 现在已经直接使用这里的 timeline、变量快照、流式 reducer、工具事件分组和错误映射逻辑来支撑 inspector、重放确认和管理界面。Client Data 第二期已经补入 owner 构造、按 collection 分组、嵌套映射和路径读取 helper。Memory V2 的条目、任务、scope 数据，以及 Prompt Runtime 的结构化 `memory` 真相目前都保持在 SDK 返回面直接暴露。当前没有单独 helper，因为 preview / inspect / historical explain 的 `memory` 对象已经是稳定的只读结构。后续会继续按这个原则扩展，但不会引入框架绑定层。

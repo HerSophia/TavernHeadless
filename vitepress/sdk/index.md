@@ -200,6 +200,8 @@ const blob = await response.blob();
 
 `sessions` 上同时挂载了 CRUD 方法和对话生成方法（`respond` / `respondStream` / `respondDryRun` / `regenerate`）。其中 `respond` / `respondStream` 会保留 `summaries` 和 `finalState`，`respondDryRun` 会返回对齐真实提交快照的 `promptSnapshot`。如果你要把 registered custom namespace 的写入与 turn 一起提交，`respond` / `respondStream` / `regenerate` 现在都接受 `sessionStateWrites`。`sessions.create()` / `sessions.update()` 也会直接返回完整的 session payload。
 
+`promptRuntime.previewText(...)`、`inspect(...)` 和 `getFloorExplain(...)` 现在还会返回结构化记忆真相：分别对应 `preview.memory`、`inspect.preparedTurn.memory`、`explain.memory`。兼容字符串 `memorySummary` 仍然保留，但它不再是唯一真相。对于较旧的 explain snapshot 行，`explain.memory` 可能是 `null`。
+
 `tools.listExecutions()` 对应新的主执行审计路由；`tools.listCallRecords()` 仍保留为兼容查询面。`imports.chat()` 会按 `format` 区分 `.thchat` 与 `sillytavern_jsonl` 的返回结构，`imports.character()` 会保留 `characterVersionId` 和可选 `session`。
 
 ```ts

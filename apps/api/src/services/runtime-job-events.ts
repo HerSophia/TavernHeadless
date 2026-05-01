@@ -3,6 +3,7 @@ import { parseBranchMemoryScopeId } from "@tavern/shared";
 
 import type { RuntimeJobRecord, RuntimeJobStatus } from "./runtime-job-types.js";
 import { parseMemoryRuntimeScopeKey } from "./memory-runtime-job-definitions.js";
+import { buildMemoryRuntimeJobEventAugment } from "./memory/observe/memory-runtime-event-bridge.js";
 
 type RuntimeJobEventName =
   | "runtime.job_enqueued"
@@ -79,6 +80,7 @@ export function buildRuntimeJobEventPayload(
   job: RuntimeJobRecord,
   overrides: RuntimeJobEventOverrides = {},
 ): CoreEventMap[RuntimeJobEventName] {
+  const memoryAugment = job.scopeType === "memory" ? buildMemoryRuntimeJobEventAugment(job) : undefined;
   const base = {
     jobId: job.id,
     jobType: job.jobType,
@@ -105,6 +107,7 @@ export function buildRuntimeJobEventPayload(
     sessionId: deriveSessionId(job),
     floorId: job.floorId ?? undefined,
     pageId: job.pageId ?? undefined,
+    ...(memoryAugment ?? {}),
   };
 
   if (overrides.retryAt !== undefined) {

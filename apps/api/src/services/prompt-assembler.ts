@@ -80,6 +80,7 @@ import {
   PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE,
   type PromptRuntimeRegexPhaseRuntimeResult,
 } from "./prompt-runtime/regex/index.js";
+import { buildPromptRuntimeMemoryTrace } from "./memory/shared/index.js";
 
 import {
   resolvePromptSourceGates,
@@ -451,6 +452,7 @@ export interface PromptRuntimeTraceSeed {
   worldbookHits: number;
   regexPreRules: string[];
   regexPostRules: string[];
+  memoryRuntimeTrace?: Omit<CorePromptRuntimeMemoryTrace, "summaryInjected">;
   memorySummaryInjected: boolean;
   selectedPromptOrderCharacterId: number | null;
   ignoredPromptOrderCharacterIds: number[];
@@ -596,6 +598,7 @@ export interface AssemblePromptOptions {
   runKind?: PromptMacroRunKind;
   budget?: PromptBudgetPolicyV5;
   sourceSelection?: PromptSourceSelectionPolicy;
+  memoryRuntimeTrace?: Omit<CorePromptRuntimeMemoryTrace, "summaryInjected">;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -1048,35 +1051,36 @@ export async function assemblePrompt(
   promptSnapshot.tokenEstimate = tokenEstimate;
 
   const runtimeTraceSeed: PromptRuntimeTraceSeed = {
-        worldbookHits,
-        regexPreRules: promptSnapshot.regexPreRuleNames,
-        regexPostRules: promptSnapshot.regexPostRuleNames,
-        // 反映真实执行状态：effectiveMemorySummary 是经过 source gate 过滤后的值
-        memorySummaryInjected: Boolean(effectiveMemorySummary),
-        selectedPromptOrderCharacterId: null,
-        ignoredPromptOrderCharacterIds: [],
-        unsupportedPresetFields: [],
-        ignoredPresetFields: [],
-        unresolvedPresetMarkers: [],
-        presetWarnings: [],
-        continueNudgeApplied: false,
-        continueNudgeText: undefined,
-        namesBehaviorApplied: resolveNamesBehavior(presetData?.namesBehavior),
-        triggerFilteredEntryIds: presetData ? collectTriggerFilteredEntryIds(presetData, promptIntent) : [],
-        inChatInsertedEntryIds: presetData ? collectInChatInsertedEntryIds(presetData, promptIntent) : [],
-        ...(regexPhases.length > 0 ? { regexPhases } : {}),
-        ...(regexReservedPlacements.length > 0 ? { regexReservedPlacements } : {}),
-        ...(enabledRegexScripts.length > 0
-          ? { regexSubstitutionMode: PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE }
-          : {}),
-        regexPromptUserInputText,
-        ...(worldbookMatches ? { worldbookMatches } : {}),
-        macroWarnings: aggregatedMacroWarnings,
-        macroUsedNames: aggregatedMacroUsedNames,
-        macroMutationPreview: aggregatedMacroMutationPreview,
-        macroStagedMutations: aggregatedMacroStagedMutations,
-        macroTraces: aggregatedMacroTraces,
-      };
+    worldbookHits,
+    regexPreRules: promptSnapshot.regexPreRuleNames,
+    regexPostRules: promptSnapshot.regexPostRuleNames,
+    // 反映真实执行状态：effectiveMemorySummary 是经过 source gate 过滤后的值
+    memorySummaryInjected: Boolean(effectiveMemorySummary),
+    ...(options.memoryRuntimeTrace ? { memoryRuntimeTrace: options.memoryRuntimeTrace } : {}),
+    selectedPromptOrderCharacterId: null,
+    ignoredPromptOrderCharacterIds: [],
+    unsupportedPresetFields: [],
+    ignoredPresetFields: [],
+    unresolvedPresetMarkers: [],
+    presetWarnings: [],
+    continueNudgeApplied: false,
+    continueNudgeText: undefined,
+    namesBehaviorApplied: resolveNamesBehavior(presetData?.namesBehavior),
+    triggerFilteredEntryIds: presetData ? collectTriggerFilteredEntryIds(presetData, promptIntent) : [],
+    inChatInsertedEntryIds: presetData ? collectInChatInsertedEntryIds(presetData, promptIntent) : [],
+    ...(regexPhases.length > 0 ? { regexPhases } : {}),
+    ...(regexReservedPlacements.length > 0 ? { regexReservedPlacements } : {}),
+    ...(enabledRegexScripts.length > 0
+      ? { regexSubstitutionMode: PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE }
+      : {}),
+    regexPromptUserInputText,
+    ...(worldbookMatches ? { worldbookMatches } : {}),
+    macroWarnings: aggregatedMacroWarnings,
+    macroUsedNames: aggregatedMacroUsedNames,
+    macroMutationPreview: aggregatedMacroMutationPreview,
+    macroStagedMutations: aggregatedMacroStagedMutations,
+    macroTraces: aggregatedMacroTraces,
+  };
 
   const assemblyCompatSeed: PromptAssemblyCompatSeed = {
     mode,
@@ -2327,9 +2331,10 @@ export function buildPromptRuntimeTrace(args: {
       ...(args.traceSeed.worldbookMatches ? { matches: args.traceSeed.worldbookMatches } : {}),
     },
     ...(regex ? { regex } : {}),
-    memory: {
+    memory: buildPromptRuntimeMemoryTrace({
       summaryInjected: args.traceSeed.memorySummaryInjected,
-    },
+      memoryTrace: args.traceSeed.memoryRuntimeTrace,
+    }),
     ...(macro ? { macro } : {}),
   };
 }

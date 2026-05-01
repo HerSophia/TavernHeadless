@@ -198,6 +198,26 @@ describe("assemblePrompt", () => {
     });
   });
 
+  it("includes memory runtime mode and write policy in runtime trace when provided", () => {
+    const runtimeTrace = buildPromptRuntimeTrace({
+      traceSeed: createAssemblyDebugFixture({
+        memorySummaryInjected: true,
+        memoryRuntimeTrace: {
+          runtimeMode: "async_primary",
+          requestedWrite: true,
+          effectiveWrite: true,
+        },
+      }),
+    });
+
+    expect(runtimeTrace.memory).toEqual({
+      summaryInjected: true,
+      runtimeMode: "async_primary",
+      requestedWrite: true,
+      effectiveWrite: true,
+    });
+  });
+
   it("falls back to compat seed and runtime trace seed when runtimeTrace is absent", () => {
     const debug = createAssemblyDebugFixture({
       mode: "preset",

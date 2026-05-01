@@ -4,13 +4,20 @@ import type { PromptSnapshotWorldbookActivation } from "@tavern/core";
 
 import type { AppDb } from "../../db/client.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
-import { characters, floorResultSnapshots, floors, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, sessions, worldbooks } from "../../db/schema.js";
+import { characters, floorResultSnapshots, floors, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, runtimeJobs, sessions, worldbooks } from "../../db/schema.js";
 import { parseJsonField, stringifyJsonField } from "../../lib/http.js";
 import { parsePromptRuntimeExplainSourceMapEnvelope } from "./explain-snapshot.js";
+import {
+  buildCommittedExplainMemoryTrace,
+  mergeHistoricalExplainMemoryTrace,
+} from "../memory/observe/memory-explain-projector.js";
+import { parseMemoryProposalBatchResultJson } from "../memory/proposals/memory-proposal-job-definitions.js";
+import { MEMORY_RUNTIME_JOB_TYPES, MEMORY_RUNTIME_SCOPE_TYPE } from "../memory-runtime-job-definitions.js";
 import type {
   PromptBudgetPolicy,
   PromptDeliveryPolicy,
   PromptSnapshotPreview,
+  PromptRuntimeTrace,
   PromptSourceExclusionReason,
   PromptSourceSelectionPolicy,
   PromptStructureAssistantRewriteStrategy,
@@ -32,7 +39,7 @@ export const INVALID_PROMPT_RUNTIME_POLICY_WARNING = "Session metadata contains 
 export const INVALID_PROMPT_RUNTIME_BRANCH_POLICY_WARNING = "Session metadata contains an invalid prompt_runtime.branchPolicies entry for this branch. The control plane ignored it.";
 export const DERIVED_NO_ASSISTANT_STRUCTURE_WARNING = "delivery.noAssistant forced the resolved structure.mode to no_assistant.";
 export const PROMPT_RUNTIME_LIMITATIONS = [
-  "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+  "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
   "Variable commit remains page -> floor. Branch promotion is not automatic.",
 ] as const;
 export const PROMPT_RUNTIME_PREVIEW_LIMITATIONS = [
@@ -339,6 +346,7 @@ export interface PromptRuntimeHistoricalExplain {
   resolvedPolicy: ResolvedPromptRuntimePolicy | null;
   sourceMap?: PromptRuntimeSourceMap;
   governance: PromptRuntimeGovernanceView | null;
+  memory?: PromptRuntimeTrace["memory"] | null;
   trimReasons: PromptTrimReason[] | null;
   excludedSources: PromptSourceExclusionReason[] | null;
   sectionStats: PromptRuntimeSectionStat[] | null;
@@ -357,6 +365,7 @@ export interface PromptRuntimeInspectionResult {
   excludedSources: PromptSourceExclusionReason[];
   sectionStats: PromptRuntimeSectionStat[];
   governance?: PromptRuntimeGovernanceView;
+  memory?: PromptRuntimeTrace["memory"];
   limitations: string[];
 }
 
@@ -422,7 +431,8 @@ export interface PromptRuntimeInspectionSnapshotPayload {
   excludedSources: PromptSourceExclusionReason[];
   sectionStats: PromptRuntimeSectionStat[];
   governance?: PromptRuntimeGovernanceView | null;
-  snapshotVersion: 1 | 2;
+  memory?: PromptRuntimeTrace["memory"] | null;
+  snapshotVersion: 1 | 2 | 3;
 }
 
 export function buildPromptRuntimeInspectionSnapshotPayload(
@@ -441,7 +451,8 @@ export function buildPromptRuntimeInspectionSnapshotPayload(
     excludedSources: inspection.excludedSources,
     sectionStats: inspection.sectionStats,
     governance: inspection.governance ?? null,
-    snapshotVersion: 2,
+    memory: buildCommittedExplainMemoryTrace(inspection.memory),
+    snapshotVersion: 3,
   };
 }
 
@@ -796,9 +807,21 @@ export class PromptRuntimeControlService {
       historySourceBranchId: floor.branchId,
       historySourceMode: "existing_branch",
     };
+    const [memoryJobRow] = await this.db.select().from(runtimeJobs).where(and(
+      eq(runtimeJobs.floorId, floor.id),
+      eq(runtimeJobs.pageId, floorResultRow.outputPageId),
+      eq(runtimeJobs.scopeType, MEMORY_RUNTIME_SCOPE_TYPE),
+      eq(runtimeJobs.jobType, MEMORY_RUNTIME_JOB_TYPES.ingest_turn),
+    )).limit(1);
 
     if (snapshotRow) {
       const snapshot = mapPromptRuntimeExplainSnapshotRow(snapshotRow);
+      const proposalBatch = parseMemoryProposalBatchResultJson(memoryJobRow?.resultJson ?? null);
+      const memory = mergeHistoricalExplainMemoryTrace({
+        persistedMemory: snapshot.memory ?? null,
+        proposalBatch,
+        pageId: floorResultRow.outputPageId,
+      });
       const limitations = [
         ...PROMPT_RUNTIME_LIMITATIONS,
         ...PROMPT_RUNTIME_HISTORICAL_EXPLAIN_COMMON_LIMITATIONS,
@@ -829,6 +852,7 @@ export class PromptRuntimeControlService {
         resolvedPolicy: snapshot.resolvedPolicy,
         sourceMap: snapshot.sourceMap,
         governance: snapshot.governance ?? null,
+        memory,
         trimReasons: snapshot.trimReasons,
         excludedSources: snapshot.excludedSources,
         sectionStats: snapshot.sectionStats,
@@ -854,6 +878,7 @@ export class PromptRuntimeControlService {
       assets: null,
       promptSnapshot: mapPromptSnapshotRowToPreview(promptSnapshotRow),
       resolvedPolicy: null,
+      memory: null,
       sourceMap: {
         history: {
           sourceBranchId: fallbackScope.historySourceBranchId,
@@ -2056,6 +2081,17 @@ function parseJsonArrayField<TValue>(
   return Array.isArray(parsed) ? parsed as TValue[] : fallback;
 }
 
+function parsePromptRuntimeMemoryTraceField(
+  value: string | null | undefined,
+): PromptRuntimeTrace["memory"] | null {
+  const parsed = parseJsonField(value ?? null);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  return parsed as PromptRuntimeTrace["memory"];
+}
+
 function mapPromptRuntimeExplainSnapshotRow(
   row: typeof promptRuntimeExplainSnapshots.$inferSelect,
 ): PromptRuntimeCommittedExplainSnapshot {
@@ -2080,6 +2116,7 @@ function mapPromptRuntimeExplainSnapshotRow(
     resolvedPolicy: parseJsonObjectField<ResolvedPromptRuntimePolicy>(row.resolvedPolicyJson, buildResolvedPromptRuntimePolicy()),
     sourceMap: sourceMapEnvelope.sourceMap,
     governance: sourceMapEnvelope.governance,
+    memory: parsePromptRuntimeMemoryTraceField(row.memoryJson),
     diagnostics: parseJsonArrayField<PromptRuntimeDiagnostic>(row.diagnosticsJson),
     trimReasons: parseJsonArrayField<PromptTrimReason>(row.trimReasonsJson),
     excludedSources: parseJsonArrayField<PromptSourceExclusionReason>(row.excludedSourcesJson),

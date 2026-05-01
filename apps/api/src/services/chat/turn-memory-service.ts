@@ -1,8 +1,11 @@
-import type { CoreEventMap, MemoryInjectionOptions, MemoryStore, TurnInput } from "@tavern/core";
+import type { CoreEventMap, MemoryInjectionOptions, MemoryStore, PromptRuntimeMemoryTrace, TurnInput } from "@tavern/core";
 import { MemoryScopeResolver } from "@tavern/core";
+
+import { TurnMemoryInjectionService } from "../memory/injection/turn-memory-injection-service.js";
 
 export class TurnMemoryService {
   private readonly memoryScopeResolver = new MemoryScopeResolver();
+  private readonly injectionService: TurnMemoryInjectionService;
 
   constructor(
     private readonly options: {
@@ -11,7 +14,37 @@ export class TurnMemoryService {
       enableDualSummaryInjection: boolean;
       emitBestEffortEvent: <K extends keyof CoreEventMap>(name: K, payload: CoreEventMap[K]) => Promise<void>;
     },
-  ) {}
+  ) {
+    this.injectionService = new TurnMemoryInjectionService({
+      memoryStore: options.memoryStore,
+      memoryInjectionDecay: options.memoryInjectionDecay,
+      enableDualSummaryInjection: options.enableDualSummaryInjection,
+      emitBestEffortEvent: options.emitBestEffortEvent,
+    });
+  }
+
+  async retrieveMemoryInjection(
+    sessionId: string,
+    accountId: string,
+    floorId?: string,
+    branchId?: string,
+  ): Promise<{
+    memorySummary?: string;
+    memoryTrace?: Omit<PromptRuntimeMemoryTrace, "summaryInjected">;
+  } | undefined> {
+    const result = await this.injectionService.retrieveMemoryInjection({
+      sessionId,
+      accountId,
+      floorId,
+      branchId,
+    });
+
+    if (!result) {
+      return undefined;
+    }
+
+    return { memorySummary: result.memorySummary, memoryTrace: result.memoryTrace };
+  }
 
   async retrieveMemorySummary(
     sessionId: string,
@@ -19,53 +52,8 @@ export class TurnMemoryService {
     floorId?: string,
     branchId?: string,
   ): Promise<string | undefined> {
-    if (!this.options.memoryStore) {
-      return undefined;
-    }
-
-    try {
-      const scopeContext = {
-        accountId,
-        sessionId,
-        ...(branchId ? { branchId } : {}),
-        ...(floorId ? { floorId } : {}),
-      };
-      const injection = await this.options.memoryStore.prepareInjection(
-        sessionId,
-        this.options.enableDualSummaryInjection
-          ? {
-              accountId,
-              maxTokens: 500,
-              maxItems: 24,
-              minImportance: 0.35,
-              includeTypes: ["open_loop", "fact", "summary"],
-              strategy: "dual_summary",
-              decay: this.options.memoryInjectionDecay,
-              scopeContext,
-            }
-          : {
-              accountId,
-              maxTokens: 500,
-              maxItems: 24,
-              minImportance: 0.35,
-              includeTypes: ["open_loop", "fact", "summary"],
-              selectionMode: "balanced",
-              typeOrder: ["open_loop", "fact", "summary"],
-              typeMaxItems: { open_loop: 6, fact: 10, summary: 8 },
-              decay: this.options.memoryInjectionDecay,
-              scopeContext,
-            },
-      );
-
-      return injection.formattedText || undefined;
-    } catch (error) {
-      await this.options.emitBestEffortEvent("memory.injection_failed", {
-        sessionId,
-        error: error instanceof Error ? error : new Error(String(error)),
-      });
-
-      return undefined;
-    }
+    const injection = await this.retrieveMemoryInjection(sessionId, accountId, floorId, branchId);
+    return injection?.memorySummary;
   }
 
   async buildConsolidationContext(

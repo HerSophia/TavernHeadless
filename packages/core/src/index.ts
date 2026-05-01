@@ -122,6 +122,12 @@ export type {
   PromptRuntimeRegexSkippedRule,
   PromptRuntimeRegexPhaseTrace,
   PromptRuntimeStructureTrace,
+  PromptRuntimeMemoryStrategy,
+  PromptRuntimeMemorySelectedItemTrace,
+  PromptRuntimeMemoryTokenStats,
+  PromptRuntimeMemoryScopeResolutionTrace,
+  PromptRuntimeMemoryProposalStatus,
+  PromptRuntimeMemoryPromotionStatus,
   PromptRuntimeMemoryTrace,
   PromptRuntimeMacroWarning,
   PromptRuntimeMacroMutationPreview,
@@ -293,6 +299,8 @@ export type {
   MemoryAccessOptions,
   MemoryScopeContext,
   MemoryScopeRef,
+  MemoryRuntimeMode,
+  MemoryProposalBatch,
 } from './memory/index.js';
 export { MemoryStore } from './memory/index.js';
 export { MemoryConsolidator } from './memory/index.js';

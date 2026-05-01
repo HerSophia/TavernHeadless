@@ -19,6 +19,7 @@ import {
 import type { PromptVisibilityTrace } from "../chat-history-loader.js";
 import type { AppDb } from "../../db/client.js";
 import type { PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
+import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
 
 import type { PromptLiveDebugOptions, ResolvedTurnModels } from "./contracts.js";
 import type {
@@ -128,17 +129,31 @@ export class PreparedPromptArtifactsBuilder {
       historyLoad: args.historyLoad,
     });
 
-    const memorySummary = await this.memoryService.retrieveMemorySummary(
-      args.sessionId,
-      args.accountId,
-      args.floorId,
-      args.branchId,
-    );
-    const effectiveMemorySummary = args.executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
-      ? undefined
-      : memorySummary;
     const narratorParams = this.modelService.getSlotGenerationParams(args.resolvedTurnModels, "narrator");
     const assistantPrefillStrategy = this.modelService.resolveNarratorAssistantPrefillStrategy(args.resolvedTurnModels);
+    const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(
+      args.request.config,
+      args.resolvedTurnModels,
+    );
+    const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
+    const memoryInjection = args.executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
+      ? undefined
+      : await this.memoryService.retrieveMemoryInjection(
+          args.sessionId,
+          args.accountId,
+          args.floorId,
+          args.branchId,
+        );
+    const effectiveMemorySummary = memoryInjection?.memorySummary;
+    const memoryRuntimeTrace = {
+      ...memoryWritePolicy,
+      ...(memoryInjection?.memoryTrace ?? {}),
+      ...(!memoryInjection ? { strategy: "none" as const } : {}),
+    };
+    const memoryTrace = buildPromptRuntimeMemoryTrace({
+      summaryInjected: Boolean(effectiveMemorySummary),
+      memoryTrace: memoryRuntimeTrace,
+    });
     const maxContextTokensOverride = this.modelService.resolveMaxContextTokensOverride(
       args.request.generationParams,
       narratorParams,
@@ -174,6 +189,7 @@ export class PreparedPromptArtifactsBuilder {
         assistantPrefillStrategy,
         budget: args.executionContext.effectivePolicy?.budget,
         sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
+        memoryRuntimeTrace,
       },
     );
 
@@ -193,6 +209,7 @@ export class PreparedPromptArtifactsBuilder {
       visibilityTrace: historyState.visibilityTrace,
       memorySummary: effectiveMemorySummary,
       assembled,
+      memoryTrace,
       worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
       extraDiagnostics: [
         ...this.firstPartyStateContextService.buildFirstPartyStateDiagnostics(
@@ -223,10 +240,6 @@ export class PreparedPromptArtifactsBuilder {
       narratorParams,
       availableForReply: execution.availableForReply ?? 0,
     });
-    const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(
-      args.request.config,
-      args.resolvedTurnModels,
-    );
     const turnConfig = this.modelService.toOrchestratorTurnConfig(requestedTurnConfig);
 
     return {

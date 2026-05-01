@@ -82,6 +82,63 @@ export function mapPromptSnapshotToSnakeCase(promptSnapshot: PromptSnapshotPrevi
   };
 }
 
+export function mapPromptRuntimeMemoryTraceToSnakeCase(
+  memory: NonNullable<PromptRuntimeTrace["memory"]>,
+): Record<string, unknown> {
+  return {
+    summary_injected: memory.summaryInjected,
+    ...(memory.runtimeMode !== undefined ? { runtime_mode: memory.runtimeMode } : {}),
+    ...(memory.requestedWrite !== undefined ? { requested_write: memory.requestedWrite } : {}),
+    ...(memory.effectiveWrite !== undefined ? { effective_write: memory.effectiveWrite } : {}),
+    ...(memory.strategy !== undefined ? { strategy: memory.strategy } : {}),
+    ...(memory.summaryText !== undefined ? { summary_text: memory.summaryText } : {}),
+    ...(memory.summaryTextHash !== undefined ? { summary_text_hash: memory.summaryTextHash } : {}),
+    ...(memory.selectedItems
+      ? {
+          selected_items: memory.selectedItems.map((item) => ({
+            memory_id: item.memoryId,
+            scope: item.scope,
+            scope_id: item.scopeId,
+            branch_id: item.branchId ?? null,
+            kind: item.kind,
+            ...(item.source !== undefined ? { source: item.source } : {}),
+            ...(item.score !== undefined ? { score: item.score } : {}),
+            ...(item.tokenCount !== undefined ? { token_count: item.tokenCount } : {}),
+            ...(item.selectedReason !== undefined ? { selected_reason: item.selectedReason } : {}),
+          })),
+        }
+      : {}),
+    ...(memory.tokenStats
+      ? {
+          token_stats: {
+            budget: memory.tokenStats.budget ?? null,
+            used: memory.tokenStats.used,
+            micro_summary: memory.tokenStats.microSummary,
+            macro_summary: memory.tokenStats.macroSummary,
+            direct_items: memory.tokenStats.directItems,
+          },
+        }
+      : {}),
+    ...(memory.scopeResolution
+      ? {
+          scope_resolution: {
+            mode: memory.scopeResolution.mode,
+            ...(memory.scopeResolution.strict !== undefined ? { strict: memory.scopeResolution.strict } : {}),
+            requested_scopes: memory.scopeResolution.requestedScopes,
+            resolved_scopes: memory.scopeResolution.resolvedScopes,
+            requested_branch_id: memory.scopeResolution.requestedBranchId ?? null,
+            resolved_branch_id: memory.scopeResolution.resolvedBranchId ?? null,
+            fallback_reason: memory.scopeResolution.fallbackReason ?? null,
+          },
+        }
+      : {}),
+    ...(memory.pageId ? { page_id: memory.pageId } : {}),
+    ...(memory.proposalBatchId ? { proposal_batch_id: memory.proposalBatchId } : {}),
+    ...(memory.proposalStatus ? { proposal_status: memory.proposalStatus } : {}),
+    ...(memory.promotionStatus ? { promotion_status: memory.promotionStatus } : {}),
+  };
+}
+
 export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<string, unknown> {
   return {
     ...(runtimeTrace.preset
@@ -169,7 +226,7 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
           },
         }
       : {}),
-    ...(runtimeTrace.memory ? { memory: { summary_injected: runtimeTrace.memory.summaryInjected } } : {}),
+    ...(runtimeTrace.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(runtimeTrace.memory) } : {}),
     ...(runtimeTrace.macro
       ? {
           macro: {

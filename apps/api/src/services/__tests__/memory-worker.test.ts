@@ -323,10 +323,12 @@ describe("MemoryWorker", () => {
         floorId,
         floorNo: 3,
         assistantMessageId: conversation.assistantMessageId,
+        pageId: conversation.outputPageId,
         userInputDigest: createUserInputDigest(userMessage),
         committedAt: now + 1_000,
         summaries: ["Alice confirms Bob still has the key."],
         enableConsolidation: true,
+        runtimeMode: "async_primary",
       });
     });
 
@@ -383,7 +385,7 @@ describe("MemoryWorker", () => {
       type: "summary",
       summaryTier: "micro",
       lifecycleStatus: "active",
-      sourceJobId: `memory-job:ingest_turn:${floorId}`,
+      sourceJobId: `memory-job:ingest_turn:${conversation.outputPageId}`,
       coverageStartFloorNo: 3,
       coverageEndFloorNo: 3,
     });
@@ -395,7 +397,7 @@ describe("MemoryWorker", () => {
       type: "fact",
       factKey: "vault_key_owner",
       lifecycleStatus: "active",
-      sourceJobId: `memory-job:ingest_turn:${floorId}`,
+      sourceJobId: `memory-job:ingest_turn:${conversation.outputPageId}`,
     });
     expect(JSON.parse(factRow!.contentJson)).toBe("vault_key_owner: Bob still holds the vault key.");
 
@@ -428,7 +430,7 @@ describe("MemoryWorker", () => {
       scope: "branch",
       scopeId: mainBranchMemoryScopeId(sessionId),
       floorId,
-      sourceJobId: `memory-job:ingest_turn:${floorId}`,
+      sourceJobId: `memory-job:ingest_turn:${conversation.outputPageId}`,
     }));
     // Committed event contract: runtime ingest path must carry the normalized
     // payload fields too (mutationId / accountId / branchId / entityType / entityId / after / source).
@@ -447,7 +449,7 @@ describe("MemoryWorker", () => {
       scope: "branch",
       scopeId: mainBranchMemoryScopeId(sessionId),
       floorId,
-      sourceJobId: `memory-job:ingest_turn:${floorId}`,
+      sourceJobId: `memory-job:ingest_turn:${conversation.outputPageId}`,
       jobType: "ingest_turn",
     }));
   });
@@ -503,10 +505,12 @@ describe("MemoryWorker", () => {
         floorId,
         floorNo: 12,
         assistantMessageId: conversation.assistantMessageId,
+        pageId: conversation.outputPageId,
         userInputDigest: createUserInputDigest(userMessage),
         committedAt: now,
         summaries: ["The archive trail remains active."],
         enableConsolidation: true,
+        runtimeMode: "async_primary",
       });
     });
 
@@ -601,10 +605,12 @@ describe("MemoryWorker", () => {
         floorId,
         floorNo: 4,
         assistantMessageId: conversation.assistantMessageId,
+        pageId: conversation.outputPageId,
         userInputDigest: createUserInputDigest(userMessage),
         committedAt: now,
         summaries: [],
         enableConsolidation: false,
+        runtimeMode: "async_primary",
       });
     });
 
@@ -654,7 +660,7 @@ describe("MemoryWorker", () => {
       type: "open_loop",
       status: "active",
       lifecycleStatus: "active",
-      sourceJobId: `memory-job:ingest_turn:${floorId}`,
+      sourceJobId: `memory-job:ingest_turn:${conversation.outputPageId}`,
     });
     expect(JSON.parse(openLoopRow!.contentJson)).toBe("What else Bob is still hiding remains unresolved.");
 
@@ -1147,7 +1153,7 @@ describe("MemoryWorker", () => {
     });
 
     await database.db.insert(runtimeJobs).values({
-      id: `memory-job:ingest_turn:${floorId}`,
+      id: `memory-job:ingest_turn:${conversation.outputPageId}`,
       jobType: toMemoryRuntimeJobType("ingest_turn"),
       accountId: DEFAULT_ACCOUNT_ID,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
@@ -1155,7 +1161,7 @@ describe("MemoryWorker", () => {
       sessionId,
       status: "leased",
       floorId,
-      pageId: null,
+      pageId: conversation.outputPageId,
       basedOnRevision: 0,
       payloadJson: JSON.stringify({
         accountId: DEFAULT_ACCOUNT_ID,
@@ -1163,10 +1169,12 @@ describe("MemoryWorker", () => {
         floorId,
         floorNo: 4,
         assistantMessageId: conversation.assistantMessageId,
+        pageId: conversation.outputPageId,
         userInputDigest: createUserInputDigest(userMessage),
         committedAt: now,
         summaries: ["Recovered summary"],
         enableConsolidation: false,
+        runtimeMode: "async_primary",
       }),
       attemptCount: 0,
       maxAttempts: 5,
@@ -1265,10 +1273,12 @@ describe("MemoryWorker", () => {
         floorId,
         floorNo: 5,
         assistantMessageId: conversation.assistantMessageId,
+        pageId: conversation.outputPageId,
         userInputDigest: createUserInputDigest(userMessage),
         committedAt: now,
         summaries: [],
         enableConsolidation: true,
+        runtimeMode: "async_primary",
       });
     });
 
@@ -1360,10 +1370,12 @@ describe("MemoryWorker", () => {
         floorId,
         floorNo: 6,
         assistantMessageId: conversation.assistantMessageId,
+        pageId: conversation.outputPageId,
         userInputDigest: createUserInputDigest(userMessage),
         committedAt: now,
         summaries: ["Fallback summary from generation"],
         enableConsolidation: false,
+        runtimeMode: "async_primary",
       });
     });
 

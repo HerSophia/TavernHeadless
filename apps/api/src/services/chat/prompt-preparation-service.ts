@@ -93,6 +93,7 @@ export class PromptPreparationService {
     visibilityTrace?: PromptVisibilityTrace;
     memorySummary?: string;
     assembled?: AssembleResult;
+    memoryTrace?: PromptRuntimeTrace["memory"];
     worldbookHitCount?: number;
     extraDiagnostics?: PromptRuntimeDiagnostic[];
   } | {
@@ -114,6 +115,7 @@ export class PromptPreparationService {
     visibilityTrace?: PromptVisibilityTrace;
     memorySummary?: string;
     assembled?: AssembleResult;
+    memoryTrace?: PromptRuntimeTrace["memory"];
     worldbookHitCount?: number;
     extraDiagnostics?: PromptRuntimeDiagnostic[];
   })): Promise<PromptRuntimeInspectionResult> {
@@ -191,6 +193,7 @@ export class PromptPreparationService {
       excludedSources: sourceSelectionTrace?.excludedSources ?? [],
       sectionStats: this.buildPromptRuntimeSectionStats(args.assembled?.tokenUsage.bySection),
       limitations: [...PROMPT_RUNTIME_LIMITATIONS],
+      ...(args.memoryTrace ? { memory: args.memoryTrace } : {}),
     };
   }
 
