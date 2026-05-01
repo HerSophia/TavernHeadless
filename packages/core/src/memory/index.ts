@@ -18,6 +18,8 @@ export type {
   MemoryOpenLoopResolveOperation,
   MemoryCompactionOutput,
   MemoryIngestOutput,
+  MemoryRuntimeMode,
+  MemoryProposalBatch,
   MemoryInjectionStrategy,
 } from './types.js';
 

@@ -1,5 +1,6 @@
 import { assemblePrompt, buildPromptAssemblyCompat } from "../prompt-assembler.js";
 import { buildPromptRuntimeExecutionResult, resolvePromptRuntimeExecutionContext } from "../prompt-runtime-execution.js";
+import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
 import type { AppDb } from "../../db/client.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 
@@ -49,11 +50,22 @@ export class DryRunService {
       visibility: executionContext.resolvedPolicy.visibility,
       sourceSelection: executionContext.effectivePolicy?.sourceSelection,
     });
-    const memorySummary = await this.memoryService.retrieveMemorySummary(sessionId, accountId, undefined, "main");
-    const effectiveMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
-      ? undefined
-      : memorySummary;
     const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, accountId);
+    const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(undefined, resolvedTurnModels);
+    const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
+    const memoryInjection = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
+      ? undefined
+      : await this.memoryService.retrieveMemoryInjection(sessionId, accountId, undefined, "main");
+    const effectiveMemorySummary = memoryInjection?.memorySummary;
+    const memoryRuntimeTrace = {
+      ...memoryWritePolicy,
+      ...(memoryInjection?.memoryTrace ?? {}),
+      ...(!memoryInjection ? { strategy: "none" as const } : {}),
+    };
+    const memoryTrace = buildPromptRuntimeMemoryTrace({
+      summaryInjected: Boolean(effectiveMemorySummary),
+      memoryTrace: memoryRuntimeTrace,
+    });
     const assistantPrefillStrategy = this.modelService.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
     const narratorParams = this.modelService.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const maxContextTokensOverride = narratorParams?.maxContextTokens;
@@ -88,6 +100,7 @@ export class DryRunService {
         assistantPrefillStrategy,
         budget: executionContext.effectivePolicy?.budget,
         sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+        memoryRuntimeTrace,
       },
     );
 
@@ -107,6 +120,7 @@ export class DryRunService {
       visibilityTrace,
       memorySummary: effectiveMemorySummary,
       assembled,
+      memoryTrace,
       worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
     });
     const execution = buildPromptRuntimeExecutionResult({

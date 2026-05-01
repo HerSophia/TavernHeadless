@@ -4,7 +4,7 @@ import { and, eq } from "drizzle-orm";
 
 import { buildBranchMemoryScopeId } from "@tavern/shared";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { accounts, floors, runtimeJobs, sessions } from "../../db/schema.js";
+import { accounts, floors, messagePages, runtimeJobs, sessions } from "../../db/schema.js";
 import { MemoryJobScheduler } from "../memory-job-scheduler.js";
 import {
   MEMORY_RUNTIME_SCOPE_TYPE,
@@ -51,6 +51,21 @@ async function seedFloor(database: DatabaseConnection, sessionId: string, floorI
     updatedAt: now,
   });
 }
+async function seedOutputPage(database: DatabaseConnection, floorId: string, pageId: string, now: number): Promise<void> {
+  await database.db.insert(messagePages).values({
+    id: pageId,
+    floorId,
+    pageNo: 1,
+    pageKind: "output",
+    isActive: true,
+    version: 1,
+    checksum: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+
 
 function toLegacyMemoryJob(row: typeof runtimeJobs.$inferSelect) {
   const scopeRef = parseMemoryRuntimeScopeKey(row.scopeKey);
@@ -79,10 +94,12 @@ describe("MemoryJobScheduler", () => {
     const now = 1_735_800_000_000;
     const sessionId = nanoid();
     const floorId = nanoid();
+    const pageId = nanoid();
 
     await seedAccount(database, DEFAULT_ACCOUNT_ID, now);
     await seedSession(database, sessionId, now);
     await seedFloor(database, sessionId, floorId, 7, now);
+    await seedOutputPage(database, floorId, pageId, now);
 
     const result = database.db.transaction((tx) => {
       const first = scheduler.enqueueIngestTurn(tx, {
@@ -92,10 +109,12 @@ describe("MemoryJobScheduler", () => {
         floorId,
         floorNo: 7,
         assistantMessageId: nanoid(),
+        pageId,
         userInputDigest: "digest-1",
         committedAt: now,
         summaries: ["summary-1"],
         enableConsolidation: true,
+        runtimeMode: "async_primary",
       });
       const second = scheduler.enqueueIngestTurn(tx, {
         accountId: DEFAULT_ACCOUNT_ID,
@@ -104,21 +123,23 @@ describe("MemoryJobScheduler", () => {
         floorId,
         floorNo: 7,
         assistantMessageId: nanoid(),
+        pageId,
         userInputDigest: "digest-2",
         committedAt: now + 100,
         summaries: ["summary-2"],
         enableConsolidation: false,
+        runtimeMode: "async_primary",
       });
 
       return { first, second };
     });
 
     expect(result.first).toEqual({
-      jobId: `memory-job:ingest_turn:${floorId}`,
+      jobId: `memory-job:ingest_turn:${pageId}`,
       created: true,
     });
     expect(result.second).toEqual({
-      jobId: `memory-job:ingest_turn:${floorId}`,
+      jobId: `memory-job:ingest_turn:${pageId}`,
       created: false,
     });
 
@@ -128,8 +149,9 @@ describe("MemoryJobScheduler", () => {
     ));
     expect(rows).toHaveLength(1);
     expect(toLegacyMemoryJob(rows[0]!)).toMatchObject({
-      id: `memory-job:ingest_turn:${floorId}`,
+      id: `memory-job:ingest_turn:${pageId}`,
       floorId,
+      pageId,
       status: "pending",
       scope: "branch",
       scopeId: buildBranchMemoryScopeId(sessionId, "main"),
@@ -139,6 +161,8 @@ describe("MemoryJobScheduler", () => {
       branchId: "main",
       summaries: ["summary-1"],
       enableConsolidation: true,
+      pageId,
+      runtimeMode: "async_primary",
     }));
   });
 

@@ -1,5 +1,9 @@
 import type { PromptRuntimeInspectResult } from "../../services/prompt-runtime/types.js";
-import { mapPromptSnapshotToSnakeCase, mapRuntimeTraceToSnakeCase } from "../chat/presenters.js";
+import {
+  mapPromptSnapshotToSnakeCase,
+  mapPromptRuntimeMemoryTraceToSnakeCase,
+  mapRuntimeTraceToSnakeCase,
+} from "../chat/presenters.js";
 
 function toSnakeCaseName(value: string): string {
   return value.replace(/[A-Z]/g, (segment) => `_${segment.toLowerCase()}`);
@@ -77,6 +81,7 @@ function mapPreparedTurnToSnakeCase(result: PromptRuntimeInspectResult["prepared
     prompt_snapshot: result.promptSnapshot ? mapPromptSnapshotToSnakeCase(result.promptSnapshot) : null,
     runtime_trace: result.runtimeTrace ? mapRuntimeTraceToSnakeCase(result.runtimeTrace) : null,
     memory_summary: result.memorySummary ?? null,
+    ...(result.runtimeTrace?.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(result.runtimeTrace.memory) } : {}),
     generation_params: mapUnknownKeysToSnakeCase(result.generationParams),
     requested_turn_config: result.requestedTurnConfig ? mapUnknownKeysToSnakeCase(result.requestedTurnConfig) : null,
     turn_config: result.turnConfig ? mapUnknownKeysToSnakeCase(result.turnConfig) : null,

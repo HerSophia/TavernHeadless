@@ -981,6 +981,7 @@ export const promptRuntimeExplainSnapshots = sqliteTable(
     historySourceMode: text("history_source_mode", { enum: ["existing_branch", "source_floor_branch", "main_fallback"] }).notNull().default("existing_branch"),
     snapshotVersion: integer("snapshot_version").notNull().default(1),
     assetsJson: text("assets_json").notNull().default("{}"),
+    memoryJson: text("memory_json"),
     resolvedPolicyJson: text("resolved_policy_json").notNull().default("{}"),
     sourceMapJson: text("source_map_json").notNull().default("{}"),
     diagnosticsJson: text("diagnostics_json").notNull().default("[]"),

@@ -4328,7 +4328,57 @@ export interface paths {
                          *             ]
                          *           },
                          *           "memory": {
-                         *             "summary_injected": true
+                         *             "effective_write": true,
+                         *             "requested_write": true,
+                         *             "runtime_mode": "async_primary",
+                         *             "scope_resolution": {
+                         *               "fallback_reason": null,
+                         *               "mode": "branch_aware",
+                         *               "requested_branch_id": "main",
+                         *               "requested_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ],
+                         *               "resolved_branch_id": "main",
+                         *               "resolved_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ]
+                         *             },
+                         *             "selected_items": [
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "fact",
+                         *                 "memory_id": "memory-branch-fact-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.82,
+                         *                 "selected_reason": null,
+                         *                 "source": "store",
+                         *                 "token_count": 18
+                         *               },
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "micro_summary",
+                         *                 "memory_id": "memory-branch-summary-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.64,
+                         *                 "source": "summary",
+                         *                 "token_count": 14
+                         *               }
+                         *             ],
+                         *             "strategy": "dual_summary",
+                         *             "summary_injected": true,
+                         *             "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                         *             "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                         *             "token_stats": {
+                         *               "budget": 500,
+                         *               "direct_items": 50,
+                         *               "macro_summary": 0,
+                         *               "micro_summary": 14,
+                         *               "used": 64
+                         *             }
                          *           },
                          *           "preset": {
                          *             "continue_nudge_applied": false,
@@ -4562,7 +4612,57 @@ export interface paths {
                              *           ]
                              *         },
                              *         "memory": {
-                             *           "summary_injected": true
+                             *           "effective_write": true,
+                             *           "requested_write": true,
+                             *           "runtime_mode": "async_primary",
+                             *           "scope_resolution": {
+                             *             "fallback_reason": null,
+                             *             "mode": "branch_aware",
+                             *             "requested_branch_id": "main",
+                             *             "requested_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ],
+                             *             "resolved_branch_id": "main",
+                             *             "resolved_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ]
+                             *           },
+                             *           "selected_items": [
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "fact",
+                             *               "memory_id": "memory-branch-fact-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.82,
+                             *               "selected_reason": null,
+                             *               "source": "store",
+                             *               "token_count": 18
+                             *             },
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "micro_summary",
+                             *               "memory_id": "memory-branch-summary-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.64,
+                             *               "source": "summary",
+                             *               "token_count": 14
+                             *             }
+                             *           ],
+                             *           "strategy": "dual_summary",
+                             *           "summary_injected": true,
+                             *           "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                             *           "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                             *           "token_stats": {
+                             *             "budget": 500,
+                             *             "direct_items": 50,
+                             *             "macro_summary": 0,
+                             *             "micro_summary": 14,
+                             *             "used": 64
+                             *           }
                              *         },
                              *         "preset": {
                              *           "continue_nudge_applied": false,
@@ -4847,7 +4947,57 @@ export interface paths {
                                  *         ]
                                  *       },
                                  *       "memory": {
-                                 *         "summary_injected": true
+                                 *         "effective_write": true,
+                                 *         "requested_write": true,
+                                 *         "runtime_mode": "async_primary",
+                                 *         "scope_resolution": {
+                                 *           "fallback_reason": null,
+                                 *           "mode": "branch_aware",
+                                 *           "requested_branch_id": "main",
+                                 *           "requested_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ],
+                                 *           "resolved_branch_id": "main",
+                                 *           "resolved_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ]
+                                 *         },
+                                 *         "selected_items": [
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "fact",
+                                 *             "memory_id": "memory-branch-fact-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.82,
+                                 *             "selected_reason": null,
+                                 *             "source": "store",
+                                 *             "token_count": 18
+                                 *           },
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "micro_summary",
+                                 *             "memory_id": "memory-branch-summary-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.64,
+                                 *             "source": "summary",
+                                 *             "token_count": 14
+                                 *           }
+                                 *         ],
+                                 *         "strategy": "dual_summary",
+                                 *         "summary_injected": true,
+                                 *         "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                                 *         "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                                 *         "token_stats": {
+                                 *           "budget": 500,
+                                 *           "direct_items": 50,
+                                 *           "macro_summary": 0,
+                                 *           "micro_summary": 14,
+                                 *           "used": 64
+                                 *         }
                                  *       },
                                  *       "preset": {
                                  *         "continue_nudge_applied": false,
@@ -5042,7 +5192,51 @@ export interface paths {
                                         }[];
                                     };
                                     memory?: {
+                                        effective_write?: boolean;
+                                        page_id?: string;
+                                        /** @enum {string} */
+                                        promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                        proposal_batch_id?: string;
+                                        /** @enum {string} */
+                                        proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                        requested_write?: boolean;
+                                        /** @enum {string} */
+                                        runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                        scope_resolution?: {
+                                            fallback_reason: string | null;
+                                            mode: string;
+                                            requested_branch_id: string | null;
+                                            requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            resolved_branch_id: string | null;
+                                            resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            strict?: boolean;
+                                        };
+                                        selected_items?: {
+                                            branch_id?: string | null;
+                                            /** @enum {string} */
+                                            kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                            memory_id: string;
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scope_id: string;
+                                            score?: number | null;
+                                            selected_reason?: string | null;
+                                            /** @enum {string} */
+                                            source?: "store" | "summary" | "open_loop" | "fallback";
+                                            token_count?: number | null;
+                                        }[];
+                                        /** @enum {string} */
+                                        strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
                                         summary_injected: boolean;
+                                        summary_text?: string;
+                                        summary_text_hash?: string | null;
+                                        token_stats?: {
+                                            budget: number | null;
+                                            direct_items: number;
+                                            macro_summary: number;
+                                            micro_summary: number;
+                                            used: number;
+                                        };
                                     };
                                     preset?: {
                                         continue_nudge_applied: boolean;
@@ -8442,7 +8636,57 @@ export interface paths {
                          *             ]
                          *           },
                          *           "memory": {
-                         *             "summary_injected": true
+                         *             "effective_write": true,
+                         *             "requested_write": true,
+                         *             "runtime_mode": "async_primary",
+                         *             "scope_resolution": {
+                         *               "fallback_reason": null,
+                         *               "mode": "branch_aware",
+                         *               "requested_branch_id": "main",
+                         *               "requested_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ],
+                         *               "resolved_branch_id": "main",
+                         *               "resolved_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ]
+                         *             },
+                         *             "selected_items": [
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "fact",
+                         *                 "memory_id": "memory-branch-fact-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.82,
+                         *                 "selected_reason": null,
+                         *                 "source": "store",
+                         *                 "token_count": 18
+                         *               },
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "micro_summary",
+                         *                 "memory_id": "memory-branch-summary-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.64,
+                         *                 "source": "summary",
+                         *                 "token_count": 14
+                         *               }
+                         *             ],
+                         *             "strategy": "dual_summary",
+                         *             "summary_injected": true,
+                         *             "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                         *             "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                         *             "token_stats": {
+                         *               "budget": 500,
+                         *               "direct_items": 50,
+                         *               "macro_summary": 0,
+                         *               "micro_summary": 14,
+                         *               "used": 64
+                         *             }
                          *           },
                          *           "preset": {
                          *             "continue_nudge_applied": false,
@@ -8678,7 +8922,57 @@ export interface paths {
                              *           ]
                              *         },
                              *         "memory": {
-                             *           "summary_injected": true
+                             *           "effective_write": true,
+                             *           "requested_write": true,
+                             *           "runtime_mode": "async_primary",
+                             *           "scope_resolution": {
+                             *             "fallback_reason": null,
+                             *             "mode": "branch_aware",
+                             *             "requested_branch_id": "main",
+                             *             "requested_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ],
+                             *             "resolved_branch_id": "main",
+                             *             "resolved_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ]
+                             *           },
+                             *           "selected_items": [
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "fact",
+                             *               "memory_id": "memory-branch-fact-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.82,
+                             *               "selected_reason": null,
+                             *               "source": "store",
+                             *               "token_count": 18
+                             *             },
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "micro_summary",
+                             *               "memory_id": "memory-branch-summary-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.64,
+                             *               "source": "summary",
+                             *               "token_count": 14
+                             *             }
+                             *           ],
+                             *           "strategy": "dual_summary",
+                             *           "summary_injected": true,
+                             *           "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                             *           "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                             *           "token_stats": {
+                             *             "budget": 500,
+                             *             "direct_items": 50,
+                             *             "macro_summary": 0,
+                             *             "micro_summary": 14,
+                             *             "used": 64
+                             *           }
                              *         },
                              *         "preset": {
                              *           "continue_nudge_applied": false,
@@ -8965,7 +9259,57 @@ export interface paths {
                                  *         ]
                                  *       },
                                  *       "memory": {
-                                 *         "summary_injected": true
+                                 *         "effective_write": true,
+                                 *         "requested_write": true,
+                                 *         "runtime_mode": "async_primary",
+                                 *         "scope_resolution": {
+                                 *           "fallback_reason": null,
+                                 *           "mode": "branch_aware",
+                                 *           "requested_branch_id": "main",
+                                 *           "requested_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ],
+                                 *           "resolved_branch_id": "main",
+                                 *           "resolved_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ]
+                                 *         },
+                                 *         "selected_items": [
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "fact",
+                                 *             "memory_id": "memory-branch-fact-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.82,
+                                 *             "selected_reason": null,
+                                 *             "source": "store",
+                                 *             "token_count": 18
+                                 *           },
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "micro_summary",
+                                 *             "memory_id": "memory-branch-summary-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.64,
+                                 *             "source": "summary",
+                                 *             "token_count": 14
+                                 *           }
+                                 *         ],
+                                 *         "strategy": "dual_summary",
+                                 *         "summary_injected": true,
+                                 *         "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                                 *         "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                                 *         "token_stats": {
+                                 *           "budget": 500,
+                                 *           "direct_items": 50,
+                                 *           "macro_summary": 0,
+                                 *           "micro_summary": 14,
+                                 *           "used": 64
+                                 *         }
                                  *       },
                                  *       "preset": {
                                  *         "continue_nudge_applied": false,
@@ -9160,7 +9504,51 @@ export interface paths {
                                         }[];
                                     };
                                     memory?: {
+                                        effective_write?: boolean;
+                                        page_id?: string;
+                                        /** @enum {string} */
+                                        promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                        proposal_batch_id?: string;
+                                        /** @enum {string} */
+                                        proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                        requested_write?: boolean;
+                                        /** @enum {string} */
+                                        runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                        scope_resolution?: {
+                                            fallback_reason: string | null;
+                                            mode: string;
+                                            requested_branch_id: string | null;
+                                            requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            resolved_branch_id: string | null;
+                                            resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            strict?: boolean;
+                                        };
+                                        selected_items?: {
+                                            branch_id?: string | null;
+                                            /** @enum {string} */
+                                            kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                            memory_id: string;
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scope_id: string;
+                                            score?: number | null;
+                                            selected_reason?: string | null;
+                                            /** @enum {string} */
+                                            source?: "store" | "summary" | "open_loop" | "fallback";
+                                            token_count?: number | null;
+                                        }[];
+                                        /** @enum {string} */
+                                        strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
                                         summary_injected: boolean;
+                                        summary_text?: string;
+                                        summary_text_hash?: string | null;
+                                        token_stats?: {
+                                            budget: number | null;
+                                            direct_items: number;
+                                            macro_summary: number;
+                                            micro_summary: number;
+                                            used: number;
+                                        };
                                     };
                                     preset?: {
                                         continue_nudge_applied: boolean;
@@ -11576,7 +11964,57 @@ export interface paths {
                          *             ]
                          *           },
                          *           "memory": {
-                         *             "summary_injected": true
+                         *             "effective_write": true,
+                         *             "requested_write": true,
+                         *             "runtime_mode": "async_primary",
+                         *             "scope_resolution": {
+                         *               "fallback_reason": null,
+                         *               "mode": "branch_aware",
+                         *               "requested_branch_id": "main",
+                         *               "requested_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ],
+                         *               "resolved_branch_id": "main",
+                         *               "resolved_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ]
+                         *             },
+                         *             "selected_items": [
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "fact",
+                         *                 "memory_id": "memory-branch-fact-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.82,
+                         *                 "selected_reason": null,
+                         *                 "source": "store",
+                         *                 "token_count": 18
+                         *               },
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "micro_summary",
+                         *                 "memory_id": "memory-branch-summary-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.64,
+                         *                 "source": "summary",
+                         *                 "token_count": 14
+                         *               }
+                         *             ],
+                         *             "strategy": "dual_summary",
+                         *             "summary_injected": true,
+                         *             "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                         *             "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                         *             "token_stats": {
+                         *               "budget": 500,
+                         *               "direct_items": 50,
+                         *               "macro_summary": 0,
+                         *               "micro_summary": 14,
+                         *               "used": 64
+                         *             }
                          *           },
                          *           "preset": {
                          *             "continue_nudge_applied": false,
@@ -11810,7 +12248,57 @@ export interface paths {
                              *           ]
                              *         },
                              *         "memory": {
-                             *           "summary_injected": true
+                             *           "effective_write": true,
+                             *           "requested_write": true,
+                             *           "runtime_mode": "async_primary",
+                             *           "scope_resolution": {
+                             *             "fallback_reason": null,
+                             *             "mode": "branch_aware",
+                             *             "requested_branch_id": "main",
+                             *             "requested_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ],
+                             *             "resolved_branch_id": "main",
+                             *             "resolved_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ]
+                             *           },
+                             *           "selected_items": [
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "fact",
+                             *               "memory_id": "memory-branch-fact-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.82,
+                             *               "selected_reason": null,
+                             *               "source": "store",
+                             *               "token_count": 18
+                             *             },
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "micro_summary",
+                             *               "memory_id": "memory-branch-summary-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.64,
+                             *               "source": "summary",
+                             *               "token_count": 14
+                             *             }
+                             *           ],
+                             *           "strategy": "dual_summary",
+                             *           "summary_injected": true,
+                             *           "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                             *           "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                             *           "token_stats": {
+                             *             "budget": 500,
+                             *             "direct_items": 50,
+                             *             "macro_summary": 0,
+                             *             "micro_summary": 14,
+                             *             "used": 64
+                             *           }
                              *         },
                              *         "preset": {
                              *           "continue_nudge_applied": false,
@@ -12095,7 +12583,57 @@ export interface paths {
                                  *         ]
                                  *       },
                                  *       "memory": {
-                                 *         "summary_injected": true
+                                 *         "effective_write": true,
+                                 *         "requested_write": true,
+                                 *         "runtime_mode": "async_primary",
+                                 *         "scope_resolution": {
+                                 *           "fallback_reason": null,
+                                 *           "mode": "branch_aware",
+                                 *           "requested_branch_id": "main",
+                                 *           "requested_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ],
+                                 *           "resolved_branch_id": "main",
+                                 *           "resolved_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ]
+                                 *         },
+                                 *         "selected_items": [
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "fact",
+                                 *             "memory_id": "memory-branch-fact-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.82,
+                                 *             "selected_reason": null,
+                                 *             "source": "store",
+                                 *             "token_count": 18
+                                 *           },
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "micro_summary",
+                                 *             "memory_id": "memory-branch-summary-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.64,
+                                 *             "source": "summary",
+                                 *             "token_count": 14
+                                 *           }
+                                 *         ],
+                                 *         "strategy": "dual_summary",
+                                 *         "summary_injected": true,
+                                 *         "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                                 *         "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                                 *         "token_stats": {
+                                 *           "budget": 500,
+                                 *           "direct_items": 50,
+                                 *           "macro_summary": 0,
+                                 *           "micro_summary": 14,
+                                 *           "used": 64
+                                 *         }
                                  *       },
                                  *       "preset": {
                                  *         "continue_nudge_applied": false,
@@ -12290,7 +12828,51 @@ export interface paths {
                                         }[];
                                     };
                                     memory?: {
+                                        effective_write?: boolean;
+                                        page_id?: string;
+                                        /** @enum {string} */
+                                        promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                        proposal_batch_id?: string;
+                                        /** @enum {string} */
+                                        proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                        requested_write?: boolean;
+                                        /** @enum {string} */
+                                        runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                        scope_resolution?: {
+                                            fallback_reason: string | null;
+                                            mode: string;
+                                            requested_branch_id: string | null;
+                                            requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            resolved_branch_id: string | null;
+                                            resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            strict?: boolean;
+                                        };
+                                        selected_items?: {
+                                            branch_id?: string | null;
+                                            /** @enum {string} */
+                                            kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                            memory_id: string;
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scope_id: string;
+                                            score?: number | null;
+                                            selected_reason?: string | null;
+                                            /** @enum {string} */
+                                            source?: "store" | "summary" | "open_loop" | "fallback";
+                                            token_count?: number | null;
+                                        }[];
+                                        /** @enum {string} */
+                                        strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
                                         summary_injected: boolean;
+                                        summary_text?: string;
+                                        summary_text_hash?: string | null;
+                                        token_stats?: {
+                                            budget: number | null;
+                                            direct_items: number;
+                                            macro_summary: number;
+                                            micro_summary: number;
+                                            used: number;
+                                        };
                                     };
                                     preset?: {
                                         continue_nudge_applied: boolean;
@@ -12858,7 +13440,57 @@ export interface paths {
                          *             ]
                          *           },
                          *           "memory": {
-                         *             "summary_injected": true
+                         *             "effective_write": true,
+                         *             "requested_write": true,
+                         *             "runtime_mode": "async_primary",
+                         *             "scope_resolution": {
+                         *               "fallback_reason": null,
+                         *               "mode": "branch_aware",
+                         *               "requested_branch_id": "main",
+                         *               "requested_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ],
+                         *               "resolved_branch_id": "main",
+                         *               "resolved_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ]
+                         *             },
+                         *             "selected_items": [
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "fact",
+                         *                 "memory_id": "memory-branch-fact-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.82,
+                         *                 "selected_reason": null,
+                         *                 "source": "store",
+                         *                 "token_count": 18
+                         *               },
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "micro_summary",
+                         *                 "memory_id": "memory-branch-summary-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.64,
+                         *                 "source": "summary",
+                         *                 "token_count": 14
+                         *               }
+                         *             ],
+                         *             "strategy": "dual_summary",
+                         *             "summary_injected": true,
+                         *             "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                         *             "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                         *             "token_stats": {
+                         *               "budget": 500,
+                         *               "direct_items": 50,
+                         *               "macro_summary": 0,
+                         *               "micro_summary": 14,
+                         *               "used": 64
+                         *             }
                          *           },
                          *           "preset": {
                          *             "continue_nudge_applied": false,
@@ -13092,7 +13724,57 @@ export interface paths {
                              *           ]
                              *         },
                              *         "memory": {
-                             *           "summary_injected": true
+                             *           "effective_write": true,
+                             *           "requested_write": true,
+                             *           "runtime_mode": "async_primary",
+                             *           "scope_resolution": {
+                             *             "fallback_reason": null,
+                             *             "mode": "branch_aware",
+                             *             "requested_branch_id": "main",
+                             *             "requested_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ],
+                             *             "resolved_branch_id": "main",
+                             *             "resolved_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ]
+                             *           },
+                             *           "selected_items": [
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "fact",
+                             *               "memory_id": "memory-branch-fact-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.82,
+                             *               "selected_reason": null,
+                             *               "source": "store",
+                             *               "token_count": 18
+                             *             },
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "micro_summary",
+                             *               "memory_id": "memory-branch-summary-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.64,
+                             *               "source": "summary",
+                             *               "token_count": 14
+                             *             }
+                             *           ],
+                             *           "strategy": "dual_summary",
+                             *           "summary_injected": true,
+                             *           "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                             *           "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                             *           "token_stats": {
+                             *             "budget": 500,
+                             *             "direct_items": 50,
+                             *             "macro_summary": 0,
+                             *             "micro_summary": 14,
+                             *             "used": 64
+                             *           }
                              *         },
                              *         "preset": {
                              *           "continue_nudge_applied": false,
@@ -13377,7 +14059,57 @@ export interface paths {
                                  *         ]
                                  *       },
                                  *       "memory": {
-                                 *         "summary_injected": true
+                                 *         "effective_write": true,
+                                 *         "requested_write": true,
+                                 *         "runtime_mode": "async_primary",
+                                 *         "scope_resolution": {
+                                 *           "fallback_reason": null,
+                                 *           "mode": "branch_aware",
+                                 *           "requested_branch_id": "main",
+                                 *           "requested_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ],
+                                 *           "resolved_branch_id": "main",
+                                 *           "resolved_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ]
+                                 *         },
+                                 *         "selected_items": [
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "fact",
+                                 *             "memory_id": "memory-branch-fact-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.82,
+                                 *             "selected_reason": null,
+                                 *             "source": "store",
+                                 *             "token_count": 18
+                                 *           },
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "micro_summary",
+                                 *             "memory_id": "memory-branch-summary-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.64,
+                                 *             "source": "summary",
+                                 *             "token_count": 14
+                                 *           }
+                                 *         ],
+                                 *         "strategy": "dual_summary",
+                                 *         "summary_injected": true,
+                                 *         "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                                 *         "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                                 *         "token_stats": {
+                                 *           "budget": 500,
+                                 *           "direct_items": 50,
+                                 *           "macro_summary": 0,
+                                 *           "micro_summary": 14,
+                                 *           "used": 64
+                                 *         }
                                  *       },
                                  *       "preset": {
                                  *         "continue_nudge_applied": false,
@@ -13572,7 +14304,51 @@ export interface paths {
                                         }[];
                                     };
                                     memory?: {
+                                        effective_write?: boolean;
+                                        page_id?: string;
+                                        /** @enum {string} */
+                                        promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                        proposal_batch_id?: string;
+                                        /** @enum {string} */
+                                        proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                        requested_write?: boolean;
+                                        /** @enum {string} */
+                                        runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                        scope_resolution?: {
+                                            fallback_reason: string | null;
+                                            mode: string;
+                                            requested_branch_id: string | null;
+                                            requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            resolved_branch_id: string | null;
+                                            resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            strict?: boolean;
+                                        };
+                                        selected_items?: {
+                                            branch_id?: string | null;
+                                            /** @enum {string} */
+                                            kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                            memory_id: string;
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scope_id: string;
+                                            score?: number | null;
+                                            selected_reason?: string | null;
+                                            /** @enum {string} */
+                                            source?: "store" | "summary" | "open_loop" | "fallback";
+                                            token_count?: number | null;
+                                        }[];
+                                        /** @enum {string} */
+                                        strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
                                         summary_injected: boolean;
+                                        summary_text?: string;
+                                        summary_text_hash?: string | null;
+                                        token_stats?: {
+                                            budget: number | null;
+                                            direct_items: number;
+                                            macro_summary: number;
+                                            micro_summary: number;
+                                            used: number;
+                                        };
                                     };
                                     preset?: {
                                         continue_nudge_applied: boolean;
@@ -14182,7 +14958,56 @@ export interface paths {
                          *             ]
                          *           },
                          *           "memory": {
-                         *             "summary_injected": true
+                         *             "effective_write": false,
+                         *             "requested_write": false,
+                         *             "runtime_mode": "async_primary",
+                         *             "scope_resolution": {
+                         *               "fallback_reason": null,
+                         *               "mode": "branch_aware",
+                         *               "requested_branch_id": "main",
+                         *               "requested_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ],
+                         *               "resolved_branch_id": "main",
+                         *               "resolved_scopes": [
+                         *                 "global",
+                         *                 "branch"
+                         *               ]
+                         *             },
+                         *             "selected_items": [
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "macro_summary",
+                         *                 "memory_id": "memory-branch-summary-2",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.71,
+                         *                 "source": "summary",
+                         *                 "token_count": 22
+                         *               },
+                         *               {
+                         *                 "branch_id": "main",
+                         *                 "kind": "open_loop",
+                         *                 "memory_id": "memory-branch-loop-1",
+                         *                 "scope": "branch",
+                         *                 "scope_id": "memscope:session-1:main",
+                         *                 "score": 0.55,
+                         *                 "source": "open_loop",
+                         *                 "token_count": 26
+                         *               }
+                         *             ],
+                         *             "strategy": "dual_summary",
+                         *             "summary_injected": true,
+                         *             "summary_text": "[Memory]\n- The party recently agreed to search the northern pass.",
+                         *             "summary_text_hash": "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+                         *             "token_stats": {
+                         *               "budget": 500,
+                         *               "direct_items": 26,
+                         *               "macro_summary": 22,
+                         *               "micro_summary": 0,
+                         *               "used": 48
+                         *             }
                          *           },
                          *           "preset": {
                          *             "continue_nudge_applied": true,
@@ -14503,7 +15328,56 @@ export interface paths {
                              *           ]
                              *         },
                              *         "memory": {
-                             *           "summary_injected": true
+                             *           "effective_write": false,
+                             *           "requested_write": false,
+                             *           "runtime_mode": "async_primary",
+                             *           "scope_resolution": {
+                             *             "fallback_reason": null,
+                             *             "mode": "branch_aware",
+                             *             "requested_branch_id": "main",
+                             *             "requested_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ],
+                             *             "resolved_branch_id": "main",
+                             *             "resolved_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ]
+                             *           },
+                             *           "selected_items": [
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "macro_summary",
+                             *               "memory_id": "memory-branch-summary-2",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.71,
+                             *               "source": "summary",
+                             *               "token_count": 22
+                             *             },
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "open_loop",
+                             *               "memory_id": "memory-branch-loop-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.55,
+                             *               "source": "open_loop",
+                             *               "token_count": 26
+                             *             }
+                             *           ],
+                             *           "strategy": "dual_summary",
+                             *           "summary_injected": true,
+                             *           "summary_text": "[Memory]\n- The party recently agreed to search the northern pass.",
+                             *           "summary_text_hash": "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+                             *           "token_stats": {
+                             *             "budget": 500,
+                             *             "direct_items": 26,
+                             *             "macro_summary": 22,
+                             *             "micro_summary": 0,
+                             *             "used": 48
+                             *           }
                              *         },
                              *         "preset": {
                              *           "continue_nudge_applied": true,
@@ -14898,7 +15772,51 @@ export interface paths {
                                         }[];
                                     };
                                     memory?: {
+                                        effective_write?: boolean;
+                                        page_id?: string;
+                                        /** @enum {string} */
+                                        promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                        proposal_batch_id?: string;
+                                        /** @enum {string} */
+                                        proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                        requested_write?: boolean;
+                                        /** @enum {string} */
+                                        runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                        scope_resolution?: {
+                                            fallback_reason: string | null;
+                                            mode: string;
+                                            requested_branch_id: string | null;
+                                            requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            resolved_branch_id: string | null;
+                                            resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            strict?: boolean;
+                                        };
+                                        selected_items?: {
+                                            branch_id?: string | null;
+                                            /** @enum {string} */
+                                            kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                            memory_id: string;
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scope_id: string;
+                                            score?: number | null;
+                                            selected_reason?: string | null;
+                                            /** @enum {string} */
+                                            source?: "store" | "summary" | "open_loop" | "fallback";
+                                            token_count?: number | null;
+                                        }[];
+                                        /** @enum {string} */
+                                        strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
                                         summary_injected: boolean;
+                                        summary_text?: string;
+                                        summary_text_hash?: string | null;
+                                        token_stats?: {
+                                            budget: number | null;
+                                            direct_items: number;
+                                            macro_summary: number;
+                                            micro_summary: number;
+                                            used: number;
+                                        };
                                     };
                                     preset?: {
                                         continue_nudge_applied: boolean;
@@ -18936,9 +19854,51 @@ export interface operations {
                      *           "mismatches": []
                      *         },
                      *         "limitations": [
-                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
                      *         ],
+                     *         "memory": {
+                     *           "effective_write": true,
+                     *           "page_id": "page-output-12",
+                     *           "promotion_status": "promoted",
+                     *           "proposal_batch_id": "memory-proposal:page-output-12",
+                     *           "proposal_status": "promoted",
+                     *           "requested_write": true,
+                     *           "runtime_mode": "async_primary",
+                     *           "scope_resolution": {
+                     *             "fallback_reason": null,
+                     *             "mode": "branch_aware",
+                     *             "requested_branch_id": "main",
+                     *             "requested_scopes": [
+                     *               "global",
+                     *               "branch"
+                     *             ],
+                     *             "resolved_branch_id": "main",
+                     *             "resolved_scopes": [
+                     *               "global",
+                     *               "branch"
+                     *             ]
+                     *           },
+                     *           "selected_items": [
+                     *             {
+                     *               "branch_id": "main",
+                     *               "kind": "fact",
+                     *               "memory_id": "memory-branch-fact-1",
+                     *               "scope": "branch",
+                     *               "scope_id": "memscope:session-1:main"
+                     *             }
+                     *           ],
+                     *           "strategy": "dual_summary",
+                     *           "summary_injected": true,
+                     *           "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                     *           "token_stats": {
+                     *             "budget": 500,
+                     *             "direct_items": 50,
+                     *             "macro_summary": 0,
+                     *             "micro_summary": 14,
+                     *             "used": 64
+                     *           }
+                     *         },
                      *         "prompt_snapshot": {
                      *           "asset_manifest_digest": "2c015f48f52d19ce879f19eeebc67ad3e7470d3d1f95e2eb1f5f3c1d8d8fdc47",
                      *           "character_content_hash": "9fe9ab675c6f2df7f9c9a96ef0c0f7797cf20cf8d88bbbd2361f6750e4b7dd1b",
@@ -19205,6 +20165,53 @@ export interface operations {
                                 }[];
                             } | null;
                             limitations: string[];
+                            memory?: {
+                                effective_write?: boolean;
+                                page_id?: string;
+                                /** @enum {string} */
+                                promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                proposal_batch_id?: string;
+                                /** @enum {string} */
+                                proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                requested_write?: boolean;
+                                /** @enum {string} */
+                                runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                scope_resolution?: {
+                                    fallback_reason: string | null;
+                                    mode: string;
+                                    requested_branch_id: string | null;
+                                    requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                    resolved_branch_id: string | null;
+                                    resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                    strict?: boolean;
+                                };
+                                selected_items?: {
+                                    branch_id?: string | null;
+                                    /** @enum {string} */
+                                    kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                    memory_id: string;
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "branch" | "floor";
+                                    scope_id: string;
+                                    score?: number | null;
+                                    selected_reason?: string | null;
+                                    /** @enum {string} */
+                                    source?: "store" | "summary" | "open_loop" | "fallback";
+                                    token_count?: number | null;
+                                }[];
+                                /** @enum {string} */
+                                strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
+                                summary_injected: boolean;
+                                summary_text?: string;
+                                summary_text_hash?: string | null;
+                                token_stats?: {
+                                    budget: number | null;
+                                    direct_items: number;
+                                    macro_summary: number;
+                                    micro_summary: number;
+                                    used: number;
+                                };
+                            } | null;
                             /**
                              * @example {
                              *       "asset_manifest_digest": "2c015f48f52d19ce879f19eeebc67ad3e7470d3d1f95e2eb1f5f3c1d8d8fdc47",
@@ -26364,7 +27371,7 @@ export interface operations {
                      *           }
                      *         ],
                      *         "limitations": [
-                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
                      *         ],
                      *         "persistent_policy": {
@@ -28246,7 +29253,7 @@ export interface operations {
                      *           "mismatches": []
                      *         },
                      *         "limitations": [
-                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
                      *         ],
                      *         "policy": {
@@ -28300,6 +29307,48 @@ export interface operations {
                      *           "generation_params": {
                      *             "max_output_tokens": 256,
                      *             "temperature": 0.7
+                     *           },
+                     *           "memory": {
+                     *             "effective_write": true,
+                     *             "page_id": "page-output-12",
+                     *             "promotion_status": "promoted",
+                     *             "proposal_batch_id": "memory-proposal:page-output-12",
+                     *             "proposal_status": "promoted",
+                     *             "requested_write": true,
+                     *             "runtime_mode": "async_primary",
+                     *             "scope_resolution": {
+                     *               "fallback_reason": null,
+                     *               "mode": "branch_aware",
+                     *               "requested_branch_id": "main",
+                     *               "requested_scopes": [
+                     *                 "global",
+                     *                 "branch"
+                     *               ],
+                     *               "resolved_branch_id": "main",
+                     *               "resolved_scopes": [
+                     *                 "global",
+                     *                 "branch"
+                     *               ]
+                     *             },
+                     *             "selected_items": [
+                     *               {
+                     *                 "branch_id": "main",
+                     *                 "kind": "fact",
+                     *                 "memory_id": "memory-branch-fact-1",
+                     *                 "scope": "branch",
+                     *                 "scope_id": "memscope:session-1:main"
+                     *               }
+                     *             ],
+                     *             "strategy": "dual_summary",
+                     *             "summary_injected": true,
+                     *             "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                     *             "token_stats": {
+                     *               "budget": 500,
+                     *               "direct_items": 50,
+                     *               "macro_summary": 0,
+                     *               "micro_summary": 14,
+                     *               "used": 64
+                     *             }
                      *           },
                      *           "memory_summary": "The party recently agreed to search the northern pass.",
                      *           "messages": [
@@ -28627,6 +29676,53 @@ export interface operations {
                             prepared_turn: {
                                 available_for_reply: number;
                                 generation_params: Record<string, never>;
+                                memory?: {
+                                    effective_write?: boolean;
+                                    page_id?: string;
+                                    /** @enum {string} */
+                                    promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                    proposal_batch_id?: string;
+                                    /** @enum {string} */
+                                    proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                    requested_write?: boolean;
+                                    /** @enum {string} */
+                                    runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                    scope_resolution?: {
+                                        fallback_reason: string | null;
+                                        mode: string;
+                                        requested_branch_id: string | null;
+                                        requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                        resolved_branch_id: string | null;
+                                        resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                        strict?: boolean;
+                                    };
+                                    selected_items?: {
+                                        branch_id?: string | null;
+                                        /** @enum {string} */
+                                        kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                        memory_id: string;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "branch" | "floor";
+                                        scope_id: string;
+                                        score?: number | null;
+                                        selected_reason?: string | null;
+                                        /** @enum {string} */
+                                        source?: "store" | "summary" | "open_loop" | "fallback";
+                                        token_count?: number | null;
+                                    }[];
+                                    /** @enum {string} */
+                                    strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
+                                    summary_injected: boolean;
+                                    summary_text?: string;
+                                    summary_text_hash?: string | null;
+                                    token_stats?: {
+                                        budget: number | null;
+                                        direct_items: number;
+                                        macro_summary: number;
+                                        micro_summary: number;
+                                        used: number;
+                                    };
+                                };
                                 memory_summary: string | null;
                                 messages: {
                                     content: string;
@@ -28795,7 +29891,51 @@ export interface operations {
                                         }[];
                                     };
                                     memory?: {
+                                        effective_write?: boolean;
+                                        page_id?: string;
+                                        /** @enum {string} */
+                                        promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                        proposal_batch_id?: string;
+                                        /** @enum {string} */
+                                        proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                        requested_write?: boolean;
+                                        /** @enum {string} */
+                                        runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                        scope_resolution?: {
+                                            fallback_reason: string | null;
+                                            mode: string;
+                                            requested_branch_id: string | null;
+                                            requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            resolved_branch_id: string | null;
+                                            resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            strict?: boolean;
+                                        };
+                                        selected_items?: {
+                                            branch_id?: string | null;
+                                            /** @enum {string} */
+                                            kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                            memory_id: string;
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scope_id: string;
+                                            score?: number | null;
+                                            selected_reason?: string | null;
+                                            /** @enum {string} */
+                                            source?: "store" | "summary" | "open_loop" | "fallback";
+                                            token_count?: number | null;
+                                        }[];
+                                        /** @enum {string} */
+                                        strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
                                         summary_injected: boolean;
+                                        summary_text?: string;
+                                        summary_text_hash?: string | null;
+                                        token_stats?: {
+                                            budget: number | null;
+                                            direct_items: number;
+                                            macro_summary: number;
+                                            micro_summary: number;
+                                            used: number;
+                                        };
                                     };
                                     preset?: {
                                         continue_nudge_applied: boolean;
@@ -29935,9 +31075,51 @@ export interface operations {
                      *           }
                      *         ],
                      *         "limitations": [
-                     *           "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+                     *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
                      *         ],
+                     *         "memory": {
+                     *           "effective_write": false,
+                     *           "requested_write": false,
+                     *           "runtime_mode": "async_primary",
+                     *           "scope_resolution": {
+                     *             "fallback_reason": null,
+                     *             "mode": "branch_aware",
+                     *             "requested_branch_id": "alt-preview",
+                     *             "requested_scopes": [
+                     *               "global",
+                     *               "branch"
+                     *             ],
+                     *             "resolved_branch_id": "main",
+                     *             "resolved_scopes": [
+                     *               "global",
+                     *               "branch"
+                     *             ]
+                     *           },
+                     *           "selected_items": [
+                     *             {
+                     *               "branch_id": "main",
+                     *               "kind": "macro_summary",
+                     *               "memory_id": "memory-branch-summary-2",
+                     *               "scope": "branch",
+                     *               "scope_id": "memscope:session-1:main",
+                     *               "score": 0.71,
+                     *               "source": "summary",
+                     *               "token_count": 22
+                     *             }
+                     *           ],
+                     *           "strategy": "single_summary",
+                     *           "summary_injected": true,
+                     *           "summary_text": "[Memory]\n- The party recently agreed to search the northern pass.",
+                     *           "summary_text_hash": "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+                     *           "token_stats": {
+                     *             "budget": 500,
+                     *             "direct_items": 0,
+                     *             "macro_summary": 22,
+                     *             "micro_summary": 0,
+                     *             "used": 22
+                     *           }
+                     *         },
                      *         "policy": {
                      *           "budget": {
                      *             "max_input_tokens": 4096,
@@ -30111,6 +31293,53 @@ export interface operations {
                                 source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
                             }[];
                             limitations: string[];
+                            memory?: {
+                                effective_write?: boolean;
+                                page_id?: string;
+                                /** @enum {string} */
+                                promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                proposal_batch_id?: string;
+                                /** @enum {string} */
+                                proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                requested_write?: boolean;
+                                /** @enum {string} */
+                                runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                scope_resolution?: {
+                                    fallback_reason: string | null;
+                                    mode: string;
+                                    requested_branch_id: string | null;
+                                    requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                    resolved_branch_id: string | null;
+                                    resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                    strict?: boolean;
+                                };
+                                selected_items?: {
+                                    branch_id?: string | null;
+                                    /** @enum {string} */
+                                    kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                    memory_id: string;
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "branch" | "floor";
+                                    scope_id: string;
+                                    score?: number | null;
+                                    selected_reason?: string | null;
+                                    /** @enum {string} */
+                                    source?: "store" | "summary" | "open_loop" | "fallback";
+                                    token_count?: number | null;
+                                }[];
+                                /** @enum {string} */
+                                strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
+                                summary_injected: boolean;
+                                summary_text?: string;
+                                summary_text_hash?: string | null;
+                                token_stats?: {
+                                    budget: number | null;
+                                    direct_items: number;
+                                    macro_summary: number;
+                                    micro_summary: number;
+                                    used: number;
+                                };
+                            };
                             policy: {
                                 budget: {
                                     max_input_tokens?: number;

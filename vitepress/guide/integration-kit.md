@@ -295,6 +295,8 @@ const preview = await client.promptRuntime.previewText({
 console.log(preview.policy.budget);
 console.log(preview.text);
 console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
+console.log(preview.memory?.runtimeMode);
+console.log(preview.memory?.scopeResolution);
 console.log(preview.runtimeTrace.visibility?.filteredFloorNos);
 console.log(preview.runtimeTrace.macro?.mutationPreview);
 console.log(preview.runtimeTrace.macro?.stagedMutations); // []
@@ -327,13 +329,16 @@ const inspect = await client.promptRuntime.inspect({
 
 console.log(inspect.preparedTurn.messages);
 console.log(inspect.preparedTurn.promptSnapshot?.promptDigest);
+console.log(inspect.preparedTurn.memorySummary);
+console.log(inspect.preparedTurn.memory);
+console.log(inspect.preparedTurn.runtimeTrace?.memory);
 console.log(inspect.preparedTurn.runtimeTrace?.budgets?.byGroup);
 console.log(inspect.preparedTurn.sessionStateWrites);
 console.log(inspect.governance.entries);
 console.log(inspect.governance.mismatches);
 ```
 
-`inspect(...)` 是只读 prepared-turn 检查接口。它会准备完整 prompt turn，并返回 `preparedTurn`、`policy`、`sourceMap`、`governance`、`diagnostics`、`trimReasons`、`excludedSources`、`sectionStats`，但不会调用模型，也不会创建 floor、写 `promptSnapshot`、写 explain snapshot，或者提交任何副作用。对应能力位是 `capabilities.observability.inspect.mode === "prepared_turn"`。
+`inspect(...)` 是只读 prepared-turn 检查接口。它会准备完整 prompt turn，并返回 `preparedTurn`、`policy`、`sourceMap`、`governance`、`diagnostics`、`trimReasons`、`excludedSources`、`sectionStats`，以及与兼容 `memorySummary` 并存的结构化 `preparedTurn.memory`。但它不会调用模型，也不会创建 floor、写 `promptSnapshot`、写 explain snapshot，或者提交任何副作用。对应能力位是 `capabilities.observability.inspect.mode === "prepared_turn"`。
 
 ## Prompt Runtime governance / explain / compare 示例
 
@@ -377,6 +382,7 @@ console.log(policy.persistentPolicyEnvelope?.value.budget);
 console.log(explain.snapshotAvailable);
 console.log(explain.assets);
 console.log(explain.sectionStats);
+console.log(explain.memory); // 旧 snapshot 或更早 explain 行可能为 null
 console.log(explain.governance); // 旧 snapshot 可能为 null
 console.log(explain.resolvedPolicy);
 
@@ -390,9 +396,11 @@ console.log(diff.governanceChanges);
 - `patchPolicy(...)` 和 `patchBranchPolicy(...)` 现在都支持 `structure`、`delivery`、`budget`、`sourceSelection`。
 - 写入后的持久化策略会带 envelope 元数据：`version`、`updatedAt`、`updatedBy`、`value`。
 - `getFloorExplain(...)` 只读取 committed floor 的持久化真相，对应 `capabilities.observability.explain.persistedTruthOnly === true`。snapshot-backed 路径会附带"只读持久化真相"声明；`snapshotAvailable = true` 表示响应来自 committed explain snapshot，`false` 表示旧楼层 fallback，此时 limitations 会在通用只读声明基础上额外追加"老 floor 字段可能为 null"的 fallback 条目，`assets`、`resolvedPolicy`、`sectionStats` 等也可能为 `null`。
+- `previewText(...)` 会在顶层 `memory` 字段里返回结构化记忆真相；它不会把这部分真相塞进 `runtimeTrace`，因为 preview trace 仍固定只保留 `macro`、`sourceSelection`、`visibility` 三个子字段。
+- `inspect(...).preparedTurn.memorySummary` 继续保留兼容摘要字符串；`inspect(...).preparedTurn.memory` 与 `getFloorExplain(...).memory` 是新的结构化真相对象。较旧的 explain snapshot 行可能返回 `null`。
 - `compare(...)` 只支持同一 session 内的两个 committed floor，且只返回结构化 path/value diff；不会做 explain recompute。
 
-当前 `@tavern/client-helpers` 没有为 historical explain 或 compare 增加专用 helper。原因很简单：这两份响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。
+当前 `@tavern/client-helpers` 没有为 historical explain、compare 或 Prompt Runtime 结构化 `memory` 对象增加专用 helper。原因很简单：这些响应已经是稳定的只读对象，当前没有额外的跨框架语义整理需求。接入方直接使用 SDK 返回值即可。
 
 <a id="assembly提示词组装的运行结果"></a>
 

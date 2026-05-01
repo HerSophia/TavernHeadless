@@ -337,6 +337,13 @@
                         "when":  1764700000000,
                         "tag":  "0047_page_variable_stage_and_promotion_trace",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  48,
+                        "version":  "6",
+                        "when":  1764800000000,
+                        "tag":  "0048_prompt_runtime_memory_trace_snapshot",
+                        "breakpoints":  true
                     }
                 ]
 }

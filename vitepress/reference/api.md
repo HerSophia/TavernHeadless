@@ -141,7 +141,7 @@ WebSocket 也遵循相同边界：
 | Users          | 用户卡管理                                                   | [Users](./api/users)                   |
 | Variables      | 五级变量系统                                                 | [Variables](./api/variables)           |
 | Macros         | 宏展开规则、兼容边界，以及 dry-run / preview 能看到的结果    | [Macros](./api/macros)                 |
-| Prompt Runtime | 查看当前提示词资源、策略和调试能力                           | [Prompt Runtime](./api/prompt-runtime) |
+| Prompt Runtime | 查看当前提示词资源、策略、结构化 memory truth 和调试能力     | [Prompt Runtime](./api/prompt-runtime) |
 
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |

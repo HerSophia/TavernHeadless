@@ -138,6 +138,7 @@ export class MemoryJobScheduler {
       scopeKey: buildMemoryRuntimeScopeKey(scope, scopeId),
       sessionId: payload.sessionId,
       floorId: payload.floorId,
+      pageId: payload.pageId,
       payload,
       availableAt: payload.committedAt,
       maxAttempts: input.maxAttempts,

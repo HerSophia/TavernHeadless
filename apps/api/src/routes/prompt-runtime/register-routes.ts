@@ -51,6 +51,7 @@ import type {
 import { promptRuntimeInspectBodySchema } from "./schemas.js";
 import { mapPromptRuntimeInspectBodyToCamelCase } from "./mappers.js";
 import { mapPromptRuntimeInspectResultToSnakeCase } from "./presenters.js";
+import { mapPromptRuntimeMemoryTraceToSnakeCase } from "../chat/presenters.js";
 import { sendPromptRuntimeInspectServiceError } from "./errors.js";
 
 const sessionIdParamsSchema = z.object({
@@ -725,6 +726,7 @@ function mapPreviewResultToSnakeCase(result: PromptRuntimePreviewResult): Record
     policy: mapResolvedPolicyToSnakeCase(result.policy),
     diagnostics: result.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
     limitations: result.limitations,
+    ...(result.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(result.memory) } : {}),
     ...(result.sourceMap ? { source_map: mapSourceMapToSnakeCase(result.sourceMap) } : {}),
     text: result.text,
     runtime_trace: mapPreviewRuntimeTraceToSnakeCase(result.runtimeTrace),
@@ -747,6 +749,7 @@ function mapHistoricalExplainToSnakeCase(explain: PromptRuntimeHistoricalExplain
     snapshot_available: explain.snapshotAvailable,
     assets: explain.assets ? mapAssetsViewToSnakeCase(explain.assets) : null,
     prompt_snapshot: mapPromptSnapshotToSnakeCase(explain.promptSnapshot),
+    memory: explain.memory ? mapPromptRuntimeMemoryTraceToSnakeCase(explain.memory) : null,
     resolved_policy: explain.resolvedPolicy ? mapResolvedPolicyToSnakeCase(explain.resolvedPolicy) : null,
     governance: explain.governance ? mapUnknownKeysToSnakeCase(explain.governance) : null,
     ...(explain.sourceMap ? { source_map: mapSourceMapToSnakeCase(explain.sourceMap) } : {}),

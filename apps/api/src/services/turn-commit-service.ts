@@ -285,6 +285,7 @@ function toPromptRuntimeExplainSnapshotInsert(input: {
     sourceFloorId: snapshot.sourceFloorId ?? null,
     historySourceBranchId: snapshot.historySourceBranchId,
     historySourceMode: snapshot.historySourceMode,
+    memoryJson: snapshot.memory ? JSON.stringify(snapshot.memory) : null,
     snapshotVersion: snapshot.snapshotVersion,
     assetsJson: JSON.stringify(snapshot.assets),
     resolvedPolicyJson: JSON.stringify(snapshot.resolvedPolicy),
@@ -429,6 +430,7 @@ export class TurnCommitService {
     branchId?: string;
     floor: FloorEntity;
     assistantMessageId: string;
+    pageId: string;
     committedAt: number;
     summaries: string[];
     enableConsolidation: boolean;
@@ -441,10 +443,12 @@ export class TurnCommitService {
       branchId: args.branchId,
       floorNo: args.floor.floorNo,
       assistantMessageId: args.assistantMessageId,
+      pageId: args.pageId,
       userInputDigest,
       committedAt: args.committedAt,
       summaries: args.summaries,
       enableConsolidation: args.enableConsolidation,
+      runtimeMode: "async_primary",
     });
   }
 
@@ -589,6 +593,7 @@ export class TurnCommitService {
                 sourceFloorId: inspectionSnapshot.sourceFloorId,
                 historySourceBranchId: inspectionSnapshot.historySourceBranchId,
                 historySourceMode: inspectionSnapshot.historySourceMode,
+                memoryJson: inspectionSnapshot.memoryJson,
                 snapshotVersion: inspectionSnapshot.snapshotVersion,
                 assetsJson: inspectionSnapshot.assetsJson,
                 resolvedPolicyJson: inspectionSnapshot.resolvedPolicyJson,
@@ -844,6 +849,7 @@ export class TurnCommitService {
                 branchId: input.branchId,
                 floor,
                 assistantMessageId: assistantMessage.messageId,
+                pageId: assistantMessage.pageId,
                 committedAt,
                 summaries: input.memoryCommit.summaries ?? [],
                 enableConsolidation: input.memoryCommit.enableConsolidation === true,
@@ -894,7 +900,6 @@ export class TurnCommitService {
             scope: input.branchId ? "branch" : "chat",
             scopeId: input.branchId ? buildBranchMemoryScopeId(input.sessionId, input.branchId) : input.sessionId,
             floorId: input.floorId,
-            sourceJobId: this.enableAsyncMemoryIngest ? `memory-job:ingest_turn:${input.floorId}` : undefined,
             error: normalizeError(error.cause ?? error),
           });
         } catch {

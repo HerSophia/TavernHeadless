@@ -35,11 +35,13 @@ export const memoryIngestTurnJobPayloadSchema = z.object({
   floorId: z.string().min(1),
   floorNo: z.number().int().nonnegative(),
   assistantMessageId: z.string().min(1),
+  pageId: z.string().min(1),
   branchId: z.string().min(1).optional(),
   userInputDigest: z.string().min(1),
   committedAt: z.number().int(),
   summaries: z.array(z.string()).default([]),
   enableConsolidation: z.boolean().default(false),
+  runtimeMode: z.enum(["legacy_sync", "async_primary"]).default("async_primary"),
 });
 
 export const memoryCompactMacroJobPayloadSchema = z.object({
@@ -139,8 +141,8 @@ export function readMemoryRuntimeScopeMetadata(value: string | null | undefined)
   }
 }
 
-export function makeIngestTurnJobId(floorId: string): string {
-  return `memory-job:ingest_turn:${floorId}`;
+export function makeIngestTurnJobId(pageId: string): string {
+  return `memory-job:ingest_turn:${pageId}`;
 }
 
 export function makeCompactMacroJobId(scope: MemoryScope, scopeId: string, sourceSeed: string): string {
@@ -180,7 +182,7 @@ export function createMemoryRuntimeJobCatalog(): RuntimeJobCatalog {
     payloadSchema: memoryIngestTurnJobPayloadSchema,
     defaultMaxAttempts: 5,
     createJobId({ payload }) {
-      return makeIngestTurnJobId(payload.floorId);
+      return makeIngestTurnJobId(payload.pageId);
     },
   }));
 

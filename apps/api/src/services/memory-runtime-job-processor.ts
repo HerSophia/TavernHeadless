@@ -53,6 +53,8 @@ import {
   readMemoryRuntimeScopeMetadata,
 } from "./memory-runtime-job-definitions.js";
 import { MemoryJobScheduler } from "./memory-job-scheduler.js";
+import { commitIngestProposalBatch } from "./memory/proposals/memory-proposal-job-processor.js";
+import type { MemoryProposalBatchRecord } from "./memory/proposals/memory-proposal-job-definitions.js";
 
 interface IngestTurnProcessingContext {
   userMessage: string;
@@ -148,6 +150,7 @@ function buildMemoryJobEventContext(args: {
   scopeId: string;
   sessionId?: string;
   floorId?: string | null;
+  pageId?: string | null;
   sourceJobId?: string;
   jobType?: MemoryJobType;
 }) {
@@ -158,6 +161,7 @@ function buildMemoryJobEventContext(args: {
     scope: args.scope,
     scopeId: args.scopeId,
     ...(floorId ? { floorId } : {}),
+    ...(args.pageId ? { pageId: args.pageId } : {}),
     ...(args.sourceJobId ? { sourceJobId: args.sourceJobId } : {}),
     ...(args.jobType ? { jobType: args.jobType } : {}),
   };
@@ -371,6 +375,7 @@ async function loadIngestContext(
         scopeId: fallbackScopeRef.scopeId,
         sessionId: payload.sessionId,
         floorId: payload.floorId,
+        pageId: payload.pageId,
         sourceJobId,
         jobType: "ingest_turn",
       }),
@@ -482,6 +487,7 @@ async function runIngestProcessor(
           scopeId: context.scopeId,
           sessionId: payload.sessionId,
           floorId: payload.floorId,
+          pageId: payload.pageId,
           sourceJobId,
           jobType: "ingest_turn",
         }),
@@ -498,6 +504,7 @@ async function runIngestProcessor(
         scopeId: context.scopeId,
         sessionId: payload.sessionId,
         floorId: payload.floorId,
+        pageId: payload.pageId,
         sourceJobId,
         jobType: "ingest_turn",
       }),
@@ -620,7 +627,7 @@ export function createMemoryRuntimeJobProcessorRegistry(
   const ingestTurnProcessor: RuntimeJobProcessor<
     MemoryIngestTurnJobPayload,
     { context: IngestTurnProcessingContext; ingestOutput: MemoryIngestOutput },
-    void
+    MemoryProposalBatchRecord
   > = {
     async prepare() {
       throw new Error("unreachable");
@@ -644,31 +651,23 @@ export function createMemoryRuntimeJobProcessorRegistry(
   ingestTurnProcessor.commit = ({ tx, job, payload, prepared, completedAt, scopeState }) => {
     const pendingEvents: PendingCoreEvent[] = [];
     const existingMetadata = readMemoryRuntimeScopeMetadata(scopeState.metadataJson);
-    const mutationCounts = applyTransactionalMemoryMutations({
-      tx,
-      accountId: payload.accountId,
-      timestamp: completedAt,
-      pendingEvents,
+    const proposalResult = commitIngestProposalBatch({
+      db: tx,
+      payload,
       ingestOutput: prepared.ingestOutput,
-      sourceFloorNo: payload.floorNo,
-      sourceJobId: job.id,
       defaultScope: prepared.context.scope,
       defaultScopeId: prepared.context.scopeId,
-      scopeContext: {
-        accountId: payload.accountId,
-        sessionId: payload.sessionId,
-        ...(prepared.context.branchId ? { branchId: prepared.context.branchId } : {}),
-        floorId: payload.floorId,
-      },
-      sourceFloorId: payload.floorId,
-      sourceMessageId: payload.assistantMessageId,
+      pendingEvents,
+      sourceJobId: job.id,
+      timestamp: completedAt,
     });
+    const mutationCounts = proposalResult.counts;
 
     const latestProcessedFloorNo = existingMetadata.lastProcessedFloorNo === null || existingMetadata.lastProcessedFloorNo === undefined
       ? payload.floorNo
       : Math.max(existingMetadata.lastProcessedFloorNo, payload.floorNo);
 
-    if (deps.enableMacroCompaction) {
+    if (deps.enableMacroCompaction && proposalResult.promotionStatus === "promoted") {
       enqueueCompactMacroIfNeeded(tx, {
         accountId: payload.accountId,
         scope: prepared.context.scope,
@@ -681,7 +680,11 @@ export function createMemoryRuntimeJobProcessorRegistry(
     }
 
     return {
-      scopeMutation: mutationCounts.created + mutationCounts.updated + mutationCounts.deprecated > 0 ? "changed" : "none",
+      result: proposalResult.proposalBatch,
+      scopeMutation: proposalResult.promotionStatus === "promoted"
+        && mutationCounts.created + mutationCounts.updated + mutationCounts.deprecated > 0
+        ? "changed"
+        : "none",
       scopeMetadata: toScopeMetadataPatch({
         ...existingMetadata,
         lastProcessedFloorNo: latestProcessedFloorNo,
@@ -689,7 +692,7 @@ export function createMemoryRuntimeJobProcessorRegistry(
       afterCommit: async () => {
         await emitPendingCoreEvents(deps.eventBus, pendingEvents);
       },
-    } satisfies RuntimeJobCommitResult<void>;
+    } satisfies RuntimeJobCommitResult<typeof proposalResult.proposalBatch>;
   };
 
   const compactMacroProcessor: RuntimeJobProcessor<
