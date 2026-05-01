@@ -14427,7 +14427,50 @@
                       },
                       "regex": {
                         "ai_output_rules": [],
+                        "phases": [
+                          {
+                            "candidate_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "changed": true,
+                            "channel": "prompt",
+                            "depth": 3,
+                            "input_text_hash": "sha256:regex-live-input-before",
+                            "matched_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "output_text_hash": "sha256:regex-live-input-after",
+                            "phase_id": "prompt.user_input",
+                            "placement": 1,
+                            "skipped_rules": [],
+                            "status": "executed"
+                          },
+                          {
+                            "candidate_rule_names": [
+                              "world_info_rule"
+                            ],
+                            "changed": false,
+                            "channel": "prompt",
+                            "depth": null,
+                            "input_text_hash": null,
+                            "matched_rule_names": [],
+                            "output_text_hash": null,
+                            "phase_id": "prompt.world_info.reserved",
+                            "placement": 5,
+                            "skipped_rules": [
+                              {
+                                "reason": "reserved_non_executable",
+                                "rule_name": "world_info_rule"
+                              }
+                            ],
+                            "status": "reserved"
+                          }
+                        ],
                         "preprocessed_user_message": "Please continue the campfire scene.",
+                        "reserved_placements": [
+                          5
+                        ],
+                        "substitution_mode": "bare_variable_only",
                         "user_input_rules": [
                           "trim_whitespace"
                         ]
@@ -14620,7 +14663,50 @@
                           },
                           "regex": {
                             "ai_output_rules": [],
+                            "phases": [
+                              {
+                                "candidate_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "changed": true,
+                                "channel": "prompt",
+                                "depth": 3,
+                                "input_text_hash": "sha256:regex-live-input-before",
+                                "matched_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "output_text_hash": "sha256:regex-live-input-after",
+                                "phase_id": "prompt.user_input",
+                                "placement": 1,
+                                "skipped_rules": [],
+                                "status": "executed"
+                              },
+                              {
+                                "candidate_rule_names": [
+                                  "world_info_rule"
+                                ],
+                                "changed": false,
+                                "channel": "prompt",
+                                "depth": null,
+                                "input_text_hash": null,
+                                "matched_rule_names": [],
+                                "output_text_hash": null,
+                                "phase_id": "prompt.world_info.reserved",
+                                "placement": 5,
+                                "skipped_rules": [
+                                  {
+                                    "reason": "reserved_non_executable",
+                                    "rule_name": "world_info_rule"
+                                  }
+                                ],
+                                "status": "reserved"
+                              }
+                            ],
                             "preprocessed_user_message": "Please continue the campfire scene.",
+                            "reserved_placements": [
+                              5
+                            ],
+                            "substitution_mode": "bare_variable_only",
                             "user_input_rules": [
                               "trim_whitespace"
                             ]
@@ -15152,7 +15238,50 @@
                             },
                             "regex": {
                               "ai_output_rules": [],
+                              "phases": [
+                                {
+                                  "candidate_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "changed": true,
+                                  "channel": "prompt",
+                                  "depth": 3,
+                                  "input_text_hash": "sha256:regex-live-input-before",
+                                  "matched_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "output_text_hash": "sha256:regex-live-input-after",
+                                  "phase_id": "prompt.user_input",
+                                  "placement": 1,
+                                  "skipped_rules": [],
+                                  "status": "executed"
+                                },
+                                {
+                                  "candidate_rule_names": [
+                                    "world_info_rule"
+                                  ],
+                                  "changed": false,
+                                  "channel": "prompt",
+                                  "depth": null,
+                                  "input_text_hash": null,
+                                  "matched_rule_names": [],
+                                  "output_text_hash": null,
+                                  "phase_id": "prompt.world_info.reserved",
+                                  "placement": 5,
+                                  "skipped_rules": [
+                                    {
+                                      "reason": "reserved_non_executable",
+                                      "rule_name": "world_info_rule"
+                                    }
+                                  ],
+                                  "status": "reserved"
+                                }
+                              ],
                               "preprocessed_user_message": "Please continue the campfire scene.",
+                              "reserved_placements": [
+                                5
+                              ],
+                              "substitution_mode": "bare_variable_only",
                               "user_input_rules": [
                                 "trim_whitespace"
                               ]
@@ -15653,6 +15782,134 @@
                                   },
                                   "type": "array"
                                 },
+                                "phases": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidate_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "changed": {
+                                        "type": "boolean"
+                                      },
+                                      "channel": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "persist",
+                                              "prompt",
+                                              "display",
+                                              "edit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "depth": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "input_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "matched_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "output_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "phase_id": {
+                                        "enum": [
+                                          "persist.user_input",
+                                          "prompt.user_input",
+                                          "persist.ai_output",
+                                          "prompt.world_info.reserved"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "placement": {
+                                        "type": "integer"
+                                      },
+                                      "skipped_rules": {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "reason": {
+                                              "enum": [
+                                                "channel_filtered",
+                                                "depth_filtered",
+                                                "invalid_regex",
+                                                "no_match",
+                                                "reserved_non_executable"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "rule_name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "rule_name",
+                                            "reason"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "status": {
+                                        "enum": [
+                                          "executed",
+                                          "reserved"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "phase_id",
+                                      "placement",
+                                      "channel",
+                                      "status",
+                                      "changed",
+                                      "depth",
+                                      "input_text_hash",
+                                      "output_text_hash",
+                                      "candidate_rule_names",
+                                      "matched_rule_names",
+                                      "skipped_rules"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
                                 "preprocessed_user_message": {
                                   "anyOf": [
                                     {
@@ -15662,6 +15919,18 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reserved_placements": {
+                                  "items": {
+                                    "type": "integer"
+                                  },
+                                  "type": "array"
+                                },
+                                "substitution_mode": {
+                                  "enum": [
+                                    "bare_variable_only"
+                                  ],
+                                  "type": "string"
                                 },
                                 "user_input_rules": {
                                   "items": {
@@ -17903,6 +18172,8 @@
                       "display_only_count": 0,
                       "persist_executable_count": 1,
                       "prompt_executable_count": 1,
+                      "reserved_world_info_count": 0,
+                      "retained_non_executable_count": 0,
                       "stored_count": 1,
                       "unsupported_runtime_count": 0
                     },
@@ -17949,6 +18220,14 @@
                               "minimum": 0,
                               "type": "integer"
                             },
+                            "reserved_world_info_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "retained_non_executable_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
                             "stored_count": {
                               "minimum": 0,
                               "type": "integer"
@@ -17963,6 +18242,8 @@
                             "prompt_executable_count",
                             "persist_executable_count",
                             "display_only_count",
+                            "retained_non_executable_count",
+                            "reserved_world_info_count",
                             "unsupported_runtime_count",
                             "contains_prompt_only",
                             "contains_run_on_edit",
@@ -31975,7 +32256,50 @@
                       },
                       "regex": {
                         "ai_output_rules": [],
+                        "phases": [
+                          {
+                            "candidate_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "changed": true,
+                            "channel": "prompt",
+                            "depth": 3,
+                            "input_text_hash": "sha256:regex-live-input-before",
+                            "matched_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "output_text_hash": "sha256:regex-live-input-after",
+                            "phase_id": "prompt.user_input",
+                            "placement": 1,
+                            "skipped_rules": [],
+                            "status": "executed"
+                          },
+                          {
+                            "candidate_rule_names": [
+                              "world_info_rule"
+                            ],
+                            "changed": false,
+                            "channel": "prompt",
+                            "depth": null,
+                            "input_text_hash": null,
+                            "matched_rule_names": [],
+                            "output_text_hash": null,
+                            "phase_id": "prompt.world_info.reserved",
+                            "placement": 5,
+                            "skipped_rules": [
+                              {
+                                "reason": "reserved_non_executable",
+                                "rule_name": "world_info_rule"
+                              }
+                            ],
+                            "status": "reserved"
+                          }
+                        ],
                         "preprocessed_user_message": "Please continue the campfire scene.",
+                        "reserved_placements": [
+                          5
+                        ],
+                        "substitution_mode": "bare_variable_only",
                         "user_input_rules": [
                           "trim_whitespace"
                         ]
@@ -32170,7 +32494,50 @@
                           },
                           "regex": {
                             "ai_output_rules": [],
+                            "phases": [
+                              {
+                                "candidate_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "changed": true,
+                                "channel": "prompt",
+                                "depth": 3,
+                                "input_text_hash": "sha256:regex-live-input-before",
+                                "matched_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "output_text_hash": "sha256:regex-live-input-after",
+                                "phase_id": "prompt.user_input",
+                                "placement": 1,
+                                "skipped_rules": [],
+                                "status": "executed"
+                              },
+                              {
+                                "candidate_rule_names": [
+                                  "world_info_rule"
+                                ],
+                                "changed": false,
+                                "channel": "prompt",
+                                "depth": null,
+                                "input_text_hash": null,
+                                "matched_rule_names": [],
+                                "output_text_hash": null,
+                                "phase_id": "prompt.world_info.reserved",
+                                "placement": 5,
+                                "skipped_rules": [
+                                  {
+                                    "reason": "reserved_non_executable",
+                                    "rule_name": "world_info_rule"
+                                  }
+                                ],
+                                "status": "reserved"
+                              }
+                            ],
                             "preprocessed_user_message": "Please continue the campfire scene.",
+                            "reserved_placements": [
+                              5
+                            ],
+                            "substitution_mode": "bare_variable_only",
                             "user_input_rules": [
                               "trim_whitespace"
                             ]
@@ -32704,7 +33071,50 @@
                             },
                             "regex": {
                               "ai_output_rules": [],
+                              "phases": [
+                                {
+                                  "candidate_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "changed": true,
+                                  "channel": "prompt",
+                                  "depth": 3,
+                                  "input_text_hash": "sha256:regex-live-input-before",
+                                  "matched_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "output_text_hash": "sha256:regex-live-input-after",
+                                  "phase_id": "prompt.user_input",
+                                  "placement": 1,
+                                  "skipped_rules": [],
+                                  "status": "executed"
+                                },
+                                {
+                                  "candidate_rule_names": [
+                                    "world_info_rule"
+                                  ],
+                                  "changed": false,
+                                  "channel": "prompt",
+                                  "depth": null,
+                                  "input_text_hash": null,
+                                  "matched_rule_names": [],
+                                  "output_text_hash": null,
+                                  "phase_id": "prompt.world_info.reserved",
+                                  "placement": 5,
+                                  "skipped_rules": [
+                                    {
+                                      "reason": "reserved_non_executable",
+                                      "rule_name": "world_info_rule"
+                                    }
+                                  ],
+                                  "status": "reserved"
+                                }
+                              ],
                               "preprocessed_user_message": "Please continue the campfire scene.",
+                              "reserved_placements": [
+                                5
+                              ],
+                              "substitution_mode": "bare_variable_only",
                               "user_input_rules": [
                                 "trim_whitespace"
                               ]
@@ -33205,6 +33615,134 @@
                                   },
                                   "type": "array"
                                 },
+                                "phases": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidate_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "changed": {
+                                        "type": "boolean"
+                                      },
+                                      "channel": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "persist",
+                                              "prompt",
+                                              "display",
+                                              "edit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "depth": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "input_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "matched_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "output_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "phase_id": {
+                                        "enum": [
+                                          "persist.user_input",
+                                          "prompt.user_input",
+                                          "persist.ai_output",
+                                          "prompt.world_info.reserved"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "placement": {
+                                        "type": "integer"
+                                      },
+                                      "skipped_rules": {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "reason": {
+                                              "enum": [
+                                                "channel_filtered",
+                                                "depth_filtered",
+                                                "invalid_regex",
+                                                "no_match",
+                                                "reserved_non_executable"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "rule_name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "rule_name",
+                                            "reason"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "status": {
+                                        "enum": [
+                                          "executed",
+                                          "reserved"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "phase_id",
+                                      "placement",
+                                      "channel",
+                                      "status",
+                                      "changed",
+                                      "depth",
+                                      "input_text_hash",
+                                      "output_text_hash",
+                                      "candidate_rule_names",
+                                      "matched_rule_names",
+                                      "skipped_rules"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
                                 "preprocessed_user_message": {
                                   "anyOf": [
                                     {
@@ -33214,6 +33752,18 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reserved_placements": {
+                                  "items": {
+                                    "type": "integer"
+                                  },
+                                  "type": "array"
+                                },
+                                "substitution_mode": {
+                                  "enum": [
+                                    "bare_variable_only"
+                                  ],
+                                  "type": "string"
                                 },
                                 "user_input_rules": {
                                   "items": {
@@ -50383,6 +50933,134 @@
                                           },
                                           "type": "array"
                                         },
+                                        "phases": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "candidate_rule_names": {
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "type": "array"
+                                              },
+                                              "changed": {
+                                                "type": "boolean"
+                                              },
+                                              "channel": {
+                                                "anyOf": [
+                                                  {
+                                                    "enum": [
+                                                      "persist",
+                                                      "prompt",
+                                                      "display",
+                                                      "edit"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "depth": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "integer"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "input_text_hash": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "matched_rule_names": {
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "type": "array"
+                                              },
+                                              "output_text_hash": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "phase_id": {
+                                                "enum": [
+                                                  "persist.user_input",
+                                                  "prompt.user_input",
+                                                  "persist.ai_output",
+                                                  "prompt.world_info.reserved"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "placement": {
+                                                "type": "integer"
+                                              },
+                                              "skipped_rules": {
+                                                "items": {
+                                                  "additionalProperties": false,
+                                                  "properties": {
+                                                    "reason": {
+                                                      "enum": [
+                                                        "channel_filtered",
+                                                        "depth_filtered",
+                                                        "invalid_regex",
+                                                        "no_match",
+                                                        "reserved_non_executable"
+                                                      ],
+                                                      "type": "string"
+                                                    },
+                                                    "rule_name": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "rule_name",
+                                                    "reason"
+                                                  ],
+                                                  "type": "object"
+                                                },
+                                                "type": "array"
+                                              },
+                                              "status": {
+                                                "enum": [
+                                                  "executed",
+                                                  "reserved"
+                                                ],
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "phase_id",
+                                              "placement",
+                                              "channel",
+                                              "status",
+                                              "changed",
+                                              "depth",
+                                              "input_text_hash",
+                                              "output_text_hash",
+                                              "candidate_rule_names",
+                                              "matched_rule_names",
+                                              "skipped_rules"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
                                         "preprocessed_user_message": {
                                           "anyOf": [
                                             {
@@ -50392,6 +51070,18 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "reserved_placements": {
+                                          "items": {
+                                            "type": "integer"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "substitution_mode": {
+                                          "enum": [
+                                            "bare_variable_only"
+                                          ],
+                                          "type": "string"
                                         },
                                         "user_input_rules": {
                                           "items": {
@@ -55359,7 +56049,50 @@
                       },
                       "regex": {
                         "ai_output_rules": [],
+                        "phases": [
+                          {
+                            "candidate_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "changed": true,
+                            "channel": "prompt",
+                            "depth": 3,
+                            "input_text_hash": "sha256:regex-live-input-before",
+                            "matched_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "output_text_hash": "sha256:regex-live-input-after",
+                            "phase_id": "prompt.user_input",
+                            "placement": 1,
+                            "skipped_rules": [],
+                            "status": "executed"
+                          },
+                          {
+                            "candidate_rule_names": [
+                              "world_info_rule"
+                            ],
+                            "changed": false,
+                            "channel": "prompt",
+                            "depth": null,
+                            "input_text_hash": null,
+                            "matched_rule_names": [],
+                            "output_text_hash": null,
+                            "phase_id": "prompt.world_info.reserved",
+                            "placement": 5,
+                            "skipped_rules": [
+                              {
+                                "reason": "reserved_non_executable",
+                                "rule_name": "world_info_rule"
+                              }
+                            ],
+                            "status": "reserved"
+                          }
+                        ],
                         "preprocessed_user_message": "Please continue the campfire scene.",
+                        "reserved_placements": [
+                          5
+                        ],
+                        "substitution_mode": "bare_variable_only",
                         "user_input_rules": [
                           "trim_whitespace"
                         ]
@@ -55552,7 +56285,50 @@
                           },
                           "regex": {
                             "ai_output_rules": [],
+                            "phases": [
+                              {
+                                "candidate_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "changed": true,
+                                "channel": "prompt",
+                                "depth": 3,
+                                "input_text_hash": "sha256:regex-live-input-before",
+                                "matched_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "output_text_hash": "sha256:regex-live-input-after",
+                                "phase_id": "prompt.user_input",
+                                "placement": 1,
+                                "skipped_rules": [],
+                                "status": "executed"
+                              },
+                              {
+                                "candidate_rule_names": [
+                                  "world_info_rule"
+                                ],
+                                "changed": false,
+                                "channel": "prompt",
+                                "depth": null,
+                                "input_text_hash": null,
+                                "matched_rule_names": [],
+                                "output_text_hash": null,
+                                "phase_id": "prompt.world_info.reserved",
+                                "placement": 5,
+                                "skipped_rules": [
+                                  {
+                                    "reason": "reserved_non_executable",
+                                    "rule_name": "world_info_rule"
+                                  }
+                                ],
+                                "status": "reserved"
+                              }
+                            ],
                             "preprocessed_user_message": "Please continue the campfire scene.",
+                            "reserved_placements": [
+                              5
+                            ],
+                            "substitution_mode": "bare_variable_only",
                             "user_input_rules": [
                               "trim_whitespace"
                             ]
@@ -56084,7 +56860,50 @@
                             },
                             "regex": {
                               "ai_output_rules": [],
+                              "phases": [
+                                {
+                                  "candidate_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "changed": true,
+                                  "channel": "prompt",
+                                  "depth": 3,
+                                  "input_text_hash": "sha256:regex-live-input-before",
+                                  "matched_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "output_text_hash": "sha256:regex-live-input-after",
+                                  "phase_id": "prompt.user_input",
+                                  "placement": 1,
+                                  "skipped_rules": [],
+                                  "status": "executed"
+                                },
+                                {
+                                  "candidate_rule_names": [
+                                    "world_info_rule"
+                                  ],
+                                  "changed": false,
+                                  "channel": "prompt",
+                                  "depth": null,
+                                  "input_text_hash": null,
+                                  "matched_rule_names": [],
+                                  "output_text_hash": null,
+                                  "phase_id": "prompt.world_info.reserved",
+                                  "placement": 5,
+                                  "skipped_rules": [
+                                    {
+                                      "reason": "reserved_non_executable",
+                                      "rule_name": "world_info_rule"
+                                    }
+                                  ],
+                                  "status": "reserved"
+                                }
+                              ],
                               "preprocessed_user_message": "Please continue the campfire scene.",
+                              "reserved_placements": [
+                                5
+                              ],
+                              "substitution_mode": "bare_variable_only",
                               "user_input_rules": [
                                 "trim_whitespace"
                               ]
@@ -56585,6 +57404,134 @@
                                   },
                                   "type": "array"
                                 },
+                                "phases": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidate_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "changed": {
+                                        "type": "boolean"
+                                      },
+                                      "channel": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "persist",
+                                              "prompt",
+                                              "display",
+                                              "edit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "depth": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "input_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "matched_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "output_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "phase_id": {
+                                        "enum": [
+                                          "persist.user_input",
+                                          "prompt.user_input",
+                                          "persist.ai_output",
+                                          "prompt.world_info.reserved"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "placement": {
+                                        "type": "integer"
+                                      },
+                                      "skipped_rules": {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "reason": {
+                                              "enum": [
+                                                "channel_filtered",
+                                                "depth_filtered",
+                                                "invalid_regex",
+                                                "no_match",
+                                                "reserved_non_executable"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "rule_name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "rule_name",
+                                            "reason"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "status": {
+                                        "enum": [
+                                          "executed",
+                                          "reserved"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "phase_id",
+                                      "placement",
+                                      "channel",
+                                      "status",
+                                      "changed",
+                                      "depth",
+                                      "input_text_hash",
+                                      "output_text_hash",
+                                      "candidate_rule_names",
+                                      "matched_rule_names",
+                                      "skipped_rules"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
                                 "preprocessed_user_message": {
                                   "anyOf": [
                                     {
@@ -56594,6 +57541,18 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reserved_placements": {
+                                  "items": {
+                                    "type": "integer"
+                                  },
+                                  "type": "array"
+                                },
+                                "substitution_mode": {
+                                  "enum": [
+                                    "bare_variable_only"
+                                  ],
+                                  "type": "string"
                                 },
                                 "user_input_rules": {
                                   "items": {
@@ -57684,7 +58643,50 @@
                       },
                       "regex": {
                         "ai_output_rules": [],
+                        "phases": [
+                          {
+                            "candidate_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "changed": true,
+                            "channel": "prompt",
+                            "depth": 3,
+                            "input_text_hash": "sha256:regex-live-input-before",
+                            "matched_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "output_text_hash": "sha256:regex-live-input-after",
+                            "phase_id": "prompt.user_input",
+                            "placement": 1,
+                            "skipped_rules": [],
+                            "status": "executed"
+                          },
+                          {
+                            "candidate_rule_names": [
+                              "world_info_rule"
+                            ],
+                            "changed": false,
+                            "channel": "prompt",
+                            "depth": null,
+                            "input_text_hash": null,
+                            "matched_rule_names": [],
+                            "output_text_hash": null,
+                            "phase_id": "prompt.world_info.reserved",
+                            "placement": 5,
+                            "skipped_rules": [
+                              {
+                                "reason": "reserved_non_executable",
+                                "rule_name": "world_info_rule"
+                              }
+                            ],
+                            "status": "reserved"
+                          }
+                        ],
                         "preprocessed_user_message": "Please continue the campfire scene.",
+                        "reserved_placements": [
+                          5
+                        ],
+                        "substitution_mode": "bare_variable_only",
                         "user_input_rules": [
                           "trim_whitespace"
                         ]
@@ -57877,7 +58879,50 @@
                           },
                           "regex": {
                             "ai_output_rules": [],
+                            "phases": [
+                              {
+                                "candidate_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "changed": true,
+                                "channel": "prompt",
+                                "depth": 3,
+                                "input_text_hash": "sha256:regex-live-input-before",
+                                "matched_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "output_text_hash": "sha256:regex-live-input-after",
+                                "phase_id": "prompt.user_input",
+                                "placement": 1,
+                                "skipped_rules": [],
+                                "status": "executed"
+                              },
+                              {
+                                "candidate_rule_names": [
+                                  "world_info_rule"
+                                ],
+                                "changed": false,
+                                "channel": "prompt",
+                                "depth": null,
+                                "input_text_hash": null,
+                                "matched_rule_names": [],
+                                "output_text_hash": null,
+                                "phase_id": "prompt.world_info.reserved",
+                                "placement": 5,
+                                "skipped_rules": [
+                                  {
+                                    "reason": "reserved_non_executable",
+                                    "rule_name": "world_info_rule"
+                                  }
+                                ],
+                                "status": "reserved"
+                              }
+                            ],
                             "preprocessed_user_message": "Please continue the campfire scene.",
+                            "reserved_placements": [
+                              5
+                            ],
+                            "substitution_mode": "bare_variable_only",
                             "user_input_rules": [
                               "trim_whitespace"
                             ]
@@ -58409,7 +59454,50 @@
                             },
                             "regex": {
                               "ai_output_rules": [],
+                              "phases": [
+                                {
+                                  "candidate_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "changed": true,
+                                  "channel": "prompt",
+                                  "depth": 3,
+                                  "input_text_hash": "sha256:regex-live-input-before",
+                                  "matched_rule_names": [
+                                    "trim_whitespace"
+                                  ],
+                                  "output_text_hash": "sha256:regex-live-input-after",
+                                  "phase_id": "prompt.user_input",
+                                  "placement": 1,
+                                  "skipped_rules": [],
+                                  "status": "executed"
+                                },
+                                {
+                                  "candidate_rule_names": [
+                                    "world_info_rule"
+                                  ],
+                                  "changed": false,
+                                  "channel": "prompt",
+                                  "depth": null,
+                                  "input_text_hash": null,
+                                  "matched_rule_names": [],
+                                  "output_text_hash": null,
+                                  "phase_id": "prompt.world_info.reserved",
+                                  "placement": 5,
+                                  "skipped_rules": [
+                                    {
+                                      "reason": "reserved_non_executable",
+                                      "rule_name": "world_info_rule"
+                                    }
+                                  ],
+                                  "status": "reserved"
+                                }
+                              ],
                               "preprocessed_user_message": "Please continue the campfire scene.",
+                              "reserved_placements": [
+                                5
+                              ],
+                              "substitution_mode": "bare_variable_only",
                               "user_input_rules": [
                                 "trim_whitespace"
                               ]
@@ -58910,6 +59998,134 @@
                                   },
                                   "type": "array"
                                 },
+                                "phases": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidate_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "changed": {
+                                        "type": "boolean"
+                                      },
+                                      "channel": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "persist",
+                                              "prompt",
+                                              "display",
+                                              "edit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "depth": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "input_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "matched_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "output_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "phase_id": {
+                                        "enum": [
+                                          "persist.user_input",
+                                          "prompt.user_input",
+                                          "persist.ai_output",
+                                          "prompt.world_info.reserved"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "placement": {
+                                        "type": "integer"
+                                      },
+                                      "skipped_rules": {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "reason": {
+                                              "enum": [
+                                                "channel_filtered",
+                                                "depth_filtered",
+                                                "invalid_regex",
+                                                "no_match",
+                                                "reserved_non_executable"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "rule_name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "rule_name",
+                                            "reason"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "status": {
+                                        "enum": [
+                                          "executed",
+                                          "reserved"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "phase_id",
+                                      "placement",
+                                      "channel",
+                                      "status",
+                                      "changed",
+                                      "depth",
+                                      "input_text_hash",
+                                      "output_text_hash",
+                                      "candidate_rule_names",
+                                      "matched_rule_names",
+                                      "skipped_rules"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
                                 "preprocessed_user_message": {
                                   "anyOf": [
                                     {
@@ -58919,6 +60135,18 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reserved_placements": {
+                                  "items": {
+                                    "type": "integer"
+                                  },
+                                  "type": "array"
+                                },
+                                "substitution_mode": {
+                                  "enum": [
+                                    "bare_variable_only"
+                                  ],
+                                  "type": "string"
                                 },
                                 "user_input_rules": {
                                   "items": {
@@ -60064,7 +61292,50 @@
                       },
                       "regex": {
                         "ai_output_rules": [],
+                        "phases": [
+                          {
+                            "candidate_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "changed": true,
+                            "channel": "prompt",
+                            "depth": 3,
+                            "input_text_hash": "sha256:regex-dry-run-input-before",
+                            "matched_rule_names": [
+                              "trim_whitespace"
+                            ],
+                            "output_text_hash": "sha256:regex-dry-run-input-after",
+                            "phase_id": "prompt.user_input",
+                            "placement": 1,
+                            "skipped_rules": [],
+                            "status": "executed"
+                          },
+                          {
+                            "candidate_rule_names": [
+                              "world_info_rule"
+                            ],
+                            "changed": false,
+                            "channel": "prompt",
+                            "depth": null,
+                            "input_text_hash": null,
+                            "matched_rule_names": [],
+                            "output_text_hash": null,
+                            "phase_id": "prompt.world_info.reserved",
+                            "placement": 5,
+                            "skipped_rules": [
+                              {
+                                "reason": "reserved_non_executable",
+                                "rule_name": "world_info_rule"
+                              }
+                            ],
+                            "status": "reserved"
+                          }
+                        ],
                         "preprocessed_user_message": "Please continue the campfire scene.",
+                        "reserved_placements": [
+                          5
+                        ],
+                        "substitution_mode": "bare_variable_only",
                         "user_input_rules": [
                           "trim_whitespace"
                         ]
@@ -60344,7 +61615,50 @@
                           },
                           "regex": {
                             "ai_output_rules": [],
+                            "phases": [
+                              {
+                                "candidate_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "changed": true,
+                                "channel": "prompt",
+                                "depth": 3,
+                                "input_text_hash": "sha256:regex-dry-run-input-before",
+                                "matched_rule_names": [
+                                  "trim_whitespace"
+                                ],
+                                "output_text_hash": "sha256:regex-dry-run-input-after",
+                                "phase_id": "prompt.user_input",
+                                "placement": 1,
+                                "skipped_rules": [],
+                                "status": "executed"
+                              },
+                              {
+                                "candidate_rule_names": [
+                                  "world_info_rule"
+                                ],
+                                "changed": false,
+                                "channel": "prompt",
+                                "depth": null,
+                                "input_text_hash": null,
+                                "matched_rule_names": [],
+                                "output_text_hash": null,
+                                "phase_id": "prompt.world_info.reserved",
+                                "placement": 5,
+                                "skipped_rules": [
+                                  {
+                                    "reason": "reserved_non_executable",
+                                    "rule_name": "world_info_rule"
+                                  }
+                                ],
+                                "status": "reserved"
+                              }
+                            ],
                             "preprocessed_user_message": "Please continue the campfire scene.",
+                            "reserved_placements": [
+                              5
+                            ],
+                            "substitution_mode": "bare_variable_only",
                             "user_input_rules": [
                               "trim_whitespace"
                             ]
@@ -61631,6 +62945,134 @@
                                   },
                                   "type": "array"
                                 },
+                                "phases": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "candidate_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "changed": {
+                                        "type": "boolean"
+                                      },
+                                      "channel": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "persist",
+                                              "prompt",
+                                              "display",
+                                              "edit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "depth": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "input_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "matched_rule_names": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "output_text_hash": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "phase_id": {
+                                        "enum": [
+                                          "persist.user_input",
+                                          "prompt.user_input",
+                                          "persist.ai_output",
+                                          "prompt.world_info.reserved"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "placement": {
+                                        "type": "integer"
+                                      },
+                                      "skipped_rules": {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "reason": {
+                                              "enum": [
+                                                "channel_filtered",
+                                                "depth_filtered",
+                                                "invalid_regex",
+                                                "no_match",
+                                                "reserved_non_executable"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "rule_name": {
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "rule_name",
+                                            "reason"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "status": {
+                                        "enum": [
+                                          "executed",
+                                          "reserved"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "phase_id",
+                                      "placement",
+                                      "channel",
+                                      "status",
+                                      "changed",
+                                      "depth",
+                                      "input_text_hash",
+                                      "output_text_hash",
+                                      "candidate_rule_names",
+                                      "matched_rule_names",
+                                      "skipped_rules"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
                                 "preprocessed_user_message": {
                                   "anyOf": [
                                     {
@@ -61640,6 +63082,18 @@
                                       "type": "null"
                                     }
                                   ]
+                                },
+                                "reserved_placements": {
+                                  "items": {
+                                    "type": "integer"
+                                  },
+                                  "type": "array"
+                                },
+                                "substitution_mode": {
+                                  "enum": [
+                                    "bare_variable_only"
+                                  ],
+                                  "type": "string"
                                 },
                                 "user_input_rules": {
                                   "items": {

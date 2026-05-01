@@ -10,6 +10,7 @@ import type {
 } from "@tavern/core";
 import {
   createEventBus,
+  extractSummaries,
   FloorNotFoundError,
   FloorStateConflictError,
   FloorStateMachine,
@@ -83,6 +84,14 @@ import { PreparedTurnInspectionService } from "../prompt-runtime/prepared-turn-i
 import { findErrorByConstructor } from "./shared/error-utils.js";
 import { normalizeBranchId } from "./shared/branch.js";
 import { buildLivePromptRuntimeRequestPolicy } from "./shared/request-policy.js";
+import {
+  buildPromptRuntimeRegexTrace,
+  buildRegexSubstitutionContext,
+  executePromptRuntimeRegexPhase,
+  listRuntimeRegexReservedPlacements,
+  mergePromptRuntimeRegexTrace,
+  PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE,
+} from "../prompt-runtime/regex/index.js";
 import type { FirstPartyStateContext } from "./types.js";
 
 export * from "./contracts.js";
@@ -334,7 +343,7 @@ export class ChatService {
         }
 
         await this.turnRunTracker.initializeFloorRun(sessionId, floorId, "respond", now);
-        let persistedUserMessage: string;
+        let persistedUserMessage: Awaited<ReturnType<RegexInputService["applyPersistedUserInputRegex"]>>;
         try {
           persistedUserMessage = await this.regexInputService.applyPersistedUserInputRegex({
             accountId: resolvedAccountId,
@@ -368,7 +377,9 @@ export class ChatService {
             accountId: resolvedAccountId,
             session,
             sessionInfo,
-            userMessage: persistedUserMessage,
+            userMessage: persistedUserMessage.text,
+            rawUserMessage: request.message,
+            baseRuntimeTrace: persistedUserMessage.runtimeTrace ? { regex: persistedUserMessage.runtimeTrace } : undefined,
             request,
             executionContext,
             history,
@@ -799,7 +810,9 @@ export class ChatService {
           accountId: resolvedAccountId,
           session,
           sessionInfo,
-          userMessage: persistedUserMessage,
+          userMessage: persistedUserMessage.text,
+          rawUserMessage: request.content,
+          baseRuntimeTrace: persistedUserMessage.runtimeTrace ? { regex: persistedUserMessage.runtimeTrace } : undefined,
           request,
           executionContext,
           history,
@@ -876,6 +889,8 @@ export class ChatService {
     session: typeof sessions.$inferSelect;
     sessionInfo?: import("../prompt-assembler.js").SessionPromptInfo;
     userMessage: string;
+    rawUserMessage?: string;
+    baseRuntimeTrace?: import("../prompt-assembler.js").PromptRuntimeTrace;
     request: {
       config?: import("@tavern/core").TurnConfig;
       generationParams?: Partial<import("@tavern/core").GenerationParams>;
@@ -914,6 +929,8 @@ export class ChatService {
       session: args.session,
       sessionInfo: args.sessionInfo,
       userMessage: args.userMessage,
+      rawUserMessage: args.rawUserMessage,
+      baseRuntimeTrace: args.baseRuntimeTrace,
       request: args.request,
       executionContext: args.executionContext,
       history: args.history,
@@ -944,7 +961,49 @@ export class ChatService {
       supersedeSourceFloor: args.supersedeSourceFloor,
     });
 
+    if (prepared.promptDebug.runtimeTrace) {
+      prepared.promptDebug.runtimeTrace = this.augmentRuntimeTraceWithAiOutputRegex({
+        runtimeTrace: prepared.promptDebug.runtimeTrace,
+        execution,
+        scripts: prepared.assembled.promptSnapshot.regexProfile?.scripts ?? [],
+        variables: prepared.assembled.promptSnapshot.variables,
+      }) ?? prepared.promptDebug.runtimeTrace;
+    }
+
     return { prepared, execution, commit };
+  }
+
+  private augmentRuntimeTraceWithAiOutputRegex(args: {
+    runtimeTrace: import("../prompt-assembler.js").PromptRuntimeTrace;
+    execution: TurnExecutionResult;
+    scripts: import("@tavern/adapters-sillytavern").STRegexScript[];
+    variables: Record<string, unknown>;
+  }): import("../prompt-assembler.js").PromptRuntimeTrace | undefined {
+    if (args.scripts.length === 0) {
+      return args.runtimeTrace;
+    }
+
+    const cleanedOutput = extractSummaries(args.execution.rawText).cleanedText;
+    const aiOutputPhase = executePromptRuntimeRegexPhase({
+      phaseId: "persist.ai_output",
+      text: cleanedOutput,
+      scripts: args.scripts,
+      depth: 0,
+      substitutionContext: buildRegexSubstitutionContext(args.variables),
+    });
+    const aiOutputTrace = buildPromptRuntimeRegexTrace({
+      userInputRules: args.runtimeTrace.regex?.userInputRules ?? [],
+      aiOutputRules: args.runtimeTrace.regex?.aiOutputRules ?? [],
+      ...(args.runtimeTrace.regex?.preprocessedUserMessage !== undefined ? { preprocessedUserMessage: args.runtimeTrace.regex.preprocessedUserMessage } : {}),
+      phases: [aiOutputPhase],
+      reservedPlacements: listRuntimeRegexReservedPlacements(args.scripts),
+      substitutionMode: PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE,
+    });
+    const mergedRegex = mergePromptRuntimeRegexTrace(args.runtimeTrace.regex, aiOutputTrace);
+
+    return mergedRegex
+      ? { ...args.runtimeTrace, regex: mergedRegex }
+      : args.runtimeTrace;
   }
 
   private async performTurnExecutionAndCommit(args: {

@@ -379,7 +379,14 @@ export class VariableService {
       globalScopeId: DEFAULT_GLOBAL_SCOPE_ID,
     });
 
-    const resolved = Array.from((await this.variableResolver.resolveAll(context)).values())
+    const resolvedEntries = Array.from((await this.variableResolver.resolveAll(context)).values()) as Array<{
+      key: string;
+      value: unknown;
+      scope: VariableScope;
+      scopeId: string;
+      updatedAt: number;
+    }>;
+    const resolved = resolvedEntries
       .map<ResolvedVariableRecord>((entry) => ({
         key: entry.key,
         value: entry.value,

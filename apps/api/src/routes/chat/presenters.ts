@@ -119,6 +119,21 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
             user_input_rules: runtimeTrace.regex.userInputRules,
             ai_output_rules: runtimeTrace.regex.aiOutputRules,
             preprocessed_user_message: runtimeTrace.regex.preprocessedUserMessage ?? null,
+            ...(runtimeTrace.regex.phases
+              ? {
+                  phases: runtimeTrace.regex.phases.map((phase) => mapRegexPhaseTraceToSnakeCase(phase)),
+                }
+              : {}),
+            ...(runtimeTrace.regex.reservedPlacements
+              ? {
+                  reserved_placements: runtimeTrace.regex.reservedPlacements,
+                }
+              : {}),
+            ...(runtimeTrace.regex.substitutionMode
+              ? {
+                  substitution_mode: runtimeTrace.regex.substitutionMode,
+                }
+              : {}),
           },
         }
       : {}),
@@ -245,6 +260,25 @@ function mapTrimReasonToSnakeCase(reason: NonNullable<NonNullable<PromptRuntimeT
     reason: reason.reason,
     ...(reason.detail ? { detail: reason.detail } : {}),
     ...(reason.prunedTokenCount !== undefined ? { pruned_token_count: reason.prunedTokenCount } : {}),
+  };
+}
+
+function mapRegexPhaseTraceToSnakeCase(phase: NonNullable<NonNullable<PromptRuntimeTrace["regex"]>["phases"]>[number]): Record<string, unknown> {
+  return {
+    phase_id: phase.phaseId,
+    placement: phase.placement,
+    channel: phase.channel,
+    status: phase.status,
+    changed: phase.changed,
+    depth: phase.depth,
+    input_text_hash: phase.inputTextHash,
+    output_text_hash: phase.outputTextHash,
+    candidate_rule_names: phase.candidateRuleNames,
+    matched_rule_names: phase.matchedRuleNames,
+    skipped_rules: phase.skippedRules.map((rule) => ({
+      rule_name: rule.ruleName,
+      reason: rule.reason,
+    })),
   };
 }
 
