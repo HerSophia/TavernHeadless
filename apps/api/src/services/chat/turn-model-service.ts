@@ -25,6 +25,7 @@ import type {
 import type { FirstPartyStateContext } from "./types.js";
 import { ChatServiceError } from "./errors.js";
 import { mergeSessionMetadataWithFirstPartyState } from "./shared/metadata.js";
+import { resolveMemoryWritePolicy as resolveMemoryWritePolicyFromRuntimeMode } from "../memory/shared/index.js";
 
 export class TurnModelService {
   constructor(private readonly options: {
@@ -179,6 +180,9 @@ export class TurnModelService {
       if (this.isSlotDisabled(models, "verifier") && nextConfig?.enableVerifier) {
         nextConfig = { ...nextConfig, enableVerifier: false };
       }
+      if (nextConfig?.enableMemoryConsolidation) {
+        nextConfig = { ...nextConfig, enableMemoryConsolidation: false };
+      }
       return nextConfig;
     }
 
@@ -202,6 +206,9 @@ export class TurnModelService {
       if (this.isSlotDisabled(models, "verifier") && nextConfig?.enableVerifier) {
         nextConfig = { ...nextConfig, enableVerifier: false };
       }
+      if (nextConfig?.enableMemoryConsolidation) {
+        nextConfig = { ...nextConfig, enableMemoryConsolidation: false };
+      }
       return nextConfig;
     }
 
@@ -219,19 +226,36 @@ export class TurnModelService {
     return nextConfig;
   }
 
+  resolveMemoryWritePolicy(config?: TurnConfig) {
+    return resolveMemoryWritePolicyFromRuntimeMode({
+      memoryStoreEnabled: this.options.memoryStoreEnabled,
+      enableAsyncMemoryIngest: this.options.enableAsyncMemoryIngest,
+      config,
+    });
+  }
+
   shouldRequestMemoryConsolidation(config?: TurnConfig): boolean {
-    return config?.enableMemoryConsolidation === true;
+    return this.resolveMemoryWritePolicy(config).requestedWrite;
   }
 
   toOrchestratorTurnConfig(config?: TurnConfig): TurnConfig | undefined {
-    if (!this.options.enableAsyncMemoryIngest || !config?.enableMemoryConsolidation) {
+    if (!config) {
       return config;
     }
 
-    return {
-      ...config,
-      enableMemoryConsolidation: false,
-    };
+    const memoryWritePolicy = this.resolveMemoryWritePolicy(config);
+    if (memoryWritePolicy.runtimeMode === "async_primary" && memoryWritePolicy.requestedWrite) {
+      return {
+        ...config,
+        enableMemoryConsolidation: false,
+      };
+    }
+
+    if (memoryWritePolicy.runtimeMode === "disabled" && config.enableMemoryConsolidation) {
+      return { ...config, enableMemoryConsolidation: false };
+    }
+
+    return config;
   }
 
   buildModelOverrides(models: ResolvedTurnModels): Partial<Record<InstanceSlot, ModelConfig>> | undefined {

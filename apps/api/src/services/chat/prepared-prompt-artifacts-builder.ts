@@ -7,7 +7,11 @@ import type {
   TurnConfig,
 } from "@tavern/core";
 
-import { assemblePrompt, type SessionPromptInfo } from "../prompt-assembler.js";
+import {
+  assemblePrompt,
+  type PromptRuntimeTrace,
+  type SessionPromptInfo,
+} from "../prompt-assembler.js";
 import {
   buildPromptRuntimeExecutionResult,
   type PromptRuntimeResolvedContext,
@@ -15,6 +19,7 @@ import {
 import type { PromptVisibilityTrace } from "../chat-history-loader.js";
 import type { AppDb } from "../../db/client.js";
 import type { PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
+import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
 
 import type { PromptLiveDebugOptions, ResolvedTurnModels } from "./contracts.js";
 import type {
@@ -25,7 +30,10 @@ import type {
 import { PromptPreparationService } from "./prompt-preparation-service.js";
 import { TurnModelService } from "./turn-model-service.js";
 import { TurnMemoryService } from "./turn-memory-service.js";
-import { RegexInputService } from "./regex-input-service.js";
+import {
+  RegexInputService,
+  type PersistedUserInputRegexResult,
+} from "./regex-input-service.js";
 import { FirstPartyStateContextService } from "./first-party-state-context-service.js";
 
 interface PreparedPromptArtifactsSessionShape {
@@ -72,6 +80,7 @@ export interface PreparePromptArtifactsArgs {
   firstPartyStateContext?: FirstPartyStateContext;
   extraDiagnostics?: PromptRuntimeDiagnostic[];
   includeRuntimeTrace?: boolean;
+  baseRuntimeTrace?: PromptRuntimeTrace;
 }
 
 export class PreparedPromptArtifactsBuilder {
@@ -92,18 +101,25 @@ export class PreparedPromptArtifactsBuilder {
       args.firstPartyStateContext,
     );
 
-    const preprocessedUserMessage = args.preprocessedUserMessage
-      ?? await this.resolveUserMessage({
-        accountId: args.accountId,
-        sessionId: args.sessionId,
-        branchId: args.branchId,
-        floorId: args.floorId,
-        pageId: args.pageId,
-        rawUserMessage: args.rawUserMessage,
-        regexChannel: args.regexChannel,
-        session: args.session,
-        sessionInfo,
-      });
+    const userMessageState = args.preprocessedUserMessage !== undefined
+      ? {
+          text: args.preprocessedUserMessage,
+          runtimeTrace: args.baseRuntimeTrace?.regex,
+        }
+      : await this.resolveUserMessage({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          branchId: args.branchId,
+          floorId: args.floorId,
+          pageId: args.pageId,
+          rawUserMessage: args.rawUserMessage,
+          regexChannel: args.regexChannel,
+          session: args.session,
+          sessionInfo,
+        });
+    const preprocessedUserMessage = userMessageState.text;
+    const baseRuntimeTrace = args.baseRuntimeTrace
+      ?? (userMessageState.runtimeTrace ? { regex: userMessageState.runtimeTrace } : undefined);
 
     const historyState = await this.resolveHistoryArtifacts({
       sessionId: args.sessionId,
@@ -113,17 +129,31 @@ export class PreparedPromptArtifactsBuilder {
       historyLoad: args.historyLoad,
     });
 
-    const memorySummary = await this.memoryService.retrieveMemorySummary(
-      args.sessionId,
-      args.accountId,
-      args.floorId,
-      args.branchId,
-    );
-    const effectiveMemorySummary = args.executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
-      ? undefined
-      : memorySummary;
     const narratorParams = this.modelService.getSlotGenerationParams(args.resolvedTurnModels, "narrator");
     const assistantPrefillStrategy = this.modelService.resolveNarratorAssistantPrefillStrategy(args.resolvedTurnModels);
+    const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(
+      args.request.config,
+      args.resolvedTurnModels,
+    );
+    const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
+    const memoryInjection = args.executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
+      ? undefined
+      : await this.memoryService.retrieveMemoryInjection(
+          args.sessionId,
+          args.accountId,
+          args.floorId,
+          args.branchId,
+        );
+    const effectiveMemorySummary = memoryInjection?.memorySummary;
+    const memoryRuntimeTrace = {
+      ...memoryWritePolicy,
+      ...(memoryInjection?.memoryTrace ?? {}),
+      ...(!memoryInjection ? { strategy: "none" as const } : {}),
+    };
+    const memoryTrace = buildPromptRuntimeMemoryTrace({
+      summaryInjected: Boolean(effectiveMemorySummary),
+      memoryTrace: memoryRuntimeTrace,
+    });
     const maxContextTokensOverride = this.modelService.resolveMaxContextTokensOverride(
       args.request.generationParams,
       narratorParams,
@@ -159,6 +189,7 @@ export class PreparedPromptArtifactsBuilder {
         assistantPrefillStrategy,
         budget: args.executionContext.effectivePolicy?.budget,
         sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
+        memoryRuntimeTrace,
       },
     );
 
@@ -178,6 +209,7 @@ export class PreparedPromptArtifactsBuilder {
       visibilityTrace: historyState.visibilityTrace,
       memorySummary: effectiveMemorySummary,
       assembled,
+      memoryTrace,
       worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
       extraDiagnostics: [
         ...this.firstPartyStateContextService.buildFirstPartyStateDiagnostics(
@@ -199,6 +231,7 @@ export class PreparedPromptArtifactsBuilder {
         assembled,
         materialized,
         visibilityTrace: historyState.visibilityTrace,
+        ...(baseRuntimeTrace ? { baseRuntimeTrace } : {}),
       },
     });
 
@@ -207,10 +240,6 @@ export class PreparedPromptArtifactsBuilder {
       narratorParams,
       availableForReply: execution.availableForReply ?? 0,
     });
-    const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(
-      args.request.config,
-      args.resolvedTurnModels,
-    );
     const turnConfig = this.modelService.toOrchestratorTurnConfig(requestedTurnConfig);
 
     return {
@@ -251,9 +280,9 @@ export class PreparedPromptArtifactsBuilder {
     regexChannel?: RegexExecutionChannel;
     session: PreparedPromptArtifactsSessionShape;
     sessionInfo: SessionPromptInfo;
-  }): Promise<string> {
+  }): Promise<PersistedUserInputRegexResult> {
     if (!args.regexChannel) {
-      return args.rawUserMessage;
+      return { text: args.rawUserMessage };
     }
 
     return this.regexInputService.applyPersistedUserInputRegex({

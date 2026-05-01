@@ -323,6 +323,27 @@
                         "when":  1764500000000,
                         "tag":  "0045_prompt_asset_provenance_closeout",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  46,
+                        "version":  "6",
+                        "when":  1764600000000,
+                        "tag":  "0046_session_branch_registry",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  47,
+                        "version":  "6",
+                        "when":  1764700000000,
+                        "tag":  "0047_page_variable_stage_and_promotion_trace",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  48,
+                        "version":  "6",
+                        "when":  1764800000000,
+                        "tag":  "0048_prompt_runtime_memory_trace_snapshot",
+                        "breakpoints":  true
                     }
                 ]
 }

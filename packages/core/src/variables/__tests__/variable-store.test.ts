@@ -289,6 +289,32 @@ describe('VariableStore', () => {
       expect(handler).not.toHaveBeenCalled();
     });
 
+    it('stores intent, reason, and source metadata in buffered tool mutations', async () => {
+      const bufferedContext: VariableContext = {
+        ...fullContext,
+        toolMutationBuffer: new ToolMutationBuffer('run-1'),
+        toolMutationAttemptNo: 1,
+      };
+
+      await store.set('mood', 'happy', bufferedContext, undefined, {
+        intent: 'page_only',
+        reason: 'builtin:set_variable',
+        source: {
+          toolName: 'set_variable',
+          providerId: 'builtin',
+          nodeId: 'node-1',
+        },
+      });
+
+      expect(bufferedContext.toolMutationBuffer!.snapshot(1)).toEqual([
+        expect.objectContaining({
+          intent: 'page_only',
+          reason: 'builtin:set_variable',
+          source: { toolName: 'set_variable', providerId: 'builtin', nodeId: 'node-1' },
+        }),
+      ]);
+    });
+
     it('prefers buffered tool writes over persisted variables during the active attempt', async () => {
       repo.seed('page', 'page-1', 'mood', 'sad');
 

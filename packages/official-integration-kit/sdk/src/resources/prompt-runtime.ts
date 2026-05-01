@@ -2,11 +2,13 @@ import { buildAccountHeaders, type AccountIdHint, type TransportClient } from ".
 import {
   mapPromptLiveDebugOptionsRequest,
   mapPromptSnapshotPayload,
+  mapPromptRuntimeTraceMemoryPayload,
   mapPromptRuntimePreviewTracePayload,
   mapPromptRuntimeTracePayload,
   type PromptLiveDebugOptions,
   type PromptSnapshotPreview,
   type PromptRuntimePreviewTrace,
+  type PromptRuntimeMemoryTrace,
   type PromptRuntimeSourceKind,
   type PromptRuntimeTrace,
   type PromptRuntimeVisibilityRange,
@@ -440,6 +442,7 @@ export type PromptRuntimePreviewOptions = PromptRuntimeGetSessionOptions & {
 };
 
 export type PromptRuntimePreviewResult = {
+  memory?: PromptRuntimeMemoryTrace;
   diagnostics?: PromptRuntimeDiagnostic[];
   limitations?: string[];
   policy: PromptRuntimeResolvedPolicy;
@@ -492,6 +495,7 @@ export type PromptRuntimeInspectPreparedTurnMessage = {
 
 export type PromptRuntimeHistoricalExplain = {
   assets: PromptRuntimeAssetsView | null;
+  memory: PromptRuntimeMemoryTrace | null;
   diagnostics?: PromptRuntimeDiagnostic[];
   excludedSources: NonNullable<PromptRuntimeTrace["sourceSelection"]>["excludedSources"] | null;
   floor: PromptRuntimeHistoricalExplainFloor;
@@ -514,6 +518,7 @@ export type PromptRuntimeInspectPreparedTurn = {
   preprocessedUserMessage: string | null;
   promptSnapshot: PromptSnapshotPreview | null;
   runtimeTrace: PromptRuntimeTrace | null;
+  memory?: PromptRuntimeMemoryTrace;
   memorySummary: string | null;
   generationParams: PromptRuntimeInspectGenerationParams;
   requestedTurnConfig: PromptRuntimeInspectTurnConfig | null;
@@ -1415,6 +1420,7 @@ function mapPromptRuntimePreviewResult(value: unknown): PromptRuntimePreviewResu
   }
 
   return {
+    ...(mapPromptRuntimeTraceMemoryPayload(record.memory) ? { memory: mapPromptRuntimeTraceMemoryPayload(record.memory) } : {}),
     ...(record.diagnostics !== undefined ? { diagnostics: mapPromptRuntimeDiagnostics(record.diagnostics) } : {}),
     ...(record.limitations !== undefined ? { limitations: mapStringArray(record.limitations) } : {}),
     policy: mapPromptRuntimeResolvedPolicy(record.policy) ?? {
@@ -1506,6 +1512,7 @@ function mapPromptRuntimeInspectPreparedTurn(value: unknown): PromptRuntimeInspe
     preprocessedUserMessage: readNullableString(record.preprocessed_user_message),
     promptSnapshot: record.prompt_snapshot === null ? null : mapPromptSnapshotPayload(record.prompt_snapshot) ?? null,
     runtimeTrace: record.runtime_trace === null ? null : mapPromptRuntimeTracePayload(record.runtime_trace) ?? null,
+    ...(mapPromptRuntimeTraceMemoryPayload(record.memory) ? { memory: mapPromptRuntimeTraceMemoryPayload(record.memory) } : {}),
     memorySummary: readNullableString(record.memory_summary),
     generationParams: mapPromptRuntimeInspectGenerationParams(record.generation_params),
     requestedTurnConfig: record.requested_turn_config === null ? null : mapPromptRuntimeInspectTurnConfig(record.requested_turn_config),
@@ -1620,6 +1627,7 @@ function mapPromptRuntimeHistoricalExplain(value: unknown): PromptRuntimeHistori
 
   return {
     assets: record.assets === null ? null : assets ? mapPromptRuntimeAssetsView(assets) : null,
+    memory: record.memory === null || record.memory === undefined ? null : mapPromptRuntimeTraceMemoryPayload(record.memory) ?? null,
     ...(record.diagnostics !== undefined ? { diagnostics: mapPromptRuntimeDiagnostics(record.diagnostics) } : {}),
     excludedSources: record.excluded_sources === null
       ? null

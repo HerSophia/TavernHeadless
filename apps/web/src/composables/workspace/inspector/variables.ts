@@ -1,12 +1,25 @@
-import { flattenVariableSnapshot, sortVariableInspectorRows, type VariableInspectorRow } from "@tavern/client-helpers";
-import type { ResolvedVariablesSnapshot, VariablesResource } from "@tavern/sdk";
+import {
+  flattenPageStagedVariableWrites,
+  flattenVariableSnapshot,
+  groupVariablePromotionTrace,
+  sortVariableInspectorRows,
+  type FlattenedPageStagedVariableWrite,
+  type GroupedVariablePromotionTrace,
+  type VariableInspectorRow,
+} from "@tavern/client-helpers";
+import type {
+  PageStagedVariableWriteSnapshot,
+  PageVariablePromotionTraceSnapshot,
+  ResolvedVariablesSnapshot,
+  VariablesResource,
+} from "@tavern/sdk";
 import { computed, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from "vue";
 
 import { apiClient } from "../../../lib/api";
 import type { TimelineMessage } from "../../../stores/workspace";
 
 type InspectorTimelineMessage = Pick<TimelineMessage, "at" | "floorId" | "id" | "pageId" | "persisted" | "seq">;
-type VariablesResourceLike = Pick<VariablesResource, "resolveContext">;
+type VariablesResourceLike = Pick<VariablesResource, "resolveContext"> & Partial<Pick<VariablesResource, "getPagePromotions" | "getPageStagedWrites">>;
 
 type UseWorkspaceInspectorVariablesOptions = {
   accountId: MaybeRefOrGetter<string>;
@@ -22,23 +35,37 @@ type ResolvedTarget = {
   sessionId: string;
 };
 
+type PageVariableInspectionBundle = {
+  promotions: PageVariablePromotionTraceSnapshot | null;
+  resolved: ResolvedVariablesSnapshot;
+  staged: PageStagedVariableWriteSnapshot | null;
+};
+
 type UseWorkspaceInspectorVariablesResult = {
   error: Ref<string | null>;
   loading: Ref<boolean>;
+  promotionGroups: Ref<GroupedVariablePromotionTrace[]>;
+  rawPromotions: Ref<PageVariablePromotionTraceSnapshot | null>;
   rawSnapshot: Ref<ResolvedVariablesSnapshot | null>;
+  rawStagedWrites: Ref<PageStagedVariableWriteSnapshot | null>;
   refresh: (force?: boolean) => Promise<void>;
   rows: Ref<VariableInspectorRow[]>;
+  stagedWrites: Ref<FlattenedPageStagedVariableWrite[]>;
 };
 
 export function useWorkspaceInspectorVariables(
   options: UseWorkspaceInspectorVariablesOptions,
 ): UseWorkspaceInspectorVariablesResult {
   const resource = options.resource ?? apiClient.variables;
-  const cache = new Map<string, ResolvedVariablesSnapshot>();
+  const cache = new Map<string, PageVariableInspectionBundle>();
   const error = ref<string | null>(null);
   const loading = ref(false);
+  const rawPromotions = ref<PageVariablePromotionTraceSnapshot | null>(null);
   const rawSnapshot = ref<ResolvedVariablesSnapshot | null>(null);
+  const rawStagedWrites = ref<PageStagedVariableWriteSnapshot | null>(null);
+  const promotionGroups = ref<GroupedVariablePromotionTrace[]>([]);
   const rows = ref<VariableInspectorRow[]>([]);
+  const stagedWrites = ref<FlattenedPageStagedVariableWrite[]>([]);
   let requestVersion = 0;
 
   const target = computed<ResolvedTarget | null>(() => {
@@ -86,16 +113,15 @@ export function useWorkspaceInspectorVariables(
       requestVersion += 1;
       error.value = null;
       loading.value = false;
-      rawSnapshot.value = null;
-      rows.value = [];
+      clearBundle();
       return;
     }
 
     const cacheKey = buildTargetKey(currentTarget);
     if (!force) {
-      const cachedSnapshot = cache.get(cacheKey);
-      if (cachedSnapshot) {
-        applySnapshot(cachedSnapshot);
+      const cachedBundle = cache.get(cacheKey);
+      if (cachedBundle) {
+        applyBundle(cachedBundle);
         loading.value = false;
         error.value = null;
         return;
@@ -107,20 +133,14 @@ export function useWorkspaceInspectorVariables(
     error.value = null;
 
     try {
-      const snapshot = await resource.resolveContext({
-        accountId: currentTarget.accountId,
-        floorId: currentTarget.floorId,
-        includeLayers: true,
-        pageId: currentTarget.pageId,
-        sessionId: currentTarget.sessionId,
-      });
+      const bundle = await loadInspectionBundle(resource, currentTarget);
 
       if (currentRequestVersion !== requestVersion) {
         return;
       }
 
-      cache.set(cacheKey, snapshot);
-      applySnapshot(snapshot);
+      cache.set(cacheKey, bundle);
+      applyBundle(bundle);
     } catch (cause) {
       if (currentRequestVersion !== requestVersion) {
         return;
@@ -134,17 +154,67 @@ export function useWorkspaceInspectorVariables(
     }
   }
 
-  function applySnapshot(snapshot: ResolvedVariablesSnapshot): void {
-    rawSnapshot.value = snapshot;
-    rows.value = sortVariableInspectorRows(flattenVariableSnapshot(snapshot));
+  function applyBundle(bundle: PageVariableInspectionBundle): void {
+    rawSnapshot.value = bundle.resolved;
+    rows.value = sortVariableInspectorRows(flattenVariableSnapshot(bundle.resolved));
+    rawStagedWrites.value = bundle.staged;
+    stagedWrites.value = flattenPageStagedVariableWrites(bundle.staged);
+    rawPromotions.value = bundle.promotions;
+    promotionGroups.value = groupVariablePromotionTrace(bundle.promotions);
+  }
+
+  function clearBundle(): void {
+    rawSnapshot.value = null;
+    rows.value = [];
+    rawStagedWrites.value = null;
+    stagedWrites.value = [];
+    rawPromotions.value = null;
+    promotionGroups.value = [];
   }
 
   return {
     error,
     loading,
+    promotionGroups,
+    rawPromotions,
     rawSnapshot,
+    rawStagedWrites,
     refresh,
     rows,
+    stagedWrites,
+  };
+}
+
+async function loadInspectionBundle(
+  resource: VariablesResourceLike,
+  target: ResolvedTarget,
+): Promise<PageVariableInspectionBundle> {
+  const [resolved, staged, promotions] = await Promise.all([
+    resource.resolveContext({
+      accountId: target.accountId,
+      floorId: target.floorId,
+      includeLayers: true,
+      pageId: target.pageId,
+      sessionId: target.sessionId,
+    }),
+    target.pageId && resource.getPageStagedWrites
+      ? resource.getPageStagedWrites({
+          accountId: target.accountId,
+          pageId: target.pageId,
+        })
+      : Promise.resolve(null),
+    target.pageId && resource.getPagePromotions
+      ? resource.getPagePromotions({
+          accountId: target.accountId,
+          pageId: target.pageId,
+        })
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    promotions,
+    resolved,
+    staged,
   };
 }
 

@@ -3,6 +3,7 @@
 import type { VariableScope } from '@tavern/shared';
 import type { InstanceSlot } from '../llm/types.js';
 import type { VariableContext } from '../types.js';
+import type { VariableWriteIntent, VariableWriteSourceMetadata } from '../variables/contracts/index.js';
 
 // ── Side Effect Level ─────────────────────────────────
 
@@ -315,6 +316,9 @@ export interface BufferedToolVariableMutation {
   key: string;
   value: unknown;
   accountId?: string;
+  intent?: VariableWriteIntent;
+  reason?: string;
+  source?: VariableWriteSourceMetadata;
   bufferedAt: number;
 }
 

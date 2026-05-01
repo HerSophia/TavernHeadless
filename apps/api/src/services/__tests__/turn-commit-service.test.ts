@@ -721,19 +721,20 @@ describe("TurnCommitService", () => {
     expect(result.memory).toEqual({
       mode: "async",
       status: "queued",
-      jobId: `memory-job:ingest_turn:${floorId}`,
+      jobId: `memory-job:ingest_turn:${result.outputPageId}`,
     });
     expect(await database.db.select().from(memoryItems)).toEqual([]);
 
     const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.floorId, floorId));
     expect(job).toMatchObject({
-      id: `memory-job:ingest_turn:${floorId}`,
+      id: `memory-job:ingest_turn:${result.outputPageId}`,
       jobType: toMemoryRuntimeJobType("ingest_turn"),
       accountId: DEFAULT_ACCOUNT_ID,
       scopeType: MEMORY_RUNTIME_SCOPE_TYPE,
       scopeKey: buildMemoryRuntimeScopeKey("chat", sessionId),
       status: "pending",
       floorId,
+      pageId: result.outputPageId,
       basedOnRevision: null,
       attemptCount: 0,
       maxAttempts: 5,
@@ -752,6 +753,8 @@ describe("TurnCommitService", () => {
       userInputDigest: expect.any(String),
       committedAt,
       summaries: execution.summaries,
+      pageId: result.outputPageId,
+      runtimeMode: "async_primary",
       enableConsolidation: true,
     }));
   });

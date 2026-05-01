@@ -1,6 +1,6 @@
 import type { VariableEntry } from '@tavern/shared';
 import type { VariableContext } from '../types.js';
-import type { VariableResolver } from '../variables/variable-resolver.js';
+import type { VariableResolver } from '../variables/resolver/variable-resolver.js';
 
 /**
  * 模板渲染选项

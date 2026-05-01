@@ -93,6 +93,33 @@ export const sessions = sqliteTable("session", {
   updatedAt: integer("updated_at").notNull()
 });
 
+export const sessionBranches = sqliteTable(
+  "session_branch",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
+    sourceBranchId: text("source_branch_id"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountSessionBranchUnique: uniqueIndex("session_branch_account_session_branch_uq").on(
+      table.accountId,
+      table.sessionId,
+      table.branchId,
+    ),
+    accountSessionCreatedIdx: index("session_branch_account_session_created_idx").on(
+      table.accountId, table.sessionId, table.createdAt,
+    ),
+    accountSessionBranchCreatedIdx: index("session_branch_account_session_branch_created_idx").on(
+      table.accountId, table.sessionId, table.branchId, table.createdAt,
+    ),
+  })
+);
+
 export const floors = sqliteTable(
   "floor",
   {
@@ -235,6 +262,78 @@ export const variables = sqliteTable(
       table.scope,
       table.updatedAt
     )
+  })
+);
+
+export const pageStagedVariableWrites = sqliteTable(
+  "page_staged_variable_write",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    pageId: text("page_id").notNull().references(() => messagePages.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    op: text("op", { enum: ["set", "delete"] }).notNull(),
+    valueJson: text("value_json"),
+    intent: text("intent", { enum: ["page_only", "promote_to_floor_on_accept"] }).notNull(),
+    conflictPolicy: text("conflict_policy", { enum: ["replace", "if_absent"] }).notNull(),
+    sourceJson: text("source_json").notNull().default("{}"),
+    evidenceJson: text("evidence_json").notNull().default("{}"),
+    reason: text("reason").notNull(),
+    status: text("status", {
+      enum: [
+        "staged",
+        "accepted_page_only",
+        "promoted",
+        "rejected",
+        "discarded",
+        "rerouted_to_session_state",
+      ],
+    }).notNull(),
+    decisionReason: text("decision_reason"),
+    createdAt: integer("created_at").notNull(),
+    resolvedAt: integer("resolved_at"),
+  },
+  (table) => ({
+    pageStatusCreatedIdx: index("page_staged_variable_write_page_status_created_idx").on(table.pageId, table.status, table.createdAt),
+    floorCreatedIdx: index("page_staged_variable_write_floor_created_idx").on(table.floorId, table.createdAt),
+    accountSessionBranchCreatedIdx: index("page_staged_variable_write_account_session_branch_created_idx").on(
+      table.accountId,
+      table.sessionId,
+      table.branchId,
+      table.createdAt,
+    ),
+  })
+);
+
+export const variablePromotionTraces = sqliteTable(
+  "variable_promotion_trace",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    pageId: text("page_id").references(() => messagePages.id, { onDelete: "cascade" }),
+    stagedWriteId: text("staged_write_id").references(() => pageStagedVariableWrites.id, { onDelete: "set null" }),
+    key: text("key").notNull(),
+    fromScope: text("from_scope", { enum: ["page", "floor", "branch", "chat"] }).notNull(),
+    fromScopeId: text("from_scope_id").notNull(),
+    toScope: text("to_scope", { enum: ["floor", "branch", "chat", "global"] }).notNull(),
+    toScopeId: text("to_scope_id").notNull(),
+    conflictPolicy: text("conflict_policy", { enum: ["replace", "if_absent"] }).notNull(),
+    sourceVariableId: text("source_variable_id"),
+    targetVariableId: text("target_variable_id"),
+    valueJson: text("value_json").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    pageCreatedIdx: index("variable_promotion_trace_page_created_idx").on(table.pageId, table.createdAt),
+    floorCreatedIdx: index("variable_promotion_trace_floor_created_idx").on(table.floorId, table.createdAt),
+    accountSessionBranchCreatedIdx: index("variable_promotion_trace_account_session_branch_created_idx").on(table.accountId, table.sessionId, table.branchId, table.createdAt),
+    stagedWriteIdx: index("variable_promotion_trace_staged_write_idx").on(table.stagedWriteId),
   })
 );
 
@@ -882,6 +981,7 @@ export const promptRuntimeExplainSnapshots = sqliteTable(
     historySourceMode: text("history_source_mode", { enum: ["existing_branch", "source_floor_branch", "main_fallback"] }).notNull().default("existing_branch"),
     snapshotVersion: integer("snapshot_version").notNull().default(1),
     assetsJson: text("assets_json").notNull().default("{}"),
+    memoryJson: text("memory_json"),
     resolvedPolicyJson: text("resolved_policy_json").notNull().default("{}"),
     sourceMapJson: text("source_map_json").notNull().default("{}"),
     diagnosticsJson: text("diagnostics_json").notNull().default("[]"),

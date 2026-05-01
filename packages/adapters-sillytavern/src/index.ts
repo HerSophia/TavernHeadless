@@ -57,8 +57,14 @@ export type {
   MatchTrace,
   ActivationTrace,
 } from './worldbook/trigger-engine.js';
-export { applyRegexScripts } from './regex/regex-engine.js';
-export type { RegexContext, RegexExecutionChannel } from './regex/regex-engine.js';
+export { applyRegexScripts, applyRegexScriptsWithTrace } from './regex/regex-engine.js';
+export type {
+  RegexContext,
+  RegexExecutionChannel,
+  RegexExecutionTraceResult,
+  RegexTraceSkipReason,
+  RegexTraceSkippedRule,
+} from './regex/regex-engine.js';
 
 // ── Assemblers ────────────────────────────────────────
 export { assembleCompat } from './compat-assembler.js';

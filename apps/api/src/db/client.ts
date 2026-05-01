@@ -12,6 +12,58 @@ const DEFAULT_DATABASE_PATH = "data/tavern-headless.db";
 const DEFAULT_MIGRATIONS_PATH = fileURLToPath(new URL("../../drizzle", import.meta.url));
 const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
 
+type SqliteTableInfoRow = {
+  name: string;
+};
+
+function tableExists(sqlite: Database.Database, tableName: string): boolean {
+  const row = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1")
+    .get(tableName) as { name: string } | undefined;
+
+  return row?.name === tableName;
+}
+
+function getTableColumnNames(sqlite: Database.Database, tableName: string): Set<string> {
+  const rows = sqlite
+    .prepare(`PRAGMA table_info(\`${tableName}\`)`)
+    .all() as SqliteTableInfoRow[];
+
+  return new Set(rows.map((row) => row.name));
+}
+
+/**
+ * 修复已知的 additive migration 漂移。
+ *
+ * 这里处理的不是正常升级路径，而是历史本地库曾经处于“迁移记录已前进，
+ * 但 branch_local_variable_snapshot 仍停留在旧表形状”的异常状态。
+ *
+ * 该漂移会让 Prompt Runtime preview 在读取 source floor snapshot 时直接触发
+ * SQLITE_ERROR，而不是返回预期的 branch_local_snapshot_missing。
+ *
+ * 对这类旧库，追加列修复是安全的：
+ * - snapshot_version 默认回填 1，继续按 v1 兼容语义读取
+ * - provenance_json 默认为 NULL，旧行仍视为无 provenance
+ */
+function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
+  const tableName = "branch_local_variable_snapshot";
+
+  if (!tableExists(sqlite, tableName)) {
+    return;
+  }
+
+  const columns = getTableColumnNames(sqlite, tableName);
+
+  if (!columns.has("snapshot_version")) {
+    sqlite.exec("ALTER TABLE `branch_local_variable_snapshot` ADD COLUMN `snapshot_version` integer NOT NULL DEFAULT 1;");
+    columns.add("snapshot_version");
+  }
+
+  if (!columns.has("provenance_json")) {
+    sqlite.exec("ALTER TABLE `branch_local_variable_snapshot` ADD COLUMN `provenance_json` text;");
+  }
+}
+
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
 /**
@@ -65,6 +117,8 @@ export function createDatabase(
   } finally {
     sqlite.pragma("foreign_keys = ON");
   }
+
+  repairKnownAdditiveSchemaDrift(sqlite);
 
   return {
     db,

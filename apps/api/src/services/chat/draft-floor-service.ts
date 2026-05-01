@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import type { AppDb, DbExecutor } from "../../db/client.js";
 import { floors, messagePages, messages } from "../../db/schema.js";
 import { ChatMessagePersistence, type PersistedMessageRef } from "../chat-message-persistence.js";
+import { SessionBranchRegistryService } from "../variables/host/session-branch-registry-service.js";
 
 import { buildFloorMetadataJson } from "./shared/metadata.js";
 
@@ -15,6 +16,7 @@ export class DraftFloorService {
 
   createDraftFloorWithUserMessage(args: {
     floorId?: string;
+    accountId: string;
     sessionId: string;
     floorNo: number;
     branchId: string;
@@ -23,6 +25,8 @@ export class DraftFloorService {
     userId: string | null;
     userSnapshotJson: string | null;
     now: number;
+    sourceFloorId?: string | null;
+    sourceBranchId?: string | null;
     prepare?: (tx: DbExecutor) => void;
     afterCreate?: (tx: DbExecutor, floorId: string) => void;
   }): { floorId: string; userMessageRef: PersistedMessageRef } {
@@ -45,6 +49,16 @@ export class DraftFloorService {
         createdAt: args.now,
         updatedAt: args.now,
       }).run();
+
+      new SessionBranchRegistryService(tx).ensure({
+        accountId: args.accountId,
+        sessionId: args.sessionId,
+        branchId: args.branchId,
+        sourceFloorId: args.sourceFloorId ?? null,
+        sourceBranchId: args.sourceBranchId ?? null,
+        createdAt: args.now,
+        updatedAt: args.now,
+      });
       args.afterCreate?.(tx, floorId);
 
       return this.messagePersistence.saveUserMessageWithExecutor(tx, floorId, args.userMessage, args.now);

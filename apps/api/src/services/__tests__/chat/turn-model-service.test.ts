@@ -66,4 +66,46 @@ describe("TurnModelService", () => {
       enableMemoryConsolidation: false,
     });
   });
+
+  it("resolveRequestedTurnConfig clears memory consolidation when memory store is unavailable", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: true,
+      enableAsyncMemoryIngest: false,
+      memoryStoreEnabled: false,
+      executionTimeoutMs: 60_000,
+    });
+
+    const config = service.resolveRequestedTurnConfig(
+      {
+        enableDirector: true,
+        enableVerifier: true,
+        enableMemoryConsolidation: true,
+      },
+      {},
+    );
+
+    expect(config).toMatchObject({
+      enableDirector: true,
+      enableVerifier: true,
+      enableMemoryConsolidation: false,
+    });
+  });
+
+  it("toOrchestratorTurnConfig keeps write intent in async mode but disables legacy consolidator execution", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: true,
+      enableAsyncMemoryIngest: true,
+      memoryStoreEnabled: true,
+      executionTimeoutMs: 60_000,
+    });
+
+    expect(service.resolveMemoryWritePolicy({ enableMemoryConsolidation: true })).toEqual({
+      runtimeMode: "async_primary",
+      requestedWrite: true,
+      effectiveWrite: true,
+    });
+    expect(service.toOrchestratorTurnConfig({ enableMemoryConsolidation: true })).toEqual({
+      enableMemoryConsolidation: false,
+    });
+  });
 });

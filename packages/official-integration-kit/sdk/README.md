@@ -105,6 +105,41 @@ const rawSession = await client.request("GET", "/sessions/{id}", {
 
 下面用几个常见场景展示资源方法的用法。
 
+### Variables 的三个观察面
+
+变量资源现在同时提供三组方法：
+
+- `client.variables.upsert(...)` / `client.variables.list(...)` / `client.variables.getDetail(...)`
+  - 对应显式 durable write / durable read
+- `client.variables.resolveContext(...)`
+  - 只返回 durable truth
+  - 不会把 page staged write 和 promotion trace 混进去
+- `client.variables.getPageStagedWrites(...)`
+  - 读取某个 page 的 staged write ledger
+- `client.variables.getPagePromotions(...)`
+  - 读取某个 page 已发生的 durable promotion trace
+
+```ts
+const resolved = await client.variables.resolveContext({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "main",
+  floorId: "floor-1",
+  pageId: "page-1",
+  includeLayers: true,
+});
+
+const staged = await client.variables.getPageStagedWrites({
+  accountId: "account-1",
+  pageId: "page-1",
+});
+
+const promotions = await client.variables.getPagePromotions({
+  accountId: "account-1",
+  pageId: "page-1",
+});
+```
+
 ### 客户端专属数据域
 
 ```ts
@@ -409,6 +444,8 @@ Chat 相关方法会保留后端返回的这些字段：
 
 如果本轮 prompt 组装实际命中了宏系统，`runtimeTrace.macro` 会继续附带宏 warning、used names、mutation preview、staged mutations 和 trace。
 
+如果 live debug 返回了结构化记忆真相，`runtimeTrace.memory` 现在会继续保留 `runtimeMode`、`scopeResolution`、`selectedItems`、`tokenStats`、`proposalStatus`、`promotionStatus` 等字段，而不再只有 `summaryInjected`。
+
 其中 `finalState === "committed"` 表示生成结果已经越过提交边界，相关持久化写入已经完成。
 
 ### 会话级工具目录与会话基础权限
@@ -601,6 +638,10 @@ console.log(branchPolicy.persistentPolicyEnvelope?.value.delivery?.noAssistant);
 console.log(preview.policy.budget);
 console.log(preview.text);
 console.log(preview.runtimeTrace.sourceSelection?.excludedSources);
+console.log(preview.memory?.runtimeMode);
+console.log(preview.memory?.scopeResolution);
+console.log(inspect.preparedTurn.memorySummary);
+console.log(inspect.preparedTurn.memory);
 console.log(inspect.preparedTurn.messages);
 console.log(inspect.preparedTurn.promptSnapshot?.promptDigest);
 console.log(inspect.governance.entries);
@@ -612,6 +653,7 @@ console.log(explain.snapshotAvailable);
 console.log(explain.assets);
 console.log(explain.sectionStats);
 console.log(explain.governance); // 旧 snapshot 可能为 null
+console.log(explain.memory); // 较旧 explain snapshot 行可能为 null
 console.log(explain.resolvedPolicy); // 旧楼层 fallback 时可能为 null
 console.log(diff.policyChanges);
 console.log(diff.left.snapshotAvailable, diff.right.snapshotAvailable);
@@ -650,9 +692,11 @@ console.log(capabilities.unsupported);
 - `previewText(...)` 的宏诊断继续统一走 `runtimeTrace.macro`，并且 `runtimeTrace.macro.stagedMutations` 固定为空；结构化 budget trim reason 仍以 dry-run / live 为主。
 - `previewText(...)` 响应的 `limitations` 会额外说明 preview 只是 `macro_text_preview` 子视图、不包含 assembly / delivery 真相，便于接入方在 UI 上提示用户 preview 不等于 live / dry-run 结果。
 - `inspect(...)` 是只读 prepared-turn 检查接口。它会返回 `preparedTurn`、`policy`、`sourceMap`、`governance`、`diagnostics`、`trimReasons`、`excludedSources`、`sectionStats`，但不会调用模型，也不会创建 floor、写 `promptSnapshot`、写 explain snapshot，或者提交任何副作用。
+- `previewText(...)` 现在会在顶层 `memory` 字段里返回结构化记忆真相；`runtimeTrace` 仍固定只保留 preview 子集，不会重复承载这部分信息。
+- `inspect(...).preparedTurn.memorySummary` 继续保留兼容摘要字符串；`inspect(...).preparedTurn.memory` 和 `inspect(...).preparedTurn.runtimeTrace?.memory` 会返回同一套结构化记忆真相。
 - `inspect(...).preparedTurn.sessionStateWrites` 只回显请求里的写入摘要，不代表这些写入已经 stage 或提交。若部署没有开启 client-data，而请求里带了 `sessionStateWrites`，服务端会返回 `503 feature_unavailable`。
 - `getFloorExplain(...)` 只读取 committed floor 的持久化真相，不会重新组装 prompt、重新展开宏，也不会重新计算 budget / source selection。对应 `capabilities.observability.explain.persistedTruthOnly === true`。
-- `getFloorExplain(...)` 现在会返回 `governance`。对于旧的 `snapshotVersion = 1` explain snapshot，这个字段会是 `null`，并且 `limitations` 会明确说明这是旧版本兼容结果。
+- `getFloorExplain(...)` 现在会返回 `memory` 与 `governance`。新的 explain snapshot 写入版本是 `snapshotVersion = 3`；较旧的 `snapshotVersion = 1 | 2` 行仍然可读，但 `memory` 可能是 `null`，并且 `snapshotVersion = 1` 的 `governance` 仍会是 `null`。
 - `getFloorExplain(...)` 的 `snapshotAvailable` 表示 explain 是否来自 committed explain snapshot。snapshot-backed 路径会返回持久化 limitations 声明，fallback 路径会在其基础上追加"旧 floor 字段可能为 null"的 fallback 限制条目；`assets`、`resolvedPolicy`、`trimReasons`、`excludedSources`、`sectionStats` 在 fallback 路径可能为 `null`，并会保留 `diagnostics` / `limitations`。
 - `supportedSources` 与 `excludedSources[].source` 继续只承诺公开 source kind；具体 budget group 标签会出现在 `budgets.byGroup[].group`、`trimReasons[].group` 与 compare 的 `trimChanges` 中，例如 `section:main`。
 - `sectionStats[].sectionName` 直接反映后端真实写入的 IR section 名称。记忆相关 section 在 `compat_plus` 与 `native` 装配路径下稳定命名为 `memory`；`compat` 路径下记忆以后置 `system` 消息形式注入，不产生 `memory` section，`sectionStats` 中也不会出现对应条目。
@@ -681,4 +725,4 @@ console.log(capabilities.unsupported);
 
 ## 当前状态
 
-当前 `@tavern/sdk` 已经覆盖会话、内容结构、变量、记忆、导入、导出、LLM Profiles、LLM Instances、Tools、MCP、Client Data 等主要接入域。Client Data 第二期已补齐 grant / audit 之前的核心资源调用面，grant / audit 的高层 SDK 封装将在后续阶段继续扩展。
+当前 `@tavern/sdk` 已经覆盖会话、内容结构、变量、记忆、Prompt Runtime 结构化 memory truth、导入、导出、LLM Profiles、LLM Instances、Tools、MCP、Client Data 等主要接入域。Client Data 第二期已补齐 grant / audit 之前的核心资源调用面，grant / audit 的高层 SDK 封装将在后续阶段继续扩展。

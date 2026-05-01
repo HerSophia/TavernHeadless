@@ -18,6 +18,7 @@ import { floors, messagePages, sessions, variables } from "../src/db/schema.js";
 import { ChatMessagePersistence } from "../src/services/chat-message-persistence.js";
 import { TurnCommitService } from "../src/services/turn-commit-service.js";
 import type { WsMessage } from "../src/ws/index.js";
+import { SessionBranchRegistryService } from "../src/services/variables/host/session-branch-registry-service.js";
 
 function createMockSocket() {
   const emitter = new EventEmitter();
@@ -204,6 +205,13 @@ describe("variable events shared event bus and websocket integration", () => {
       createdAt: now,
       updatedAt: now,
     });
+    new SessionBranchRegistryService(directDatabase.db).ensure({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId,
+      branchId,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     const sessionSocket = createMockSocket();
     const foreignSocket = createMockSocket();
@@ -301,6 +309,13 @@ describe("variable events shared event bus and websocket integration", () => {
       title: "Phase 5 Commit Session",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    new SessionBranchRegistryService(directDatabase.db).ensure({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId,
+      branchId,
       createdAt: now,
       updatedAt: now,
     });

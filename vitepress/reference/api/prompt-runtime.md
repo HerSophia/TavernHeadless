@@ -61,7 +61,7 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 - branch 策略也只对已经存在的分支生效；不能对还没创建的分支预先写入策略。
 - session 与 branch 的策略现在都支持持久化管理：`structure`、`delivery`、`budget`、`source_selection`、`visibility`。
 - 策略写入后统一包裹一层 envelope（`version`、`updated_at`、`updated_by`、`value`）。读取侧会继续兼容旧的裸对象格式。
-- historical explain snapshot 现在会把 `source_map` 与 `governance` 一起写入 `snapshotVersion = 2` 的 envelope；旧的 `snapshotVersion = 1` 仍然可读，但会返回 `governance = null` 并在 `limitations` 中明确说明。
+- historical explain snapshot 现在使用 `snapshotVersion = 3` 来表示：`source_map` 继续按 envelope 读写，且 committed explain 额外持久化了结构化 `memory`。旧的 `snapshotVersion = 1` 与 `2` 仍然可读，但旧行可能返回 `memory = null`，且 `snapshotVersion = 1` 仍会返回 `governance = null` 并在 `limitations` 中明确说明。
 - 一次真实聊天在成功提交后，会把 `prompt_runtime_explain_snapshot` 与助理消息、楼层状态、`prompt_snapshot`、提交结果等数据一起写入同一个数据库事务。
 - `GET /floors/:id/prompt-runtime/explain` 和 `POST /sessions/:id/prompt-runtime/compare` 只读取已持久化的真相，不会重新组装提示词、重新展开宏、重新计算预算或来源选择。
 - 对于没有 committed snapshot 的旧楼层，会显式返回 `snapshot_available: false` 和结构化 `limitations`，不会试图用启发式方法补数据。
@@ -171,6 +171,47 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 - 记忆相关 section 在 `compat_plus` 与 `native` 两条装配路径下统一为 `memory`。
 - `compat` 路径下记忆仍以后置 `system` 消息形式注入，不会产生 `memory` section，`section_stats` 中也不会出现对应条目。
 
+### MemoryTrace
+
+预览、inspect 和 historical explain 现在都会在兼容字段 `memory_summary` 旁边，额外返回结构化 `memory` 真相。
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `summary_injected` | boolean | 本轮是否真的把记忆摘要注入了 prompt |
+| `runtime_mode` | string | 可选。`disabled` / `legacy_sync` / `async_primary` |
+| `requested_write` | boolean | 可选。当前请求是否要求产生记忆写入 |
+| `effective_write` | boolean | 可选。当前开关和主链下，最终是否会产生真实写入 |
+| `strategy` | string | 可选。`none` / `single_summary` / `dual_summary` / `direct_items` |
+| `summary_text` | string | 可选。结构化别名，对应兼容 `memory_summary` 的摘要文本 |
+| `summary_text_hash` | string \| null | 可选。注入摘要文本的稳定 hash |
+| `selected_items` | object[] | 可选。本轮实际进入记忆注入块的条目 |
+| `selected_items[].memory_id` | string | 记忆条目 ID |
+| `selected_items[].scope` | string | `global` / `chat` / `branch` / `floor` |
+| `selected_items[].scope_id` | string | 该记忆条目所属 scope 的 durable ID |
+| `selected_items[].branch_id` | string \| null | 可选。若条目来自分支隔离记忆，这里返回实际命中的 branch |
+| `selected_items[].kind` | string | `fact` / `micro_summary` / `macro_summary` / `summary` / `open_loop` |
+| `selected_items[].source` | string | 可选。`store` / `summary` / `open_loop` / `fallback` |
+| `selected_items[].score` | number \| null | 可选。选入时的排序分值 |
+| `selected_items[].token_count` | number \| null | 可选。该条目占用的 token 估算 |
+| `selected_items[].selected_reason` | string \| null | 可选。选入原因摘要 |
+| `token_stats` | object | 可选。记忆预算和摘要分配统计 |
+| `token_stats.budget` | integer \| null | 记忆预算上限 |
+| `token_stats.used` | integer | 本轮已使用的记忆 token |
+| `token_stats.micro_summary` | integer | micro summary 占用 |
+| `token_stats.macro_summary` | integer | macro summary 占用 |
+| `token_stats.direct_items` | integer | direct item 占用 |
+| `scope_resolution` | object | 可选。记忆 scope 解析与 fallback 诊断 |
+| `scope_resolution.mode` | string | `branch_aware` / `explicit_scope` / `fallback` / `strict_empty` / `resolver_error` / `legacy_direct` |
+| `scope_resolution.requested_scopes` | string[] | 请求要求参与解析的 scope 列表 |
+| `scope_resolution.resolved_scopes` | string[] | 最终真正参与解析的 scope 列表 |
+| `scope_resolution.requested_branch_id` | string \| null | 可选。请求目标 branch |
+| `scope_resolution.resolved_branch_id` | string \| null | 可选。最终实际命中的 branch |
+| `scope_resolution.fallback_reason` | string \| null | 可选。发生 fallback 时的原因 |
+| `page_id` | string | 可选。当前 proposal / promotion 关联的输出页。这里只是 proposal 容器，不代表新增 live memory scope |
+| `proposal_batch_id` | string | 可选。当前记忆 proposal batch ID |
+| `proposal_status` | string | 可选。`not_requested` / `skipped_by_request` / `proposed` / `promoted` / `rejected` / `superseded` |
+| `promotion_status` | string | 可选。`not_requested` / `promoted` / `rejected` / `superseded` |
+
 ### GovernanceView
 
 | 字段 | 类型 | 说明 |
@@ -244,7 +285,7 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 | `diagnostics[].source` | string | 可选。当前至少会覆盖 `policy` / `branch` / `budget` / `source_selection` |
 | `diagnostics[].field_path` | string | 可选。命中的字段路径 |
 | `diagnostics[].phase` | string | 可选。当前 control plane 读取通常省略；preview / explain 场景会返回显式 phase |
-| `limitations` | string[] | 当前已知边界摘要，例如 memory 仍不具备 branch 隔离、`variableCommit` 仍只做 `page -> floor` |
+| `limitations` | string[] | 当前已知边界摘要，例如较旧 committed floor 的 page-local proposal / promotion 轨迹可能不完整、`variableCommit` 仍只做 `page -> floor` |
 | `source_map` | object | 可选。当前已覆盖 `structure` / `delivery` / `budget` / `source_selection` / `visibility` / `debug` 的来源解释，以及 `history.source_branch_id` / `history.source_mode` |
 
 ### PolicyView
@@ -522,7 +563,7 @@ GET /sessions/:id/prompt-runtime
       }
     ],
     "limitations": [
-      "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+      "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
       "Variable commit remains page -> floor. Branch promotion is not automatic."
     ]
   }
@@ -1063,7 +1104,7 @@ curl http://localhost:3000/sessions/session-1/prompt-runtime/assets \
 POST /sessions/:id/prompt-runtime/preview
 ```
 
-对一段文本执行宏 preview，并返回预览后的文本与 `runtime_trace`。
+对一段文本执行宏 preview，并返回预览后的文本、结构化 `memory` 真相，以及 preview 子集 `runtime_trace`。
 
 这个入口继续复用主线宏求值链，但边界固定为：
 
@@ -1073,6 +1114,7 @@ POST /sessions/:id/prompt-runtime/preview
 - 不写 `prompt_snapshot`
 - 不提交副作用
 - 返回的 `runtime_trace` 当前只投影 `macro`、`source_selection`、`visibility`
+- 顶层 `memory` 继续提供完整的结构化记忆真相；preview 不会把它折叠进 `runtime_trace`
 - 宏诊断继续统一走 `runtime_trace.macro`
 
 ### 路径参数
@@ -1197,6 +1239,36 @@ POST /sessions/:id/prompt-runtime/preview
       },
       "history": { "source_branch_id": "fork-branch", "source_mode": "source_floor_branch" }
     },
+    "memory": {
+      "summary_injected": true,
+      "runtime_mode": "async_primary",
+      "requested_write": false,
+      "effective_write": false,
+      "strategy": "single_summary",
+      "summary_text": "[Memory]\n- The party recently agreed to search the northern pass.",
+      "summary_text_hash": "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+      "selected_items": [
+        {
+          "memory_id": "memory-branch-summary-2",
+          "scope": "branch",
+          "scope_id": "memscope:session-1:main",
+          "branch_id": "main",
+          "kind": "macro_summary",
+          "source": "summary",
+          "score": 0.71,
+          "token_count": 22
+        }
+      ],
+      "token_stats": { "budget": 500, "used": 22, "micro_summary": 0, "macro_summary": 22, "direct_items": 0 },
+      "scope_resolution": {
+        "mode": "branch_aware",
+        "requested_scopes": ["global", "branch"],
+        "resolved_scopes": ["global", "branch"],
+        "requested_branch_id": "alt-preview",
+        "resolved_branch_id": "main",
+        "fallback_reason": null
+      }
+    },
     "text": "{\"金币\":3}",
     "runtime_trace": {
       "macro": {
@@ -1263,7 +1335,7 @@ POST /sessions/:id/prompt-runtime/preview
       }
     ],
     "limitations": [
-      "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+      "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
       "Variable commit remains page -> floor. Branch promotion is not automatic."
     ]
   }
@@ -1271,6 +1343,9 @@ POST /sessions/:id/prompt-runtime/preview
 ```
 
 ### 兼容说明
+
+- preview 顶层 `memory` 是新的结构化记忆真相。它和 live / inspect / historical explain 使用同一套 `MemoryTrace` 对象。
+- preview 仍然不会返回 `memory_summary` 这种兼容字符串，因为这里没有完整 prepared turn；如果你需要兼容摘要字符串，请查看 `inspect` 的 `prepared_turn.memory_summary` 或 committed floor explain。
 
 ## 检查分支感知 prepared turn
 
@@ -1434,9 +1509,62 @@ POST /sessions/:id/prompt-runtime/inspect
           "by_group": [
             { "group": "history", "token_count": 256 }
           ]
+        },
+        "memory": {
+          "summary_injected": true,
+          "runtime_mode": "async_primary",
+          "requested_write": true,
+          "effective_write": true,
+          "strategy": "dual_summary",
+          "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+          "selected_items": [
+            {
+              "memory_id": "memory-branch-fact-1",
+              "scope": "branch",
+              "scope_id": "memscope:session-1:main",
+              "branch_id": "main",
+              "kind": "fact"
+            }
+          ],
+          "token_stats": { "budget": 500, "used": 64, "micro_summary": 14, "macro_summary": 0, "direct_items": 50 },
+          "scope_resolution": {
+            "mode": "branch_aware",
+            "requested_scopes": ["global", "branch"],
+            "resolved_scopes": ["global", "branch"],
+            "requested_branch_id": "main",
+            "resolved_branch_id": "main",
+            "fallback_reason": null
+          },
+          "page_id": "page-output-12",
+          "proposal_batch_id": "memory-proposal:page-output-12",
+          "proposal_status": "promoted",
+          "promotion_status": "promoted"
         }
       },
       "memory_summary": "Remember the promise.",
+      "memory": {
+        "summary_injected": true,
+        "runtime_mode": "async_primary",
+        "requested_write": true,
+        "effective_write": true,
+        "strategy": "dual_summary",
+        "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+        "selected_items": [
+          {
+            "memory_id": "memory-branch-fact-1",
+            "scope": "branch",
+            "scope_id": "memscope:session-1:main",
+            "branch_id": "main",
+            "kind": "fact"
+          }
+        ],
+        "token_stats": { "budget": 500, "used": 64, "micro_summary": 14, "macro_summary": 0, "direct_items": 50 },
+        "scope_resolution": { "mode": "branch_aware", "requested_scopes": ["global", "branch"], "resolved_scopes": ["global", "branch"], "requested_branch_id": "main", "resolved_branch_id": "main", "fallback_reason": null },
+        "page_id": "page-output-12",
+        "proposal_batch_id": "memory-proposal:page-output-12",
+        "proposal_status": "promoted",
+        "promotion_status": "promoted"
+      },
       "generation_params": {
         "max_output_tokens": 256,
         "temperature": 0.7
@@ -1484,7 +1612,7 @@ POST /sessions/:id/prompt-runtime/inspect
     "excluded_sources": [],
     "section_stats": [],
     "limitations": [
-      "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+      "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
       "Variable commit remains page -> floor. Branch promotion is not automatic."
     ]
   }
@@ -1496,6 +1624,8 @@ POST /sessions/:id/prompt-runtime/inspect
 - `prepared_turn.messages` 是已经 materialize 完成、可直接送入模型前的消息序列。
 - `prepared_turn.prompt_snapshot` 是这次 inspect 对应的 prompt snapshot 预览值，不会落库。
 - `prepared_turn.runtime_trace` 是这次 inspect 的完整 runtime trace 预览值，不会落库。
+- `prepared_turn.memory_summary` 仍然保留兼容摘要字符串；`prepared_turn.memory` 是新的结构化记忆真相。
+- `prepared_turn.runtime_trace.memory` 与 `prepared_turn.memory` 使用同一套结构；前者属于完整 runtime trace，后者是便于直接读取的 additive 字段。
 - `prepared_turn.session_state_writes` 只总结请求里带来的写入意图，不代表已经 stage 或提交。
 - `governance` 聚合了各个来源的声明治理级别、实际保留语义和不一致项。
 
@@ -1652,6 +1782,36 @@ GET /floors/:id/prompt-runtime/explain
       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
       "token_estimate": 512
     },
+    "memory": {
+      "summary_injected": true,
+      "runtime_mode": "async_primary",
+      "requested_write": true,
+      "effective_write": true,
+      "strategy": "dual_summary",
+      "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+      "selected_items": [
+        {
+          "memory_id": "memory-branch-fact-1",
+          "scope": "branch",
+          "scope_id": "memscope:session-1:main",
+          "branch_id": "main",
+          "kind": "fact"
+        }
+      ],
+      "token_stats": { "budget": 500, "used": 64, "micro_summary": 14, "macro_summary": 0, "direct_items": 50 },
+      "scope_resolution": {
+        "mode": "branch_aware",
+        "requested_scopes": ["global", "branch"],
+        "resolved_scopes": ["global", "branch"],
+        "requested_branch_id": "main",
+        "resolved_branch_id": "main",
+        "fallback_reason": null
+      },
+      "page_id": "page-output-12",
+      "proposal_batch_id": "memory-proposal:page-output-12",
+      "proposal_status": "promoted",
+      "promotion_status": "promoted"
+    },
     "resolved_policy": {
       "structure": {
         "mode": "no_assistant",
@@ -1777,7 +1937,7 @@ GET /floors/:id/prompt-runtime/explain
       }
     ],
     "limitations": [
-      "Memory remains scoped to global / chat / floor. Branch isolation is not available.",
+      "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
       "Variable commit remains page -> floor. Branch promotion is not automatic."
     ],
     "result": {
@@ -1804,6 +1964,7 @@ GET /floors/:id/prompt-runtime/explain
 典型特征如下：
 
 - `assets = null`
+- `memory = null`
 - `resolved_policy = null`
 - `trim_reasons = null`
 - `governance = null`
@@ -1822,6 +1983,7 @@ GET /floors/:id/prompt-runtime/explain
   "data": {
     "snapshot_available": false,
     "assets": null,
+    "memory": null,
     "resolved_policy": null,
     "trim_reasons": null,
     "excluded_sources": null,
@@ -1843,8 +2005,8 @@ GET /floors/:id/prompt-runtime/explain
 ### 当前返回面的解释
 
 - `prompt_snapshot`、`floor`、`result` 都来自已持久化记录。
-- `snapshot_available = true` 表示 explain 已读到 `prompt_runtime_explain_snapshot`，因此可以返回完整 `assets`、`resolved_policy`、`source_map`、`trim_reasons`、`excluded_sources`、`section_stats`。
-- 新写入的 `snapshotVersion = 2` explain snapshot 会同时返回 `governance`；旧的 `snapshotVersion = 1` snapshot 仍然可读，但会返回 `governance = null`，并在 `limitations` 中说明这是旧版本兼容行为。
+- `snapshot_available = true` 表示 explain 已读到 `prompt_runtime_explain_snapshot`，因此可以返回完整 `assets`、结构化 `memory`、`resolved_policy`、`source_map`、`trim_reasons`、`excluded_sources`、`section_stats`。
+- 新写入的 `snapshotVersion = 3` explain snapshot 会同时返回 `memory` 与 `governance`；旧的 `snapshotVersion = 1` 与 `2` snapshot 仍然可读，但较旧行可能返回 `memory = null`，且 `snapshotVersion = 1` 仍会返回 `governance = null`，并在 `limitations` 中说明这是旧版本兼容行为。
 - `snapshot_available = false` 表示目标 floor 没有这份 committed snapshot。服务会保留最小只读 explain，并通过 `diagnostics` 与 `limitations` 显式说明缺失字段。
 - 无论 snapshot 是否存在，这个接口都不会重跑 prompt 组装、宏展开、budget 或 source selection。
 

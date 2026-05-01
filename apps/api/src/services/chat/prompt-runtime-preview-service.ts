@@ -5,9 +5,10 @@ import {
   resolvePromptRuntimeExecutionContext,
 } from "../prompt-runtime-execution.js";
 import { PROMPT_RUNTIME_PREVIEW_LIMITATIONS, type PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
+import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
 import type { AppDb } from "../../db/client.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
-import { VariableService } from "../variable-service.js";
+import { VariableService } from "../variables/variable-service.js";
 import {
   BranchLocalVariableSnapshotService,
   isBranchLocalSnapshotMissingError,
@@ -63,8 +64,22 @@ export class PromptRuntimePreviewService {
       visibility: executionContext.resolvedPolicy.visibility,
       sourceSelection: executionContext.resolvedPolicy.sourceSelection,
     });
-    const memorySummary = await this.memoryService.retrieveMemorySummary(sessionId, accountId, undefined, branchId);
     const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, accountId);
+    const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(undefined, resolvedTurnModels);
+    const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
+    const memoryInjection = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
+      ? undefined
+      : await this.memoryService.retrieveMemoryInjection(sessionId, accountId, undefined, branchId);
+    const effectivePreviewMemorySummary = memoryInjection?.memorySummary;
+    const memoryRuntimeTrace = {
+      ...memoryWritePolicy,
+      ...(memoryInjection?.memoryTrace ?? {}),
+      ...(!memoryInjection ? { strategy: "none" as const } : {}),
+    };
+    const memoryTrace = buildPromptRuntimeMemoryTrace({
+      summaryInjected: Boolean(effectivePreviewMemorySummary),
+      memoryTrace: memoryRuntimeTrace,
+    });
     const narratorParams = this.modelService.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const effectivePreviewBudget = resolveEffectivePromptBudget({
       budget: executionContext.effectivePolicy?.budget,
@@ -86,9 +101,6 @@ export class PromptRuntimePreviewService {
       this.rethrowBranchLocalSnapshotError(error);
     }
 
-    const effectivePreviewMemorySummary = executionContext.resolvedPolicy.sourceSelection.memory.enabled
-      ? memorySummary
-      : undefined;
     const preview = previewPromptMacroText({
       session: sessionInfo,
       text: request.text,
@@ -110,6 +122,7 @@ export class PromptRuntimePreviewService {
       history,
       visibilityTrace,
       memorySummary: effectivePreviewMemorySummary,
+      memoryTrace,
       extraDiagnostics: branchContext.branchExists
         ? []
         : [{
@@ -135,6 +148,7 @@ export class PromptRuntimePreviewService {
       diagnostics: inspection.diagnostics,
       limitations: [...inspection.limitations, ...PROMPT_RUNTIME_PREVIEW_LIMITATIONS],
       text: preview.text,
+      memory: inspection.memory,
       runtimeTrace,
     };
   }

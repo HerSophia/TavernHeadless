@@ -151,10 +151,49 @@ export type PromptRuntimeWorldbookTrace = {
   matches?: PromptRuntimeWorldbookMatchDetail[];
 };
 
+export type PromptRuntimeRegexPhaseId =
+  | "persist.user_input"
+  | "prompt.user_input"
+  | "persist.ai_output"
+  | "prompt.world_info.reserved";
+
+export type PromptRuntimeRegexPhaseStatus = "executed" | "reserved";
+
+export type PromptRuntimeRegexSkipReason =
+  | "channel_filtered"
+  | "depth_filtered"
+  | "invalid_regex"
+  | "no_match"
+  | "reserved_non_executable";
+
+export type PromptRuntimeRegexSubstitutionMode = "bare_variable_only";
+
+export type PromptRuntimeRegexSkippedRule = {
+  ruleName: string;
+  reason: PromptRuntimeRegexSkipReason;
+};
+
+export type PromptRuntimeRegexPhaseTrace = {
+  phaseId: PromptRuntimeRegexPhaseId;
+  placement: number;
+  channel: "persist" | "prompt" | "display" | "edit" | null;
+  status: PromptRuntimeRegexPhaseStatus;
+  changed: boolean;
+  depth: number | null;
+  inputTextHash: string | null;
+  outputTextHash: string | null;
+  candidateRuleNames: string[];
+  matchedRuleNames: string[];
+  skippedRules: PromptRuntimeRegexSkippedRule[];
+};
+
 export type PromptRuntimeRegexTrace = {
   aiOutputRules: string[];
   preprocessedUserMessage: string | null;
   userInputRules: string[];
+  phases?: PromptRuntimeRegexPhaseTrace[];
+  reservedPlacements?: number[];
+  substitutionMode?: PromptRuntimeRegexSubstitutionMode;
 };
 
 export type PromptRuntimeBudgetGroupTrace = {
@@ -204,7 +243,71 @@ export type PromptRuntimeStructureTrace = {
 };
 
 export type PromptRuntimeMemoryTrace = {
+  effectiveWrite?: boolean;
+  pageId?: string;
+  promotionStatus?: PromptRuntimeMemoryPromotionStatus;
+  proposalBatchId?: string;
+  proposalStatus?: PromptRuntimeMemoryProposalStatus;
+  requestedWrite?: boolean;
+  runtimeMode?: PromptRuntimeMemoryRuntimeMode;
+  scopeResolution?: PromptRuntimeMemoryScopeResolutionTrace;
+  selectedItems?: PromptRuntimeMemorySelectedItemTrace[];
+  strategy?: PromptRuntimeMemoryStrategy;
+  summaryText?: string;
+  summaryTextHash?: string | null;
   summaryInjected: boolean;
+  tokenStats?: PromptRuntimeMemoryTokenStats;
+};
+
+export type PromptRuntimeMemoryRuntimeMode = "disabled" | "legacy_sync" | "async_primary";
+export type PromptRuntimeMemoryStrategy = "none" | "single_summary" | "dual_summary" | "direct_items";
+export type PromptRuntimeMemorySelectedItemScope = "global" | "chat" | "branch" | "floor";
+export type PromptRuntimeMemorySelectedItemKind = "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+export type PromptRuntimeMemorySelectedItemSource = "store" | "summary" | "open_loop" | "fallback";
+export type PromptRuntimeMemoryScopeResolutionMode =
+  | "branch_aware"
+  | "explicit_scope"
+  | "fallback"
+  | "strict_empty"
+  | "resolver_error"
+  | "legacy_direct";
+export type PromptRuntimeMemoryProposalStatus =
+  | "not_requested"
+  | "skipped_by_request"
+  | "proposed"
+  | "promoted"
+  | "rejected"
+  | "superseded";
+export type PromptRuntimeMemoryPromotionStatus = "not_requested" | "promoted" | "rejected" | "superseded";
+
+export type PromptRuntimeMemorySelectedItemTrace = {
+  branchId?: string | null;
+  kind: PromptRuntimeMemorySelectedItemKind;
+  memoryId: string;
+  scope: PromptRuntimeMemorySelectedItemScope;
+  scopeId: string;
+  score?: number | null;
+  selectedReason?: string | null;
+  source?: PromptRuntimeMemorySelectedItemSource;
+  tokenCount?: number | null;
+};
+
+export type PromptRuntimeMemoryTokenStats = {
+  budget?: number | null;
+  directItems: number;
+  macroSummary: number;
+  microSummary: number;
+  used: number;
+};
+
+export type PromptRuntimeMemoryScopeResolutionTrace = {
+  fallbackReason?: string | null;
+  mode: PromptRuntimeMemoryScopeResolutionMode;
+  requestedBranchId?: string | null;
+  requestedScopes: PromptRuntimeMemorySelectedItemScope[];
+  resolvedBranchId?: string | null;
+  resolvedScopes: PromptRuntimeMemorySelectedItemScope[];
+  strict?: boolean;
 };
 
 export type PromptRuntimeMacroWarning = {
@@ -403,6 +506,7 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   const budgets = readRecord(record.budgets);
   const structure = readRecord(record.structure);
   const memory = readRecord(record.memory);
+  const memoryTrace = mapPromptRuntimeTraceMemoryPayload(memory);
   const macro = readRecord(record.macro);
   const delivery = readRecord(record.delivery);
   const visibility = readRecord(record.visibility);
@@ -443,7 +547,16 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
       ? {
           regex: {
             aiOutputRules: mapStringArray(regex.ai_output_rules),
+            ...(regex.phases !== undefined
+              ? {
+                  phases: readArray(regex.phases).map(mapPromptRuntimeRegexPhaseTrace).filter((item): item is PromptRuntimeRegexPhaseTrace => item !== null),
+                }
+              : {}),
             preprocessedUserMessage: readNullableString(regex.preprocessed_user_message),
+            ...(regex.reserved_placements !== undefined ? { reservedPlacements: mapNumberArray(regex.reserved_placements) } : {}),
+            ...(regex.substitution_mode !== undefined
+              ? { substitutionMode: readNullablePromptRuntimeRegexSubstitutionMode(regex.substitution_mode) ?? undefined }
+              : {}),
             userInputRules: mapStringArray(regex.user_input_rules),
           },
         }
@@ -476,11 +589,9 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
           },
         }
       : {}),
-    ...(memory
+    ...(memoryTrace
       ? {
-          memory: {
-            summaryInjected: readBoolean(memory.summary_injected),
-          },
+          memory: memoryTrace,
         }
       : {}),
     ...(macro
@@ -543,6 +654,83 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   };
 
   return Object.keys(runtimeTrace).length > 0 ? runtimeTrace : undefined;
+}
+
+export function mapPromptRuntimeTraceMemoryPayload(value: unknown): PromptRuntimeMemoryTrace | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const mapped: PromptRuntimeMemoryTrace = {
+    summaryInjected: readBoolean(record.summary_injected),
+  };
+
+  const runtimeMode = readOptionalPromptRuntimeMemoryRuntimeMode(record.runtime_mode);
+  if (runtimeMode) mapped.runtimeMode = runtimeMode;
+  if (record.requested_write !== undefined) mapped.requestedWrite = readBoolean(record.requested_write);
+  if (record.effective_write !== undefined) mapped.effectiveWrite = readBoolean(record.effective_write);
+
+  const strategy = readOptionalPromptRuntimeMemoryStrategy(record.strategy);
+  if (strategy) mapped.strategy = strategy;
+  if (record.summary_text !== undefined) mapped.summaryText = readString(record.summary_text);
+  if (record.summary_text_hash !== undefined) mapped.summaryTextHash = readNullableString(record.summary_text_hash);
+
+  if (record.selected_items !== undefined) {
+    mapped.selectedItems = readArray(record.selected_items)
+      .map(mapPromptRuntimeMemorySelectedItemTrace)
+      .filter((item): item is PromptRuntimeMemorySelectedItemTrace => item !== null);
+  }
+
+  const tokenStats = mapPromptRuntimeMemoryTokenStats(record.token_stats);
+  if (tokenStats) mapped.tokenStats = tokenStats;
+
+  const scopeResolution = mapPromptRuntimeMemoryScopeResolutionTrace(record.scope_resolution);
+  if (scopeResolution) mapped.scopeResolution = scopeResolution;
+
+  const pageId = readOptionalString(record.page_id);
+  if (pageId) mapped.pageId = pageId;
+
+  const proposalBatchId = readOptionalString(record.proposal_batch_id);
+  if (proposalBatchId) mapped.proposalBatchId = proposalBatchId;
+
+  const proposalStatus = readOptionalPromptRuntimeMemoryProposalStatus(record.proposal_status);
+  if (proposalStatus) mapped.proposalStatus = proposalStatus;
+
+  const promotionStatus = readOptionalPromptRuntimeMemoryPromotionStatus(record.promotion_status);
+  if (promotionStatus) mapped.promotionStatus = promotionStatus;
+
+  return mapped;
+}
+
+function mapPromptRuntimeMemorySelectedItemTrace(value: unknown): PromptRuntimeMemorySelectedItemTrace | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const scope = readOptionalPromptRuntimeMemorySelectedItemScope(record.scope);
+  const kind = readOptionalPromptRuntimeMemorySelectedItemKind(record.kind);
+  if (!scope || !kind) {
+    return null;
+  }
+
+  const mapped: PromptRuntimeMemorySelectedItemTrace = {
+    memoryId: readString(record.memory_id),
+    scope,
+    scopeId: readString(record.scope_id),
+    kind,
+  };
+
+  if (record.branch_id !== undefined) mapped.branchId = readNullableString(record.branch_id);
+
+  const source = readOptionalPromptRuntimeMemorySelectedItemSource(record.source);
+  if (source) mapped.source = source;
+  if (record.score !== undefined) mapped.score = readNullableNumber(record.score);
+  if (record.token_count !== undefined) mapped.tokenCount = readNullableNumber(record.token_count);
+  if (record.selected_reason !== undefined) mapped.selectedReason = readNullableString(record.selected_reason);
+
+  return mapped;
 }
 
 function mapPromptRuntimeMacroWarning(value: unknown): PromptRuntimeMacroWarning | null {
@@ -766,6 +954,43 @@ function mapPromptRuntimeVisibilityRange(value: unknown): PromptRuntimeVisibilit
   };
 }
 
+function mapPromptRuntimeMemoryTokenStats(value: unknown): PromptRuntimeMemoryTokenStats | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    ...(record.budget !== undefined ? { budget: readNullableNumber(record.budget) } : {}),
+    used: readNumber(record.used),
+    microSummary: readNumber(record.micro_summary),
+    macroSummary: readNumber(record.macro_summary),
+    directItems: readNumber(record.direct_items),
+  };
+}
+
+function mapPromptRuntimeMemoryScopeResolutionTrace(value: unknown): PromptRuntimeMemoryScopeResolutionTrace | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const mode = readOptionalPromptRuntimeMemoryScopeResolutionMode(record.mode);
+  if (!mode) {
+    return null;
+  }
+
+  return {
+    mode,
+    ...(record.strict !== undefined ? { strict: readBoolean(record.strict) } : {}),
+    requestedScopes: mapPromptRuntimeMemoryScopeArray(record.requested_scopes),
+    resolvedScopes: mapPromptRuntimeMemoryScopeArray(record.resolved_scopes),
+    ...(record.requested_branch_id !== undefined ? { requestedBranchId: readNullableString(record.requested_branch_id) } : {}),
+    ...(record.resolved_branch_id !== undefined ? { resolvedBranchId: readNullableString(record.resolved_branch_id) } : {}),
+    ...(record.fallback_reason !== undefined ? { fallbackReason: readNullableString(record.fallback_reason) } : {}),
+  };
+}
+
 function mapStringArray(value: unknown): string[] {
   return readArray(value)
     .map((item) => readOptionalString(item))
@@ -810,6 +1035,83 @@ function readPromptWorldbookInsertionPosition(
     || position === "outlet"
     ? position
     : "after";
+}
+
+function mapPromptRuntimeRegexPhaseTrace(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const phaseId = readNullablePromptRuntimeRegexPhaseId(record.phase_id);
+  const status = readNullablePromptRuntimeRegexPhaseStatus(record.status);
+  if (!phaseId || !status) {
+    return null;
+  }
+
+  return {
+    phaseId,
+    placement: readNumber(record.placement),
+    channel: readNullablePromptRuntimeRegexChannel(record.channel),
+    status,
+    changed: readBoolean(record.changed),
+    depth: readNullableNumber(record.depth),
+    inputTextHash: readNullableString(record.input_text_hash),
+    outputTextHash: readNullableString(record.output_text_hash),
+    candidateRuleNames: mapStringArray(record.candidate_rule_names),
+    matchedRuleNames: mapStringArray(record.matched_rule_names),
+    skippedRules: readArray(record.skipped_rules)
+      .map(mapPromptRuntimeRegexSkippedRule)
+      .filter((item): item is PromptRuntimeRegexSkippedRule => item !== null),
+  };
+}
+
+function mapPromptRuntimeRegexSkippedRule(
+  value: unknown,
+): PromptRuntimeRegexSkippedRule | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const reason = readNullablePromptRuntimeRegexSkipReason(record.reason);
+  if (!reason) {
+    return null;
+  }
+
+  return {
+    ruleName: readString(record.rule_name),
+    reason,
+  };
+}
+
+function readNullablePromptRuntimeRegexPhaseId(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace["phaseId"] | null {
+  const phaseId = readOptionalString(value);
+  if (
+    phaseId === "persist.user_input"
+    || phaseId === "prompt.user_input"
+    || phaseId === "persist.ai_output"
+    || phaseId === "prompt.world_info.reserved"
+  ) {
+    return phaseId;
+  }
+
+  return null;
+}
+
+function readNullablePromptRuntimeRegexPhaseStatus(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace["status"] | null {
+  const status = readOptionalString(value);
+  if (status === "executed" || status === "reserved") {
+    return status;
+  }
+
+  return null;
 }
 
 function readNullablePromptAssistantRewriteStrategy(
@@ -858,6 +1160,130 @@ function readNullablePromptMessageRole(value: unknown): PromptRuntimeDeliveryTra
   }
 
   return null;
+}
+
+function readNullablePromptRuntimeRegexChannel(
+  value: unknown,
+): PromptRuntimeRegexPhaseTrace["channel"] {
+  const channel = readNullableString(value);
+  if (channel === "persist" || channel === "prompt" || channel === "display" || channel === "edit") {
+    return channel;
+  }
+
+  return null;
+}
+
+function readNullablePromptRuntimeRegexSkipReason(
+  value: unknown,
+): PromptRuntimeRegexSkippedRule["reason"] | null {
+  const reason = readOptionalString(value);
+  if (
+    reason === "channel_filtered"
+    || reason === "depth_filtered"
+    || reason === "invalid_regex"
+    || reason === "no_match"
+    || reason === "reserved_non_executable"
+  ) {
+    return reason;
+  }
+
+  return null;
+}
+
+function readNullablePromptRuntimeRegexSubstitutionMode(
+  value: unknown,
+): PromptRuntimeRegexTrace["substitutionMode"] | null {
+  const mode = readOptionalString(value);
+  return mode === "bare_variable_only" ? mode : null;
+}
+
+function readOptionalPromptRuntimeMemoryRuntimeMode(
+  value: unknown,
+): PromptRuntimeMemoryRuntimeMode | undefined {
+  const mode = readOptionalString(value);
+  if (mode === "disabled" || mode === "legacy_sync" || mode === "async_primary") {
+    return mode;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryStrategy(value: unknown): PromptRuntimeMemoryStrategy | undefined {
+  const strategy = readOptionalString(value);
+  if (strategy === "none" || strategy === "single_summary" || strategy === "dual_summary" || strategy === "direct_items") {
+    return strategy;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemorySelectedItemScope(value: unknown): PromptRuntimeMemorySelectedItemScope | undefined {
+  const scope = readOptionalString(value);
+  if (scope === "global" || scope === "chat" || scope === "branch" || scope === "floor") {
+    return scope;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemorySelectedItemKind(value: unknown): PromptRuntimeMemorySelectedItemKind | undefined {
+  const kind = readOptionalString(value);
+  if (kind === "fact" || kind === "micro_summary" || kind === "macro_summary" || kind === "summary" || kind === "open_loop") {
+    return kind;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemorySelectedItemSource(value: unknown): PromptRuntimeMemorySelectedItemSource | undefined {
+  const source = readOptionalString(value);
+  if (source === "store" || source === "summary" || source === "open_loop" || source === "fallback") {
+    return source;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryScopeResolutionMode(
+  value: unknown,
+): PromptRuntimeMemoryScopeResolutionMode | undefined {
+  const mode = readOptionalString(value);
+  if (
+    mode === "branch_aware"
+    || mode === "explicit_scope"
+    || mode === "fallback"
+    || mode === "strict_empty"
+    || mode === "resolver_error"
+    || mode === "legacy_direct"
+  ) {
+    return mode;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryProposalStatus(value: unknown): PromptRuntimeMemoryProposalStatus | undefined {
+  const status = readOptionalString(value);
+  if (status === "not_requested" || status === "skipped_by_request" || status === "proposed" || status === "promoted" || status === "rejected" || status === "superseded") {
+    return status;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryPromotionStatus(value: unknown): PromptRuntimeMemoryPromotionStatus | undefined {
+  const status = readOptionalString(value);
+  if (status === "not_requested" || status === "promoted" || status === "rejected" || status === "superseded") {
+    return status;
+  }
+
+  return undefined;
+}
+
+function mapPromptRuntimeMemoryScopeArray(value: unknown): PromptRuntimeMemorySelectedItemScope[] {
+  return readArray(value)
+    .map((item) => readOptionalPromptRuntimeMemorySelectedItemScope(item))
+    .filter((item): item is PromptRuntimeMemorySelectedItemScope => item !== undefined);
 }
 
 function readOptionalPromptMessageRole(

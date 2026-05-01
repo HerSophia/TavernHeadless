@@ -53,7 +53,6 @@ import {
   REGEX_PLACEMENT,
   type CharacterProfile,
   type ImportedCharacterCard,
-  type STRegexScript,
   parseChatFile,
   groupMessagesIntoFloors,
   parseSendDate,
@@ -91,8 +90,9 @@ import {
   buildRawWorldbookEntryPayload,
   buildWorldbookEntryInsertValues,
 } from "../lib/worldbook-utils.js";
-import { VariableService } from "../services/variable-service.js";
+import { VariableService } from "../services/variables/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
+import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
 import { LocalChatTransferArtifactStore } from "../services/chat-transfer-artifacts.js";
 import { ChatTransferJobScheduler } from "../services/chat-transfer-job-scheduler.js";
 import { MEMORY_RUNTIME_SCOPE_TYPE, buildMemoryRuntimeScopeKey } from "../services/memory-runtime-job-definitions.js";
@@ -103,6 +103,7 @@ import {
   assertRevisionWriteApplied,
 } from "../services/resource-write.js";
 import { getLatestOwnedActiveCharacterVersion } from "../services/resource-ownership.js";
+import { buildRegexCompatReport } from "../services/prompt-runtime/regex/index.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -126,40 +127,6 @@ const importRegexSchema = z.object({
   /** 原始酒馆正则脚本 JSON 数组 */
   data: z.array(z.record(z.unknown())),
 });
-
-const SUPPORTED_REGEX_PROMPT_PLACEMENTS = new Set<number>([
-  REGEX_PLACEMENT.USER_INPUT,
-  REGEX_PLACEMENT.AI_OUTPUT,
-  REGEX_PLACEMENT.WORLD_INFO,
-]);
-
-function buildRegexCompatReport(scripts: STRegexScript[]) {
-  const storedCount = scripts.length;
-  const promptExecutableCount = scripts.filter(
-    (script) => !script.markdownOnly && script.placement.some((placement) => SUPPORTED_REGEX_PROMPT_PLACEMENTS.has(placement)),
-  ).length;
-  const persistExecutableCount = scripts.filter(
-    (script) => !script.markdownOnly && !script.promptOnly && script.placement.some((placement) => SUPPORTED_REGEX_PROMPT_PLACEMENTS.has(placement)),
-  ).length;
-  const displayOnlyCount = scripts.filter((script) => script.markdownOnly && !script.promptOnly).length;
-  const unsupportedRuntimeCount = scripts.filter((script) => {
-    const promptExecutable = !script.markdownOnly && script.placement.some((placement) => SUPPORTED_REGEX_PROMPT_PLACEMENTS.has(placement));
-    const displayOnly = script.markdownOnly && !script.promptOnly;
-    return !promptExecutable && !displayOnly;
-  }).length;
-
-  return {
-    stored_count: storedCount,
-    prompt_executable_count: promptExecutableCount,
-    persist_executable_count: persistExecutableCount,
-    display_only_count: displayOnlyCount,
-    unsupported_runtime_count: unsupportedRuntimeCount,
-    contains_prompt_only: scripts.filter((script) => script.promptOnly).length,
-    contains_run_on_edit: scripts.filter((script) => script.runOnEdit).length,
-    contains_reasoning: scripts.filter((script) => script.placement.includes(REGEX_PLACEMENT.REASONING)).length,
-    contains_slash_command: scripts.filter((script) => script.placement.includes(REGEX_PLACEMENT.SLASH_COMMAND)).length,
-  };
-}
 
 const importCharacterSchema = z.object({
   payload: z.record(z.unknown()),
@@ -305,6 +272,8 @@ const importRegexResponseExample = {
       prompt_executable_count: 1,
       persist_executable_count: 1,
       display_only_count: 0,
+      retained_non_executable_count: 0,
+      reserved_world_info_count: 0,
       unsupported_runtime_count: 0,
       contains_prompt_only: 0,
       contains_run_on_edit: 0,
@@ -594,6 +563,8 @@ const importRegexResponseJsonSchema = {
             "prompt_executable_count",
             "persist_executable_count",
             "display_only_count",
+            "retained_non_executable_count",
+            "reserved_world_info_count",
             "unsupported_runtime_count",
             "contains_prompt_only",
             "contains_run_on_edit",
@@ -605,6 +576,8 @@ const importRegexResponseJsonSchema = {
             prompt_executable_count: { type: "integer", minimum: 0 },
             persist_executable_count: { type: "integer", minimum: 0 },
             display_only_count: { type: "integer", minimum: 0 },
+            retained_non_executable_count: { type: "integer", minimum: 0 },
+            reserved_world_info_count: { type: "integer", minimum: 0 },
             unsupported_runtime_count: { type: "integer", minimum: 0 },
             contains_prompt_only: { type: "integer", minimum: 0 },
             contains_run_on_edit: { type: "integer", minimum: 0 },
@@ -2437,6 +2410,14 @@ function createSessionFromCharacterImportInternal(
     updatedAt: input.now
   }).run();
 
+  new SessionBranchRegistryService(db).ensure({
+    accountId: input.accountId,
+    sessionId,
+    branchId: "main",
+    createdAt: input.now,
+    updatedAt: input.now,
+  });
+
   const snapshot = parseSessionCharacterSnapshot(input.characterBinding.characterSnapshotJson);
   const greetingCandidates = getGreetingCandidates(snapshot);
   const greeting = greetingCandidates[0];
@@ -2458,6 +2439,14 @@ function createSessionFromCharacterImportInternal(
       createdAt: input.now,
       updatedAt: input.now
     }).run();
+
+    new SessionBranchRegistryService(db).ensure({
+      accountId: input.accountId,
+      sessionId,
+      branchId: "main",
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
 
     for (let index = 0; index < greetingCandidates.length; index += 1) {
       const pageId = nanoid();
@@ -2553,6 +2542,14 @@ function createSessionFromChatImport(
       updatedAt: input.now,
     }).run();
 
+    new SessionBranchRegistryService(tx).ensure({
+      accountId: input.accountId,
+      sessionId,
+      branchId: "main",
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
+
     let totalMessageCount = 0;
     let totalSwipeCount = 0;
 
@@ -2575,6 +2572,14 @@ function createSessionFromChatImport(
         createdAt: input.now,
         updatedAt: input.now,
       }).run();
+
+      new SessionBranchRegistryService(tx).ensure({
+        accountId: input.accountId,
+        sessionId,
+        branchId: "main",
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
 
       // 3. 遍历每条消息
       for (const msg of group.messages) {
@@ -3000,6 +3005,14 @@ function createSessionFromThChatImport(
       updatedAt: input.now,
     }).run();
 
+    new SessionBranchRegistryService(tx).ensure({
+      accountId: input.accountId,
+      sessionId,
+      branchId: "main",
+      createdAt: input.now,
+      updatedAt: input.now,
+    });
+
     let totalPageCount = 0;
     let totalMessageCount = 0;
 
@@ -3029,6 +3042,15 @@ function createSessionFromThChatImport(
         createdAt: floor.created_at,
         updatedAt: floor.updated_at,
       }).run();
+
+      new SessionBranchRegistryService(tx).ensure({
+        accountId: input.accountId,
+        sessionId,
+        branchId: floor.branch_id,
+        createdAt: floor.created_at,
+        updatedAt: floor.updated_at,
+        sourceFloorId: parentFloorId,
+      });
 
       // 3. 遍历 pages
       for (const page of floor.pages) {

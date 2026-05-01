@@ -44,8 +44,13 @@ import {
 import {
   VariableCommitService,
   type VariablePromotionPolicy,
-} from "./variable-commit-service.js";
-import { VARIABLE_MUTATION_KINDS } from "./variable-mutation-applier.js";
+} from "./variables/commit/variable-commit-service.js";
+import { VariablePromotionService } from "./variables/commit/variable-promotion-service.js";
+import { PageVariableStageService } from "./variables/stage/page-variable-stage-service.js";
+import type {
+  PageVariableDecision,
+  VariablePromotionResult,
+} from "./variables/contracts.js";
 import type { MutationRuntime } from "./runtime-mutation-types.js";
 import type { ToolRuntimeJobBridge } from "./tool-runtime-job-bridge.js";
 import type { FloorRunService } from "./floor-run-service.js";
@@ -54,7 +59,7 @@ import {
   buildBranchMemoryScopeId,
   buildBranchVariableScopeId,
 } from "@tavern/shared";
-import { DEFAULT_GLOBAL_SCOPE_ID } from "./variable-host-service.js";
+import { DEFAULT_GLOBAL_SCOPE_ID } from "./variables/host/variable-host-service.js";
 import { BranchLocalVariableSnapshotService } from "./branch-local-variable-snapshot-service.js";
 import {
   buildPromptRuntimeCommittedExplainSnapshot,
@@ -80,6 +85,7 @@ interface MemoryCommitInput {
 interface VariableCommitOptions {
   pageId?: string;
   policy?: VariablePromotionPolicy;
+  pageDecision?: PageVariableDecision;
 }
 
 export interface TurnCommitInput {
@@ -279,6 +285,7 @@ function toPromptRuntimeExplainSnapshotInsert(input: {
     sourceFloorId: snapshot.sourceFloorId ?? null,
     historySourceBranchId: snapshot.historySourceBranchId,
     historySourceMode: snapshot.historySourceMode,
+    memoryJson: snapshot.memory ? JSON.stringify(snapshot.memory) : null,
     snapshotVersion: snapshot.snapshotVersion,
     assetsJson: JSON.stringify(snapshot.assets),
     resolvedPolicyJson: JSON.stringify(snapshot.resolvedPolicy),
@@ -319,7 +326,7 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
   };
 }
 
-function createEmptyVariableCommitResult(input: TurnCommitInput): ReturnType<VariableCommitService["promoteAll"]> {
+function createEmptyVariableCommitResult(input: TurnCommitInput): TurnVariableCommitResult {
   return {
     pageId: input.variableCommit?.pageId,
     floorId: input.floorId,
@@ -331,8 +338,13 @@ function createEmptyVariableCommitResult(input: TurnCommitInput): ReturnType<Var
     promotedCount: 0,
     skippedCount: 0,
     promotedVariables: [],
+    pageVariables: [],
+    stageWrites: [],
+    promotionTraces: [],
   };
 }
+
+type TurnVariableCommitResult = VariablePromotionResult;
 
 function toBufferedMutationFromMacro(
   mutation: StMacroStagedMutation,
@@ -418,6 +430,7 @@ export class TurnCommitService {
     branchId?: string;
     floor: FloorEntity;
     assistantMessageId: string;
+    pageId: string;
     committedAt: number;
     summaries: string[];
     enableConsolidation: boolean;
@@ -430,10 +443,12 @@ export class TurnCommitService {
       branchId: args.branchId,
       floorNo: args.floor.floorNo,
       assistantMessageId: args.assistantMessageId,
+      pageId: args.pageId,
       userInputDigest,
       committedAt: args.committedAt,
       summaries: args.summaries,
       enableConsolidation: args.enableConsolidation,
+      runtimeMode: "async_primary",
     });
   }
 
@@ -444,16 +459,14 @@ export class TurnCommitService {
       input.toolExecutionRecords ?? input.execution.toolExecutionRecords ?? [];
     const actualToolExecutionRunIds = Array.from(
       new Set(actualToolExecutionRecords.map((record) => record.runId)));
-    const macroBufferedMutations = (input.macroStagedMutations ?? [])
+    const macroBufferedVariableMutations = (input.macroStagedMutations ?? [])
       .map((mutation) => toBufferedMutationFromMacro(mutation, {
         sessionId: input.sessionId,
         branchId: input.branchId ?? "main",
       }, committedAt))
       .filter((item): item is BufferedToolVariableMutation => item !== null);
-    const actualBufferedVariableMutations = [
-      ...(input.execution.bufferedVariableMutations ?? []),
-      ...macroBufferedMutations,
-    ];
+    const toolBufferedVariableMutations =
+      input.execution.bufferedVariableMutations ?? [];
     const pendingToolJobs =
       input.pendingToolJobs ?? input.execution.pendingToolJobs ?? [];
     const explicitLegacyToolCalls =
@@ -463,13 +476,14 @@ export class TurnCommitService {
     const hasPrimaryToolExecutionRecords = actualToolExecutionRecords.length > 0;
     const pendingEvents: PendingCoreEvent[] = [];
     const variableMutationBatch = this.variableCommitService.beginBatch();
+    const effectiveBranchId = input.branchId ?? "main";
 
     this.variableCommitService.stageBufferedMutations(variableMutationBatch, {
-      mutations: actualBufferedVariableMutations,
+      mutations: macroBufferedVariableMutations,
       committedAt,
       accountId: input.accountId,
       sessionId: input.sessionId,
-      branchId: input.branchId ?? "main",
+      branchId: effectiveBranchId,
     });
     for (const mutation of input.macroStagedMutations ?? []) {
       if (mutation.kind !== "delete") {
@@ -481,28 +495,20 @@ export class TurnCommitService {
         scope: mutation.scope,
         scopeId: mutation.scope === "global"
           ? DEFAULT_GLOBAL_SCOPE_ID
-          : buildBranchVariableScopeId(input.sessionId, input.branchId ?? "main"),
+          : buildBranchVariableScopeId(input.sessionId, effectiveBranchId),
         key: mutation.key,
         committedAt,
         accountId: input.accountId,
         sessionId: input.sessionId,
-        branchId: input.branchId ?? "main",
+        branchId: effectiveBranchId,
       });
     }
-    this.variableCommitService.stagePromotion(variableMutationBatch, {
-      accountId: input.accountId,
-      pageId: input.variableCommit?.pageId,
-      floorId: input.floorId,
-      sessionId: input.sessionId,
-      policy: input.variableCommit?.policy,
-      committedAt,
-    });
 
     let transactionResult: {
       floor: FloorEntity;
       floorTransition: ReturnType<FloorStateMachine["completeTransition"]>;
       assistantMessage: { pageId: string; messageId: string };
-      variableCommit: ReturnType<VariableCommitService["promoteAll"]>;
+      variableCommit: TurnVariableCommitResult;
       variableMutationApply: { runAfterCommit(): Promise<void> };
       memory?: TurnCommitMemoryReceipt;
     };
@@ -587,6 +593,7 @@ export class TurnCommitService {
                 sourceFloorId: inspectionSnapshot.sourceFloorId,
                 historySourceBranchId: inspectionSnapshot.historySourceBranchId,
                 historySourceMode: inspectionSnapshot.historySourceMode,
+                memoryJson: inspectionSnapshot.memoryJson,
                 snapshotVersion: inspectionSnapshot.snapshotVersion,
                 assetsJson: inspectionSnapshot.assetsJson,
                 resolvedPolicyJson: inspectionSnapshot.resolvedPolicyJson,
@@ -628,10 +635,16 @@ export class TurnCommitService {
           actor: { type: "system", id: "turn-commit-service" },
           requestId: `turn-commit:${input.floorId}`,
         });
-        const variableCommit = variableMutationApply.mutations.find(
-          (mutation: (typeof variableMutationApply.mutations)[number]) => mutation.envelope.kind === VARIABLE_MUTATION_KINDS.promotePageToFloor,
-        )?.result as ReturnType<VariableCommitService["promoteAll"]> | undefined
-          ?? createEmptyVariableCommitResult(input);
+        const stagedVariableWrites = new PageVariableStageService(tx).stageBufferedWrites({
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          branchId: effectiveBranchId,
+          floorId: input.floorId,
+          pageId: input.variableCommit?.pageId,
+          mutations: toolBufferedVariableMutations,
+          committedAt,
+        });
+        let variableCommit = createEmptyVariableCommitResult(input);
 
         const floorRow = tx
           .select()
@@ -782,11 +795,23 @@ export class TurnCommitService {
           })
           .run();
 
+        variableCommit = new VariablePromotionService(tx).finalizePageWrites({
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          branchId: effectiveBranchId,
+          floorId: input.floorId,
+          pageId: input.variableCommit?.pageId,
+          committedAt,
+          pageDecision: input.variableCommit?.pageDecision,
+          conflictPolicy: input.variableCommit?.policy === "ifAbsent" ? "if_absent" : "replace",
+          stagedWrites: stagedVariableWrites,
+        });
+
         if (this.sessionStateService) {
           this.sessionStateService.applyStagedMutationsForFloor({
             accountId: input.accountId,
             sessionId: input.sessionId,
-            branchId: input.branchId ?? "main",
+            branchId: effectiveBranchId,
             floorId: input.floorId,
             committedAt,
           }, tx);
@@ -796,7 +821,7 @@ export class TurnCommitService {
           accountId: input.accountId,
           floorId: input.floorId,
           sessionId: input.sessionId,
-          branchId: input.branchId ?? "main",
+          branchId: effectiveBranchId,
           createdAt: committedAt,
         });
 
@@ -824,6 +849,7 @@ export class TurnCommitService {
                 branchId: input.branchId,
                 floor,
                 assistantMessageId: assistantMessage.messageId,
+                pageId: assistantMessage.pageId,
                 committedAt,
                 summaries: input.memoryCommit.summaries ?? [],
                 enableConsolidation: input.memoryCommit.enableConsolidation === true,
@@ -874,7 +900,6 @@ export class TurnCommitService {
             scope: input.branchId ? "branch" : "chat",
             scopeId: input.branchId ? buildBranchMemoryScopeId(input.sessionId, input.branchId) : input.sessionId,
             floorId: input.floorId,
-            sourceJobId: this.enableAsyncMemoryIngest ? `memory-job:ingest_turn:${input.floorId}` : undefined,
             error: normalizeError(error.cause ?? error),
           });
         } catch {
@@ -922,9 +947,22 @@ export class TurnCommitService {
 
   private async emitPostCommitEvents(
     floorTransition: ReturnType<FloorStateMachine["completeTransition"]>,
-    variableCommit: ReturnType<VariableCommitService["promoteAll"]>,
+    variableCommit: TurnVariableCommitResult,
     pendingEvents: PendingCoreEvent[],
   ): Promise<void> {
+    for (const materialized of variableCommit.pageVariables) {
+      try {
+        await this.eventBus.emit("variable.set", {
+          sessionId: floorTransition.floor.sessionId,
+          branchId: floorTransition.floor.branchId,
+          entry: materialized.entry,
+          isNew: materialized.isNew,
+        });
+      } catch {
+        // best-effort
+      }
+    }
+
     await emitPendingCoreEvents(this.eventBus, pendingEvents);
 
     try {

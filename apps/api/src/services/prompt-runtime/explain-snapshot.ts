@@ -3,7 +3,7 @@ import type {
   PromptRuntimeSourceMap,
 } from "./control-service.js";
 
-export type PromptRuntimeExplainSnapshotVersion = 1 | 2;
+export type PromptRuntimeExplainSnapshotVersion = 1 | 2 | 3;
 
 interface PromptRuntimeExplainSourceMapEnvelopeV2 {
   sourceMap: PromptRuntimeSourceMap;
@@ -13,7 +13,7 @@ interface PromptRuntimeExplainSourceMapEnvelopeV2 {
 export function normalizePromptRuntimeExplainSnapshotVersion(
   value: number | null | undefined,
 ): PromptRuntimeExplainSnapshotVersion {
-  return value === 2 ? 2 : 1;
+  return value === 3 ? 3 : value === 2 ? 2 : 1;
 }
 
 export function serializePromptRuntimeExplainSourceMapEnvelope(args: {
@@ -21,7 +21,7 @@ export function serializePromptRuntimeExplainSourceMapEnvelope(args: {
   sourceMap: PromptRuntimeSourceMap;
   governance?: PromptRuntimeGovernanceViewModel | null;
 }): string {
-  if (args.snapshotVersion === 2) {
+  if (args.snapshotVersion >= 2) {
     return JSON.stringify({
       sourceMap: args.sourceMap,
       governance: args.governance ?? null,
@@ -51,7 +51,7 @@ export function parsePromptRuntimeExplainSourceMapEnvelope(args: {
   try {
     const parsed = JSON.parse(args.sourceMapJson) as unknown;
     if (
-      snapshotVersion === 2
+      snapshotVersion >= 2
       && parsed
       && typeof parsed === "object"
       && !Array.isArray(parsed)

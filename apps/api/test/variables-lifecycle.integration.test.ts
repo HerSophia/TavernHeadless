@@ -194,9 +194,19 @@ describe("variable lifecycle integrity", () => {
     const variablesAfterFloorDelete = await listVariables();
     const remainingIds = variablesAfterFloorDelete.map((item) => item.id);
     expect(remainingIds).toContain(chatVar.id);
-    expect(remainingIds).not.toContain(branchVar.id);
+    expect(remainingIds).toContain(branchVar.id);
     expect(remainingIds).not.toContain(floorVar.id);
     expect(remainingIds).not.toContain(pageVar.id);
+
+    const deleteBranchResponse = await app.inject({
+      method: "DELETE",
+      url: `/branches/alt?session_id=${encodeURIComponent(branchSessionId)}`,
+    });
+    expect(deleteBranchResponse.statusCode, deleteBranchResponse.body).toBe(200);
+
+    const variablesAfterBranchDelete = await listVariables();
+    expect(variablesAfterBranchDelete.map((item) => item.id)).toContain(chatVar.id);
+    expect(variablesAfterBranchDelete.map((item) => item.id)).not.toContain(branchVar.id);
   });
 
   it("cleans scoped variables when sessions are deleted through single and batch routes", async () => {

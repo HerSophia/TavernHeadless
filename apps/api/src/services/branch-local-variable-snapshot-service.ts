@@ -4,7 +4,7 @@ import { buildBranchVariableScopeId, type VariableScope } from "@tavern/shared";
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { branchLocalVariableSnapshots, variables } from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
-import { VariableService } from "./variable-service.js";
+import { VariableService } from "./variables/variable-service.js";
 
 type BranchLocalVariableSnapshotRow = typeof branchLocalVariableSnapshots.$inferSelect;
 

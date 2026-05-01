@@ -18,6 +18,12 @@ export const promptSourceSelectionHistoryModeValues = ["full", "windowed"] as co
 export const promptTrimReasonCodeValues = ["budget_exceeded", "group_limit_exceeded", "provider_constraint", "policy_disabled"] as const;
 export const promptSourceExclusionReasonValues = ["disabled_by_policy", "budget_trimmed", "provider_constraint", "visibility_filtered", "not_triggered"] as const;
 export const promptSourceKindValues = ["history", "memory", "worldbook", "examples"] as const;
+export const memoryRuntimeModeValues = ["disabled", "legacy_sync", "async_primary"] as const;
+export const promptRuntimeMemoryStrategyValues = ["none", "single_summary", "dual_summary", "direct_items"] as const;
+export const promptRuntimeMemorySelectedKindValues = ["fact", "micro_summary", "macro_summary", "summary", "open_loop"] as const;
+export const promptRuntimeMemorySelectedSourceValues = ["store", "summary", "open_loop", "fallback"] as const;
+export const promptRuntimeMemoryProposalStatusValues = ["not_requested", "skipped_by_request", "proposed", "promoted", "rejected", "superseded"] as const;
+export const promptRuntimeMemoryPromotionStatusValues = ["not_requested", "promoted", "rejected", "superseded"] as const;
 
 // ── Example constants ─────────────────────────────────
 
@@ -150,6 +156,36 @@ export const liveRuntimeTraceExample = {
     user_input_rules: ["trim_whitespace"],
     ai_output_rules: [],
     preprocessed_user_message: "Please continue the campfire scene.",
+    phases: [
+      {
+        phase_id: "prompt.user_input",
+        placement: 1,
+        channel: "prompt",
+        status: "executed",
+        changed: true,
+        depth: 3,
+        input_text_hash: "sha256:regex-live-input-before",
+        output_text_hash: "sha256:regex-live-input-after",
+        candidate_rule_names: ["trim_whitespace"],
+        matched_rule_names: ["trim_whitespace"],
+        skipped_rules: [],
+      },
+      {
+        phase_id: "prompt.world_info.reserved",
+        placement: 5,
+        channel: "prompt",
+        status: "reserved",
+        changed: false,
+        depth: null,
+        input_text_hash: null,
+        output_text_hash: null,
+        candidate_rule_names: ["world_info_rule"],
+        matched_rule_names: [],
+        skipped_rules: [{ rule_name: "world_info_rule", reason: "reserved_non_executable" }],
+      },
+    ],
+    reserved_placements: [5],
+    substitution_mode: "bare_variable_only",
   },
   budgets: {
     by_group: [
@@ -166,6 +202,37 @@ export const liveRuntimeTraceExample = {
   },
   memory: {
     summary_injected: true,
+    runtime_mode: "async_primary",
+    requested_write: true,
+    effective_write: true,
+    strategy: "dual_summary",
+    summary_text: "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+    summary_text_hash: "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+    selected_items: [
+      {
+        memory_id: "memory-branch-fact-1",
+        scope: "branch",
+        scope_id: "memscope:session-1:main",
+        branch_id: "main",
+        kind: "fact",
+        source: "store",
+        score: 0.82,
+        token_count: 18,
+        selected_reason: null,
+      },
+      {
+        memory_id: "memory-branch-summary-1",
+        scope: "branch",
+        scope_id: "memscope:session-1:main",
+        branch_id: "main",
+        kind: "micro_summary",
+        source: "summary",
+        score: 0.64,
+        token_count: 14,
+      },
+    ],
+    token_stats: { budget: 500, used: 64, micro_summary: 14, macro_summary: 0, direct_items: 50 },
+    scope_resolution: { mode: "branch_aware", requested_scopes: ["global", "branch"], resolved_scopes: ["global", "branch"], requested_branch_id: "main", resolved_branch_id: "main", fallback_reason: null },
   },
   macro: liveRuntimeTraceMacroExample,
   delivery: {
@@ -462,6 +529,36 @@ export const dryRunSuccessResponseExample = {
         user_input_rules: ["trim_whitespace"],
         ai_output_rules: [],
         preprocessed_user_message: "Please continue the campfire scene.",
+        phases: [
+          {
+            phase_id: "prompt.user_input",
+            placement: 1,
+            channel: "prompt",
+            status: "executed",
+            changed: true,
+            depth: 3,
+            input_text_hash: "sha256:regex-dry-run-input-before",
+            output_text_hash: "sha256:regex-dry-run-input-after",
+            candidate_rule_names: ["trim_whitespace"],
+            matched_rule_names: ["trim_whitespace"],
+            skipped_rules: [],
+          },
+          {
+            phase_id: "prompt.world_info.reserved",
+            placement: 5,
+            channel: "prompt",
+            status: "reserved",
+            changed: false,
+            depth: null,
+            input_text_hash: null,
+            output_text_hash: null,
+            candidate_rule_names: ["world_info_rule"],
+            matched_rule_names: [],
+            skipped_rules: [{ rule_name: "world_info_rule", reason: "reserved_non_executable" }],
+          },
+        ],
+        reserved_placements: [5],
+        substitution_mode: "bare_variable_only",
       },
       budgets: {
         by_group: [
@@ -480,6 +577,36 @@ export const dryRunSuccessResponseExample = {
       },
       memory: {
         summary_injected: true,
+        runtime_mode: "async_primary",
+        requested_write: false,
+        effective_write: false,
+        strategy: "dual_summary",
+        summary_text: "[Memory]\n- The party recently agreed to search the northern pass.",
+        summary_text_hash: "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+        selected_items: [
+          {
+            memory_id: "memory-branch-summary-2",
+            scope: "branch",
+            scope_id: "memscope:session-1:main",
+            branch_id: "main",
+            kind: "macro_summary",
+            source: "summary",
+            score: 0.71,
+            token_count: 22,
+          },
+          {
+            memory_id: "memory-branch-loop-1",
+            scope: "branch",
+            scope_id: "memscope:session-1:main",
+            branch_id: "main",
+            kind: "open_loop",
+            source: "open_loop",
+            score: 0.55,
+            token_count: 26,
+          },
+        ],
+        token_stats: { budget: 500, used: 48, micro_summary: 0, macro_summary: 22, direct_items: 26 },
+        scope_resolution: { mode: "branch_aware", requested_scopes: ["global", "branch"], resolved_scopes: ["global", "branch"], requested_branch_id: "main", resolved_branch_id: "main", fallback_reason: null },
       },
       macro: dryRunRuntimeTraceMacroExample,
       delivery: {
@@ -891,6 +1018,50 @@ const runtimeTraceWorldbookJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeTraceRegexSkippedRuleJsonSchema = {
+  type: "object",
+  required: ["rule_name", "reason"],
+  properties: {
+    rule_name: { type: "string" },
+    reason: {
+      type: "string",
+      enum: ["channel_filtered", "depth_filtered", "invalid_regex", "no_match", "reserved_non_executable"],
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceRegexPhaseJsonSchema = {
+  type: "object",
+  required: [
+    "phase_id",
+    "placement",
+    "channel",
+    "status",
+    "changed",
+    "depth",
+    "input_text_hash",
+    "output_text_hash",
+    "candidate_rule_names",
+    "matched_rule_names",
+    "skipped_rules",
+  ],
+  properties: {
+    phase_id: { type: "string", enum: ["persist.user_input", "prompt.user_input", "persist.ai_output", "prompt.world_info.reserved"] },
+    placement: { type: "integer" },
+    channel: { anyOf: [{ type: "string", enum: ["persist", "prompt", "display", "edit"] }, { type: "null" }] },
+    status: { type: "string", enum: ["executed", "reserved"] },
+    changed: { type: "boolean" },
+    depth: { anyOf: [{ type: "integer" }, { type: "null" }] },
+    input_text_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    output_text_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    candidate_rule_names: { type: "array", items: { type: "string" } },
+    matched_rule_names: { type: "array", items: { type: "string" } },
+    skipped_rules: { type: "array", items: runtimeTraceRegexSkippedRuleJsonSchema },
+  },
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceRegexJsonSchema = {
   type: "object",
   required: ["user_input_rules", "ai_output_rules", "preprocessed_user_message"],
@@ -898,6 +1069,9 @@ const runtimeTraceRegexJsonSchema = {
     user_input_rules: { type: "array", items: { type: "string" } },
     ai_output_rules: { type: "array", items: { type: "string" } },
     preprocessed_user_message: { anyOf: [{ type: "string" }, { type: "null" }] },
+    phases: { type: "array", items: runtimeTraceRegexPhaseJsonSchema },
+    reserved_placements: { type: "array", items: { type: "integer" } },
+    substitution_mode: { type: "string", enum: ["bare_variable_only"] },
   },
   additionalProperties: false,
 } as const;
@@ -991,11 +1165,69 @@ const runtimeTraceStructureJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const runtimeTraceMemoryJsonSchema = {
+const runtimeTraceMemorySelectedItemJsonSchema = {
+  type: "object",
+  required: ["memory_id", "scope", "scope_id", "kind"],
+  properties: {
+    memory_id: { type: "string" },
+    scope: { type: "string", enum: ["global", "chat", "branch", "floor"] },
+    scope_id: { type: "string" },
+    branch_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    kind: { type: "string", enum: promptRuntimeMemorySelectedKindValues },
+    source: { type: "string", enum: promptRuntimeMemorySelectedSourceValues },
+    score: { anyOf: [{ type: "number" }, { type: "null" }] },
+    token_count: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    selected_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceMemoryTokenStatsJsonSchema = {
+  type: "object",
+  required: ["budget", "used", "micro_summary", "macro_summary", "direct_items"],
+  properties: {
+    budget: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    used: { type: "integer", minimum: 0 },
+    micro_summary: { type: "integer", minimum: 0 },
+    macro_summary: { type: "integer", minimum: 0 },
+    direct_items: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceMemoryScopeResolutionJsonSchema = {
+  type: "object",
+  required: ["mode", "requested_scopes", "resolved_scopes", "requested_branch_id", "resolved_branch_id", "fallback_reason"],
+  properties: {
+    mode: { type: "string" },
+    strict: { type: "boolean" },
+    requested_scopes: { type: "array", items: { type: "string", enum: ["global", "chat", "branch", "floor"] } },
+    resolved_scopes: { type: "array", items: { type: "string", enum: ["global", "chat", "branch", "floor"] } },
+    requested_branch_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    resolved_branch_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    fallback_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
+export const runtimeTraceMemoryJsonSchema = {
   type: "object",
   required: ["summary_injected"],
   properties: {
     summary_injected: { type: "boolean" },
+    runtime_mode: { type: "string", enum: memoryRuntimeModeValues },
+    requested_write: { type: "boolean" },
+    effective_write: { type: "boolean" },
+    strategy: { type: "string", enum: promptRuntimeMemoryStrategyValues },
+    summary_text: { type: "string" },
+    summary_text_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    selected_items: { type: "array", items: runtimeTraceMemorySelectedItemJsonSchema },
+    token_stats: runtimeTraceMemoryTokenStatsJsonSchema,
+    scope_resolution: runtimeTraceMemoryScopeResolutionJsonSchema,
+    page_id: { type: "string" },
+    proposal_batch_id: { type: "string" },
+    proposal_status: { type: "string", enum: promptRuntimeMemoryProposalStatusValues },
+    promotion_status: { type: "string", enum: promptRuntimeMemoryPromotionStatusValues },
   },
   additionalProperties: false,
 } as const;

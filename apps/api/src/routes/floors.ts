@@ -12,7 +12,8 @@ import { getRequestAuthContext } from "../plugins/auth";
 import { FloorResultService } from "../services/floor-result-service";
 import { FloorRunService } from "../services/floor-run-service";
 import { getOwnedFloorById, getOwnedSessionIds } from "../services/resource-ownership";
-import { deleteVariablesForBranch, deleteVariablesForFloor } from "../services/variable-owned-resource-cleanup.js";
+import { deleteVariablesForBranch, deleteVariablesForFloor } from "../services/variables/cleanup/variable-owned-resource-cleanup.js";
+import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
 
@@ -379,6 +380,7 @@ export async function registerFloorRoutes(
   const { db } = connection;
   const floorRunService = new FloorRunService(db);
   const floorResultService = new FloorResultService(db);
+  const branchRegistry = new SessionBranchRegistryService(db);
 
   app.post("/floors", {
     schema: {
@@ -404,13 +406,14 @@ export async function registerFloorRoutes(
 
     const auth = getRequestAuthContext(request);
     const ownedSessionIds = await getOwnedSessionIds(db, auth.accountId, [parsedBody.data.session_id]);
+    let parentFloor: Awaited<ReturnType<typeof getOwnedFloorById>> | null = null;
 
     if (ownedSessionIds.length === 0) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
     if (parsedBody.data.parent_floor_id !== undefined) {
-      const parentFloor = await getOwnedFloorById(db, auth.accountId, parsedBody.data.parent_floor_id);
+      parentFloor = await getOwnedFloorById(db, auth.accountId, parsedBody.data.parent_floor_id);
 
       if (!parentFloor) {
         return sendError(reply, 404, "not_found", "Parent floor not found");
@@ -423,8 +426,8 @@ export async function registerFloorRoutes(
 
     const now = Date.now();
 
-    const createdRows = await db
-      .insert(floors)
+    const created = db.transaction((tx) => {
+      const createdRows = tx.insert(floors)
       .values({
         id: nanoid(),
         sessionId: parsedBody.data.session_id,
@@ -437,9 +440,21 @@ export async function registerFloorRoutes(
         createdAt: now,
         updatedAt: now
       })
-      .returning();
+      .returning()
+      .all();
 
-    const created = requireRow(createdRows[0], "Failed to create floor");
+      const createdRow = requireRow(createdRows[0], "Failed to create floor");
+      new SessionBranchRegistryService(tx).ensure({
+        accountId: auth.accountId,
+        sessionId: parsedBody.data.session_id,
+        branchId: parsedBody.data.branch_id,
+        sourceFloorId: parentFloor?.id ?? null,
+        sourceBranchId: parentFloor?.branchId ?? null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return createdRow;
+    });
 
     return reply.code(201).send({ data: toFloorResponse(created) });
   });
@@ -808,6 +823,14 @@ export async function registerFloorRoutes(
       return sendError(reply, 404, "not_found", "Floor not found");
     }
 
+    branchRegistry.ensure({
+      accountId: auth.accountId,
+      sessionId: updated.sessionId,
+      branchId: updated.branchId,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    });
+
     return reply.send({ data: toFloorResponse(updated) });
   });
 
@@ -845,8 +868,6 @@ export async function registerFloorRoutes(
       deleteVariablesForFloor(tx, {
         accountId: auth.accountId,
         floorId: existingFloor.id,
-        sessionId: existingFloor.sessionId,
-        branchId: existingFloor.branchId,
       });
 
       return tx
@@ -932,22 +953,19 @@ export async function registerFloorRoutes(
     // 生成或使用指定的 branch_id
     const branchId = parsedBody.data.branch_id ?? `branch-${nanoid(8)}`;
 
-    // 检查 branch_id 在该 session 中是否唯一
-    const [existing] = await db
-      .select({ id: floors.id })
-      .from(floors)
-      .where(
-        and(
-          eq(floors.sessionId, sourceFloor.sessionId),
-          eq(floors.branchId, branchId),
-          isNull(floors.supersededAt)
-        )
-      )
-      .limit(1);
+    const existing = branchRegistry.get(auth.accountId, sourceFloor.sessionId, branchId);
 
     if (existing) {
       return sendError(reply, 409, "branch_exists", `Branch '${branchId}' already exists in this session`);
     }
+
+    branchRegistry.ensure({
+      accountId: auth.accountId,
+      sessionId: sourceFloor.sessionId,
+      branchId,
+      sourceFloorId: sourceFloor.id,
+      sourceBranchId: sourceFloor.branchId,
+    });
 
     return reply.code(201).send({
       data: {
@@ -1015,17 +1033,14 @@ export async function registerFloorRoutes(
       return sendError(reply, 404, "not_found", "Branch not found");
     }
 
-    const matchedRows = await db
-      .select({ id: floors.id, sessionId: floors.sessionId })
-      .from(floors)
-      .where(and(eq(floors.branchId, branchId), inArray(floors.sessionId, ownedSessionIds)));
+    const matchedBranches = branchRegistry.listByBranchId(auth.accountId, branchId, ownedSessionIds);
 
-    if (matchedRows.length === 0) {
+    if (matchedBranches.length === 0) {
       return sendError(reply, 404, "not_found", "Branch not found");
     }
 
 
-    const sessionIds = Array.from(new Set(matchedRows.map((row) => row.sessionId)));
+    const sessionIds = Array.from(new Set(matchedBranches.map((row) => row.sessionId)));
 
     if (!parsedQuery.data.session_id && sessionIds.length > 1) {
       return sendError(
@@ -1046,11 +1061,20 @@ export async function registerFloorRoutes(
       return sendError(reply, 409, "active_run_in_progress", `Branch '${branchId}' cannot be deleted while a run is in progress`);
     }
 
-    const branchFloorIds = matchedRows
-      .filter((row) => row.sessionId === targetSessionId)
+    const branchFloorIds = await db
+      .select({ id: floors.id })
+      .from(floors)
+      .where(and(eq(floors.sessionId, targetSessionId), eq(floors.branchId, branchId)))
+      .all()
       .map((row) => row.id);
 
     const deletedRows = await db.transaction((tx) => {
+      new SessionBranchRegistryService(tx).remove(
+        auth.accountId,
+        targetSessionId,
+        branchId,
+      );
+
       deleteVariablesForBranch(tx, {
         accountId: auth.accountId,
         sessionId: targetSessionId,

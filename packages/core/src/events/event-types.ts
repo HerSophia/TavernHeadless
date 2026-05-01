@@ -1,7 +1,7 @@
 import type { FloorState, MemoryJobType, MemoryScope, VariableScope, VariableEntry } from '@tavern/shared';
 import type { FloorEntity } from '../types.js';
 import type { ModelConfig, TokenUsage } from '../llm/types.js';
-import type { MemoryEdge, MemoryItem } from '../memory/types.js';
+import type { MemoryEdge, MemoryItem, MemoryRuntimeMode } from '../memory/types.js';
 import type { InstanceSlot } from '../llm/types.js';
 import type {
   ToolExecutionProviderType,
@@ -227,6 +227,7 @@ export interface MemoryEventContext {
   scope: MemoryScope;
   scopeId: string;
   floorId?: string;
+  pageId?: string;
   sourceJobId?: string;
   entityType?: MemoryEventEntityType;
   entityId?: string;
@@ -331,6 +332,11 @@ export interface RuntimeJobEvent {
   sessionId?: string;
   floorId?: string;
   pageId?: string;
+  branchId?: string;
+  runtimeMode?: MemoryRuntimeMode;
+  proposalBatchId?: string;
+  proposalStatus?: 'proposed' | 'promoted' | 'rejected' | 'superseded';
+  promotionStatus?: 'promoted' | 'rejected' | 'superseded';
   status: string;
   phase?: string | null;
   attemptCount: number;

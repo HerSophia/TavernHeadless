@@ -81,6 +81,7 @@ export type { FloorRepository } from './ports/floor-repository.js';
 // ── Variables ─────────────────────────────────────────
 export { VariableResolver } from './variables/index.js';
 export { VariableStore } from './variables/index.js';
+export type { VariableWriteIntent, VariableWriteSourceMetadata } from './variables/index.js';
 export type { VariableContext } from './types.js';
 export type { VariableRepository, VariableRepositoryOptions } from './ports/variable-repository.js';
 
@@ -114,7 +115,19 @@ export type {
   PromptRuntimePresetTrace,
   PromptRuntimeWorldbookTrace,
   PromptRuntimeRegexTrace,
+  PromptRuntimeRegexPhaseId,
+  PromptRuntimeRegexPhaseStatus,
+  PromptRuntimeRegexSkipReason,
+  PromptRuntimeRegexSubstitutionMode,
+  PromptRuntimeRegexSkippedRule,
+  PromptRuntimeRegexPhaseTrace,
   PromptRuntimeStructureTrace,
+  PromptRuntimeMemoryStrategy,
+  PromptRuntimeMemorySelectedItemTrace,
+  PromptRuntimeMemoryTokenStats,
+  PromptRuntimeMemoryScopeResolutionTrace,
+  PromptRuntimeMemoryProposalStatus,
+  PromptRuntimeMemoryPromotionStatus,
   PromptRuntimeMemoryTrace,
   PromptRuntimeMacroWarning,
   PromptRuntimeMacroMutationPreview,
@@ -286,6 +299,8 @@ export type {
   MemoryAccessOptions,
   MemoryScopeContext,
   MemoryScopeRef,
+  MemoryRuntimeMode,
+  MemoryProposalBatch,
 } from './memory/index.js';
 export { MemoryStore } from './memory/index.js';
 export { MemoryConsolidator } from './memory/index.js';

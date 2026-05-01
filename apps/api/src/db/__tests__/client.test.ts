@@ -12,6 +12,38 @@ import * as schema from "../schema.js";
 
 const MIGRATIONS_PATH = fileURLToPath(new URL("../../../drizzle", import.meta.url));
 
+type TableInfoRow = {
+  name: string;
+  dflt_value: string | null;
+};
+
+function getTableColumns(sqlite: Database.Database, tableName: string): TableInfoRow[] {
+  return sqlite.prepare(`PRAGMA table_info(\`${tableName}\`)`).all() as TableInfoRow[];
+}
+
+function replaceMigrationHistory(
+  targetSqlite: Database.Database,
+  sourceSqlite: Database.Database,
+): void {
+  const rows = sourceSqlite
+    .prepare("SELECT hash, created_at FROM __drizzle_migrations ORDER BY created_at ASC")
+    .all() as Array<{ hash: string; created_at: number }>;
+
+  targetSqlite.prepare("DELETE FROM __drizzle_migrations").run();
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const insert = targetSqlite.prepare("INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)");
+  const insertMany = targetSqlite.transaction((items: Array<{ hash: string; created_at: number }>) => {
+    for (const item of items) {
+      insert.run(item.hash, item.created_at);
+    }
+  });
+  insertMany(rows);
+}
+
 function createMigrationsDirBeforeIndex(maxExclusive: number): string {
   const tempDir = mkdtempSync(join(tmpdir(), "tavern-db-migrations-"));
   const metaDir = join(tempDir, "meta");
@@ -39,6 +71,7 @@ describe("createDatabase", () => {
   let seedSqlite: Database.Database | undefined;
   let connection: DatabaseConnection | undefined;
   let verifySqlite: Database.Database | undefined;
+  let migrationSourceSqlite: Database.Database | undefined;
   let tempDir: string | undefined;
   let tempMigrationsDir: string | undefined;
 
@@ -51,6 +84,9 @@ describe("createDatabase", () => {
 
     verifySqlite?.close();
     verifySqlite = undefined;
+
+    migrationSourceSqlite?.close();
+    migrationSourceSqlite = undefined;
 
     if (tempMigrationsDir) {
       rmSync(tempMigrationsDir, { recursive: true, force: true });
@@ -139,12 +175,8 @@ describe("createDatabase", () => {
 
     verifySqlite = new Database(databasePath);
 
-    const llmProfileColumns = verifySqlite
-      .prepare("PRAGMA table_info(`llm_profile`)")
-      .all() as Array<{ name: string; dflt_value: string | null }>;
-    const llmProfileBindingColumns = verifySqlite
-      .prepare("PRAGMA table_info(`llm_profile_binding`)")
-      .all() as Array<{ name: string; dflt_value: string | null }>;
+    const llmProfileColumns = getTableColumns(verifySqlite, "llm_profile");
+    const llmProfileBindingColumns = getTableColumns(verifySqlite, "llm_profile_binding");
 
     expect(llmProfileColumns.find((column) => column.name === "account_id")?.dflt_value).toBeNull();
     expect(llmProfileBindingColumns.find((column) => column.name === "account_id")?.dflt_value).toBeNull();
@@ -154,5 +186,91 @@ describe("createDatabase", () => {
     expect(
       verifySqlite.prepare("SELECT COUNT(*) AS count FROM llm_profile_binding").get()
     ).toEqual({ count: 1 });
+  });
+
+  it("repairs drifted branch_local_variable_snapshot additive columns even when migration history is already up to date", () => {
+    tempDir = mkdtempSync(join(tmpdir(), "tavern-db-"));
+    tempMigrationsDir = createMigrationsDirBeforeIndex(40);
+
+    const databasePath = join(tempDir, "tavern.db");
+
+    seedSqlite = new Database(databasePath);
+    seedSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(seedSqlite, { schema }), { migrationsFolder: tempMigrationsDir });
+
+    expect(getTableColumns(seedSqlite, "branch_local_variable_snapshot").map((column) => column.name)).not.toEqual(
+      expect.arrayContaining(["snapshot_version", "provenance_json"]),
+    );
+
+    migrationSourceSqlite = new Database(":memory:");
+    migrationSourceSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(migrationSourceSqlite, { schema }), { migrationsFolder: MIGRATIONS_PATH });
+
+    replaceMigrationHistory(seedSqlite, migrationSourceSqlite);
+
+    seedSqlite.close();
+    seedSqlite = undefined;
+
+    connection = createDatabase(databasePath);
+    connection.close();
+    connection = undefined;
+
+    verifySqlite = new Database(databasePath);
+
+    const repairedColumns = getTableColumns(verifySqlite, "branch_local_variable_snapshot");
+    expect(repairedColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["snapshot_version", "provenance_json"]),
+    );
+    expect(repairedColumns.find((column) => column.name === "snapshot_version")?.dflt_value).toBe("1");
+
+    verifySqlite.prepare(
+      `INSERT OR IGNORE INTO account (
+        id,
+        name,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?)`
+    ).run("default-admin", "default-admin", 1_735_700_000_000, 1_735_700_000_000);
+
+    verifySqlite.prepare(
+      `INSERT OR IGNORE INTO session (
+        id,
+        account_id,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?)`
+    ).run("session-1", "default-admin", 1_735_700_000_000, 1_735_700_000_000);
+
+    verifySqlite.prepare(
+      `INSERT OR IGNORE INTO floor (
+        id,
+        session_id,
+        floor_no,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?)`
+    ).run("floor-1", "session-1", 1, 1_735_700_000_000, 1_735_700_000_000);
+
+    verifySqlite.prepare(
+      `INSERT INTO branch_local_variable_snapshot (
+        floor_id,
+        account_id,
+        session_id,
+        branch_id,
+        values_json,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(
+      "floor-1",
+      "default-admin",
+      "session-1",
+      "main",
+      JSON.stringify({ mood: "steady" }),
+      1_735_700_000_000,
+    );
+
+    expect(
+      verifySqlite.prepare("SELECT snapshot_version, provenance_json FROM branch_local_variable_snapshot WHERE floor_id = ?").get("floor-1")
+    ).toEqual({ snapshot_version: 1, provenance_json: null });
   });
 });

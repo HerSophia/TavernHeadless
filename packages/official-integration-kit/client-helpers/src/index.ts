@@ -31,8 +31,18 @@ export type { TimelineContentFormat, TimelineMessageView } from "./timeline/type
 export { resolveUsage } from "./usage/resolve-usage.js";
 export {
   flattenVariableSnapshot,
+  flattenPageStagedVariableWrites,
   formatVariablePreview,
+  groupVariablePromotionTrace,
   sortVariableInspectorRows,
 } from "./variables/index.js";
 export type { NormalizedUsage } from "./usage/resolve-usage.js";
-export type { VariableInspectorLayerValue, VariableInspectorRow, VariableSnapshotLike } from "./variables/index.js";
+export type {
+  FlattenedPageStagedVariableWrite,
+  GroupedVariablePromotionTrace,
+  PageStagedVariableWriteLike,
+  VariableInspectorLayerValue,
+  VariableInspectorRow,
+  VariablePromotionTraceLike,
+  VariableSnapshotLike,
+} from "./variables/index.js";

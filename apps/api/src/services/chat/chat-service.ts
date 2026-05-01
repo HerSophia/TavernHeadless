@@ -10,6 +10,7 @@ import type {
 } from "@tavern/core";
 import {
   createEventBus,
+  extractSummaries,
   FloorNotFoundError,
   FloorStateConflictError,
   FloorStateMachine,
@@ -37,6 +38,7 @@ import {
   type GenerationCoordinator,
 } from "../generation-guard-service.js";
 import { TurnCommitService } from "../turn-commit-service.js";
+import { PageVariableDecisionService } from "../variables/commit/page-variable-decision-service.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 import {
   BranchLocalVariableSnapshotService,
@@ -82,6 +84,14 @@ import { PreparedTurnInspectionService } from "../prompt-runtime/prepared-turn-i
 import { findErrorByConstructor } from "./shared/error-utils.js";
 import { normalizeBranchId } from "./shared/branch.js";
 import { buildLivePromptRuntimeRequestPolicy } from "./shared/request-policy.js";
+import {
+  buildPromptRuntimeRegexTrace,
+  buildRegexSubstitutionContext,
+  executePromptRuntimeRegexPhase,
+  listRuntimeRegexReservedPlacements,
+  mergePromptRuntimeRegexTrace,
+  PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE,
+} from "../prompt-runtime/regex/index.js";
 import type { FirstPartyStateContext } from "./types.js";
 
 export * from "./contracts.js";
@@ -304,6 +314,7 @@ export class ChatService {
         try {
           ({ userMessageRef } = this.draftFloorService.createDraftFloorWithUserMessage({
             floorId,
+            accountId: resolvedAccountId,
             sessionId,
             floorNo: nextFloorNo,
             branchId,
@@ -312,6 +323,8 @@ export class ChatService {
             userId: session.userId,
             userSnapshotJson: session.userSnapshotJson,
             now,
+            sourceFloorId: branchContext.inheritanceSource?.floorId,
+            sourceBranchId: branchContext.inheritanceSource?.branchId,
             afterCreate: branchContext.inheritanceSource
               ? (tx) => {
                   new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
@@ -330,7 +343,7 @@ export class ChatService {
         }
 
         await this.turnRunTracker.initializeFloorRun(sessionId, floorId, "respond", now);
-        let persistedUserMessage: string;
+        let persistedUserMessage: Awaited<ReturnType<RegexInputService["applyPersistedUserInputRegex"]>>;
         try {
           persistedUserMessage = await this.regexInputService.applyPersistedUserInputRegex({
             accountId: resolvedAccountId,
@@ -364,7 +377,9 @@ export class ChatService {
             accountId: resolvedAccountId,
             session,
             sessionInfo,
-            userMessage: persistedUserMessage,
+            userMessage: persistedUserMessage.text,
+            rawUserMessage: request.message,
+            baseRuntimeTrace: persistedUserMessage.runtimeTrace ? { regex: persistedUserMessage.runtimeTrace } : undefined,
             request,
             executionContext,
             history,
@@ -489,6 +504,7 @@ export class ChatService {
       const now = Date.now();
       const { userMessageRef } = this.draftFloorService.createDraftFloorWithUserMessage({
         floorId: newFloorId,
+        accountId: resolvedAccountId,
         sessionId,
         floorNo: targetFloor.floorNo,
         branchId: targetFloor.branchId,
@@ -743,6 +759,7 @@ export class ChatService {
       try {
         ({ userMessageRef } = this.draftFloorService.createDraftFloorWithUserMessage({
           floorId: newFloorId,
+          accountId: resolvedAccountId,
           sessionId: source.sessionId,
           floorNo: source.floorNo + 1,
           branchId: newBranchId,
@@ -751,6 +768,8 @@ export class ChatService {
           userId: session.userId,
           userSnapshotJson: session.userSnapshotJson,
           now,
+          sourceFloorId: source.floorId,
+          sourceBranchId: source.branchId,
           afterCreate: (tx) => {
             new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
               accountId: resolvedAccountId,
@@ -791,7 +810,9 @@ export class ChatService {
           accountId: resolvedAccountId,
           session,
           sessionInfo,
-          userMessage: persistedUserMessage,
+          userMessage: persistedUserMessage.text,
+          rawUserMessage: request.content,
+          baseRuntimeTrace: persistedUserMessage.runtimeTrace ? { regex: persistedUserMessage.runtimeTrace } : undefined,
           request,
           executionContext,
           history,
@@ -868,6 +889,8 @@ export class ChatService {
     session: typeof sessions.$inferSelect;
     sessionInfo?: import("../prompt-assembler.js").SessionPromptInfo;
     userMessage: string;
+    rawUserMessage?: string;
+    baseRuntimeTrace?: import("../prompt-assembler.js").PromptRuntimeTrace;
     request: {
       config?: import("@tavern/core").TurnConfig;
       generationParams?: Partial<import("@tavern/core").GenerationParams>;
@@ -906,6 +929,8 @@ export class ChatService {
       session: args.session,
       sessionInfo: args.sessionInfo,
       userMessage: args.userMessage,
+      rawUserMessage: args.rawUserMessage,
+      baseRuntimeTrace: args.baseRuntimeTrace,
       request: args.request,
       executionContext: args.executionContext,
       history: args.history,
@@ -936,7 +961,49 @@ export class ChatService {
       supersedeSourceFloor: args.supersedeSourceFloor,
     });
 
+    if (prepared.promptDebug.runtimeTrace) {
+      prepared.promptDebug.runtimeTrace = this.augmentRuntimeTraceWithAiOutputRegex({
+        runtimeTrace: prepared.promptDebug.runtimeTrace,
+        execution,
+        scripts: prepared.assembled.promptSnapshot.regexProfile?.scripts ?? [],
+        variables: prepared.assembled.promptSnapshot.variables,
+      }) ?? prepared.promptDebug.runtimeTrace;
+    }
+
     return { prepared, execution, commit };
+  }
+
+  private augmentRuntimeTraceWithAiOutputRegex(args: {
+    runtimeTrace: import("../prompt-assembler.js").PromptRuntimeTrace;
+    execution: TurnExecutionResult;
+    scripts: import("@tavern/adapters-sillytavern").STRegexScript[];
+    variables: Record<string, unknown>;
+  }): import("../prompt-assembler.js").PromptRuntimeTrace | undefined {
+    if (args.scripts.length === 0) {
+      return args.runtimeTrace;
+    }
+
+    const cleanedOutput = extractSummaries(args.execution.rawText).cleanedText;
+    const aiOutputPhase = executePromptRuntimeRegexPhase({
+      phaseId: "persist.ai_output",
+      text: cleanedOutput,
+      scripts: args.scripts,
+      depth: 0,
+      substitutionContext: buildRegexSubstitutionContext(args.variables),
+    });
+    const aiOutputTrace = buildPromptRuntimeRegexTrace({
+      userInputRules: args.runtimeTrace.regex?.userInputRules ?? [],
+      aiOutputRules: args.runtimeTrace.regex?.aiOutputRules ?? [],
+      ...(args.runtimeTrace.regex?.preprocessedUserMessage !== undefined ? { preprocessedUserMessage: args.runtimeTrace.regex.preprocessedUserMessage } : {}),
+      phases: [aiOutputPhase],
+      reservedPlacements: listRuntimeRegexReservedPlacements(args.scripts),
+      substitutionMode: PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE,
+    });
+    const mergedRegex = mergePromptRuntimeRegexTrace(args.runtimeTrace.regex, aiOutputTrace);
+
+    return mergedRegex
+      ? { ...args.runtimeTrace, regex: mergedRegex }
+      : args.runtimeTrace;
   }
 
   private async performTurnExecutionAndCommit(args: {
@@ -1053,6 +1120,11 @@ export class ChatService {
 
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "transaction_prepared");
 
+    const pageDecision = new PageVariableDecisionService(this.db).resolveForCommit({
+      floorId: args.floorId,
+      pageId: turnInput.pageId,
+    });
+
     const commitInput = {
       accountId: args.accountId,
       floorId: args.floorId,
@@ -1061,6 +1133,7 @@ export class ChatService {
       execution,
       variableCommit: {
         pageId: turnInput.pageId,
+        ...(pageDecision ? { pageDecision } : {}),
       },
       promptSnapshot: args.promptSnapshot,
       promptRuntimeInspection: args.promptRuntimeInspection,

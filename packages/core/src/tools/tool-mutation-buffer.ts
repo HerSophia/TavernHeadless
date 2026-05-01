@@ -35,6 +35,9 @@ export class ToolMutationBuffer {
     value: unknown;
     accountId?: string;
     bufferedAt?: number;
+    intent?: BufferedToolVariableMutation['intent'];
+    reason?: BufferedToolVariableMutation['reason'];
+    source?: BufferedToolVariableMutation['source'];
   }): VariableEntry {
     const attempt = this.getAttempt(args.generationAttemptNo, true);
     const mutationKey = toMutationKey(args);
@@ -46,6 +49,9 @@ export class ToolMutationBuffer {
       key: args.key,
       value: args.value,
       ...(args.accountId ? { accountId: args.accountId } : {}),
+      ...(args.intent ? { intent: args.intent } : {}),
+      ...(args.reason ? { reason: args.reason } : {}),
+      ...(args.source ? { source: { ...args.source } } : {}),
       bufferedAt: args.bufferedAt ?? Date.now(),
     };
 
@@ -127,7 +133,10 @@ export class ToolMutationBuffer {
 
         return a.key.localeCompare(b.key);
       })
-      .map((mutation) => ({ ...mutation }));
+      .map((mutation) => ({
+        ...mutation,
+        ...(mutation.source ? { source: { ...mutation.source } } : {}),
+      }));
   }
 
   discardGenerationAttempt(generationAttemptNo: number): void {

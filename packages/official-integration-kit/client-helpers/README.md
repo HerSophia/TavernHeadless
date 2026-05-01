@@ -48,6 +48,8 @@ TavernHeadless 官方接入的语义层。
 | `getDisplayPage` | 优先使用运行中的候选输出，否则回退到 active page |
 | `getActivePage` | 从楼层中选出当前活动页 |
 | `flattenVariableSnapshot` | 把 resolved variable snapshot 整理成 inspector 可用行 |
+| `flattenPageStagedVariableWrites` | 把 page staged write ledger 整理成 inspector 可用行 |
+| `groupVariablePromotionTrace` | 把 page variable promotion trace 按 key 分组 |
 | `sortVariableInspectorRows` | 对变量 inspector 行做稳定排序 |
 | `formatVariablePreview` | 把变量值格式化成适合界面展示的预览字符串 |
 | `mapApiErrorToUiState` | 把 API 错误转换成界面可用的错误状态 |
@@ -129,6 +131,27 @@ console.log(item?.valueJson);
 
 这一组三段路径直接收敛成一次读取动作。
 
+### Variables inspect helpers
+
+```ts
+import {
+  flattenPageStagedVariableWrites,
+  flattenVariableSnapshot,
+  groupVariablePromotionTrace,
+} from "@tavern/client-helpers";
+
+const resolvedRows = flattenVariableSnapshot(resolvedSnapshot);
+const stagedRows = flattenPageStagedVariableWrites(stagedSnapshot);
+const promotionGroups = groupVariablePromotionTrace(promotionSnapshot);
+```
+
+这组 helper 的边界是：
+
+- `flattenVariableSnapshot(...)` 只处理 durable resolve snapshot
+- `flattenPageStagedVariableWrites(...)` 只处理 page staged ledger
+- `groupVariablePromotionTrace(...)` 只处理 page promotion trace
+- 它们不会把三种观察面混成一份数据
+
 ## 设计边界
 
 适合放进来的：
@@ -161,4 +184,4 @@ console.log(item?.valueJson);
 
 ## 当前状态
 
-`apps/web` 现在已经直接使用这里的 timeline、变量快照、流式 reducer、工具事件分组和错误映射逻辑来支撑 inspector、重放确认和管理界面。Client Data 第二期已经补入 owner 构造、按 collection 分组、嵌套映射和路径读取 helper。Memory V2 的条目、任务和 scope 数据目前保持在 SDK 资源层暴露。后续会继续按这个原则扩展，但不会引入框架绑定层。
+`apps/web` 现在已经直接使用这里的 timeline、变量快照、流式 reducer、工具事件分组和错误映射逻辑来支撑 inspector、重放确认和管理界面。Client Data 第二期已经补入 owner 构造、按 collection 分组、嵌套映射和路径读取 helper。Memory V2 的条目、任务、scope 数据，以及 Prompt Runtime 的结构化 `memory` 真相目前都保持在 SDK 返回面直接暴露。当前没有单独 helper，因为 preview / inspect / historical explain 的 `memory` 对象已经是稳定的只读结构。后续会继续按这个原则扩展，但不会引入框架绑定层。

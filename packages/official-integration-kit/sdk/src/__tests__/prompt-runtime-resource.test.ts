@@ -20,6 +20,71 @@ const defaultVisibilitySourceMap = {
   mode: "system_default",
 } as const;
 
+const promptRuntimeLimitations = [
+  "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
+  "Variable commit remains page -> floor. Branch promotion is not automatic.",
+] as const;
+
+const previewMemoryTracePayload = {
+  summary_injected: true,
+  runtime_mode: "async_primary",
+  requested_write: false,
+  effective_write: false,
+  strategy: "single_summary",
+  summary_text: "[Memory]\n- The party recently agreed to search the northern pass.",
+  summary_text_hash: "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+  selected_items: [
+    { memory_id: "memory-branch-summary-2", scope: "branch", scope_id: "memscope:session-1:main", branch_id: "main", kind: "macro_summary", source: "summary", score: 0.71, token_count: 22 },
+  ],
+  token_stats: { budget: 500, used: 22, micro_summary: 0, macro_summary: 22, direct_items: 0 },
+  scope_resolution: { mode: "branch_aware", requested_scopes: ["global", "branch"], resolved_scopes: ["global", "branch"], requested_branch_id: "alt-preview", resolved_branch_id: "main", fallback_reason: null },
+} as const;
+
+const previewMemoryTrace = {
+  summaryInjected: true,
+  runtimeMode: "async_primary",
+  requestedWrite: false,
+  effectiveWrite: false,
+  strategy: "single_summary",
+  summaryText: "[Memory]\n- The party recently agreed to search the northern pass.",
+  summaryTextHash: "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+  selectedItems: [{ memoryId: "memory-branch-summary-2", scope: "branch", scopeId: "memscope:session-1:main", branchId: "main", kind: "macro_summary", source: "summary", score: 0.71, tokenCount: 22 }],
+  tokenStats: { budget: 500, used: 22, microSummary: 0, macroSummary: 22, directItems: 0 },
+  scopeResolution: { mode: "branch_aware", requestedScopes: ["global", "branch"], resolvedScopes: ["global", "branch"], requestedBranchId: "alt-preview", resolvedBranchId: "main", fallbackReason: null },
+} as const;
+
+const committedMemoryTracePayload = {
+  summary_injected: true,
+  runtime_mode: "async_primary",
+  requested_write: true,
+  effective_write: true,
+  strategy: "dual_summary",
+  summary_text_hash: "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+  selected_items: [{ memory_id: "memory-branch-fact-1", scope: "branch", scope_id: "memscope:session-1:main", branch_id: "main", kind: "fact" }],
+  token_stats: { budget: 500, used: 64, micro_summary: 14, macro_summary: 0, direct_items: 50 },
+  scope_resolution: { mode: "branch_aware", requested_scopes: ["global", "branch"], resolved_scopes: ["global", "branch"], requested_branch_id: "main", resolved_branch_id: "main", fallback_reason: null },
+  page_id: "page-output-12",
+  proposal_batch_id: "memory-proposal:page-output-12",
+  proposal_status: "promoted",
+  promotion_status: "promoted",
+} as const;
+
+const committedMemoryTrace = {
+  summaryInjected: true,
+  runtimeMode: "async_primary",
+  requestedWrite: true,
+  effectiveWrite: true,
+  strategy: "dual_summary",
+  summaryTextHash: "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+  selectedItems: [{ memoryId: "memory-branch-fact-1", scope: "branch", scopeId: "memscope:session-1:main", branchId: "main", kind: "fact" }],
+  tokenStats: { budget: 500, used: 64, microSummary: 14, macroSummary: 0, directItems: 50 },
+  scopeResolution: { mode: "branch_aware", requestedScopes: ["global", "branch"], resolvedScopes: ["global", "branch"], requestedBranchId: "main", resolvedBranchId: "main", fallbackReason: null },
+  pageId: "page-output-12",
+  proposalBatchId: "memory-proposal:page-output-12",
+  proposalStatus: "promoted",
+  promotionStatus: "promoted",
+} as const;
+
 describe("sdk prompt runtime resource", () => {
   it("maps session prompt runtime state, policy, assets, and capabilities", async () => {
     const fetchImpl = vi
@@ -103,7 +168,7 @@ describe("sdk prompt runtime resource", () => {
               },
             },
             diagnostics: [{ code: "derived_no_assistant_structure", message: "derived", severity: "warning" }],
-            limitations: ["memory remains shared"],
+            limitations: [...promptRuntimeLimitations],
           },
         }),
       )
@@ -385,7 +450,7 @@ describe("sdk prompt runtime resource", () => {
         },
       },
       diagnostics: [{ code: "derived_no_assistant_structure", message: "derived", severity: "warning" }],
-      limitations: ["memory remains shared"],
+      limitations: [...promptRuntimeLimitations],
     });
 
     await expect(
@@ -656,6 +721,7 @@ describe("sdk prompt runtime resource", () => {
             token_estimate: 42,
           },
           resolved_policy: null,
+          memory: committedMemoryTracePayload,
           governance: {
             entries: [
               {
@@ -718,6 +784,7 @@ describe("sdk prompt runtime resource", () => {
       scope: { sessionId: "session-1", targetBranchId: "main", branchExists: true, sourceFloorId: null, historySourceBranchId: "main", historySourceMode: "existing_branch" },
       snapshotAvailable: true,
       assets: { preset: { id: "preset-1", name: "Story Preset" }, characterCard: { id: "char-1", name: "Hero" }, worldbook: null, regexProfile: null },
+      memory: committedMemoryTrace,
       promptSnapshot: { presetId: "preset-1", presetUpdatedAt: 1710000000000, presetVersion: 3, worldbookId: null, worldbookUpdatedAt: null, worldbookVersion: null, regexProfileId: null, regexProfileUpdatedAt: null, regexProfileVersion: null, characterId: "char-1", characterVersionId: "charver-1", characterImportedFormat: "tavern_card_v2", characterContentHash: "char-hash-1", worldbookActivatedEntryUids: [7], worldbookActivatedEntries: [{ uid: 7, activationKey: "worldbook:worldbook-1:5:entry:7", source: { kind: "session_worldbook", worldbookId: null, worldbookName: "Historical Worldbook", assetScopeId: "worldbook:worldbook-1:5" }, insertion: { position: "before" } }], regexPreRuleNames: ["Input Rule"], regexPostRuleNames: [], promptMode: "compat_strict", assetManifestDigest: null, promptDigest: "digest-1", tokenEstimate: 42 },
       resolvedPolicy: null,
       governance: {
@@ -914,12 +981,14 @@ describe("sdk prompt runtime resource", () => {
               token_estimate: 320,
             },
             runtime_trace: {
+              memory: committedMemoryTracePayload,
               budgets: {
                 by_group: [
                   { group: "history", token_count: 256 },
                 ],
               },
             },
+            memory: committedMemoryTracePayload,
             memory_summary: "Remember the promise.",
             generation_params: {
               max_output_tokens: 256,
@@ -998,6 +1067,8 @@ describe("sdk prompt runtime resource", () => {
         availableForReply: 704,
         preprocessedUserMessage: "Hello there",
         promptSnapshot: { characterId: "char-1", characterVersionId: "charver-1", characterImportedFormat: "tavern_card_v2", characterContentHash: "char-hash-1", worldbookActivatedEntries: [{ uid: 7, activationKey: "worldbook:worldbook-1:5:entry:7", source: { kind: "session_worldbook", worldbookId: null, worldbookName: "Inspect Worldbook", assetScopeId: "worldbook:worldbook-1:5" }, insertion: { position: "before" } }] },
+        runtimeTrace: { budgets: { byGroup: [{ group: "history", tokenCount: 256 }] }, memory: committedMemoryTrace },
+        memory: committedMemoryTrace,
         memorySummary: "Remember the promise.",
         generationParams: { maxOutputTokens: 256, temperature: 0.7, reasoningEffort: "medium" },
         requestedTurnConfig: { enableTools: true, toolMode: "both" },
@@ -1217,7 +1288,8 @@ describe("sdk prompt runtime resource", () => {
           diagnostics: [
             { code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" },
           ],
-          limitations: ["memory remains shared"],
+          limitations: [...promptRuntimeLimitations],
+          memory: previewMemoryTracePayload,
           text: '{"金币":3}/霜刃',
           runtime_trace: {
             macro: {
@@ -1305,7 +1377,8 @@ describe("sdk prompt runtime resource", () => {
       },
       sourceMap: { delivery: { noAssistant: "request_override" }, budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" }, sourceSelection: { history: { mode: "request_override", maxMessages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } }, visibility: { mode: "request_override", hiddenFloorRanges: "request_override" }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
       diagnostics: [{ code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" }],
-      limitations: ["memory remains shared"],
+      limitations: [...promptRuntimeLimitations],
+      memory: previewMemoryTrace,
       text: '{"金币":3}/霜刃',
       runtimeTrace: {
         macro: {

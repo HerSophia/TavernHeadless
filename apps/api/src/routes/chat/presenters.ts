@@ -82,6 +82,63 @@ export function mapPromptSnapshotToSnakeCase(promptSnapshot: PromptSnapshotPrevi
   };
 }
 
+export function mapPromptRuntimeMemoryTraceToSnakeCase(
+  memory: NonNullable<PromptRuntimeTrace["memory"]>,
+): Record<string, unknown> {
+  return {
+    summary_injected: memory.summaryInjected,
+    ...(memory.runtimeMode !== undefined ? { runtime_mode: memory.runtimeMode } : {}),
+    ...(memory.requestedWrite !== undefined ? { requested_write: memory.requestedWrite } : {}),
+    ...(memory.effectiveWrite !== undefined ? { effective_write: memory.effectiveWrite } : {}),
+    ...(memory.strategy !== undefined ? { strategy: memory.strategy } : {}),
+    ...(memory.summaryText !== undefined ? { summary_text: memory.summaryText } : {}),
+    ...(memory.summaryTextHash !== undefined ? { summary_text_hash: memory.summaryTextHash } : {}),
+    ...(memory.selectedItems
+      ? {
+          selected_items: memory.selectedItems.map((item) => ({
+            memory_id: item.memoryId,
+            scope: item.scope,
+            scope_id: item.scopeId,
+            branch_id: item.branchId ?? null,
+            kind: item.kind,
+            ...(item.source !== undefined ? { source: item.source } : {}),
+            ...(item.score !== undefined ? { score: item.score } : {}),
+            ...(item.tokenCount !== undefined ? { token_count: item.tokenCount } : {}),
+            ...(item.selectedReason !== undefined ? { selected_reason: item.selectedReason } : {}),
+          })),
+        }
+      : {}),
+    ...(memory.tokenStats
+      ? {
+          token_stats: {
+            budget: memory.tokenStats.budget ?? null,
+            used: memory.tokenStats.used,
+            micro_summary: memory.tokenStats.microSummary,
+            macro_summary: memory.tokenStats.macroSummary,
+            direct_items: memory.tokenStats.directItems,
+          },
+        }
+      : {}),
+    ...(memory.scopeResolution
+      ? {
+          scope_resolution: {
+            mode: memory.scopeResolution.mode,
+            ...(memory.scopeResolution.strict !== undefined ? { strict: memory.scopeResolution.strict } : {}),
+            requested_scopes: memory.scopeResolution.requestedScopes,
+            resolved_scopes: memory.scopeResolution.resolvedScopes,
+            requested_branch_id: memory.scopeResolution.requestedBranchId ?? null,
+            resolved_branch_id: memory.scopeResolution.resolvedBranchId ?? null,
+            fallback_reason: memory.scopeResolution.fallbackReason ?? null,
+          },
+        }
+      : {}),
+    ...(memory.pageId ? { page_id: memory.pageId } : {}),
+    ...(memory.proposalBatchId ? { proposal_batch_id: memory.proposalBatchId } : {}),
+    ...(memory.proposalStatus ? { proposal_status: memory.proposalStatus } : {}),
+    ...(memory.promotionStatus ? { promotion_status: memory.promotionStatus } : {}),
+  };
+}
+
 export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<string, unknown> {
   return {
     ...(runtimeTrace.preset
@@ -119,6 +176,21 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
             user_input_rules: runtimeTrace.regex.userInputRules,
             ai_output_rules: runtimeTrace.regex.aiOutputRules,
             preprocessed_user_message: runtimeTrace.regex.preprocessedUserMessage ?? null,
+            ...(runtimeTrace.regex.phases
+              ? {
+                  phases: runtimeTrace.regex.phases.map((phase) => mapRegexPhaseTraceToSnakeCase(phase)),
+                }
+              : {}),
+            ...(runtimeTrace.regex.reservedPlacements
+              ? {
+                  reserved_placements: runtimeTrace.regex.reservedPlacements,
+                }
+              : {}),
+            ...(runtimeTrace.regex.substitutionMode
+              ? {
+                  substitution_mode: runtimeTrace.regex.substitutionMode,
+                }
+              : {}),
           },
         }
       : {}),
@@ -154,7 +226,7 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
           },
         }
       : {}),
-    ...(runtimeTrace.memory ? { memory: { summary_injected: runtimeTrace.memory.summaryInjected } } : {}),
+    ...(runtimeTrace.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(runtimeTrace.memory) } : {}),
     ...(runtimeTrace.macro
       ? {
           macro: {
@@ -245,6 +317,25 @@ function mapTrimReasonToSnakeCase(reason: NonNullable<NonNullable<PromptRuntimeT
     reason: reason.reason,
     ...(reason.detail ? { detail: reason.detail } : {}),
     ...(reason.prunedTokenCount !== undefined ? { pruned_token_count: reason.prunedTokenCount } : {}),
+  };
+}
+
+function mapRegexPhaseTraceToSnakeCase(phase: NonNullable<NonNullable<PromptRuntimeTrace["regex"]>["phases"]>[number]): Record<string, unknown> {
+  return {
+    phase_id: phase.phaseId,
+    placement: phase.placement,
+    channel: phase.channel,
+    status: phase.status,
+    changed: phase.changed,
+    depth: phase.depth,
+    input_text_hash: phase.inputTextHash,
+    output_text_hash: phase.outputTextHash,
+    candidate_rule_names: phase.candidateRuleNames,
+    matched_rule_names: phase.matchedRuleNames,
+    skipped_rules: phase.skippedRules.map((rule) => ({
+      rule_name: rule.ruleName,
+      reason: rule.reason,
+    })),
   };
 }
 

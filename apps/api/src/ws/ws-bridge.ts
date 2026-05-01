@@ -2,6 +2,8 @@ import type { WebSocket } from 'ws';
 import type { CoreEventBus, CoreEventMap } from '@tavern/core';
 import { parseBranchMemoryScopeId } from '@tavern/shared';
 
+import { resolveMemorySessionIdFromScopeCarrier } from '../services/memory/observe/memory-ws-payload-builder.js';
+
 // ── 推送协议 ──────────────────────────────
 
 export interface WsMessage {
@@ -214,6 +216,11 @@ function resolveSessionFromScopeCarrier(carrier: Record<string, unknown>): strin
 
   if (!scope || !scopeId) {
     return undefined;
+  }
+
+  const resolvedMemorySessionId = resolveMemorySessionIdFromScopeCarrier(carrier);
+  if (resolvedMemorySessionId) {
+    return resolvedMemorySessionId;
   }
 
   if (scope === 'chat') {
