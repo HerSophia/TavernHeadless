@@ -777,7 +777,7 @@ describe("ChatService.dryRun", () => {
 
     const result = await chatService.dryRun(sessionId, { message: "hello dry run" });
 
-    expect(result.messages[result.messages.length - 1]?.content).toBe("hello dry run");
+    expect(result.messages[result.messages.length - 1]?.content).toBe("history\n\nhello dry run");
     expect(result.tokenEstimate).toBeGreaterThan(0);
     expect(result.promptSnapshot.presetId).toBeNull();
     expect(result.promptSnapshot.worldbookActivatedEntryUids).toEqual([]);
@@ -1935,9 +1935,9 @@ describe("ChatService.dryRun", () => {
             matchedKey: "sword",
             matchedKeyScope: "primary",
             matchedKeyType: "plain",
-            charStart: 6,
-            charEnd: 11,
-            excerpt: "hello sword",
+            charStart: 15,
+            charEnd: 20,
+            excerpt: "history\n\nhello sword",
           },
         },
       },

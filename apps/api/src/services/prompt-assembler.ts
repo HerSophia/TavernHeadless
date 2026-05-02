@@ -45,6 +45,7 @@ import {
 } from "@tavern/adapters-sillytavern";
 
 import type { AppDb } from "../db/client.js";
+import type { PromptRuntimeHistoryNormalizationSummary } from "./chat/conversation-history-normalizer.js";
 import {
   PromptResourceLoader,
   type LoadedPromptPreset,
@@ -444,9 +445,10 @@ export interface PromptRuntimeMacroTrace {
 export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatchDetail> {
   regex?: PromptRuntimeRegexTrace;
   macro?: PromptRuntimeMacroTrace;
+  historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
 }
 
-export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility">;
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization">;
 
 export interface PromptRuntimeTraceSeed {
   worldbookHits: number;

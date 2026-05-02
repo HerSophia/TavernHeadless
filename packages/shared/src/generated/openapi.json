@@ -14736,6 +14736,30 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "history_normalization": {
+                        "effective_turn_count": 2,
+                        "merged_user_groups": [
+                          {
+                            "effective_role": "user",
+                            "includes_current_input": true,
+                            "source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "source_message_ids": [
+                              "msg_19",
+                              "msg_21"
+                            ]
+                          }
+                        ],
+                        "raw_entry_count": 4,
+                        "selected_turn_count": 2,
+                        "trailing_user_source_floor_ids": [
+                          "floor_11",
+                          "floor_12"
+                        ],
+                        "violations": []
+                      },
                       "macro": {
                         "mutation_preview": [
                           {
@@ -15021,6 +15045,30 @@
                             "last_message_role": "user",
                             "no_assistant": false,
                             "require_last_user": true
+                          },
+                          "history_normalization": {
+                            "effective_turn_count": 2,
+                            "merged_user_groups": [
+                              {
+                                "effective_role": "user",
+                                "includes_current_input": true,
+                                "source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "source_message_ids": [
+                                  "msg_19",
+                                  "msg_21"
+                                ]
+                              }
+                            ],
+                            "raw_entry_count": 4,
+                            "selected_turn_count": 2,
+                            "trailing_user_source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "violations": []
                           },
                           "macro": {
                             "mutation_preview": [
@@ -15647,6 +15695,30 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "history_normalization": {
+                              "effective_turn_count": 2,
+                              "merged_user_groups": [
+                                {
+                                  "effective_role": "user",
+                                  "includes_current_input": true,
+                                  "source_floor_ids": [
+                                    "floor_11",
+                                    "floor_12"
+                                  ],
+                                  "source_message_ids": [
+                                    "msg_19",
+                                    "msg_21"
+                                  ]
+                                }
+                              ],
+                              "raw_entry_count": 4,
+                              "selected_turn_count": 2,
+                              "trailing_user_source_floor_ids": [
+                                "floor_11",
+                                "floor_12"
+                              ],
+                              "violations": []
+                            },
                             "macro": {
                               "mutation_preview": [
                                 {
@@ -15978,6 +16050,134 @@
                                 "ends_with_user",
                                 "degraded",
                                 "degrade_reasons"
+                              ],
+                              "type": "object"
+                            },
+                            "history_normalization": {
+                              "additionalProperties": false,
+                              "example": {
+                                "effective_turn_count": 2,
+                                "merged_user_groups": [
+                                  {
+                                    "effective_role": "user",
+                                    "includes_current_input": true,
+                                    "source_floor_ids": [
+                                      "floor_11",
+                                      "floor_12"
+                                    ],
+                                    "source_message_ids": [
+                                      "msg_19",
+                                      "msg_21"
+                                    ]
+                                  }
+                                ],
+                                "raw_entry_count": 4,
+                                "selected_turn_count": 2,
+                                "trailing_user_source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "violations": []
+                              },
+                              "properties": {
+                                "effective_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "merged_user_groups": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "effective_role": {
+                                        "enum": [
+                                          "user"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "includes_current_input": {
+                                        "type": "boolean"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "effective_role",
+                                      "source_floor_ids",
+                                      "source_message_ids",
+                                      "includes_current_input"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "raw_entry_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "selected_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "trailing_user_source_floor_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "violations": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "enum": [
+                                          "adjacent_assistant_floors"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message",
+                                      "source_floor_ids",
+                                      "source_message_ids"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "raw_entry_count",
+                                "effective_turn_count",
+                                "selected_turn_count",
+                                "trailing_user_source_floor_ids",
+                                "merged_user_groups",
+                                "violations"
                               ],
                               "type": "object"
                             },
@@ -33029,6 +33229,30 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "history_normalization": {
+                        "effective_turn_count": 2,
+                        "merged_user_groups": [
+                          {
+                            "effective_role": "user",
+                            "includes_current_input": true,
+                            "source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "source_message_ids": [
+                              "msg_19",
+                              "msg_21"
+                            ]
+                          }
+                        ],
+                        "raw_entry_count": 4,
+                        "selected_turn_count": 2,
+                        "trailing_user_source_floor_ids": [
+                          "floor_11",
+                          "floor_12"
+                        ],
+                        "violations": []
+                      },
                       "macro": {
                         "mutation_preview": [
                           {
@@ -33316,6 +33540,30 @@
                             "last_message_role": "user",
                             "no_assistant": false,
                             "require_last_user": true
+                          },
+                          "history_normalization": {
+                            "effective_turn_count": 2,
+                            "merged_user_groups": [
+                              {
+                                "effective_role": "user",
+                                "includes_current_input": true,
+                                "source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "source_message_ids": [
+                                  "msg_19",
+                                  "msg_21"
+                                ]
+                              }
+                            ],
+                            "raw_entry_count": 4,
+                            "selected_turn_count": 2,
+                            "trailing_user_source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "violations": []
                           },
                           "macro": {
                             "mutation_preview": [
@@ -33944,6 +34192,30 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "history_normalization": {
+                              "effective_turn_count": 2,
+                              "merged_user_groups": [
+                                {
+                                  "effective_role": "user",
+                                  "includes_current_input": true,
+                                  "source_floor_ids": [
+                                    "floor_11",
+                                    "floor_12"
+                                  ],
+                                  "source_message_ids": [
+                                    "msg_19",
+                                    "msg_21"
+                                  ]
+                                }
+                              ],
+                              "raw_entry_count": 4,
+                              "selected_turn_count": 2,
+                              "trailing_user_source_floor_ids": [
+                                "floor_11",
+                                "floor_12"
+                              ],
+                              "violations": []
+                            },
                             "macro": {
                               "mutation_preview": [
                                 {
@@ -34275,6 +34547,134 @@
                                 "ends_with_user",
                                 "degraded",
                                 "degrade_reasons"
+                              ],
+                              "type": "object"
+                            },
+                            "history_normalization": {
+                              "additionalProperties": false,
+                              "example": {
+                                "effective_turn_count": 2,
+                                "merged_user_groups": [
+                                  {
+                                    "effective_role": "user",
+                                    "includes_current_input": true,
+                                    "source_floor_ids": [
+                                      "floor_11",
+                                      "floor_12"
+                                    ],
+                                    "source_message_ids": [
+                                      "msg_19",
+                                      "msg_21"
+                                    ]
+                                  }
+                                ],
+                                "raw_entry_count": 4,
+                                "selected_turn_count": 2,
+                                "trailing_user_source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "violations": []
+                              },
+                              "properties": {
+                                "effective_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "merged_user_groups": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "effective_role": {
+                                        "enum": [
+                                          "user"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "includes_current_input": {
+                                        "type": "boolean"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "effective_role",
+                                      "source_floor_ids",
+                                      "source_message_ids",
+                                      "includes_current_input"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "raw_entry_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "selected_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "trailing_user_source_floor_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "violations": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "enum": [
+                                          "adjacent_assistant_floors"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message",
+                                      "source_floor_ids",
+                                      "source_message_ids"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "raw_entry_count",
+                                "effective_turn_count",
+                                "selected_turn_count",
+                                "trailing_user_source_floor_ids",
+                                "merged_user_groups",
+                                "violations"
                               ],
                               "type": "object"
                             },
@@ -40608,7 +41008,8 @@
                         "trace_subset": [
                           "macro",
                           "source_selection",
-                          "visibility"
+                          "visibility",
+                          "history_normalization"
                         ],
                         "writes_prompt_snapshot": false
                       },
@@ -41236,7 +41637,8 @@
                                     "enum": [
                                       "macro",
                                       "source_selection",
-                                      "visibility"
+                                      "visibility",
+                                      "history_normalization"
                                     ],
                                     "type": "string"
                                   },
@@ -50564,6 +50966,30 @@
                       "limitations": [],
                       "mismatches": []
                     },
+                    "history_normalization": {
+                      "effective_turn_count": 2,
+                      "merged_user_groups": [
+                        {
+                          "effective_role": "user",
+                          "includes_current_input": true,
+                          "source_floor_ids": [
+                            "floor_11",
+                            "floor_12"
+                          ],
+                          "source_message_ids": [
+                            "msg_19",
+                            "msg_21"
+                          ]
+                        }
+                      ],
+                      "raw_entry_count": 4,
+                      "selected_turn_count": 2,
+                      "trailing_user_source_floor_ids": [
+                        "floor_11",
+                        "floor_12"
+                      ],
+                      "violations": []
+                    },
                     "limitations": [
                       "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                       "Variable commit remains page -> floor. Branch promotion is not automatic."
@@ -50735,6 +51161,30 @@
                         "enableVerifier": false
                       },
                       "runtime_trace": {
+                        "history_normalization": {
+                          "effective_turn_count": 2,
+                          "merged_user_groups": [
+                            {
+                              "effective_role": "user",
+                              "includes_current_input": true,
+                              "source_floor_ids": [
+                                "floor_11",
+                                "floor_12"
+                              ],
+                              "source_message_ids": [
+                                "msg_19",
+                                "msg_21"
+                              ]
+                            }
+                          ],
+                          "raw_entry_count": 4,
+                          "selected_turn_count": 2,
+                          "trailing_user_source_floor_ids": [
+                            "floor_11",
+                            "floor_12"
+                          ],
+                          "violations": []
+                        },
                         "macro": {
                           "mutation_preview": [
                             {
@@ -51144,6 +51594,134 @@
                             "entries",
                             "mismatches",
                             "limitations"
+                          ],
+                          "type": "object"
+                        },
+                        "history_normalization": {
+                          "additionalProperties": false,
+                          "example": {
+                            "effective_turn_count": 2,
+                            "merged_user_groups": [
+                              {
+                                "effective_role": "user",
+                                "includes_current_input": true,
+                                "source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "source_message_ids": [
+                                  "msg_19",
+                                  "msg_21"
+                                ]
+                              }
+                            ],
+                            "raw_entry_count": 4,
+                            "selected_turn_count": 2,
+                            "trailing_user_source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "violations": []
+                          },
+                          "properties": {
+                            "effective_turn_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "merged_user_groups": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "effective_role": {
+                                    "enum": [
+                                      "user"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "includes_current_input": {
+                                    "type": "boolean"
+                                  },
+                                  "source_floor_ids": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "source_message_ids": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  }
+                                },
+                                "required": [
+                                  "effective_role",
+                                  "source_floor_ids",
+                                  "source_message_ids",
+                                  "includes_current_input"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "raw_entry_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "selected_turn_count": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "trailing_user_source_floor_ids": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "violations": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "code": {
+                                    "enum": [
+                                      "adjacent_assistant_floors"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "source_floor_ids": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "source_message_ids": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  }
+                                },
+                                "required": [
+                                  "code",
+                                  "message",
+                                  "source_floor_ids",
+                                  "source_message_ids"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "raw_entry_count",
+                            "effective_turn_count",
+                            "selected_turn_count",
+                            "trailing_user_source_floor_ids",
+                            "merged_user_groups",
+                            "violations"
                           ],
                           "type": "object"
                         },
@@ -52246,6 +52824,136 @@
                                         "ends_with_user",
                                         "degraded",
                                         "degrade_reasons"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "history_normalization": {
+                                      "additionalProperties": false,
+                                      "examples": [
+                                        {
+                                          "effective_turn_count": 2,
+                                          "merged_user_groups": [
+                                            {
+                                              "effective_role": "user",
+                                              "includes_current_input": true,
+                                              "source_floor_ids": [
+                                                "floor_11",
+                                                "floor_12"
+                                              ],
+                                              "source_message_ids": [
+                                                "msg_19",
+                                                "msg_21"
+                                              ]
+                                            }
+                                          ],
+                                          "raw_entry_count": 4,
+                                          "selected_turn_count": 2,
+                                          "trailing_user_source_floor_ids": [
+                                            "floor_11",
+                                            "floor_12"
+                                          ],
+                                          "violations": []
+                                        }
+                                      ],
+                                      "properties": {
+                                        "effective_turn_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "merged_user_groups": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "effective_role": {
+                                                "enum": [
+                                                  "user"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "includes_current_input": {
+                                                "type": "boolean"
+                                              },
+                                              "source_floor_ids": {
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "type": "array"
+                                              },
+                                              "source_message_ids": {
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "type": "array"
+                                              }
+                                            },
+                                            "required": [
+                                              "effective_role",
+                                              "source_floor_ids",
+                                              "source_message_ids",
+                                              "includes_current_input"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "raw_entry_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "selected_turn_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "trailing_user_source_floor_ids": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array"
+                                        },
+                                        "violations": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "code": {
+                                                "enum": [
+                                                  "adjacent_assistant_floors"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "message": {
+                                                "type": "string"
+                                              },
+                                              "source_floor_ids": {
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "type": "array"
+                                              },
+                                              "source_message_ids": {
+                                                "items": {
+                                                  "type": "string"
+                                                },
+                                                "type": "array"
+                                              }
+                                            },
+                                            "required": [
+                                              "code",
+                                              "message",
+                                              "source_floor_ids",
+                                              "source_message_ids"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "raw_entry_count",
+                                        "effective_turn_count",
+                                        "selected_turn_count",
+                                        "trailing_user_source_floor_ids",
+                                        "merged_user_groups",
+                                        "violations"
                                       ],
                                       "type": "object"
                                     },
@@ -53854,6 +54562,7 @@
                         "policy",
                         "source_map",
                         "diagnostics",
+                        "history_normalization",
                         "trim_reasons",
                         "excluded_sources",
                         "section_stats",
@@ -56355,6 +57064,30 @@
                       }
                     },
                     "runtime_trace": {
+                      "history_normalization": {
+                        "effective_turn_count": 2,
+                        "merged_user_groups": [
+                          {
+                            "effective_role": "user",
+                            "includes_current_input": true,
+                            "source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "source_message_ids": [
+                              "msg_19",
+                              "msg_21"
+                            ]
+                          }
+                        ],
+                        "raw_entry_count": 4,
+                        "selected_turn_count": 2,
+                        "trailing_user_source_floor_ids": [
+                          "floor_11",
+                          "floor_12"
+                        ],
+                        "violations": []
+                      },
                       "macro": {
                         "mutation_preview": [
                           {
@@ -57041,6 +57774,134 @@
                         "runtime_trace": {
                           "additionalProperties": false,
                           "properties": {
+                            "history_normalization": {
+                              "additionalProperties": false,
+                              "example": {
+                                "effective_turn_count": 2,
+                                "merged_user_groups": [
+                                  {
+                                    "effective_role": "user",
+                                    "includes_current_input": true,
+                                    "source_floor_ids": [
+                                      "floor_11",
+                                      "floor_12"
+                                    ],
+                                    "source_message_ids": [
+                                      "msg_19",
+                                      "msg_21"
+                                    ]
+                                  }
+                                ],
+                                "raw_entry_count": 4,
+                                "selected_turn_count": 2,
+                                "trailing_user_source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "violations": []
+                              },
+                              "properties": {
+                                "effective_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "merged_user_groups": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "effective_role": {
+                                        "enum": [
+                                          "user"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "includes_current_input": {
+                                        "type": "boolean"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "effective_role",
+                                      "source_floor_ids",
+                                      "source_message_ids",
+                                      "includes_current_input"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "raw_entry_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "selected_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "trailing_user_source_floor_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "violations": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "enum": [
+                                          "adjacent_assistant_floors"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message",
+                                      "source_floor_ids",
+                                      "source_message_ids"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "raw_entry_count",
+                                "effective_turn_count",
+                                "selected_turn_count",
+                                "trailing_user_source_floor_ids",
+                                "merged_user_groups",
+                                "violations"
+                              ],
+                              "type": "object"
+                            },
                             "macro": {
                               "additionalProperties": false,
                               "example": {
@@ -58261,6 +59122,30 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "history_normalization": {
+                        "effective_turn_count": 2,
+                        "merged_user_groups": [
+                          {
+                            "effective_role": "user",
+                            "includes_current_input": true,
+                            "source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "source_message_ids": [
+                              "msg_19",
+                              "msg_21"
+                            ]
+                          }
+                        ],
+                        "raw_entry_count": 4,
+                        "selected_turn_count": 2,
+                        "trailing_user_source_floor_ids": [
+                          "floor_11",
+                          "floor_12"
+                        ],
+                        "violations": []
+                      },
                       "macro": {
                         "mutation_preview": [
                           {
@@ -58546,6 +59431,30 @@
                             "last_message_role": "user",
                             "no_assistant": false,
                             "require_last_user": true
+                          },
+                          "history_normalization": {
+                            "effective_turn_count": 2,
+                            "merged_user_groups": [
+                              {
+                                "effective_role": "user",
+                                "includes_current_input": true,
+                                "source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "source_message_ids": [
+                                  "msg_19",
+                                  "msg_21"
+                                ]
+                              }
+                            ],
+                            "raw_entry_count": 4,
+                            "selected_turn_count": 2,
+                            "trailing_user_source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "violations": []
                           },
                           "macro": {
                             "mutation_preview": [
@@ -59172,6 +60081,30 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "history_normalization": {
+                              "effective_turn_count": 2,
+                              "merged_user_groups": [
+                                {
+                                  "effective_role": "user",
+                                  "includes_current_input": true,
+                                  "source_floor_ids": [
+                                    "floor_11",
+                                    "floor_12"
+                                  ],
+                                  "source_message_ids": [
+                                    "msg_19",
+                                    "msg_21"
+                                  ]
+                                }
+                              ],
+                              "raw_entry_count": 4,
+                              "selected_turn_count": 2,
+                              "trailing_user_source_floor_ids": [
+                                "floor_11",
+                                "floor_12"
+                              ],
+                              "violations": []
+                            },
                             "macro": {
                               "mutation_preview": [
                                 {
@@ -59503,6 +60436,134 @@
                                 "ends_with_user",
                                 "degraded",
                                 "degrade_reasons"
+                              ],
+                              "type": "object"
+                            },
+                            "history_normalization": {
+                              "additionalProperties": false,
+                              "example": {
+                                "effective_turn_count": 2,
+                                "merged_user_groups": [
+                                  {
+                                    "effective_role": "user",
+                                    "includes_current_input": true,
+                                    "source_floor_ids": [
+                                      "floor_11",
+                                      "floor_12"
+                                    ],
+                                    "source_message_ids": [
+                                      "msg_19",
+                                      "msg_21"
+                                    ]
+                                  }
+                                ],
+                                "raw_entry_count": 4,
+                                "selected_turn_count": 2,
+                                "trailing_user_source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "violations": []
+                              },
+                              "properties": {
+                                "effective_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "merged_user_groups": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "effective_role": {
+                                        "enum": [
+                                          "user"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "includes_current_input": {
+                                        "type": "boolean"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "effective_role",
+                                      "source_floor_ids",
+                                      "source_message_ids",
+                                      "includes_current_input"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "raw_entry_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "selected_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "trailing_user_source_floor_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "violations": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "enum": [
+                                          "adjacent_assistant_floors"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message",
+                                      "source_floor_ids",
+                                      "source_message_ids"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "raw_entry_count",
+                                "effective_turn_count",
+                                "selected_turn_count",
+                                "trailing_user_source_floor_ids",
+                                "merged_user_groups",
+                                "violations"
                               ],
                               "type": "object"
                             },
@@ -61319,6 +62380,30 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "history_normalization": {
+                        "effective_turn_count": 2,
+                        "merged_user_groups": [
+                          {
+                            "effective_role": "user",
+                            "includes_current_input": true,
+                            "source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "source_message_ids": [
+                              "msg_19",
+                              "msg_21"
+                            ]
+                          }
+                        ],
+                        "raw_entry_count": 4,
+                        "selected_turn_count": 2,
+                        "trailing_user_source_floor_ids": [
+                          "floor_11",
+                          "floor_12"
+                        ],
+                        "violations": []
+                      },
                       "macro": {
                         "mutation_preview": [
                           {
@@ -61604,6 +62689,30 @@
                             "last_message_role": "user",
                             "no_assistant": false,
                             "require_last_user": true
+                          },
+                          "history_normalization": {
+                            "effective_turn_count": 2,
+                            "merged_user_groups": [
+                              {
+                                "effective_role": "user",
+                                "includes_current_input": true,
+                                "source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "source_message_ids": [
+                                  "msg_19",
+                                  "msg_21"
+                                ]
+                              }
+                            ],
+                            "raw_entry_count": 4,
+                            "selected_turn_count": 2,
+                            "trailing_user_source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "violations": []
                           },
                           "macro": {
                             "mutation_preview": [
@@ -62230,6 +63339,30 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "history_normalization": {
+                              "effective_turn_count": 2,
+                              "merged_user_groups": [
+                                {
+                                  "effective_role": "user",
+                                  "includes_current_input": true,
+                                  "source_floor_ids": [
+                                    "floor_11",
+                                    "floor_12"
+                                  ],
+                                  "source_message_ids": [
+                                    "msg_19",
+                                    "msg_21"
+                                  ]
+                                }
+                              ],
+                              "raw_entry_count": 4,
+                              "selected_turn_count": 2,
+                              "trailing_user_source_floor_ids": [
+                                "floor_11",
+                                "floor_12"
+                              ],
+                              "violations": []
+                            },
                             "macro": {
                               "mutation_preview": [
                                 {
@@ -62561,6 +63694,134 @@
                                 "ends_with_user",
                                 "degraded",
                                 "degrade_reasons"
+                              ],
+                              "type": "object"
+                            },
+                            "history_normalization": {
+                              "additionalProperties": false,
+                              "example": {
+                                "effective_turn_count": 2,
+                                "merged_user_groups": [
+                                  {
+                                    "effective_role": "user",
+                                    "includes_current_input": true,
+                                    "source_floor_ids": [
+                                      "floor_11",
+                                      "floor_12"
+                                    ],
+                                    "source_message_ids": [
+                                      "msg_19",
+                                      "msg_21"
+                                    ]
+                                  }
+                                ],
+                                "raw_entry_count": 4,
+                                "selected_turn_count": 2,
+                                "trailing_user_source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "violations": []
+                              },
+                              "properties": {
+                                "effective_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "merged_user_groups": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "effective_role": {
+                                        "enum": [
+                                          "user"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "includes_current_input": {
+                                        "type": "boolean"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "effective_role",
+                                      "source_floor_ids",
+                                      "source_message_ids",
+                                      "includes_current_input"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "raw_entry_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "selected_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "trailing_user_source_floor_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "violations": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "enum": [
+                                          "adjacent_assistant_floors"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message",
+                                      "source_floor_ids",
+                                      "source_message_ids"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "raw_entry_count",
+                                "effective_turn_count",
+                                "selected_turn_count",
+                                "trailing_user_source_floor_ids",
+                                "merged_user_groups",
+                                "violations"
                               ],
                               "type": "object"
                             },
@@ -64378,6 +65639,30 @@
                         "no_assistant": false,
                         "require_last_user": false
                       },
+                      "history_normalization": {
+                        "effective_turn_count": 2,
+                        "merged_user_groups": [
+                          {
+                            "effective_role": "user",
+                            "includes_current_input": true,
+                            "source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "source_message_ids": [
+                              "msg_19",
+                              "msg_21"
+                            ]
+                          }
+                        ],
+                        "raw_entry_count": 4,
+                        "selected_turn_count": 2,
+                        "trailing_user_source_floor_ids": [
+                          "floor_11",
+                          "floor_12"
+                        ],
+                        "violations": []
+                      },
                       "macro": {
                         "mutation_preview": [
                           {
@@ -64749,6 +66034,30 @@
                             "last_message_role": "user",
                             "no_assistant": false,
                             "require_last_user": false
+                          },
+                          "history_normalization": {
+                            "effective_turn_count": 2,
+                            "merged_user_groups": [
+                              {
+                                "effective_role": "user",
+                                "includes_current_input": true,
+                                "source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "source_message_ids": [
+                                  "msg_19",
+                                  "msg_21"
+                                ]
+                              }
+                            ],
+                            "raw_entry_count": 4,
+                            "selected_turn_count": 2,
+                            "trailing_user_source_floor_ids": [
+                              "floor_11",
+                              "floor_12"
+                            ],
+                            "violations": []
                           },
                           "macro": {
                             "mutation_preview": [
@@ -65872,6 +67181,134 @@
                                 "ends_with_user",
                                 "degraded",
                                 "degrade_reasons"
+                              ],
+                              "type": "object"
+                            },
+                            "history_normalization": {
+                              "additionalProperties": false,
+                              "example": {
+                                "effective_turn_count": 2,
+                                "merged_user_groups": [
+                                  {
+                                    "effective_role": "user",
+                                    "includes_current_input": true,
+                                    "source_floor_ids": [
+                                      "floor_11",
+                                      "floor_12"
+                                    ],
+                                    "source_message_ids": [
+                                      "msg_19",
+                                      "msg_21"
+                                    ]
+                                  }
+                                ],
+                                "raw_entry_count": 4,
+                                "selected_turn_count": 2,
+                                "trailing_user_source_floor_ids": [
+                                  "floor_11",
+                                  "floor_12"
+                                ],
+                                "violations": []
+                              },
+                              "properties": {
+                                "effective_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "merged_user_groups": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "effective_role": {
+                                        "enum": [
+                                          "user"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "includes_current_input": {
+                                        "type": "boolean"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "effective_role",
+                                      "source_floor_ids",
+                                      "source_message_ids",
+                                      "includes_current_input"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "raw_entry_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "selected_turn_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "trailing_user_source_floor_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "violations": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "enum": [
+                                          "adjacent_assistant_floors"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "source_floor_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "source_message_ids": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message",
+                                      "source_floor_ids",
+                                      "source_message_ids"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "raw_entry_count",
+                                "effective_turn_count",
+                                "selected_turn_count",
+                                "trailing_user_source_floor_ids",
+                                "merged_user_groups",
+                                "violations"
                               ],
                               "type": "object"
                             },

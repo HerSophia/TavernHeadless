@@ -329,7 +329,7 @@ describe("sdk prompt runtime resource", () => {
                 creates_floor: false,
                 writes_prompt_snapshot: false,
                 commits_side_effects: false,
-                trace_subset: ["macro", "source_selection", "visibility"],
+                trace_subset: ["macro", "source_selection", "visibility", "history_normalization"],
               },
               explain: {
                 enabled: true,
@@ -612,7 +612,7 @@ describe("sdk prompt runtime resource", () => {
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
-          traceSubset: ["macro", "source_selection", "visibility"],
+          traceSubset: ["macro", "source_selection", "visibility", "history_normalization"],
         },
         explain: {
           enabled: true,

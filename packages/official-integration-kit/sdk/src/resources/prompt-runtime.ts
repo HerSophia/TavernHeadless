@@ -365,7 +365,7 @@ export type PromptRuntimeCapabilities = {
       /**
        * Preview does not expose assembled messages, materialized delivery
        * results, or executable prompt snapshot truth. It only exposes the
-       * macro / source_selection / visibility sub-view of the runtime trace.
+       * macro / source_selection / visibility / history_normalization sub-view of the runtime trace.
        */
       returnsAssemblyTruth: false;
       returnsRuntimeTrace: boolean;
@@ -373,9 +373,9 @@ export type PromptRuntimeCapabilities = {
       supportsVisibility: boolean;
       /**
        * Subset of runtime trace fields that preview may populate. Currently
-       * fixed to `["macro", "source_selection", "visibility"]`.
+       * fixed to `["macro", "source_selection", "visibility", "history_normalization"]`.
        */
-      traceSubset: ReadonlyArray<"macro" | "source_selection" | "visibility">;
+      traceSubset: ReadonlyArray<"macro" | "source_selection" | "visibility" | "history_normalization">;
       writesPromptSnapshot: boolean;
     };
     explain: {
@@ -546,6 +546,7 @@ export type PromptRuntimeInspectResult = {
   scope: PromptRuntimeScopeRef;
   policy: PromptRuntimeResolvedPolicy;
   sourceMap: PromptRuntimeSourceMap;
+  historyNormalization?: PromptRuntimeTrace["historyNormalization"];
   diagnostics: PromptRuntimeDiagnostic[];
   trimReasons: NonNullable<NonNullable<PromptRuntimeTrace["budgets"]>["trimReasons"]>;
   excludedSources: NonNullable<PromptRuntimeTrace["sourceSelection"]>["excludedSources"];
@@ -1036,8 +1037,8 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
         singleTextOnly: readBoolean(preview.single_text_only, true),
         supportsVisibility: readBoolean(preview.supports_visibility, true),
         traceSubset: mapStringArray(preview.trace_subset)
-          .filter((item): item is "macro" | "source_selection" | "visibility" =>
-            item === "macro" || item === "source_selection" || item === "visibility",
+          .filter((item): item is "macro" | "source_selection" | "visibility" | "history_normalization" =>
+            item === "macro" || item === "source_selection" || item === "visibility" || item === "history_normalization",
           ),
         writesPromptSnapshot: readBoolean(preview.writes_prompt_snapshot),
       },
@@ -1452,6 +1453,7 @@ function mapPromptRuntimeInspectResult(value: unknown): PromptRuntimeInspectResu
     return null;
   }
 
+  const historyNormalization = mapPromptRuntimeTracePayload({ history_normalization: record.history_normalization })?.historyNormalization;
   return {
     scope,
     policy,
@@ -1479,6 +1481,7 @@ function mapPromptRuntimeInspectResult(value: unknown): PromptRuntimeInspectResu
       .filter((item): item is Record<string, unknown> => item !== null)
       .map((item) => ({ sectionName: readString(item.section_name), tokenCount: readNumber(item.token_count) })),
     limitations: mapStringArray(record.limitations),
+    ...(historyNormalization ? { historyNormalization } : {}),
     preparedTurn,
     governance,
   };

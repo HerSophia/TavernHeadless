@@ -61,7 +61,11 @@ import type {
   TurnExecutionPolicyOverrides,
 } from "./contracts.js";
 import { ChatServiceError } from "./errors.js";
-import { PromptPreparationService } from "./prompt-preparation-service.js";
+import {
+  PromptPreparationService,
+  type PromptRuntimeConversationInput,
+  type PromptRuntimeConversationWindow,
+} from "./prompt-preparation-service.js";
 import { ReplayGuardService, type ReplayBlockingExecutionDetail } from "./replay-guard-service.js";
 import { ChatRuntimeEventBridge } from "./runtime-event-bridge.js";
 import { ChatTargetResolver } from "./target-resolver.js";
@@ -297,13 +301,6 @@ export class ChatService {
           sourceFloorId: request.sourceFloorId ?? null,
           request: buildLivePromptRuntimeRequestPolicy(request),
         });
-        const { history, visibilityTrace } = await this.promptPreparationService.loadPromptRuntimeHistoryWindow({
-          sessionId,
-          branchId: branchContext.historySourceBranchId,
-          beforeFloorNo: branchContext.nextFloorNo,
-          visibility: executionContext.resolvedPolicy.visibility,
-          sourceSelection: executionContext.effectivePolicy?.sourceSelection,
-        });
 
         const nextFloorNo = branchContext.nextFloorNo;
         const now = Date.now();
@@ -362,6 +359,29 @@ export class ChatService {
           throw error;
         }
 
+        let conversationWindow: PromptRuntimeConversationWindow;
+        try {
+          conversationWindow = await this.loadLiveConversationWindow({
+            sessionId,
+            branchId: branchContext.historySourceBranchId,
+            beforeFloorNo: branchContext.nextFloorNo,
+            visibility: executionContext.resolvedPolicy.visibility,
+            sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+            currentInput: {
+              content: persistedUserMessage.text,
+              floorId,
+              floorNo: nextFloorNo,
+              pageId: userMessageRef.pageId,
+              pageNo: 0,
+              messageId: userMessageRef.messageId,
+              seq: 0,
+            },
+          });
+        } catch (error) {
+          await this.turnRunTracker.failRunAndFloorBestEffort(floorId, error, "respond_conversation_shape_failed");
+          throw error;
+        }
+
         runtimeOptions.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
         const unsubscribeRuntimeToolEvents = this.runtimeEventBridge.subscribeRuntimeToolEvents(floorId, runtimeOptions);
         const unsubscribeFloorRunEvents = this.runtimeEventBridge.subscribeFloorRunEvents(floorId, runtimeOptions);
@@ -374,16 +394,16 @@ export class ChatService {
             branchId,
             floorId,
             pageId: userMessageRef.pageId,
+            pageMessageId: userMessageRef.messageId,
             accountId: resolvedAccountId,
             session,
             sessionInfo,
-            userMessage: persistedUserMessage.text,
+            userMessage: conversationWindow.effectiveUserMessage!,
             rawUserMessage: request.message,
             baseRuntimeTrace: persistedUserMessage.runtimeTrace ? { regex: persistedUserMessage.runtimeTrace } : undefined,
             request,
             executionContext,
-            history,
-            visibilityTrace,
+            conversationWindow,
             resolvedTurnModels,
             firstPartyStateContext,
             abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
@@ -481,20 +501,18 @@ export class ChatService {
         resolutionMode: "source_floor",
       });
 
-      const existingUserMessage = await this.draftFloorService.getUserMessageFromFloor(targetFloor.id);
-      if (!existingUserMessage) {
-        throw new ChatServiceError(
-          "no_user_message",
-          `No user message found in floor '${targetFloor.id}'`,
-        );
+      const replayInput = await this.draftFloorService.getEffectiveConversationInputFromFloor(targetFloor.id);
+      if (!replayInput) {
+        throw new ChatServiceError("no_user_message", `No user message found in floor '${targetFloor.id}'`);
       }
-      const userMessage = existingUserMessage.content;
-      const { history, visibilityTrace } = await this.promptPreparationService.loadPromptRuntimeHistoryWindow({
+      const conversationWindow = await this.loadLiveConversationWindow({
         sessionId,
         branchId: targetFloor.branchId,
         beforeFloorNo: targetFloor.floorNo,
         visibility: executionContext.resolvedPolicy.visibility,
         sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+        currentInput: replayInput.currentInput,
+        effectiveUserMessageOverride: replayInput.snapshot.effectiveText,
       });
       const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, resolvedAccountId);
       this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
@@ -502,29 +520,43 @@ export class ChatService {
 
       const newFloorId = nanoid();
       const now = Date.now();
-      const { userMessageRef } = this.draftFloorService.createDraftFloorWithUserMessage({
-        floorId: newFloorId,
-        accountId: resolvedAccountId,
-        sessionId,
-        floorNo: targetFloor.floorNo,
-        branchId: targetFloor.branchId,
-        parentFloorId: targetFloor.id,
-        userMessage,
-        userId: session.userId,
-        userSnapshotJson: session.userSnapshotJson,
-        now,
-        prepare: (tx) => {
-          tx
-            .update(floors)
-            .set({
-              supersededAt: now,
-              supersededByFloorId: newFloorId,
-              updatedAt: now,
-            })
-            .where(eq(floors.id, targetFloor.id))
-            .run();
-        },
-      });
+      const prepareSupersedeSourceFloor = (tx: Parameters<Exclude<Parameters<DraftFloorService["createDraftFloorWithUserMessage"]>[0]["prepare"], undefined>>[0]) => {
+        tx
+          .update(floors)
+          .set({
+            supersededAt: now,
+            supersededByFloorId: newFloorId,
+            updatedAt: now,
+          })
+          .where(eq(floors.id, targetFloor.id))
+          .run();
+      };
+      const userMessageRef = replayInput.currentInput
+        ? this.draftFloorService.createDraftFloorWithUserMessage({
+            floorId: newFloorId,
+            accountId: resolvedAccountId,
+            sessionId,
+            floorNo: targetFloor.floorNo,
+            branchId: targetFloor.branchId,
+            parentFloorId: targetFloor.id,
+            userMessage: replayInput.currentInput.content,
+            userId: session.userId,
+            userSnapshotJson: session.userSnapshotJson,
+            now,
+            prepare: prepareSupersedeSourceFloor,
+          }).userMessageRef
+        : (this.draftFloorService.createDraftResponseFloor({
+            floorId: newFloorId,
+            accountId: resolvedAccountId,
+            sessionId,
+            floorNo: targetFloor.floorNo,
+            branchId: targetFloor.branchId,
+            parentFloorId: targetFloor.id,
+            userId: session.userId,
+            userSnapshotJson: session.userSnapshotJson,
+            now,
+            prepare: prepareSupersedeSourceFloor,
+          }), undefined);
 
       await this.turnRunTracker.initializeFloorRun(sessionId, newFloorId, "regenerate_page", now);
       try {
@@ -534,15 +566,15 @@ export class ChatService {
           sessionId,
           branchId: targetFloor.branchId,
           floorId: newFloorId,
-          pageId: userMessageRef.pageId,
+          pageId: userMessageRef?.pageId,
+          pageMessageId: userMessageRef?.messageId,
           accountId: resolvedAccountId,
           session,
           sessionInfo,
-          userMessage,
+          userMessage: conversationWindow.effectiveUserMessage!,
           request: { ...request, promptIntent: "regenerate" },
           executionContext,
-          history,
-          visibilityTrace,
+          conversationWindow,
           resolvedTurnModels,
           firstPartyStateContext,
           abortSignal: generationRuntime.abortSignal,
@@ -615,17 +647,18 @@ export class ChatService {
           resolutionMode: "source_floor",
         });
 
-        const userMessageRef = await this.draftFloorService.getUserMessageFromFloor(targetFloor.id);
-        if (!userMessageRef) {
+        const replayInput = await this.draftFloorService.getEffectiveConversationInputFromFloor(targetFloor.id);
+        if (!replayInput) {
           throw new ChatServiceError("no_user_message", `No user message found in floor '${floorId}'`);
         }
-        const userMessage = userMessageRef.content;
-        const { history, visibilityTrace } = await this.promptPreparationService.loadPromptRuntimeHistoryWindow({
+        const conversationWindow = await this.loadLiveConversationWindow({
           sessionId: targetFloor.sessionId,
           branchId: targetFloor.branchId,
           beforeFloorNo: targetFloor.floorNo,
           visibility: executionContext.resolvedPolicy.visibility,
           sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+          currentInput: replayInput.currentInput,
+          effectiveUserMessageOverride: replayInput.snapshot.effectiveText,
         });
         const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(targetFloor.sessionId, resolvedAccountId);
         this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
@@ -649,15 +682,15 @@ export class ChatService {
             sessionId: targetFloor.sessionId,
             branchId: targetFloor.branchId,
             floorId: targetFloor.id,
-            pageId: userMessageRef.pageId,
+            pageId: replayInput.currentInput?.pageId,
+            pageMessageId: replayInput.currentInput?.messageId,
             accountId: resolvedAccountId,
             session,
             sessionInfo,
-            userMessage,
+            userMessage: conversationWindow.effectiveUserMessage!,
             request,
             executionContext,
-            history,
-            visibilityTrace,
+            conversationWindow,
             resolvedTurnModels,
             firstPartyStateContext,
             abortSignal: generationRuntime.abortSignal,
@@ -741,13 +774,6 @@ export class ChatService {
         expectedSourceBranchId: source.branchId,
         resolutionMode: "source_floor",
       });
-      const { history, visibilityTrace } = await this.promptPreparationService.loadPromptRuntimeHistoryWindow({
-        sessionId: source.sessionId,
-        branchId: source.branchId,
-        beforeFloorNo: source.floorNo,
-        visibility: executionContext.resolvedPolicy.visibility,
-        sourceSelection: executionContext.effectivePolicy?.sourceSelection,
-      });
 
       const now = Date.now();
       const newFloorId = nanoid();
@@ -798,6 +824,29 @@ export class ChatService {
         regexChannel: "edit",
       });
 
+      let conversationWindow: PromptRuntimeConversationWindow;
+      try {
+        conversationWindow = await this.loadLiveConversationWindow({
+          sessionId: source.sessionId,
+          branchId: source.branchId,
+          beforeFloorNo: source.floorNo,
+          visibility: executionContext.resolvedPolicy.visibility,
+          sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+          currentInput: {
+            content: persistedUserMessage.text,
+            floorId: newFloorId,
+            floorNo: source.floorNo + 1,
+            pageId: userMessageRef.pageId,
+            pageNo: 0,
+            messageId: userMessageRef.messageId,
+            seq: 0,
+          },
+        });
+      } catch (error) {
+        await this.turnRunTracker.failRunAndFloorBestEffort(newFloorId, error, "edit_and_regenerate_conversation_shape_failed");
+        throw error;
+      }
+
       await this.turnRunTracker.initializeFloorRun(source.sessionId, newFloorId, "edit_and_regenerate", now);
       try {
         const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
@@ -807,16 +856,16 @@ export class ChatService {
           branchId: newBranchId,
           floorId: newFloorId,
           pageId: userMessageRef.pageId,
+          pageMessageId: userMessageRef.messageId,
           accountId: resolvedAccountId,
           session,
           sessionInfo,
-          userMessage: persistedUserMessage.text,
+          userMessage: conversationWindow.effectiveUserMessage!,
           rawUserMessage: request.content,
           baseRuntimeTrace: persistedUserMessage.runtimeTrace ? { regex: persistedUserMessage.runtimeTrace } : undefined,
           request,
           executionContext,
-          history,
-          visibilityTrace,
+          conversationWindow,
           resolvedTurnModels,
           firstPartyStateContext,
           abortSignal: generationRuntime.abortSignal,
@@ -844,6 +893,184 @@ export class ChatService {
         throw error;
       }
     });
+  }
+
+  private async respondFromConversationTail(args: {
+    sessionId: string;
+    request: {
+      branchId?: string;
+      sourceFloorId?: string;
+      config?: import("@tavern/core").TurnConfig;
+      generationParams?: Partial<import("@tavern/core").GenerationParams>;
+      promptIntent?: import("@tavern/core").PromptRunIntent;
+      debugOptions?: import("./contracts.js").PromptLiveDebugOptions;
+      sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
+      structure?: RespondRequest["structure"];
+      delivery?: RespondRequest["delivery"];
+    };
+    runtimeOptions?: RespondRuntimeOptions;
+    accountId: string;
+  }): Promise<RespondResult> {
+    this.turnSessionStateService.assertTurnSessionStateWritesAvailable(args.request.sessionStateWrites);
+    const branchId = normalizeBranchId(args.request.branchId);
+
+    return this.withGenerationCoordinator(
+      args.sessionId,
+      branchId,
+      args.runtimeOptions?.abortSignal,
+      async (generationRuntime) => {
+        const session = await this.requireActiveSession(args.sessionId, args.accountId, "Cannot respond to an archived session");
+        const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(args.sessionId, args.accountId);
+        this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
+
+        const branchContext = await this.targetResolver.resolveRespondBranchContext(
+          args.sessionId,
+          branchId,
+          args.request.sourceFloorId,
+        );
+        const firstPartyStateContext = this.firstPartyStateContextService.loadFirstPartyStateContext({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          branchId,
+          sourceFloorId: branchContext.inheritanceSource?.floorId ?? null,
+          expectedSourceBranchId: branchContext.inheritanceSource?.branchId ?? null,
+          resolutionMode: branchContext.inheritanceSource ? "source_floor" : "current_effective",
+        });
+        const executionContext = resolvePromptRuntimeExecutionContext({
+          sessionId: args.sessionId,
+          metadataJson: session.metadataJson,
+          branchId,
+          branchExists: branchContext.branchExists,
+          historySourceBranchId: branchContext.historySourceBranchId,
+          historySourceMode: branchContext.historySourceMode,
+          sourceFloorId: args.request.sourceFloorId ?? null,
+          request: buildLivePromptRuntimeRequestPolicy(args.request),
+        });
+        const conversationWindow = await this.loadLiveConversationWindow({
+          sessionId: args.sessionId,
+          branchId: branchContext.historySourceBranchId,
+          beforeFloorNo: branchContext.nextFloorNo,
+          visibility: executionContext.resolvedPolicy.visibility,
+          sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+        });
+
+        const nextFloorNo = branchContext.nextFloorNo;
+        const now = Date.now();
+        const floorId = nanoid();
+        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+
+        try {
+          this.draftFloorService.createDraftResponseFloor({
+            floorId,
+            accountId: args.accountId,
+            sessionId: args.sessionId,
+            floorNo: nextFloorNo,
+            branchId,
+            parentFloorId: branchContext.parentFloorId,
+            userId: session.userId,
+            userSnapshotJson: session.userSnapshotJson,
+            now,
+            sourceFloorId: branchContext.inheritanceSource?.floorId,
+            sourceBranchId: branchContext.inheritanceSource?.branchId,
+            afterCreate: branchContext.inheritanceSource
+              ? (tx) => {
+                  new BranchLocalVariableSnapshotService(tx).materializeFromSourceFloor({
+                    accountId: args.accountId,
+                    sessionId: args.sessionId,
+                    sourceFloorId: branchContext.inheritanceSource!.floorId,
+                    sourceBranchId: branchContext.inheritanceSource!.branchId,
+                    targetBranchId: branchId,
+                    createdAt: now,
+                  });
+                }
+              : undefined,
+          });
+        } catch (error) {
+          this.rethrowBranchLocalSnapshotError(error);
+        }
+
+        await this.turnRunTracker.initializeFloorRun(args.sessionId, floorId, "respond", now);
+
+        args.runtimeOptions?.onStart?.({ floorId, floorNo: nextFloorNo, branchId });
+        const unsubscribeRuntimeToolEvents = this.runtimeEventBridge.subscribeRuntimeToolEvents(floorId, args.runtimeOptions ?? {});
+        const unsubscribeFloorRunEvents = this.runtimeEventBridge.subscribeFloorRunEvents(floorId, args.runtimeOptions ?? {});
+
+        try {
+          const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
+            mode: "respond",
+            runType: "respond",
+            sessionId: args.sessionId,
+            branchId,
+            floorId,
+            accountId: args.accountId,
+            session,
+            sessionInfo,
+            userMessage: conversationWindow.effectiveUserMessage!,
+            request: args.request,
+            executionContext,
+            conversationWindow,
+            resolvedTurnModels,
+            firstPartyStateContext,
+            abortSignal: args.runtimeOptions?.abortSignal ?? generationRuntime.abortSignal,
+            onChunk: args.runtimeOptions?.onChunk,
+            stream: !!args.runtimeOptions?.onChunk,
+            orchestrationFailureCode: "orchestration_failed",
+            orchestrationFailureMessage: "Turn orchestration failed",
+            commitFailureMessage: "Turn commit failed",
+          });
+
+          return {
+            floorId,
+            floorNo: nextFloorNo,
+            generatedText: execution.generatedText,
+            summaries: execution.summaries,
+            totalUsage: commit.usage,
+            finalState: commit.finalState,
+            branchId,
+            memory: commit.memory,
+            promptSnapshot: prepared.promptDebug.promptSnapshot,
+            runtimeTrace: prepared.promptDebug.runtimeTrace,
+          };
+        } catch (error) {
+          await this.turnRunTracker.failRunAndFloorBestEffort(floorId, error, "respond_from_conversation_tail_failed");
+          throw error;
+        } finally {
+          unsubscribeRuntimeToolEvents();
+          unsubscribeFloorRunEvents();
+        }
+      },
+    );
+  }
+
+  private async loadLiveConversationWindow(args: {
+    sessionId: string;
+    branchId: string;
+    beforeFloorNo?: number;
+    visibility: import("../chat-history-loader.js").PromptVisibilityPolicy;
+    sourceSelection?: import("../prompt-assembler.js").PromptSourceSelectionPolicy;
+    currentInput?: PromptRuntimeConversationInput;
+    effectiveUserMessageOverride?: string;
+  }): Promise<PromptRuntimeConversationWindow> {
+    const conversationWindow = await this.promptPreparationService.loadPromptRuntimeConversationWindow(args);
+    if (conversationWindow.historyNormalization.violations.length > 0) {
+      throw new ChatServiceError(
+        "adjacent_assistant_floors",
+        "Cannot execute prompt runtime when consecutive assistant floors are present in the visible history.",
+      );
+    }
+
+    const effectiveUserMessage = args.effectiveUserMessageOverride ?? conversationWindow.effectiveUserMessage;
+    if (!effectiveUserMessage) {
+      throw new ChatServiceError(
+        "missing_effective_user_tail",
+        "Prompt runtime execution requires a trailing effective user turn.",
+      );
+    }
+
+    return {
+      ...conversationWindow,
+      effectiveUserMessage,
+    };
   }
 
   private async withGenerationCoordinator<T>(
@@ -884,7 +1111,8 @@ export class ChatService {
     sessionId: string;
     branchId?: string;
     floorId: string;
-    pageId: string;
+    pageId?: string;
+    pageMessageId?: string;
     accountId: string;
     session: typeof sessions.$inferSelect;
     sessionInfo?: import("../prompt-assembler.js").SessionPromptInfo;
@@ -899,8 +1127,7 @@ export class ChatService {
       sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
     };
     executionContext: import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
-    history: import("@tavern/core").ChatMessage[];
-    visibilityTrace?: import("../chat-history-loader.js").PromptVisibilityTrace;
+    conversationWindow?: PromptRuntimeConversationWindow;
     resolvedTurnModels: ResolvedTurnModels;
     firstPartyStateContext?: FirstPartyStateContext;
     abortSignal?: AbortSignal;
@@ -925,6 +1152,7 @@ export class ChatService {
       branchId: args.branchId,
       floorId: args.floorId,
       pageId: args.pageId,
+      pageMessageId: args.pageMessageId,
       accountId: args.accountId,
       session: args.session,
       sessionInfo: args.sessionInfo,
@@ -933,8 +1161,7 @@ export class ChatService {
       baseRuntimeTrace: args.baseRuntimeTrace,
       request: args.request,
       executionContext: args.executionContext,
-      history: args.history,
-      visibilityTrace: args.visibilityTrace,
+      conversationWindow: args.conversationWindow,
       resolvedTurnModels: args.resolvedTurnModels,
       firstPartyStateContext: args.firstPartyStateContext,
       abortSignal: args.abortSignal,
@@ -958,6 +1185,7 @@ export class ChatService {
       commitFailureMessage: args.commitFailureMessage,
       memoryConsolidationRequested: prepared.memoryConsolidationRequested,
       persistMemory: this.memoryStoreEnabled,
+      conversationInputSnapshot: prepared.conversationInputSnapshot,
       supersedeSourceFloor: args.supersedeSourceFloor,
     });
 
@@ -1023,6 +1251,7 @@ export class ChatService {
     runType: import("@tavern/core").FloorRunType;
     memoryConsolidationRequested: boolean;
     commitFailureMessage: string;
+    conversationInputSnapshot?: import("./shared/metadata.js").FloorConversationInputSnapshot;
     supersedeSourceFloor?: { floorId: string };
   }): Promise<{
     execution: TurnExecutionResult;
@@ -1147,6 +1376,7 @@ export class ChatService {
             consolidationOutput: execution.consolidationResult?.output,
           }
         : undefined,
+      conversationInputSnapshot: args.conversationInputSnapshot,
       ...(args.supersedeSourceFloor ? { supersedeSourceFloor: args.supersedeSourceFloor } : {}),
     };
 

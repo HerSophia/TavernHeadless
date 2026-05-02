@@ -57,13 +57,17 @@ export class PromptRuntimePreviewService {
       sourceFloorId: request.sourceFloorId ?? null,
       request,
     });
-    const { history, visibilityTrace } = await this.promptPreparationService.loadPromptRuntimeHistoryWindow({
+    const conversationState = await this.promptPreparationService.loadPromptRuntimeConversationWindow({
       sessionId,
       branchId: branchContext.historySourceBranchId,
       beforeFloorNo: branchContext.nextFloorNo,
       visibility: executionContext.resolvedPolicy.visibility,
       sourceSelection: executionContext.resolvedPolicy.sourceSelection,
     });
+    const previewHistory = conversationState.selectedTurns.map((turn) => ({
+      role: turn.role,
+      content: turn.content,
+    }));
     const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, accountId);
     const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(undefined, resolvedTurnModels);
     const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
@@ -104,7 +108,7 @@ export class PromptRuntimePreviewService {
     const preview = previewPromptMacroText({
       session: sessionInfo,
       text: request.text,
-      chatHistory: history.filter((message): message is { role: "user" | "assistant"; content: string } => (
+      chatHistory: previewHistory.filter((message): message is { role: "user" | "assistant"; content: string } => (
         message.role === "user" || message.role === "assistant"
       )),
       ordinaryVariables: variableState.ordinaryVariables,
@@ -119,10 +123,11 @@ export class PromptRuntimePreviewService {
       accountId,
       context: executionContext,
       phase: "preview",
-      history,
-      visibilityTrace,
+      history: previewHistory,
+      visibilityTrace: conversationState.visibilityTrace,
       memorySummary: effectivePreviewMemorySummary,
       memoryTrace,
+      historyNormalization: conversationState.historyNormalization,
       extraDiagnostics: branchContext.branchExists
         ? []
         : [{
@@ -136,7 +141,7 @@ export class PromptRuntimePreviewService {
     const runtimeTrace = buildPromptRuntimePreviewTrace(
       buildPromptRuntimeExecutionTrace({
         inspection,
-        visibilityTrace,
+        visibilityTrace: conversationState.visibilityTrace,
         baseRuntimeTrace: preview.runtimeTrace,
       }) ?? preview.runtimeTrace,
     );

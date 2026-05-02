@@ -1,6 +1,7 @@
 import type { PromptRuntimeInspectResult } from "../../services/prompt-runtime/types.js";
 import {
   mapPromptSnapshotToSnakeCase,
+  mapPromptRuntimeHistoryNormalizationToSnakeCase,
   mapPromptRuntimeMemoryTraceToSnakeCase,
   mapRuntimeTraceToSnakeCase,
 } from "../chat/presenters.js";
@@ -139,6 +140,7 @@ export function mapPromptRuntimeInspectResultToSnakeCase(
     policy: mapResolvedPolicyToSnakeCase(result.policy),
     source_map: mapSourceMapToSnakeCase(result.sourceMap),
     diagnostics: result.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
+    ...(result.historyNormalization ? { history_normalization: mapPromptRuntimeHistoryNormalizationToSnakeCase(result.historyNormalization) } : {}),
     trim_reasons: result.trimReasons.map((reason) => mapTrimReasonToSnakeCase(reason)),
     excluded_sources: result.excludedSources.map((source) => mapExcludedSourceToSnakeCase(source)),
     section_stats: result.sectionStats.map((stat) => mapSectionStatToSnakeCase(stat)),

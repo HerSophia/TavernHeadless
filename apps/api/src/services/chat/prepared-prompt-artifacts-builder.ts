@@ -16,7 +16,10 @@ import {
   buildPromptRuntimeExecutionResult,
   type PromptRuntimeResolvedContext,
 } from "../prompt-runtime-execution.js";
-import type { PromptVisibilityTrace } from "../chat-history-loader.js";
+import type {
+  PromptHistoryMessageEntry,
+  PromptVisibilityTrace,
+} from "../chat-history-loader.js";
 import type { AppDb } from "../../db/client.js";
 import type { PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
 import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
@@ -27,7 +30,10 @@ import type {
   PreparedPromptArtifacts,
   PreparedPromptArtifactsMode,
 } from "./types.js";
-import { PromptPreparationService } from "./prompt-preparation-service.js";
+import {
+  PromptPreparationService,
+  type PromptRuntimeConversationWindow,
+} from "./prompt-preparation-service.js";
 import { TurnModelService } from "./turn-model-service.js";
 import { TurnMemoryService } from "./turn-memory-service.js";
 import {
@@ -35,6 +41,11 @@ import {
   type PersistedUserInputRegexResult,
 } from "./regex-input-service.js";
 import { FirstPartyStateContextService } from "./first-party-state-context-service.js";
+import { buildConversationHistoryWindow } from "./conversation-history-normalizer.js";
+import {
+  buildConversationInputSnapshot as buildFloorConversationInputSnapshot,
+  type FloorConversationInputSnapshot,
+} from "./shared/metadata.js";
 
 interface PreparedPromptArtifactsSessionShape {
   presetId: string | null;
@@ -65,6 +76,7 @@ export interface PreparePromptArtifactsArgs {
   branchId?: string;
   floorId?: string;
   pageId?: string;
+  pageMessageId?: string;
   accountId: string;
   session: PreparedPromptArtifactsSessionShape;
   sessionInfo?: SessionPromptInfo;
@@ -73,6 +85,7 @@ export interface PreparePromptArtifactsArgs {
   regexChannel?: RegexExecutionChannel;
   request: PreparedPromptArtifactsRequestShape;
   executionContext: PromptRuntimeResolvedContext;
+  conversationWindow?: PromptRuntimeConversationWindow;
   history?: ChatMessage[];
   visibilityTrace?: PromptVisibilityTrace;
   historyLoad?: PreparedPromptArtifactsHistoryLoad;
@@ -121,12 +134,20 @@ export class PreparedPromptArtifactsBuilder {
     const baseRuntimeTrace = args.baseRuntimeTrace
       ?? (userMessageState.runtimeTrace ? { regex: userMessageState.runtimeTrace } : undefined);
 
-    const historyState = await this.resolveHistoryArtifacts({
+    const conversationState = args.conversationWindow ?? await this.resolveConversationArtifacts({
       sessionId: args.sessionId,
       executionContext: args.executionContext,
       history: args.history,
       visibilityTrace: args.visibilityTrace,
       historyLoad: args.historyLoad,
+      currentUserMessage: preprocessedUserMessage,
+    });
+    const effectiveUserMessage = conversationState.effectiveUserMessage ?? preprocessedUserMessage;
+    const conversationInputSnapshot = this.buildConversationInputSnapshot({
+      conversationState,
+      effectiveUserMessage,
+      currentInputPageId: args.pageId,
+      currentInputMessageId: args.pageMessageId,
     });
 
     const narratorParams = this.modelService.getSlotGenerationParams(args.resolvedTurnModels, "narrator");
@@ -167,8 +188,8 @@ export class PreparedPromptArtifactsBuilder {
       this.db,
       args.accountId,
       sessionInfo,
-      historyState.history,
-      preprocessedUserMessage,
+      conversationState.history,
+      effectiveUserMessage,
       this.tokenCounter,
       effectiveMemorySummary,
       {
@@ -205,11 +226,12 @@ export class PreparedPromptArtifactsBuilder {
       accountId: args.accountId,
       context: args.executionContext,
       phase: "assemble",
-      history: historyState.history,
-      visibilityTrace: historyState.visibilityTrace,
+      history: conversationState.history,
+      visibilityTrace: conversationState.visibilityTrace,
       memorySummary: effectiveMemorySummary,
       assembled,
       memoryTrace,
+      historyNormalization: conversationState.historyNormalization,
       worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
       extraDiagnostics: [
         ...this.firstPartyStateContextService.buildFirstPartyStateDiagnostics(
@@ -222,7 +244,7 @@ export class PreparedPromptArtifactsBuilder {
 
     const execution = buildPromptRuntimeExecutionResult({
       tokenCounter: this.tokenCounter,
-      userMessage: preprocessedUserMessage,
+      userMessage: effectiveUserMessage,
       floorId: args.floorId,
       sessionId: args.floorId ? args.sessionId : undefined,
       includeRuntimeTrace: args.includeRuntimeTrace ?? true,
@@ -230,7 +252,7 @@ export class PreparedPromptArtifactsBuilder {
         inspection,
         assembled,
         materialized,
-        visibilityTrace: historyState.visibilityTrace,
+        visibilityTrace: conversationState.visibilityTrace,
         ...(baseRuntimeTrace ? { baseRuntimeTrace } : {}),
       },
     });
@@ -248,15 +270,17 @@ export class PreparedPromptArtifactsBuilder {
       sessionId: args.sessionId,
       branchId: args.branchId,
       accountId: args.accountId,
-      userMessage: preprocessedUserMessage,
+      userMessage: effectiveUserMessage,
       rawUserMessage: args.rawUserMessage,
       executionContext: args.executionContext,
-      history: historyState.history,
-      visibilityTrace: historyState.visibilityTrace,
+      history: conversationState.history,
+      visibilityTrace: conversationState.visibilityTrace,
       memorySummary: effectiveMemorySummary,
       resolvedTurnModels: args.resolvedTurnModels,
       assembled,
       materialized,
+      conversationInputSnapshot,
+      historyNormalization: conversationState.historyNormalization,
       inspection,
       tokenEstimate: execution.tokenEstimate ?? 0,
       availableForReply: execution.availableForReply ?? 0,
@@ -298,41 +322,123 @@ export class PreparedPromptArtifactsBuilder {
     });
   }
 
-  private async resolveHistoryArtifacts(args: {
+  private async resolveConversationArtifacts(args: {
     sessionId: string;
     executionContext: PromptRuntimeResolvedContext;
     history?: ChatMessage[];
     visibilityTrace?: PromptVisibilityTrace;
     historyLoad?: PreparedPromptArtifactsHistoryLoad;
-  }): Promise<{ history: ChatMessage[]; visibilityTrace?: PromptVisibilityTrace }> {
+    currentUserMessage?: string;
+  }): Promise<PromptRuntimeConversationWindow> {
     if (args.history) {
-      return {
-        history: this.promptPreparationService.applyPromptRuntimeHistorySourceSelection(
-          args.history,
-          args.executionContext.effectivePolicy?.sourceSelection,
-        ),
+      return buildLegacyConversationWindow({
+        history: args.history,
         visibilityTrace: args.visibilityTrace,
-      };
+        sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
+        currentUserMessage: args.currentUserMessage,
+      });
     }
 
-    if (!args.historyLoad) {
-      return {
-        history: [],
-        visibilityTrace: args.visibilityTrace,
-      };
+    if (args.historyLoad) {
+      return this.promptPreparationService.loadPromptRuntimeConversationWindow({
+        sessionId: args.sessionId,
+        branchId: args.historyLoad.branchId,
+        beforeFloorNo: args.historyLoad.beforeFloorNo,
+        visibility: args.executionContext.resolvedPolicy.visibility,
+        sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
+        ...(args.currentUserMessage !== undefined
+          ? {
+              currentInput: {
+                content: args.currentUserMessage,
+              },
+            }
+          : {}),
+      });
     }
 
-    const loaded = await this.promptPreparationService.loadPromptRuntimeHistoryWindow({
-      sessionId: args.sessionId,
-      branchId: args.historyLoad.branchId,
-      beforeFloorNo: args.historyLoad.beforeFloorNo,
-      visibility: args.executionContext.resolvedPolicy.visibility,
+    return buildLegacyConversationWindow({
+      history: [],
+      visibilityTrace: args.visibilityTrace,
       sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
+      currentUserMessage: args.currentUserMessage,
     });
-
-    return {
-      history: loaded.history,
-      visibilityTrace: loaded.visibilityTrace,
-    };
   }
+
+  private buildConversationInputSnapshot(args: {
+    conversationState: PromptRuntimeConversationWindow;
+    effectiveUserMessage: string;
+    currentInputPageId?: string;
+    currentInputMessageId?: string;
+  }): FloorConversationInputSnapshot | undefined {
+    const trailingTurn = args.conversationState.selectedTurns[args.conversationState.selectedTurns.length - 1];
+    if (!trailingTurn || trailingTurn.role !== "user") {
+      return undefined;
+    }
+
+    return buildFloorConversationInputSnapshot({
+      effectiveText: args.effectiveUserMessage,
+      sourceTurn: trailingTurn,
+      currentInputPageId: args.currentInputPageId,
+      currentInputMessageId: args.currentInputMessageId,
+    });
+  }
+}
+
+function buildLegacyConversationWindow(args: {
+  history: ChatMessage[];
+  visibilityTrace?: PromptVisibilityTrace;
+  sourceSelection?: import("../prompt-assembler.js").PromptSourceSelectionPolicy;
+  currentUserMessage?: string;
+}): PromptRuntimeConversationWindow {
+  const entries: PromptHistoryMessageEntry[] = args.history.map((message, index) => ({
+    floorId: null,
+    floorNo: null,
+    pageId: null,
+    pageNo: null,
+    messageId: null,
+    seq: index,
+    role: message.role,
+    content: message.content,
+  }));
+
+  if (args.currentUserMessage !== undefined) {
+    entries.push({
+      floorId: null,
+      floorNo: null,
+      pageId: null,
+      pageNo: null,
+      messageId: null,
+      seq: entries.length,
+      role: "user",
+      content: args.currentUserMessage,
+      fromCurrentInput: true,
+    });
+  }
+
+  const maxSelectedTurns = resolveHistoryMaxTurns(args.sourceSelection);
+  const window = buildConversationHistoryWindow({
+    entries,
+    ...(maxSelectedTurns !== undefined ? { maxSelectedTurns } : {}),
+  });
+
+  return {
+    ...window,
+    visibilityTrace: args.visibilityTrace ?? { filteredFloorNos: [] },
+  };
+}
+
+function resolveHistoryMaxTurns(
+  sourceSelection?: import("../prompt-assembler.js").PromptSourceSelectionPolicy,
+): number | undefined {
+  const mode = sourceSelection?.history?.mode;
+  if (mode === "full") {
+    return undefined;
+  }
+
+  const value = sourceSelection?.history?.maxMessages;
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    return undefined;
+  }
+
+  return value;
 }

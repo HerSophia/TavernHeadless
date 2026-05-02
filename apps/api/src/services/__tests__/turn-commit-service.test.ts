@@ -47,6 +47,7 @@ import {
   toMemoryRuntimeJobType,
 } from "../memory-runtime-job-definitions.js";
 import { createToolRuntimeJobBridge } from "../tool-runtime-job-bridge.js";
+import { buildConversationInputSnapshot, readFloorConversationInputSnapshot } from "../chat/shared/metadata.js";
 
 const DEFAULT_ACCOUNT_ID = "default-admin";
 
@@ -759,6 +760,74 @@ describe("TurnCommitService", () => {
     }));
   });
 
+  it("uses conversation_input snapshot for async memory ingest when the floor has no input page", async () => {
+    const asyncService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      eventBus,
+      { enableAsyncMemoryIngest: true },
+    );
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_689_775_000;
+    const committedAt = now + 1_000;
+    const effectiveUserText = "Merged user tail for a response-only floor.";
+    const conversationInputSnapshot = buildConversationInputSnapshot({
+      effectiveText: effectiveUserText,
+      sourceTurn: {
+        sourceFloorIds: ["floor-user-1", "floor-user-2"],
+        sourcePageIds: ["page-user-1", "page-user-2"],
+        sourceMessageIds: ["msg-user-1", "msg-user-2"],
+        floorRange: { start: 1, end: 2 },
+        includesCurrentInput: false,
+        entryCount: 2,
+      },
+    });
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply for a response-only floor.",
+      rawText: "Assistant reply for a response-only floor.",
+      summaries: ["Async memory for response-only floor."],
+      totalUsage: {
+        promptTokens: 9,
+        completionTokens: 10,
+        totalTokens: 19,
+      },
+    };
+
+    const result = await asyncService.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      conversationInputSnapshot,
+      memoryCommit: {
+        summaries: execution.summaries,
+        enableConsolidation: true,
+      },
+    });
+
+    expect(result.memory).toEqual({
+      mode: "async",
+      status: "queued",
+      jobId: `memory-job:ingest_turn:${result.outputPageId}`,
+    });
+
+    const [job] = await database.db.select().from(runtimeJobs).where(eq(runtimeJobs.floorId, floorId));
+    expect(JSON.parse(job!.payloadJson)).toEqual(expect.objectContaining({
+      userInputDigest: expect.any(String),
+    }));
+
+    const [floorRow] = await database.db.select().from(floors).where(eq(floors.id, floorId));
+    expect(readFloorConversationInputSnapshot(floorRow!.metadataJson)).toEqual(conversationInputSnapshot);
+  });
+
   it("enqueues deferred tool.execute jobs inside the commit transaction and links runtime_job_id", async () => {
     const toolBridge = createToolRuntimeJobBridge(database.db, { eventBus });
     const deferredService = new TurnCommitService(
@@ -1210,6 +1279,14 @@ describe("TurnCommitService", () => {
           prunedTokenCount: 32,
         },
       ],
+      historyNormalization: {
+        rawEntryCount: 3,
+        effectiveTurnCount: 2,
+        selectedTurnCount: 2,
+        trailingUserSourceFloorIds: ["floor-history-2"],
+        mergedUserGroups: [],
+        violations: [],
+      },
       excludedSources: [
         {
           source: "history",
@@ -1265,6 +1342,7 @@ describe("TurnCommitService", () => {
       snapshotVersion: expectedSnapshot.snapshotVersion,
       sourceMap: expectedSnapshot.sourceMap,
       governance: expectedSnapshot.governance,
+      historyNormalization: expectedSnapshot.historyNormalization ?? null,
     });
   });
 

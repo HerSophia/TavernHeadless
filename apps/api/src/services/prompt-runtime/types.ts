@@ -28,6 +28,7 @@ import type {
   PromptLiveDebugOptions,
   TurnSessionStateWriteRequest,
 } from "../chat/contracts.js";
+import type { PromptRuntimeHistoryNormalizationSummary } from "../chat/conversation-history-normalizer.js";
 
 export type {
   PromptRuntimeGovernanceEntry,
@@ -84,6 +85,7 @@ export interface PromptRuntimeInspectResult {
   diagnostics: PromptRuntimeDiagnostic[];
   trimReasons: PromptTrimReason[];
   excludedSources: PromptSourceExclusionReason[];
+  historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   sectionStats: PromptRuntimeSectionStat[];
   limitations: string[];
   preparedTurn: PromptRuntimeInspectionPreparedTurn;

@@ -374,6 +374,29 @@ export type PromptRuntimeVisibilityTrace = {
   hiddenFloorRanges?: PromptRuntimeVisibilityRange[];
 };
 
+export type PromptRuntimeHistoryNormalizationViolation = {
+  code: "adjacent_assistant_floors";
+  message: string;
+  sourceFloorIds: string[];
+  sourceMessageIds: string[];
+};
+
+export type PromptRuntimeMergedUserGroupSummary = {
+  effectiveRole: "user";
+  sourceFloorIds: string[];
+  sourceMessageIds: string[];
+  includesCurrentInput: boolean;
+};
+
+export type PromptRuntimeHistoryNormalizationTrace = {
+  rawEntryCount: number;
+  effectiveTurnCount: number;
+  selectedTurnCount: number;
+  trailingUserSourceFloorIds: string[];
+  mergedUserGroups: PromptRuntimeMergedUserGroupSummary[];
+  violations: PromptRuntimeHistoryNormalizationViolation[];
+};
+
 export type PromptRuntimeTrace = {
   budgets?: PromptRuntimeBudgetTrace;
   delivery?: PromptRuntimeDeliveryTrace;
@@ -384,10 +407,11 @@ export type PromptRuntimeTrace = {
   regex?: PromptRuntimeRegexTrace;
   structure?: PromptRuntimeStructureTrace;
   visibility?: PromptRuntimeVisibilityTrace;
+  historyNormalization?: PromptRuntimeHistoryNormalizationTrace;
   worldbook?: PromptRuntimeWorldbookTrace;
 };
 
-export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility">;
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization">;
 
 export type PromptDebugPayload = {
   promptSnapshot?: PromptSnapshotPreview;
@@ -490,6 +514,7 @@ export function mapPromptRuntimePreviewTracePayload(value: unknown): PromptRunti
   return {
     ...(runtimeTrace.macro ? { macro: runtimeTrace.macro } : {}),
     ...(runtimeTrace.sourceSelection ? { sourceSelection: runtimeTrace.sourceSelection } : {}),
+    ...(runtimeTrace.historyNormalization ? { historyNormalization: runtimeTrace.historyNormalization } : {}),
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
   };
 }
@@ -510,6 +535,7 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   const macro = readRecord(record.macro);
   const delivery = readRecord(record.delivery);
   const visibility = readRecord(record.visibility);
+  const historyNormalization = mapPromptRuntimeHistoryNormalization(record.history_normalization);
 
   const runtimeTrace: PromptRuntimeTrace = {
     ...(preset
@@ -651,9 +677,58 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
           },
         }
       : {}),
+    ...(historyNormalization
+      ? {
+          historyNormalization,
+        }
+      : {}),
   };
 
   return Object.keys(runtimeTrace).length > 0 ? runtimeTrace : undefined;
+}
+
+function mapPromptRuntimeHistoryNormalization(value: unknown): PromptRuntimeHistoryNormalizationTrace | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return {
+    rawEntryCount: readNumber(record.raw_entry_count),
+    effectiveTurnCount: readNumber(record.effective_turn_count),
+    selectedTurnCount: readNumber(record.selected_turn_count),
+    trailingUserSourceFloorIds: mapStringArray(record.trailing_user_source_floor_ids),
+    mergedUserGroups: readArray(record.merged_user_groups)
+      .map((item) => {
+        const group = readRecord(item);
+        if (!group) {
+          return null;
+        }
+
+        return {
+          effectiveRole: "user" as const,
+          sourceFloorIds: mapStringArray(group.source_floor_ids),
+          sourceMessageIds: mapStringArray(group.source_message_ids),
+          includesCurrentInput: readBoolean(group.includes_current_input),
+        };
+      })
+      .filter((item): item is PromptRuntimeMergedUserGroupSummary => item !== null),
+    violations: readArray(record.violations)
+      .map((item) => {
+        const violation = readRecord(item);
+        if (!violation) {
+          return null;
+        }
+
+        return {
+          code: "adjacent_assistant_floors" as const,
+          message: readString(violation.message),
+          sourceFloorIds: mapStringArray(violation.source_floor_ids),
+          sourceMessageIds: mapStringArray(violation.source_message_ids),
+        };
+      })
+      .filter((item): item is PromptRuntimeHistoryNormalizationViolation => item !== null),
+  };
 }
 
 export function mapPromptRuntimeTraceMemoryPayload(value: unknown): PromptRuntimeMemoryTrace | undefined {

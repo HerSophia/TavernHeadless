@@ -176,7 +176,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
       {
         page_id: pageV1Id,
         seq: 0,
-        role: "assistant",
+        role: "user",
         content: `${runId}-v1`,
       },
       [201]
@@ -206,7 +206,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
       {
         page_id: pageV2Id,
         seq: 0,
-        role: "assistant",
+        role: "user",
         content: `${runId}-v2`,
       },
       [201]
@@ -229,7 +229,7 @@ export async function smokeCore(ctx: SmokeContext): Promise<void> {
       {
         page_id: pageV2Id,
         seq: 1,
-        role: "assistant",
+        role: "user",
         content: `${runId}-temp-message`,
       },
       [201]

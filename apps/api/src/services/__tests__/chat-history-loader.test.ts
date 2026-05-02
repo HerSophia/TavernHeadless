@@ -190,4 +190,21 @@ describe("ChatHistoryLoader visibility policy", () => {
 
     expect(messagesLoaded.map((message) => message.content)).toEqual(["visible-1", "visible-3"]);
   });
+
+  it("loads structured history entries with floor, page, and message provenance", async () => {
+    const sessionId = await seedSessionWithFloors();
+    const loader = new ChatHistoryLoader(database.db);
+
+    const entries = await loader.loadHistoryEntries(sessionId, "main");
+
+    expect(entries).toHaveLength(5);
+    expect(entries[0]).toMatchObject({
+      floorNo: 1,
+      pageNo: 1,
+      seq: 1,
+      role: "user",
+      content: "floor-1",
+    });
+    expect(entries.every((entry) => entry.floorId && entry.pageId && entry.messageId)).toBe(true);
+  });
 });

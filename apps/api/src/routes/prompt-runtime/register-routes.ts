@@ -51,7 +51,10 @@ import type {
 import { promptRuntimeInspectBodySchema } from "./schemas.js";
 import { mapPromptRuntimeInspectBodyToCamelCase } from "./mappers.js";
 import { mapPromptRuntimeInspectResultToSnakeCase } from "./presenters.js";
-import { mapPromptRuntimeMemoryTraceToSnakeCase } from "../chat/presenters.js";
+import {
+  mapPromptRuntimeHistoryNormalizationToSnakeCase,
+  mapPromptRuntimeMemoryTraceToSnakeCase,
+} from "../chat/presenters.js";
 import { sendPromptRuntimeInspectServiceError } from "./errors.js";
 
 const sessionIdParamsSchema = z.object({
@@ -795,6 +798,11 @@ function mapExplainDiffToSnakeCase(diff: PromptRuntimeExplainDiff): Record<strin
 function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewResult["runtimeTrace"]): Record<string, unknown> {
   return {
     ...(runtimeTrace.macro ? { macro: mapPreviewMacroTraceToSnakeCase(runtimeTrace.macro) } : {}),
+    ...(runtimeTrace.historyNormalization
+      ? {
+          history_normalization: mapPromptRuntimeHistoryNormalizationToSnakeCase(runtimeTrace.historyNormalization),
+        }
+      : {}),
     ...(runtimeTrace.visibility
       ? {
           visibility: {

@@ -1559,7 +1559,7 @@ describe("PromptRuntimeControlService", () => {
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
-          traceSubset: ["macro", "source_selection", "visibility"],
+          traceSubset: ["macro", "source_selection", "visibility", "history_normalization"],
         }),
         inspect: expect.objectContaining({
           enabled: true,
