@@ -109,7 +109,7 @@ describe('ProviderRegistry', () => {
 
       const model = registry.getModel('p1', 'gpt-4o');
       expect(model).toBeDefined();
-      expect(model.modelId).toBe('gpt-4o');
+      expect((model as any).modelId).toBe('gpt-4o');
     });
 
     it('throws ProviderNotFoundError for unknown provider', () => {
@@ -136,8 +136,8 @@ describe('ProviderRegistry', () => {
       const model = registry.createModel({ id: 'turn-scope', type: 'test' as any }, 'claude-3');
 
       expect(model).toBeDefined();
-      expect(model.modelId).toBe('claude-3');
-      expect(model.provider).toBe('turn-scope');
+      expect((model as any).modelId).toBe('claude-3');
+      expect((model as any).provider).toBe('turn-scope');
       expect(registry.has('turn-scope')).toBe(false);
     });
   });

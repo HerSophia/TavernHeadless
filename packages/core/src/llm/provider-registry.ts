@@ -31,6 +31,18 @@ export class ProviderInitError extends Error {
  * 创建 OpenAI 兼容的 provider 工厂。
  * 用于 openai / deepseek / xai / openai-compatible 类型。
  */
+function resolveOpenAIProviderName(config: ProviderConfig): string | undefined {
+  if (config.type === 'openai') {
+    return undefined;
+  }
+
+  if (config.type === 'openai-compatible') {
+    return config.id;
+  }
+
+  return config.type;
+}
+
 function createOpenAIFactory(config: ProviderConfig): (modelId: string) => LanguageModel {
   // 动态导入 @ai-sdk/openai（已在 core 的依赖中通过 ai 包间接提供）
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -49,11 +61,11 @@ function createOpenAIFactory(config: ProviderConfig): (modelId: string) => Langu
   const provider = createOpenAI({
     apiKey: config.apiKey,
     baseURL: config.baseURL,
-    compatibility: config.type === 'openai-compatible' ? 'compatible' : 'strict',
+    ...(resolveOpenAIProviderName(config) ? { name: resolveOpenAIProviderName(config) } : {}),
     ...config.options,
   });
 
-  return (modelId: string) => provider(modelId);
+  return (modelId: string) => provider(modelId) as LanguageModel;
 }
 
 /**

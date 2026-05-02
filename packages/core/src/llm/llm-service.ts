@@ -107,11 +107,38 @@ function normalizeUsage(usage: unknown): {
     outputTokens?: unknown;
   } | null | undefined;
 
+  // v5 usage 结构（直接数字）:
+  //   { inputTokens: number, outputTokens: number, totalTokens: number }
+  // v5 usage 结构（嵌套，来自 mock/provider 底层）:
+  //   { inputTokens: { total: number, ... }, outputTokens: { total: number, ... }, totalTokens: number }
+  const inVal = raw?.inputTokens;
+  const outVal = raw?.outputTokens;
+  const prompt = typeof inVal === 'number' ? inVal
+    : typeof inVal === 'object' && inVal !== null ? (inVal as any).total : undefined;
+  const completion = typeof outVal === 'number' ? outVal
+    : typeof outVal === 'object' && outVal !== null ? (outVal as any).total : undefined;
+ 
+  const p = toTokenCount(raw?.promptTokens ?? prompt);
+  const c = toTokenCount(raw?.completionTokens ?? completion);
+  const t = raw?.totalTokens;
+  // v5 generateText 可能把未传入的 totalTokens 写为零，零值应回退到 p + c
+  const total = (typeof t === 'number' && t > 0) ? toTokenCount(t) : (p + c);
+ 
   return {
-    promptTokens: toTokenCount(raw?.promptTokens ?? raw?.inputTokens),
-    completionTokens: toTokenCount(raw?.completionTokens ?? raw?.outputTokens),
-    totalTokens: toTokenCount(raw?.totalTokens),
+    promptTokens: p,
+    completionTokens: c,
+    totalTokens: total,
   };
+}
+
+function normalizeFinishReason(finishReason: unknown): string {
+  if (typeof finishReason === 'string' && finishReason.length > 0) {
+    return finishReason;
+  }
+
+  return typeof (finishReason as { unified?: unknown } | null | undefined)?.unified === 'string'
+    ? (finishReason as { unified: string }).unified
+    : 'unknown';
 }
 
 /**
@@ -120,7 +147,7 @@ function normalizeUsage(usage: unknown): {
 function mapParams(params: GenerationParams): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
 
-  if (params.maxOutputTokens !== undefined) mapped.maxTokens = params.maxOutputTokens;
+  if (params.maxOutputTokens !== undefined) mapped.maxOutputTokens = params.maxOutputTokens;
   if (params.temperature !== undefined) mapped.temperature = params.temperature;
   if (params.topP !== undefined) mapped.topP = params.topP;
   if (params.topK !== undefined) mapped.topK = params.topK;
@@ -202,7 +229,7 @@ export class LLMService implements LLMPort {
       return {
         text: result.text,
         usage: normalizeUsage(result.usage),
-        finishReason: result.finishReason ?? 'unknown',
+        finishReason: normalizeFinishReason(result.finishReason),
         toolCalls: extractToolCalls(result),
         steps: extractSteps(result),
       };
@@ -237,7 +264,10 @@ export class LLMService implements LLMPort {
       // 消费文本流
       let fullText = '';
       try {
-        for await (const chunk of result.textStream) {
+        for await (const part of result.textStream) {
+          // v5 返回的可能为字符串，也可能是 { type: 'text-delta', textDelta: '...' }
+          const chunk: string = typeof part === 'string' ? part
+            : ((part as any).textDelta ?? (part as any).delta ?? '');
           fullText += chunk;
           callbacks.onChunk?.(chunk);
         }
@@ -250,11 +280,12 @@ export class LLMService implements LLMPort {
       // 等待最终结果
       const usage = await result.usage;
       const finishReason = await result.finishReason;
+      const normalizedFinish = normalizeFinishReason(finishReason);
 
       const response: LLMResponse = {
         text: fullText,
         usage: normalizeUsage(usage),
-        finishReason: finishReason ?? 'unknown',
+        finishReason: normalizedFinish,
         toolCalls: extractToolCallsFromStream(result),
         steps: extractStepsFromStream(result),
       };
@@ -352,9 +383,10 @@ function extractToolCallsFromStream(result: any): LLMToolCall[] | undefined {
   // streamText 的 toolCalls 可能是 promise，这里只取已经 resolve 的同步数据
   // 在 stream() 方法中，流已经完全消费完毕，所以 steps 应该已就绪
   try {
-    if (result._stepsResult && Array.isArray(result._stepsResult)) {
+    const steps = (result as any).steps;
+    if (Array.isArray(steps) && steps.length > 0) {
       const calls: LLMToolCall[] = [];
-      for (const step of result._stepsResult) {
+      for (const step of steps) {
         if (Array.isArray(step.toolCalls)) {
           for (const tc of step.toolCalls) {
             calls.push({ toolName: tc.toolName, args: tc.args });
@@ -374,8 +406,9 @@ function extractToolCallsFromStream(result: any): LLMToolCall[] | undefined {
  */
 function extractStepsFromStream(result: any): LLMStepResult[] | undefined {
   try {
-    if (result._stepsResult && Array.isArray(result._stepsResult) && result._stepsResult.length > 0) {
-      return result._stepsResult.map((step: any) => ({
+    const steps = (result as any).steps;
+    if (Array.isArray(steps) && steps.length > 0) {
+      return steps.map((step: any) => ({
         text: step.text ?? '',
         toolCalls: Array.isArray(step.toolCalls)
           ? step.toolCalls.map((tc: any) => ({ toolName: tc.toolName, args: tc.args }))

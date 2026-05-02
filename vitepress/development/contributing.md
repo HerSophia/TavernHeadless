@@ -12,7 +12,7 @@ outline: [2, 3]
 
 ### 必须
 
-- Node.js >= 20
+- Node.js >= 22.22.2
 - pnpm >= 9
 - Git >= 2.30
 
