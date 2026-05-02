@@ -395,6 +395,8 @@ GET /sessions/:id/branches
 }
 ```
 
+新建 session 在尚未产生任何 floor 时，这个接口仍会返回默认 `main` 分支。此时 `floor_count` 为 `0`，`latest_floor_no`、`latest_floor_id`、`latest_state` 都返回 `null`。
+
 ## 分支差异
 
 ```http

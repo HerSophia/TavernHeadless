@@ -801,11 +801,23 @@ describe("OpenAPI integration", () => {
       const respondProperties = readRecordNode(respondRequestSchema?.properties);
       const sessionStateWritesSchema = readRecordNode(respondProperties?.session_state_writes);
       const sessionStateWriteItemSchema = readRecordNode(sessionStateWritesSchema?.items);
-      const sessionStateWriteProperties = readRecordNode(sessionStateWriteItemSchema?.properties);
-      expect(sessionStateWriteProperties?.namespace).toBeDefined();
-      expect(sessionStateWriteProperties?.slot).toBeDefined();
-      expect(sessionStateWriteProperties?.value).toBeDefined();
-      expect(sessionStateWriteProperties?.delete).toBeDefined();
+      const sessionStateWriteVariants = readArrayNode(sessionStateWriteItemSchema?.oneOf);
+      expect(sessionStateWriteVariants).toHaveLength(2);
+
+      const sessionStateWriteValueVariant = readRecordNode(sessionStateWriteVariants?.[0]);
+      const sessionStateWriteDeleteVariant = readRecordNode(sessionStateWriteVariants?.[1]);
+      const sessionStateWriteValueProperties = readRecordNode(sessionStateWriteValueVariant?.properties);
+      const sessionStateWriteDeleteProperties = readRecordNode(sessionStateWriteDeleteVariant?.properties);
+
+      expect(sessionStateWriteValueProperties?.namespace).toBeDefined();
+      expect(sessionStateWriteValueProperties?.slot).toBeDefined();
+      expect(sessionStateWriteValueProperties?.value).toBeDefined();
+      expect(readArrayNode(sessionStateWriteValueVariant?.required)).toEqual(expect.arrayContaining(["namespace", "slot", "value"]));
+
+      expect(sessionStateWriteDeleteProperties?.namespace).toBeDefined();
+      expect(sessionStateWriteDeleteProperties?.slot).toBeDefined();
+      expect(sessionStateWriteDeleteProperties?.delete).toBeDefined();
+      expect(readArrayNode(sessionStateWriteDeleteVariant?.required)).toEqual(expect.arrayContaining(["namespace", "slot", "delete"]));
 
       const regeneratePath = body.paths["/sessions/{id}/regenerate"] as { post?: OpenApiOperation };
       expect(readRecordNode(getOpenApiRequestSchema(regeneratePath.post)?.properties)?.session_state_writes).toBeDefined();

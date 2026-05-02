@@ -6,6 +6,8 @@ outline: [2, 3]
 
 Session State 是会话里的受治理状态存储。
 
+当前这组真实公开路由面，由 `/sessions/:sessionId/state/*` 这组 public routes，以及 turn API 里的 `session_state_writes` 共同组成。
+
 可以把它理解为：**给一个会话挂上一组有规则的状态项。** 客户端可以读取这些状态，也可以在受限制的条件下写入其中一部分状态。
 
 这组公开接口主要做六件事：
@@ -64,7 +66,7 @@ Session State 是会话里的受治理状态存储。
 - 自定义状态项会在首次成功直接写入或首次成功随回合提交后自动出现在公开定义里
 - public `DELETE` 的治理语义是把当前值写成 `present: false`，不是物理删除历史
 - 跨账号访问仍然统一返回 `404 not_found`
-- `enableClientData=false` 时，这组端点不可用
+- 当前实现里，`enableClientData=false` 时这组 public route family 默认不会注册，外部通常直接看到 `404 not_found`
 
 ::: tip SDK 支持
 `@tavern/sdk` 现在已经封装这组公开 Session State 接口，对应资源为 `client.sessionState`。
@@ -574,10 +576,12 @@ GET /sessions/:sessionId/state/diff
 | `409` | `session_state_account_item_limit_exceeded` | 当前账号的 Session State managed storage item 总量已达到上限 |
 | `409` | `session_state_account_byte_limit_exceeded` | 当前账号的 Session State managed storage 总字节数已达到上限 |
 | `409` | `session_state_payload_too_large` | payload 超过当前 slot 的治理预算 |
-| `503` | `feature_unavailable` | `enableClientData` 关闭时这组端点不可用；部分部署也可能直接返回 `404` |
+
+当前默认实现里，`enableClientData=false` 时这组 public route family 不会注册，因此更常见的是路由层直接返回 `404 not_found`，而不是业务体里的 `feature_unavailable`。
 
 ## 设计参考
 
-- 下一版设计草案：`.limcode/design/session-state-下一版客户端可写受治理状态空间设计草案.md`
-- 当前实施计划：`.limcode/plans/session-state-下一版客户端可写受治理状态空间实施计划.md`
+- 当前设计草稿：`.limcode/design/session-state-暴露真实路由面设计草稿.md`
+- 当前实施计划：`.limcode/plans/session-state-暴露真实路由面-implementation-plan.md`
 - 内部观察面：[`reference/api/session-state-observation.md`](./session-state-observation.md)
+- 最小联调清单：[`guide/session-state-client-checklist.md`](../../guide/session-state-client-checklist.md)

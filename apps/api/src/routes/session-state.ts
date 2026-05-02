@@ -12,6 +12,11 @@ import type {
   SessionStatePublicResolvedValue,
 } from "../session-state/session-state-types.js";
 import {
+  SESSION_STATE_LOGICAL_OWNER_ID_PATTERN,
+  SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN,
+  SESSION_STATE_NAMESPACE_PATTERN,
+} from "../session-state/session-state-types.js";
+import {
   SessionStatePublicService,
   SessionStatePublicServiceError,
 } from "../session-state/session-state-public-service.js";
@@ -46,27 +51,27 @@ const snapshotParamsSchema = z.object({
 });
 
 const registerNamespaceBodySchema = z.object({
-  namespace: z.string().min(1).max(128),
-  logical_owner_type: z.string().min(1).max(128),
-  logical_owner_id: z.string().min(1).max(256),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN),
+  logical_owner_type: z.string().min(1).max(128).regex(SESSION_STATE_LOGICAL_OWNER_TYPE_PATTERN),
+  logical_owner_id: z.string().min(1).max(256).regex(SESSION_STATE_LOGICAL_OWNER_ID_PATTERN),
 }).strict();
 
 const writeValueBodySchema = z.object({
   branch_id: z.string().min(1),
-  namespace: z.string().min(1).max(128),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN),
   slot: z.string().min(1).max(256),
   value: z.unknown(),
 }).strict();
 
 const deleteValueBodySchema = z.object({
   branch_id: z.string().min(1),
-  namespace: z.string().min(1).max(128),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN),
   slot: z.string().min(1).max(256),
 }).strict();
 
 const resolveQuerySchema = z.object({
   branch_id: z.string().min(1),
-  namespace: z.string().min(1).optional(),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN).optional(),
   slot: z.string().min(1).optional(),
   source_floor_id: z.string().min(1).optional(),
 }).superRefine((value, context) => {
@@ -80,7 +85,7 @@ const resolveQuerySchema = z.object({
 });
 
 const snapshotQuerySchema = z.object({
-  namespace: z.string().min(1).optional(),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN).optional(),
   slot: z.string().min(1).optional(),
 }).superRefine((value, context) => {
   if (value.slot && !value.namespace) {
@@ -98,7 +103,7 @@ const diffQuerySchema = z.object({
   floor_id: z.string().min(1),
   against: z.string().regex(diffAgainstPattern),
   branch_id: z.string().min(1).optional(),
-  namespace: z.string().min(1).optional(),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN).optional(),
   slot: z.string().min(1).optional(),
 }).superRefine((value, context) => {
   if (value.slot && !value.namespace) {

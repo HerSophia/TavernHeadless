@@ -168,6 +168,8 @@ describe("createTavernClient", () => {
     expect(typeof client.sessionState.resolve).toBe("function");
     expect(typeof client.sessionState.getFloorSnapshots).toBe("function");
     expect(typeof client.sessionState.diff).toBe("function");
+    expect((client as Record<string, unknown>).sessionStateObservation).toBeUndefined();
+    expect((client as Record<string, unknown>).sessionStateMutations).toBeUndefined();
 
     expect(client.tools).toBeDefined();
     expect(typeof client.tools.listBuiltin).toBe("function");

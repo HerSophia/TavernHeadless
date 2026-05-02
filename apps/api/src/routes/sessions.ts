@@ -378,9 +378,9 @@ const branchSummaryJsonSchema = {
   properties: {
     branch_id: { type: "string" },
     floor_count: { type: "integer", minimum: 0 },
-    latest_floor_no: { type: "integer", minimum: 0 },
-    latest_floor_id: { type: "string" },
-    latest_state: { type: "string" },
+    latest_floor_no: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    latest_floor_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    latest_state: { anyOf: [{ type: "string" }, { type: "null" }] },
     updated_at: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -1120,6 +1120,7 @@ export async function registerSessionRoutes(
   const { db } = connection;
   const floorRunService = new FloorRunService(db);
   const lineageService = new FloorLineageService(db);
+  const branchRegistry = new SessionBranchRegistryService(db);
 
   app.post("/sessions", {
     schema: {
@@ -1669,6 +1670,8 @@ export async function registerSessionRoutes(
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
+    const registeredBranches = branchRegistry.listBySession(auth.accountId, sessionId);
+
     const floorRows = await db
       .select({
         id: floors.id,
@@ -1683,11 +1686,21 @@ export async function registerSessionRoutes(
     const branchMap = new Map<string, {
       branch_id: string;
       floor_count: number;
-      latest_floor_no: number;
-      latest_floor_id: string;
-      latest_state: string;
+      latest_floor_no: number | null;
+      latest_floor_id: string | null;
+      latest_state: string | null;
       updated_at: number;
-    }>();
+    }>(registeredBranches.map((branch) => [
+      branch.branchId,
+      {
+        branch_id: branch.branchId,
+        floor_count: 0,
+        latest_floor_no: null,
+        latest_floor_id: null,
+        latest_state: null,
+        updated_at: branch.updatedAt,
+      },
+    ]));
 
     for (const row of floorRows) {
       const existing = branchMap.get(row.branchId);
@@ -1703,10 +1716,17 @@ export async function registerSessionRoutes(
         continue;
       }
 
+      if (existing.floor_count === 0) {
+        existing.latest_floor_no = row.floorNo;
+        existing.latest_floor_id = row.id;
+        existing.latest_state = row.state;
+      }
       existing.floor_count += 1;
+
       if (
-        row.floorNo > existing.latest_floor_no ||
-        (row.floorNo === existing.latest_floor_no && row.updatedAt > existing.updated_at)
+        existing.latest_floor_no === null
+        || row.floorNo > existing.latest_floor_no
+        || (row.floorNo === existing.latest_floor_no && row.updatedAt > existing.updated_at)
       ) {
         existing.latest_floor_no = row.floorNo;
         existing.latest_floor_id = row.id;
@@ -1724,7 +1744,7 @@ export async function registerSessionRoutes(
         case "floor_count":
           return (a.floor_count - b.floor_count) * direction;
         case "latest_floor_no":
-          return (a.latest_floor_no - b.latest_floor_no) * direction;
+          return ((a.latest_floor_no ?? -1) - (b.latest_floor_no ?? -1)) * direction;
         case "updated_at":
         default:
           return (a.updated_at - b.updated_at) * direction;

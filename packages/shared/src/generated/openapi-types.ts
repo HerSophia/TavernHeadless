@@ -4156,13 +4156,32 @@ export interface paths {
                             top_k?: number;
                             top_p?: number;
                         };
-                        session_state_writes?: {
+                        /**
+                         * @example [
+                         *       {
+                         *         "namespace": "quest_flags",
+                         *         "slot": "companion",
+                         *         "value": {
+                         *           "mood": "ally"
+                         *         }
+                         *       },
+                         *       {
+                         *         "delete": true,
+                         *         "namespace": "quest_flags",
+                         *         "slot": "expired_hint"
+                         *       }
+                         *     ]
+                         */
+                        session_state_writes?: ({
+                            namespace: string;
+                            slot: string;
+                            value: unknown;
+                        } | {
                             /** @enum {boolean} */
-                            delete?: true;
-                            namespace?: string;
-                            slot?: string;
-                            value?: unknown;
-                        }[];
+                            delete: true;
+                            namespace: string;
+                            slot: string;
+                        })[];
                         structure?: {
                             /** @enum {string} */
                             assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
@@ -8464,13 +8483,32 @@ export interface paths {
                             top_k?: number;
                             top_p?: number;
                         };
-                        session_state_writes?: {
+                        /**
+                         * @example [
+                         *       {
+                         *         "namespace": "quest_flags",
+                         *         "slot": "companion",
+                         *         "value": {
+                         *           "mood": "ally"
+                         *         }
+                         *       },
+                         *       {
+                         *         "delete": true,
+                         *         "namespace": "quest_flags",
+                         *         "slot": "expired_hint"
+                         *       }
+                         *     ]
+                         */
+                        session_state_writes?: ({
+                            namespace: string;
+                            slot: string;
+                            value: unknown;
+                        } | {
                             /** @enum {boolean} */
-                            delete?: true;
-                            namespace?: string;
-                            slot?: string;
-                            value?: unknown;
-                        }[];
+                            delete: true;
+                            namespace: string;
+                            slot: string;
+                        })[];
                         structure?: {
                             /** @enum {string} */
                             assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
@@ -11173,9 +11211,9 @@ export interface paths {
                             data: {
                                 branch_id: string;
                                 floor_count: number;
-                                latest_floor_id: string;
-                                latest_floor_no: number;
-                                latest_state: string;
+                                latest_floor_id: string | null;
+                                latest_floor_no: number | null;
+                                latest_state: string | null;
                                 updated_at: number;
                             }[];
                             meta: {
@@ -11792,13 +11830,32 @@ export interface paths {
                             top_k?: number;
                             top_p?: number;
                         };
-                        session_state_writes?: {
+                        /**
+                         * @example [
+                         *       {
+                         *         "namespace": "quest_flags",
+                         *         "slot": "companion",
+                         *         "value": {
+                         *           "mood": "ally"
+                         *         }
+                         *       },
+                         *       {
+                         *         "delete": true,
+                         *         "namespace": "quest_flags",
+                         *         "slot": "expired_hint"
+                         *       }
+                         *     ]
+                         */
+                        session_state_writes?: ({
+                            namespace: string;
+                            slot: string;
+                            value: unknown;
+                        } | {
                             /** @enum {boolean} */
-                            delete?: true;
-                            namespace?: string;
-                            slot?: string;
-                            value?: unknown;
-                        }[];
+                            delete: true;
+                            namespace: string;
+                            slot: string;
+                        })[];
                         structure?: {
                             /** @enum {string} */
                             assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
@@ -13267,13 +13324,32 @@ export interface paths {
                         message: string;
                         /** @enum {string} */
                         prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
-                        session_state_writes?: {
+                        /**
+                         * @example [
+                         *       {
+                         *         "namespace": "quest_flags",
+                         *         "slot": "companion",
+                         *         "value": {
+                         *           "mood": "ally"
+                         *         }
+                         *       },
+                         *       {
+                         *         "delete": true,
+                         *         "namespace": "quest_flags",
+                         *         "slot": "expired_hint"
+                         *       }
+                         *     ]
+                         */
+                        session_state_writes?: ({
+                            namespace: string;
+                            slot: string;
+                            value: unknown;
+                        } | {
                             /** @enum {boolean} */
-                            delete?: true;
-                            namespace?: string;
-                            slot?: string;
-                            value?: unknown;
-                        }[];
+                            delete: true;
+                            namespace: string;
+                            slot: string;
+                        })[];
                         source_floor_id?: string;
                         structure?: {
                             /** @enum {string} */
@@ -16155,13 +16231,32 @@ export interface paths {
                         message: string;
                         /** @enum {string} */
                         prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
-                        session_state_writes?: {
+                        /**
+                         * @example [
+                         *       {
+                         *         "namespace": "quest_flags",
+                         *         "slot": "companion",
+                         *         "value": {
+                         *           "mood": "ally"
+                         *         }
+                         *       },
+                         *       {
+                         *         "delete": true,
+                         *         "namespace": "quest_flags",
+                         *         "slot": "expired_hint"
+                         *       }
+                         *     ]
+                         */
+                        session_state_writes?: ({
+                            namespace: string;
+                            slot: string;
+                            value: unknown;
+                        } | {
                             /** @enum {boolean} */
-                            delete?: true;
-                            namespace?: string;
-                            slot?: string;
-                            value?: unknown;
-                        }[];
+                            delete: true;
+                            namespace: string;
+                            slot: string;
+                        })[];
                         source_floor_id?: string;
                         structure?: {
                             /** @enum {string} */
@@ -29138,13 +29233,32 @@ export interface operations {
                     message: string;
                     /** @enum {string} */
                     prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
-                    session_state_writes?: {
+                    /**
+                     * @example [
+                     *       {
+                     *         "namespace": "quest_flags",
+                     *         "slot": "companion",
+                     *         "value": {
+                     *           "mood": "ally"
+                     *         }
+                     *       },
+                     *       {
+                     *         "delete": true,
+                     *         "namespace": "quest_flags",
+                     *         "slot": "expired_hint"
+                     *       }
+                     *     ]
+                     */
+                    session_state_writes?: ({
+                        namespace: string;
+                        slot: string;
+                        value: unknown;
+                    } | {
                         /** @enum {boolean} */
-                        delete?: true;
-                        namespace?: string;
-                        slot?: string;
-                        value?: unknown;
-                    }[];
+                        delete: true;
+                        namespace: string;
+                        slot: string;
+                    })[];
                     source_floor_id?: string;
                     source_selection?: {
                         examples?: {

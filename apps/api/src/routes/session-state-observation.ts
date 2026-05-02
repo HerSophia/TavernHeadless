@@ -20,6 +20,7 @@ import type {
   SessionStateReplayEvaluation,
   SessionStateResolvedValue,
 } from "../session-state/session-state-types.js";
+import { SESSION_STATE_NAMESPACE_PATTERN } from "../session-state/session-state-types.js";
 
 /**
  * Phase 3 观察面路由包。
@@ -37,12 +38,12 @@ const floorIdParamsSchema = z.object({ floorId: z.string().min(1) });
 const mutationIdParamsSchema = z.object({ sessionId: z.string().min(1), mutationId: z.string().min(1) });
 const liveSlotParamsSchema = z.object({
   sessionId: z.string().min(1),
-  namespace: z.string().min(1),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN),
   slot: z.string().min(1),
 });
 const snapshotSlotParamsSchema = z.object({
   floorId: z.string().min(1),
-  namespace: z.string().min(1),
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN),
   slot: z.string().min(1),
 });
 
@@ -56,7 +57,7 @@ const listMutationsQuerySchema = z.object({
   source_floor_id: z.string().min(1).optional(),
   run_id: z.string().min(1).optional(),
   target_slot: z.string().min(1).optional(),
-  state_namespace: z.string().min(1).optional(),
+  state_namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN).optional(),
   write_mode: writeModeSchema.optional(),
   replay_safety: replaySafetySchema.optional(),
   created_after: z.coerce.number().int().nonnegative().optional(),
@@ -68,7 +69,7 @@ const listMutationsQuerySchema = z.object({
 
 const listLiveHeadsQuerySchema = z.object({
   branch_id: z.string().min(1).optional(),
-  state_namespace: z.string().min(1).optional(),
+  state_namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN).optional(),
 });
 
 const liveSlotQuerySchema = z.object({
@@ -77,7 +78,7 @@ const liveSlotQuerySchema = z.object({
 });
 
 const listFloorSnapshotsQuerySchema = z.object({
-  state_namespace: z.string().min(1).optional(),
+  state_namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN).optional(),
 });
 
 const replaySafetyQuerySchema = z.object({
@@ -100,7 +101,7 @@ const diffAgainstPattern = /^(floor:.+|live)$/;
 const diffQuerySchema = z.object({
   against: z.string().regex(diffAgainstPattern),
   branch_id: z.string().min(1).optional(),
-  state_namespace: z.string().min(1).optional(),
+  state_namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN).optional(),
   include_values: z.coerce.boolean().optional().default(false),
 });
 
