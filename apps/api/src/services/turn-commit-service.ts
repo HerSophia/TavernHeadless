@@ -68,6 +68,10 @@ import {
 import { serializePromptRuntimeExplainSourceMapEnvelope } from "./prompt-runtime/explain-snapshot.js";
 import type { SessionStateService } from "../session-state/session-state-service.js";
 import { projectLegacyToolCallRecords } from "./tooling/shared/legacy-tool-call-projection.js";
+import {
+  mergeFloorMetadataConversationInput,
+  type FloorConversationInputSnapshot,
+} from "./chat/shared/metadata.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -112,6 +116,7 @@ export interface TurnCommitInput {
   toolExecutionRecords?: ExecutedToolCallRecord[];
   pendingToolJobs?: PendingToolJobRequest[];
   variableCommit?: VariableCommitOptions;
+  conversationInputSnapshot?: FloorConversationInputSnapshot;
   memoryCommit?: MemoryCommitInput;
   macroStagedMutations?: StMacroStagedMutation[];
   /**
@@ -289,7 +294,12 @@ function toPromptRuntimeExplainSnapshotInsert(input: {
     snapshotVersion: snapshot.snapshotVersion,
     assetsJson: JSON.stringify(snapshot.assets),
     resolvedPolicyJson: JSON.stringify(snapshot.resolvedPolicy),
-    sourceMapJson: serializePromptRuntimeExplainSourceMapEnvelope({ snapshotVersion: snapshot.snapshotVersion, sourceMap: snapshot.sourceMap, governance: snapshot.governance }),
+    sourceMapJson: serializePromptRuntimeExplainSourceMapEnvelope({
+      snapshotVersion: snapshot.snapshotVersion,
+      sourceMap: snapshot.sourceMap,
+      governance: snapshot.governance,
+      historyNormalization: snapshot.historyNormalization,
+    }),
     diagnosticsJson: JSON.stringify(snapshot.diagnostics),
     trimReasonsJson: JSON.stringify(snapshot.trimReasons),
     excludedSourcesJson: JSON.stringify(snapshot.excludedSources),
@@ -400,7 +410,16 @@ export class TurnCommitService {
     this.sessionStateService = options.sessionStateService;
   }
 
-  private loadUserInputDigest(tx: DbExecutor, floorId: string, accountId: string): string {
+  private loadUserInputDigest(
+    tx: DbExecutor,
+    floorId: string,
+    accountId: string,
+    conversationInputSnapshot?: FloorConversationInputSnapshot,
+  ): string {
+    if (conversationInputSnapshot?.effectiveText) {
+      return createUserInputDigest(conversationInputSnapshot.effectiveText);
+    }
+
     const row = tx
       .select({ content: messages.content })
       .from(messages)
@@ -434,8 +453,9 @@ export class TurnCommitService {
     committedAt: number;
     summaries: string[];
     enableConsolidation: boolean;
+    conversationInputSnapshot?: FloorConversationInputSnapshot;
   }) {
-    const userInputDigest = this.loadUserInputDigest(tx, args.floor.id, args.accountId);
+    const userInputDigest = this.loadUserInputDigest(tx, args.floor.id, args.accountId, args.conversationInputSnapshot);
     return this.memoryJobScheduler.enqueueIngestTurn(tx, {
       accountId: args.accountId,
       sessionId: args.sessionId,
@@ -671,9 +691,15 @@ export class TurnCommitService {
           throw error;
         }
 
+        const mergedFloorMetadataJson = mergeFloorMetadataConversationInput(
+          floorRow.metadataJson,
+          input.conversationInputSnapshot,
+        );
+
         const updatedFloorRow = tx
           .update(floors)
           .set({
+            metadataJson: mergedFloorMetadataJson,
             tokenIn: usage.promptTokens,
             tokenOut: usage.completionTokens,
             updatedAt: committedAt,
@@ -853,6 +879,7 @@ export class TurnCommitService {
                 committedAt,
                 summaries: input.memoryCommit.summaries ?? [],
                 enableConsolidation: input.memoryCommit.enableConsolidation === true,
+                conversationInputSnapshot: input.conversationInputSnapshot,
               });
               memory = {
                 mode: "async",

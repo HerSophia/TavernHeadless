@@ -185,6 +185,7 @@ export function buildPromptRuntimeExecutionTrace(
     ...(mergedRegexTrace ? { regex: mergedRegexTrace } : {}),
     ...(artifacts.materialized?.structureTrace ? { structure: artifacts.materialized.structureTrace } : {}),
     ...(artifacts.materialized?.deliveryTrace ? { delivery: artifacts.materialized.deliveryTrace } : {}),
+    ...(artifacts.inspection.historyNormalization ? { historyNormalization: artifacts.inspection.historyNormalization } : {}),
     ...(visibilityTrace ? { visibility: visibilityTrace } : {}),
   };
 
@@ -199,6 +200,7 @@ export function buildPromptRuntimePreviewTrace(runtimeTrace?: PromptRuntimeTrace
   return {
     ...(runtimeTrace.macro ? { macro: runtimeTrace.macro } : {}),
     ...(runtimeTrace.sourceSelection ? { sourceSelection: runtimeTrace.sourceSelection } : {}),
+    ...(runtimeTrace.historyNormalization ? { historyNormalization: runtimeTrace.historyNormalization } : {}),
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
   };
 }

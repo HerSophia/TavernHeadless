@@ -26,6 +26,29 @@ export function mapMemoryToSnakeCase(memory: { mode: "sync" | "async"; status: "
   };
 }
 
+export function mapPromptRuntimeHistoryNormalizationToSnakeCase(
+  historyNormalization: NonNullable<PromptRuntimeTrace["historyNormalization"]>,
+): Record<string, unknown> {
+  return {
+    raw_entry_count: historyNormalization.rawEntryCount,
+    effective_turn_count: historyNormalization.effectiveTurnCount,
+    selected_turn_count: historyNormalization.selectedTurnCount,
+    trailing_user_source_floor_ids: historyNormalization.trailingUserSourceFloorIds,
+    merged_user_groups: historyNormalization.mergedUserGroups.map((group) => ({
+      effective_role: group.effectiveRole,
+      source_floor_ids: group.sourceFloorIds,
+      source_message_ids: group.sourceMessageIds,
+      includes_current_input: group.includesCurrentInput,
+    })),
+    violations: historyNormalization.violations.map((violation) => ({
+      code: violation.code,
+      message: violation.message,
+      source_floor_ids: violation.sourceFloorIds,
+      source_message_ids: violation.sourceMessageIds,
+    })),
+  };
+}
+
 export function mapRunToSnakeCase(run: {
   floorId: string;
   runId: string;
@@ -292,6 +315,11 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
           },
         }
       : {}),
+    ...(runtimeTrace.historyNormalization
+      ? {
+          history_normalization: mapPromptRuntimeHistoryNormalizationToSnakeCase(runtimeTrace.historyNormalization),
+        }
+      : {}),
   };
 }
 
@@ -458,6 +486,8 @@ export function mapChatServiceError(error: ChatServiceError): { statusCode: numb
     case "profile_not_found":
     case "tool_catalog_conflict":
     case "instance_slot_disabled_required":
+    case "adjacent_assistant_floors":
+    case "missing_effective_user_tail":
     case "profile_disabled":
       return { statusCode: 409, code: error.code, message: error.message };
     case "secret_unavailable":

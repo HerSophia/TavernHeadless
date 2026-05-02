@@ -6,67 +6,83 @@ import {
   getFloorContentMutationRejection,
   type FloorContentMutationRejection,
 } from "./floor-content-mutability-policy.js";
+import {
+  ConversationShapePolicyError,
+  type ConversationShapeMutationRejection,
+  ConversationShapePolicyService,
+} from "./conversation-shape-policy.js";
 import { OwnedPageRepository, type OwnedPageContext } from "./owned-resource-repositories.js";
 
 export type PageActivationResult =
   | { kind: "not_found" }
   | { kind: "rejected"; rejection: FloorContentMutationRejection }
+  | { kind: "shape_rejected"; rejection: ConversationShapeMutationRejection }
   | { kind: "activated"; page: typeof messagePages.$inferSelect };
 
 export class PageActivationService {
   constructor(private readonly db: AppDb) {}
 
   activateVersion(accountId: string, pageId: string): PageActivationResult {
-    return this.db.transaction((tx) => {
-      const ownedPages = new OwnedPageRepository(tx);
-      const targetPage = ownedPages.getContextById(accountId, pageId);
+    try {
+      return this.db.transaction((tx) => {
+        const ownedPages = new OwnedPageRepository(tx);
+        const targetPage = ownedPages.getContextById(accountId, pageId);
 
-      if (!targetPage) {
-        return { kind: "not_found" };
-      }
+        if (!targetPage) {
+          return { kind: "not_found" };
+        }
 
-      const rejection = getFloorContentMutationRejection({
-        mutationKind: "page.activate",
-        floorState: targetPage.floorState,
-        floorSupersededAt: targetPage.floorSupersededAt,
-        pageKind: targetPage.pageKind,
-      });
+        const rejection = getFloorContentMutationRejection({
+          mutationKind: "page.activate",
+          floorState: targetPage.floorState,
+          floorSupersededAt: targetPage.floorSupersededAt,
+          pageKind: targetPage.pageKind,
+        });
 
-      if (rejection) {
-        return { kind: "rejected", rejection };
-      }
+        if (rejection) {
+          return { kind: "rejected", rejection };
+        }
 
-      if (targetPage.isActive) {
-        return { kind: "activated", page: toPageRecord(targetPage) };
-      }
+        if (targetPage.isActive) {
+          return { kind: "activated", page: toPageRecord(targetPage) };
+        }
 
-      const now = Date.now();
+        const now = Date.now();
 
-      tx
-        .update(messagePages)
-        .set({ isActive: false, updatedAt: now })
-        .where(
-          and(
-            eq(messagePages.floorId, targetPage.floorId),
-            eq(messagePages.pageNo, targetPage.pageNo),
-            eq(messagePages.isActive, true)
+        tx
+          .update(messagePages)
+          .set({ isActive: false, updatedAt: now })
+          .where(
+            and(
+              eq(messagePages.floorId, targetPage.floorId),
+              eq(messagePages.pageNo, targetPage.pageNo),
+              eq(messagePages.isActive, true)
+            )
           )
-        )
-        .run();
+          .run();
 
-      const updated = tx
-        .update(messagePages)
-        .set({ isActive: true, updatedAt: now })
-        .where(eq(messagePages.id, pageId))
-        .returning()
-        .all()[0];
+        const updated = tx
+          .update(messagePages)
+          .set({ isActive: true, updatedAt: now })
+          .where(eq(messagePages.id, pageId))
+          .returning()
+          .all()[0];
 
-      if (!updated) {
-        return { kind: "not_found" };
+        if (!updated) {
+          return { kind: "not_found" };
+        }
+
+        new ConversationShapePolicyService(tx).assertFloorMutationAllowed(targetPage.floorId);
+
+        return { kind: "activated", page: updated };
+      });
+    } catch (error) {
+      if (error instanceof ConversationShapePolicyError) {
+        return { kind: "shape_rejected", rejection: error.rejection };
       }
 
-      return { kind: "activated", page: updated };
-    });
+      throw error;
+    }
   }
 }
 

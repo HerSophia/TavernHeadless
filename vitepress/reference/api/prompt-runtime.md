@@ -56,7 +56,7 @@ Prompt Runtime 用来回答一个很具体的问题：**当前这次聊天，会
 - inspect 只读准备完整 prompt turn，不走 LLM、不创建楼层、不写 `prompt_snapshot`、不写 `prompt_runtime_explain_snapshot`、不提交副作用。
 - preview 只提供 `POST /sessions/:id/prompt-runtime/preview`，一次只处理一段文本。它的正式能力名是 `macro_text_preview`。
 - preview 不调用模型、不创建楼层、不写 `prompt_snapshot`、不提交副作用。它也不做完整提示词组装、预算分配和最终投递内容生成，`returns_assembly_truth` 固定为 `false`。
-- preview 返回的 `runtime_trace` 只包含三个子字段：`macro`、`source_selection`、`visibility`。完整的预算、投递和结构信息，请读取 `policy` 与 `source_map`。
+- preview 返回的 `runtime_trace` 只包含四个子字段：`macro`、`source_selection`、`visibility`、`history_normalization`。完整的预算、投递和结构信息，请读取 `policy` 与 `source_map`。
 - `GET /sessions/:id/prompt-runtime` 的 `branch_id` 只能查已经存在的分支；未创建的分支会返回 `404 branch_not_found`。
 - branch 策略也只对已经存在的分支生效；不能对还没创建的分支预先写入策略。
 - session 与 branch 的策略现在都支持持久化管理：`structure`、`delivery`、`budget`、`source_selection`、`visibility`。
@@ -1113,7 +1113,7 @@ POST /sessions/:id/prompt-runtime/preview
 - 不创建 floor
 - 不写 `prompt_snapshot`
 - 不提交副作用
-- 返回的 `runtime_trace` 当前只投影 `macro`、`source_selection`、`visibility`
+- 返回的 `runtime_trace` 当前只投影 `macro`、`source_selection`、`visibility`、`history_normalization`
 - 顶层 `memory` 继续提供完整的结构化记忆真相；preview 不会把它折叠进 `runtime_trace`
 - 宏诊断继续统一走 `runtime_trace.macro`
 
@@ -1624,6 +1624,7 @@ POST /sessions/:id/prompt-runtime/inspect
 - `prepared_turn.messages` 是已经 materialize 完成、可直接送入模型前的消息序列。
 - `prepared_turn.prompt_snapshot` 是这次 inspect 对应的 prompt snapshot 预览值，不会落库。
 - `prepared_turn.runtime_trace` 是这次 inspect 的完整 runtime trace 预览值，不会落库。
+- 顶层 `history_normalization` 与 `prepared_turn.runtime_trace.history_normalization` 记录的是同一份会话归一化诊断；前者便于直接读取，后者保留在完整 trace 里。
 - `prepared_turn.memory_summary` 仍然保留兼容摘要字符串；`prepared_turn.memory` 是新的结构化记忆真相。
 - `prepared_turn.runtime_trace.memory` 与 `prepared_turn.memory` 使用同一套结构；前者属于完整 runtime trace，后者是便于直接读取的 additive 字段。
 - `prepared_turn.session_state_writes` 只总结请求里带来的写入意图，不代表已经 stage 或提交。

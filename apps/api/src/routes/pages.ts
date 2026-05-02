@@ -10,6 +10,11 @@ import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
+import {
+  ConversationShapePolicyError,
+  ConversationShapePolicyService,
+  type ConversationShapeMutationRejection,
+} from "../services/conversation-shape-policy.js";
 import { OwnedFloorRepository, OwnedPageRepository } from "../services/owned-resource-repositories";
 import { deleteVariablesForPages } from "../services/variables/cleanup/variable-owned-resource-cleanup.js";
 import { PageActivationService } from "../services/page-activation-service";
@@ -323,6 +328,18 @@ function sendPageMutationRejection(reply: Parameters<typeof sendError>[0], rejec
   return sendError(reply, 409, rejection.code, rejection.message);
 }
 
+function sendConversationShapeRejection(
+  reply: Parameters<typeof sendError>[0],
+  rejection: ConversationShapeMutationRejection,
+) {
+  return sendError(reply, 409, rejection.code, rejection.message, {
+    reason: rejection.reason,
+    floor_id: rejection.floorId,
+    previous_floor_id: rejection.previousFloorId,
+    next_floor_id: rejection.nextFloorId,
+  });
+}
+
 const PAGE_CONSTRAINT_MAPPINGS: SqliteConstraintErrorMapping[] = [
   {
     constraintName: "message_page_floor_no_version_uq",
@@ -394,44 +411,51 @@ export async function registerMessagePageRoutes(
     }
 
     const now = Date.now();
-    const activeSlotRow = db
-      .select({ id: messagePages.id })
-      .from(messagePages)
-      .where(
-        and(
-          eq(messagePages.floorId, parsedBody.data.floor_id),
-          eq(messagePages.pageNo, parsedBody.data.page_no),
-          eq(messagePages.isActive, true)
-        )
-      )
-      .limit(1)
-      .all()[0];
-
-    let createdRows;
+    let created;
     try {
-      createdRows = await db
-        .insert(messagePages)
-        .values({
-          id: nanoid(),
-          floorId: parsedBody.data.floor_id,
-          pageNo: parsedBody.data.page_no,
-          pageKind: parsedBody.data.page_kind,
-          isActive: activeSlotRow === undefined,
-          version: parsedBody.data.version ?? 1,
-          checksum: parsedBody.data.checksum ?? null,
-          createdAt: now,
-          updatedAt: now
-        })
-        .returning();
+      created = db.transaction((tx) => {
+        const activeSlotRow = tx
+          .select({ id: messagePages.id })
+          .from(messagePages)
+          .where(
+            and(
+              eq(messagePages.floorId, parsedBody.data.floor_id),
+              eq(messagePages.pageNo, parsedBody.data.page_no),
+              eq(messagePages.isActive, true)
+            )
+          )
+          .limit(1)
+          .all()[0];
+
+        const row = tx
+          .insert(messagePages)
+          .values({
+            id: nanoid(),
+            floorId: parsedBody.data.floor_id,
+            pageNo: parsedBody.data.page_no,
+            pageKind: parsedBody.data.page_kind,
+            isActive: activeSlotRow === undefined,
+            version: parsedBody.data.version ?? 1,
+            checksum: parsedBody.data.checksum ?? null,
+            createdAt: now,
+            updatedAt: now
+          })
+          .returning()
+          .all()[0];
+
+        new ConversationShapePolicyService(tx).assertFloorMutationAllowed(parsedBody.data.floor_id);
+        return requireRow(row, "Failed to create message page");
+      });
     } catch (error) {
+      if (error instanceof ConversationShapePolicyError) {
+        return sendConversationShapeRejection(reply, error.rejection);
+      }
       const mapped = mapPageWriteError(error);
       if (mapped) {
         return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
       }
       throw error;
     }
-
-    const created = requireRow(createdRows[0], "Failed to create message page");
 
     return reply.code(201).send({ data: toPageResponse(created) });
   });
@@ -703,12 +727,20 @@ export async function registerMessagePageRoutes(
 
     let updated;
     try {
-      [updated] = await db
-        .update(messagePages)
-        .set(updates)
-        .where(eq(messagePages.id, existingPage.id))
-        .returning();
+      updated = db.transaction((tx) => {
+        const row = tx
+          .update(messagePages)
+          .set(updates)
+          .where(eq(messagePages.id, existingPage.id))
+          .returning()
+          .all()[0];
+        new ConversationShapePolicyService(tx).assertFloorMutationAllowed(existingPage.floorId);
+        return row;
+      });
     } catch (error) {
+      if (error instanceof ConversationShapePolicyError) {
+        return sendConversationShapeRejection(reply, error.rejection);
+      }
       const mapped = mapPageWriteError(error);
       if (mapped) {
         return sendError(reply, mapped.statusCode, mapped.code, mapped.message);
@@ -757,14 +789,24 @@ export async function registerMessagePageRoutes(
     });
     if (rejection) return sendPageMutationRejection(reply, rejection);
 
-    const deleted = await db.transaction((tx) => {
-      deleteVariablesForPages(tx, auth.accountId, [existingPage.id]);
-      return tx
-        .delete(messagePages)
-        .where(eq(messagePages.id, parsedParams.data.id))
-        .returning()
-        .all();
-    });
+    let deleted;
+    try {
+      deleted = await db.transaction((tx) => {
+        deleteVariablesForPages(tx, auth.accountId, [existingPage.id]);
+        const rows = tx
+          .delete(messagePages)
+          .where(eq(messagePages.id, parsedParams.data.id))
+          .returning()
+          .all();
+        new ConversationShapePolicyService(tx).assertFloorMutationAllowed(existingPage.floorId);
+        return rows;
+      });
+    } catch (error) {
+      if (error instanceof ConversationShapePolicyError) {
+        return sendConversationShapeRejection(reply, error.rejection);
+      }
+      throw error;
+    }
 
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -801,6 +843,9 @@ export async function registerMessagePageRoutes(
     }
     if (activation.kind === "rejected") {
       return sendPageMutationRejection(reply, activation.rejection);
+    }
+    if (activation.kind === "shape_rejected") {
+      return sendConversationShapeRejection(reply, activation.rejection);
     }
 
     return reply.send({ data: toPageResponse(activation.page) });
@@ -851,8 +896,10 @@ export async function registerMessagePageRoutes(
     let deleted = 0;
     let notFound = 0;
 
-    db.transaction((tx) => {
+    try {
+      db.transaction((tx) => {
       const deletablePageIds = ids.filter((id) => ownedPageIds.has(id));
+      const affectedFloorIds = Array.from(new Set(ownedPageContexts.map((page) => page.floorId)));
       deleteVariablesForPages(tx, auth.accountId, deletablePageIds);
 
       ids.forEach((id, index) => {
@@ -876,7 +923,17 @@ export async function registerMessagePageRoutes(
           notFound++;
         }
       });
+
+      for (const affectedFloorId of affectedFloorIds) {
+        new ConversationShapePolicyService(tx).assertFloorMutationAllowed(affectedFloorId);
+      }
     });
+    } catch (error) {
+      if (error instanceof ConversationShapePolicyError) {
+        return sendConversationShapeRejection(reply, error.rejection);
+      }
+      throw error;
+    }
 
     return reply.send({
       data: { results, meta: { total: ids.length, deleted, not_found: notFound } },

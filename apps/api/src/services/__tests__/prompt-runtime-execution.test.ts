@@ -130,6 +130,14 @@ describe("prompt-runtime-execution", () => {
         sourceMap: {},
         diagnostics: [],
         trimReasons: [],
+        historyNormalization: {
+          rawEntryCount: 3,
+          effectiveTurnCount: 2,
+          selectedTurnCount: 2,
+          trailingUserSourceFloorIds: ["floor-2"],
+          mergedUserGroups: [],
+          violations: [],
+        },
         excludedSources: [{
           source: "history",
           reason: "visibility_filtered",
@@ -172,6 +180,14 @@ describe("prompt-runtime-execution", () => {
         hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
         filteredFloorNos: [1, 2],
       },
+      historyNormalization: {
+        rawEntryCount: 3,
+        effectiveTurnCount: 2,
+        selectedTurnCount: 2,
+        trailingUserSourceFloorIds: ["floor-2"],
+        mergedUserGroups: [],
+        violations: [],
+      },
     });
   });
 
@@ -189,6 +205,14 @@ describe("prompt-runtime-execution", () => {
           source: "history",
           reason: "visibility_filtered",
         }],
+      },
+      historyNormalization: {
+        rawEntryCount: 2,
+        effectiveTurnCount: 2,
+        selectedTurnCount: 2,
+        trailingUserSourceFloorIds: ["floor-2"],
+        mergedUserGroups: [],
+        violations: [],
       },
       visibility: {
         filteredFloorNos: [1, 2],
@@ -225,6 +249,14 @@ describe("prompt-runtime-execution", () => {
           source: "history",
           reason: "visibility_filtered",
         }],
+      },
+      historyNormalization: {
+        rawEntryCount: 2,
+        effectiveTurnCount: 2,
+        selectedTurnCount: 2,
+        trailingUserSourceFloorIds: ["floor-2"],
+        mergedUserGroups: [],
+        violations: [],
       },
       visibility: {
         filteredFloorNos: [1, 2],

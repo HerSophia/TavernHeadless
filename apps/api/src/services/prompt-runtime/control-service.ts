@@ -13,6 +13,7 @@ import {
 } from "../memory/observe/memory-explain-projector.js";
 import { parseMemoryProposalBatchResultJson } from "../memory/proposals/memory-proposal-job-definitions.js";
 import { MEMORY_RUNTIME_JOB_TYPES, MEMORY_RUNTIME_SCOPE_TYPE } from "../memory-runtime-job-definitions.js";
+import type { PromptRuntimeHistoryNormalizationSummary } from "../chat/conversation-history-normalizer.js";
 import type {
   PromptBudgetPolicy,
   PromptDeliveryPolicy,
@@ -362,6 +363,7 @@ export interface PromptRuntimeInspectionResult {
   sourceMap: PromptRuntimeSourceMap;
   diagnostics: PromptRuntimeDiagnostic[];
   trimReasons: PromptTrimReason[];
+  historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   excludedSources: PromptSourceExclusionReason[];
   sectionStats: PromptRuntimeSectionStat[];
   governance?: PromptRuntimeGovernanceView;
@@ -429,10 +431,11 @@ export interface PromptRuntimeInspectionSnapshotPayload {
   diagnostics: PromptRuntimeDiagnostic[];
   trimReasons: PromptTrimReason[];
   excludedSources: PromptSourceExclusionReason[];
+  historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   sectionStats: PromptRuntimeSectionStat[];
   governance?: PromptRuntimeGovernanceView | null;
   memory?: PromptRuntimeTrace["memory"] | null;
-  snapshotVersion: 1 | 2 | 3;
+  snapshotVersion: 1 | 2 | 3 | 4;
 }
 
 export function buildPromptRuntimeInspectionSnapshotPayload(
@@ -449,10 +452,11 @@ export function buildPromptRuntimeInspectionSnapshotPayload(
     diagnostics: inspection.diagnostics,
     trimReasons: inspection.trimReasons,
     excludedSources: inspection.excludedSources,
+    historyNormalization: inspection.historyNormalization,
     sectionStats: inspection.sectionStats,
     governance: inspection.governance ?? null,
     memory: buildCommittedExplainMemoryTrace(inspection.memory),
-    snapshotVersion: 3,
+    snapshotVersion: 4,
   };
 }
 
@@ -607,7 +611,7 @@ export interface PromptRuntimeCapabilities {
       createsFloor: false;
       writesPromptSnapshot: false;
       commitsSideEffects: false;
-      traceSubset: readonly ("macro" | "source_selection" | "visibility")[];
+      traceSubset: readonly ("macro" | "source_selection" | "visibility" | "history_normalization")[];
     };
     explain: {
       returnsGovernance: true;
@@ -1116,7 +1120,7 @@ export class PromptRuntimeControlService {
           createsFloor: false,
           writesPromptSnapshot: false,
           commitsSideEffects: false,
-          traceSubset: ["macro", "source_selection", "visibility"],
+          traceSubset: ["macro", "source_selection", "visibility", "history_normalization"],
         },
         explain: {
           enabled: true,
@@ -2116,6 +2120,7 @@ function mapPromptRuntimeExplainSnapshotRow(
     resolvedPolicy: parseJsonObjectField<ResolvedPromptRuntimePolicy>(row.resolvedPolicyJson, buildResolvedPromptRuntimePolicy()),
     sourceMap: sourceMapEnvelope.sourceMap,
     governance: sourceMapEnvelope.governance,
+    historyNormalization: sourceMapEnvelope.historyNormalization ?? undefined,
     memory: parsePromptRuntimeMemoryTraceField(row.memoryJson),
     diagnostics: parseJsonArrayField<PromptRuntimeDiagnostic>(row.diagnosticsJson),
     trimReasons: parseJsonArrayField<PromptTrimReason>(row.trimReasonsJson),

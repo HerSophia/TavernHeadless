@@ -1180,7 +1180,7 @@ describe("ChatService", () => {
     expect(inspectionSnapshotRow).toBeDefined();
     expect(inspectionSnapshotRow!.sessionId).toBe(sessionId);
     expect(inspectionSnapshotRow!.floorId).toBe(result.floorId);
-    expect(inspectionSnapshotRow!.snapshotVersion).toBe(3);
+    expect(inspectionSnapshotRow!.snapshotVersion).toBe(4);
   });
 
   it("should promote page variables to floor inside the commit boundary after respond", async () => {

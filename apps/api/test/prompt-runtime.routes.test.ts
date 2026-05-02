@@ -1042,6 +1042,14 @@ describe("prompt runtime routes", () => {
           history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" },
         },
         diagnostics: [{ code: "unmaterialized_branch_inspect", message: "branch pending", severity: "info", source: "branch", phase: "assemble" }],
+        historyNormalization: {
+          rawEntryCount: 3,
+          effectiveTurnCount: 2,
+          selectedTurnCount: 2,
+          trailingUserSourceFloorIds: ["floor-11", "floor-12"],
+          mergedUserGroups: [],
+          violations: [],
+        },
         trimReasons: [{ group: "history", reason: "group_limit_exceeded", prunedTokenCount: 32 }],
         excludedSources: [{ source: "history", reason: "visibility_filtered", detail: "Visibility filtered 2 floor(s) from the available history window." }],
         sectionStats: [{ sectionName: "history", tokenCount: 256 }],
@@ -1115,6 +1123,14 @@ describe("prompt runtime routes", () => {
       history_source_mode: "source_floor_branch",
     });
     expect(body.data.source_map).toEqual({ delivery: { no_assistant: "request_override" }, history: { source_branch_id: "fork-branch", source_mode: "source_floor_branch" } });
+    expect(body.data.history_normalization).toEqual({
+      raw_entry_count: 3,
+      effective_turn_count: 2,
+      selected_turn_count: 2,
+      trailing_user_source_floor_ids: ["floor-11", "floor-12"],
+      merged_user_groups: [],
+      violations: [],
+    });
     expect(body.data.prepared_turn.messages).toEqual([{ role: "system", content: "System prompt" }, { role: "user", content: "Hello there" }]);
     expect(body.data.prepared_turn.session_state_writes).toEqual({ total: 1, writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }] });
     expect(body.data.governance.entries).toEqual([{ source_kind: "memory", declared_level: "soft_required", registered: true, effective_retention: "soft_required", pinned: false, prunable: false, budget_groups: ["memory"], section_names: ["memory"], token_count: 64, retained_token_count: 64, pruned_token_count: 0 }]);
@@ -1473,7 +1489,7 @@ describe("prompt runtime routes", () => {
             createsFloor: false,
             writesPromptSnapshot: false,
             commitsSideEffects: false,
-            traceSubset: ["macro", "source_selection", "visibility"],
+            traceSubset: ["macro", "source_selection", "visibility", "history_normalization"],
           },
           explain: {
             enabled: true,
@@ -1614,7 +1630,7 @@ describe("prompt runtime routes", () => {
             creates_floor: false,
             writes_prompt_snapshot: false,
             commits_side_effects: false,
-            trace_subset: ["macro", "source_selection", "visibility"],
+            trace_subset: ["macro", "source_selection", "visibility", "history_normalization"],
           },
           explain: {
             enabled: true,

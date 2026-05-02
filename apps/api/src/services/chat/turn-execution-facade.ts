@@ -4,6 +4,7 @@ import type { PromptRuntimeInspectionResult } from "../prompt-runtime-control-se
 import type { PromptRuntimeExecutionResult } from "../prompt-runtime-execution.js";
 import type { StMacroStagedMutation } from "../st-macros/index.js";
 import type { TurnCommitService } from "../turn-commit-service.js";
+import type { FloorConversationInputSnapshot } from "./shared/metadata.js";
 import type { ResolvedTurnModels, TurnSessionStateWriteRequest } from "./contracts.js";
 
 export interface ExecuteTurnAndCommitArgs {
@@ -23,6 +24,7 @@ export interface ExecuteTurnAndCommitArgs {
   runType: FloorRunType;
   memoryConsolidationRequested: boolean;
   commitFailureMessage: string;
+  conversationInputSnapshot?: FloorConversationInputSnapshot;
   supersedeSourceFloor?: { floorId: string };
 }
 

@@ -103,6 +103,7 @@ export class PreparedTurnInspectionService {
       sourceMap: prepared.inspection.sourceMap,
       diagnostics: prepared.inspection.diagnostics,
       trimReasons: prepared.inspection.trimReasons,
+      historyNormalization: prepared.historyNormalization,
       excludedSources: prepared.inspection.excludedSources,
       sectionStats: prepared.inspection.sectionStats,
       limitations: [...prepared.inspection.limitations],
