@@ -1,6 +1,6 @@
 // ── LLM 类型定义 ──────────────────────────────────────
 
-import type { LanguageModel } from 'ai';
+import type { LanguageModel, Schema } from 'ai';
 
 // ── Provider & Model ──────────────────────────────────
 
@@ -118,7 +118,7 @@ export interface LLMRequest {
 /** Vercel AI SDK 兼容的工具定义 */
 export interface LLMToolDefinition {
   description: string;
-  parameters: ToolParameterSchema;
+  inputSchema: Schema<unknown>;
   execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
 

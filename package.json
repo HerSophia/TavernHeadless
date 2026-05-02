@@ -7,7 +7,7 @@
   "type": "module",
   "packageManager": "pnpm@9.15.4",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=22.22.2",
     "pnpm": ">=9.0.0"
   },
   "workspaces": [
@@ -17,9 +17,13 @@
   "scripts": {
     "dev": "node scripts/dev-select.mjs",
     "dev:api": "pnpm --filter @tavern/api dev",
+    "dev:api:local": "node scripts/run-with-local-node.mjs pnpm --filter @tavern/api dev",
     "dev:web": "pnpm --filter @tavern/web dev",
     "dev:both": "concurrently \"pnpm --filter @tavern/api dev\" \"pnpm --filter @tavern/web dev\"",
+    "dev:local": "node scripts/run-with-local-node.mjs pnpm dev",
     "dev:select": "node scripts/dev-select.mjs",
+    "node:local": "node scripts/run-with-local-node.mjs",
+    "rebuild:native": "node scripts/run-with-local-node.mjs pnpm rebuild better-sqlite3",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest",
@@ -46,19 +50,19 @@
     "docs:preview": "pnpm --filter @tavern/docs preview"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^1.0.17",
-    "@fastify/cors": "^10.0.1",
-    "@fastify/sensible": "^6.0.3",
-    "ai": "^4.1.18",
-    "better-sqlite3": "^11.7.0",
-    "drizzle-orm": "^0.36.4",
+    "@ai-sdk/openai": "3.0.57",
+    "@fastify/cors": "11.2.0",
+    "@fastify/sensible": "^6.0.4",
+    "ai": "6.0.173",
+    "better-sqlite3": "12.8.0",
+    "drizzle-orm": "0.45.2",
     "emittery": "^1.1.0",
-    "fastify": "^5.2.1",
+    "fastify": "^5.8.5",
     "lru-cache": "^11.0.2",
     "nanoid": "^5.0.9",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",
-    "zod": "^3.24.1"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.6.1",
@@ -70,7 +74,7 @@
     "@vitest/coverage-v8": "^2.1.8",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
-    "drizzle-kit": "^0.30.1",
+    "drizzle-kit": "0.31.10",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
@@ -78,6 +82,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^15.2.11",
     "markdownlint-cli2": "^0.16.0",
+    "msw": "^2",
     "openapi-typescript": "^7.13.0",
     "postcss": "^8.4.49",
     "prettier": "^3.4.2",

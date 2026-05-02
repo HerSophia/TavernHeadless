@@ -1,3 +1,4 @@
+import { jsonSchema } from 'ai';
 import { describe, it, expect, vi } from 'vitest';
 import { GenerationPipeline, GenerationPipelineError } from '../generation-pipeline.js';
 import type { LLMPort, LLMRequest, LLMResponse, LLMToolCall, StreamCallbacks } from '../../llm/types.js';
@@ -303,7 +304,7 @@ describe('GenerationPipeline', () => {
 
       const fakeTool = {
         description: 'test tool',
-        parameters: { type: 'object' as const, properties: {} },
+        inputSchema: jsonSchema({ type: 'object', properties: {} }),
         execute: async () => 'result',
       };
 
