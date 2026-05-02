@@ -84,7 +84,7 @@ export class GenerationPipeline {
     const isStream = params.stream !== false; // 默认流式
     let rawText: string;
     let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-    let finishReason = 'unknown';
+    let finishReason = 'other';
     let toolCalls: GenerationOutput['toolCalls'];
 
     try {

@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { LLMService, LLMServiceError, LLMAbortError, LLMTimeoutError } from '../llm-service.js';
 import { ProviderRegistry } from '../provider-registry.js';
 import type { LLMRequest, StreamCallbacks, ModelConfig, ProviderFactory } from '../types.js';
-import { MockLanguageModelV2 } from 'ai/test';
+import { MockLanguageModelV3 } from 'ai/test';
 
 // ── 测试 Helpers ──────────────────────────────────────
 
@@ -29,14 +29,14 @@ afterEach(() => {
 describe('LLMService', () => {
   describe('generate (non-streaming)', () => {
     it('returns text and usage', async () => {
-      const model = new MockLanguageModelV2({
+      const model = new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'Hello World' }],
-          finishReason: 'stop',
+          finishReason: { unified: 'stop', raw: undefined },
           usage: {
-            inputTokens: 10,
-            outputTokens: 5,
-            totalTokens: 15,
+            inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 5, text: 5, reasoning: undefined },
+            raw: { totalTokens: 15 },
           },
           warnings: [],
         }),
@@ -60,16 +60,16 @@ describe('LLMService', () => {
     it('maps generation params correctly', async () => {
       let capturedSettings: any;
 
-      const model = new MockLanguageModelV2({
+      const model = new MockLanguageModelV3({
         doGenerate: async (options) => {
           capturedSettings = options;
           return {
             content: [{ type: 'text', text: 'ok' }],
-            finishReason: 'stop',
+            finishReason: { unified: 'stop', raw: undefined },
             usage: {
-              inputTokens: 1,
-              outputTokens: 1,
-              totalTokens: 2,
+              inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+              raw: { totalTokens: 2 },
             },
             warnings: [],
           };
@@ -104,7 +104,7 @@ describe('LLMService', () => {
     });
 
     it('wraps errors as LLMServiceError', async () => {
-      const model = new MockLanguageModelV2({
+      const model = new MockLanguageModelV3({
         doGenerate: async () => {
           throw new Error('API Error');
         },
@@ -125,7 +125,7 @@ describe('LLMService', () => {
       vi.useFakeTimers();
 
       let capturedAbortSignal: AbortSignal | undefined;
-      const model = new MockLanguageModelV2({
+      const model = new MockLanguageModelV3({
         doGenerate: async (options: any) => {
           capturedAbortSignal = options.abortSignal as AbortSignal | undefined;
 
@@ -157,7 +157,7 @@ describe('LLMService', () => {
     it('maps AbortError without timeout cause to LLMAbortError', async () => {
       const abortController = new AbortController();
       let capturedAbortSignal: AbortSignal | undefined;
-      const model = new MockLanguageModelV2({
+      const model = new MockLanguageModelV3({
         doGenerate: async (options: any) => {
           capturedAbortSignal = options.abortSignal as AbortSignal | undefined;
 
@@ -196,7 +196,7 @@ describe('LLMService', () => {
 
   describe('stream', () => {
     it('streams chunks and returns full response', async () => {
-      const model = new MockLanguageModelV2({
+      const model = new MockLanguageModelV3({
         doStream: async () => ({
           stream: new ReadableStream({
             start(controller) {
@@ -248,7 +248,7 @@ describe('LLMService', () => {
     });
 
     it('calls onError when stream fails', async () => {
-      const model = new MockLanguageModelV2({
+      const model = new MockLanguageModelV3({
         doStream: async () => ({
           stream: new ReadableStream({
             start(controller) {
@@ -278,27 +278,27 @@ describe('LLMService', () => {
 
   describe('model override', () => {
     it('uses request.model over defaultModel', async () => {
-      const model1 = new MockLanguageModelV2({
+      const model1 = new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'from model1' }],
-          finishReason: 'stop',
+          finishReason: { unified: 'stop', raw: undefined },
           usage: {
-            inputTokens: 1,
-            outputTokens: 1,
-            totalTokens: 2,
+            inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 1, text: 1, reasoning: undefined },
+            raw: { totalTokens: 2 },
           },
           warnings: [],
         }),
       });
 
-      const model2 = new MockLanguageModelV2({
+      const model2 = new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'from model2' }],
-          finishReason: 'stop',
+          finishReason: { unified: 'stop', raw: undefined },
           usage: {
-            inputTokens: 1,
-            outputTokens: 1,
-            totalTokens: 2,
+            inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 1, text: 1, reasoning: undefined },
+            raw: { totalTokens: 2 },
           },
           warnings: [],
         }),
@@ -329,27 +329,27 @@ describe('LLMService', () => {
     });
 
     it('uses request.model.languageModel without consulting the registry', async () => {
-      const frozenHandle = new MockLanguageModelV2({
+      const frozenHandle = new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'from frozen handle' }],
-          finishReason: 'stop',
+          finishReason: { unified: 'stop', raw: undefined },
           usage: {
-            inputTokens: 2,
-            outputTokens: 1,
-            totalTokens: 3,
+            inputTokens: { total: 2, noCache: 2, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 1, text: 1, reasoning: undefined },
+            raw: { totalTokens: 3 },
           },
           warnings: [],
         }),
       });
 
-      const registry = createMockRegistry(new MockLanguageModelV2({
+      const registry = createMockRegistry(new MockLanguageModelV3({
         doGenerate: async () => ({
           content: [{ type: 'text', text: 'from registry' }],
-          finishReason: 'stop',
+          finishReason: { unified: 'stop', raw: undefined },
           usage: {
-            inputTokens: 1,
-            outputTokens: 1,
-            totalTokens: 2,
+            inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 1, text: 1, reasoning: undefined },
+            raw: { totalTokens: 2 },
           },
           warnings: [],
         }),
