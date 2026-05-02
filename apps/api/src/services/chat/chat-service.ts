@@ -525,7 +525,16 @@ export class ChatService {
           .update(floors)
           .set({
             supersededAt: now,
-            supersededByFloorId: newFloorId,
+            // 这里只需要先把源楼层移出 live 唯一索引窗口，
+            // 让同 floor_no / branch_id 的新 draft floor 能落库。
+            //
+            // 一些历史数据库文件给 `floor.superseded_by_floor_id`
+            // 保留了自引用外键；如果这里提前写入尚未插入的新 floor id，
+            // 会直接触发 SQLITE_CONSTRAINT_FOREIGNKEY。
+            //
+            // 因此占位阶段只写 `superseded_at`，真正的 replacement floor id
+            // 留到 commit 时再补齐。
+            supersededByFloorId: null,
             updatedAt: now,
           })
           .where(eq(floors.id, targetFloor.id))

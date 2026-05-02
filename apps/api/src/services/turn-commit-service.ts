@@ -762,11 +762,15 @@ export class TurnCommitService {
             );
           }
 
-          // 允许源楼层已被同一目标楼层临时 supersede（例如 regenerate() 为绕过
-          // `floor_session_no_branch_live_uq` 部分唯一索引而先行写入的占位 supersede）。
-          // 但若被其他楼层 supersede，则视为真实冲突。
+          // 允许源楼层处于 regenerate() 的临时占位 supersede 状态。
+          // 该占位阶段只会先写 superseded_at，用来绕过
+          // `floor_session_no_branch_live_uq` 部分唯一索引；
+          // 历史数据库里若 `superseded_by_floor_id` 仍带自引用外键，
+          // 这里不能在 draft floor 创建前提前写入新 floor id。
+          // 但若它已经被其他 replacement floor 正式 supersede，仍视为真实冲突。
           if (
             sourceRow.supersededAt !== null &&
+            sourceRow.supersededByFloorId !== null &&
             sourceRow.supersededByFloorId !== input.floorId
           ) {
             throw new SupersedeSourceFloorError(
