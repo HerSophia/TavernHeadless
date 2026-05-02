@@ -2,7 +2,7 @@
 
 本文用于记录 TavernHeadless 当前的依赖升级顺序、目标版本、风险点和验证要求。
 
-本文基于 2026-04-07 的仓库状态和上游版本信息整理。上游最新版本会继续变化。实际执行前，应再确认一次 npm registry 和相关发布说明。
+本文基于 2026-05-01 的仓库状态和上游版本信息整理。上游最新版本会继续变化。实际执行前，应再确认一次 npm registry 和相关发布说明。
 
 ---
 
@@ -14,24 +14,26 @@
 - CI 工作流当前固定使用 Node 20
 - 后端数据库默认启用 WAL
 - `better-sqlite3` 当前版本为 `11.7.0`
+- `packages/core` 还直接依赖 `@ai-sdk/anthropic`，当前版本为 `1.0.0`
 
 关键依赖的当前版本、已确认的最新版本和处理建议如下：
 
 | 依赖 | 当前版本 | 已确认的最新版本 | 建议 |
 | ---- | ---- | ---- | ---- |
-| Node.js | `>=20.0.0` | 建议目标为 22 LTS 或 24 LTS | 先处理 |
-| `better-sqlite3` | `11.7.0` | `12.8.0` | 第一批处理 |
-| `fastify` | `5.2.1` | `5.8.4` | 第一批处理 |
+| Node.js | `>=20.0.0` | `22.22.2 LTS` / `24.15.0 LTS` | 先处理 |
+| `better-sqlite3` | `11.7.0` | `12.9.0` | 第一批处理；首个 PR 先锁 `12.8.0` |
+| `fastify` | `5.2.1` | `5.8.5` | 第一批处理 |
 | `@fastify/swagger` | `9.5.2` | `9.7.0` | 第一批处理 |
-| `@fastify/swagger-ui` | `5.2.3` | `5.2.5` | 第一批处理 |
+| `@fastify/swagger-ui` | `5.2.3` | `5.2.6` | 第一批处理 |
 | `@fastify/sensible` | `6.0.3` | `6.0.4` | 第一批处理 |
 | `@fastify/cors` | `10.0.1` | `11.2.0` | 单独一批处理 |
 | `@fastify/jwt` | `10.0.0` | `10.0.0` | 暂不处理 |
 | `@fastify/websocket` | `11.2.0` | `11.2.0` | 暂不处理 |
-| `zod` | `3.24.1` | `4.3.6` | 先升到更高的稳定 3.x |
+| `zod` | `3.24.1` | `4.4.1` | 先升到更高的稳定 3.x |
 | `@modelcontextprotocol/sdk` | `1.27.1` | `1.29.0` | 在 Zod 3.x 升级后处理 |
-| `ai` | `4.1.18` | `6.0.149` | 单独一批处理 |
-| `@ai-sdk/openai` | `1.0.17` | `3.0.51` | 单独一批处理 |
+| `ai` | `4.1.18` | `6.0.173` | 单独一批处理 |
+| `@ai-sdk/openai` | `1.0.17` | `3.0.57` | 单独一批处理 |
+| `@ai-sdk/anthropic` | `1.0.0` | `3.0.74` | 如继续保留 provider，需与 AI SDK 同批处理 |
 | `drizzle-orm` | `0.36.4` | `0.45.2` | 最后处理 |
 | `drizzle-kit` | `0.30.1` | `0.31.10` | 与 Drizzle 一起处理 |
 
@@ -40,6 +42,8 @@
 - `zod` 当前稳定 3.x 的已确认目标点可以使用 `3.25.76`
 - `ai` 如果需要分两步走，已确认的稳定 5.x 目标点可以使用 `5.0.169`
 - `@ai-sdk/openai` 如果需要分两步走，已确认的稳定 2.x 目标点可以使用 `2.0.102`
+- `better-sqlite3` 的当前最新稳定版虽然已经是 `12.9.0`，但首个 PR 仍建议先锁 `12.8.0`
+- `@ai-sdk/openai-compatible` 的已确认最新版本为 `2.0.44`；仓库当前未直接依赖它，但批次 4 需要明确评估是否引入
 
 ---
 
@@ -54,6 +58,8 @@
 5. 每一批升级都要完成完整验证，再进入下一批。
 6. 数据库文件要先备份，尤其是 `*.db`、`*.db-wal`、`*.db-shm`。
 7. 不使用 `better-sqlite3@12.7.0` 或 `12.7.1`。
+8. AI SDK 升级时，`ai` 与直接依赖的 `@ai-sdk/*` provider 包要保持同代，不混用 1.x / 2.x / 3.x。
+9. 如果继续保留 `openai-compatible` provider 类型，批次 4 必须显式验证它的兼容路径。
 
 ---
 
@@ -63,7 +69,7 @@
 
 ### 3.1 推荐目标线
 
-- Node.js 22 LTS
+- Node.js 22.22.2 LTS
 - `better-sqlite3` 12.8.0
 
 这条线的优点是：
@@ -74,7 +80,7 @@
 
 ### 3.2 可选目标线
 
-- Node.js 24 LTS
+- Node.js 24.15.0 LTS
 - `better-sqlite3` 12.8.0
 
 这条线可以使用，但要额外补做一轮真实外部服务联调。重点是：
@@ -87,8 +93,10 @@
 
 - 不建议在 Node 24 上继续停留在 `better-sqlite3@11.7.0`
 - `better-sqlite3@12.8.0` 内含 SQLite 3.51.3
+- `better-sqlite3@12.9.0` 是当前最新稳定版，内含 SQLite 3.53.0
 - SQLite 3.51.3 修复了 WAL-reset 相关问题
 - 当前项目默认开启 WAL，因此升级到 `12.8.0` 对本项目是合适的
+- 如果首个 PR 希望减少变量，仍建议先锁 `12.8.0`，等批次 1 稳定后再判断是否跟进 `12.9.0`
 
 ### 3.4 与事务相关的结论
 
@@ -133,11 +141,11 @@ pnpm docs:build
 
 | 依赖 | 当前版本 | 目标版本 |
 | ---- | ---- | ---- |
-| Node.js | `>=20.0.0` | 22 LTS 或 24 LTS |
+| Node.js | `>=20.0.0` | 22.22.2 LTS 或 24.15.0 LTS |
 | `better-sqlite3` | `11.7.0` | `12.8.0` |
-| `fastify` | `5.2.1` | `5.8.4` |
+| `fastify` | `5.2.1` | `5.8.5` |
 | `@fastify/swagger` | `9.5.2` | `9.7.0` |
-| `@fastify/swagger-ui` | `5.2.3` | `5.2.5` |
+| `@fastify/swagger-ui` | `5.2.3` | `5.2.6` |
 | `@fastify/sensible` | `6.0.3` | `6.0.4` |
 
 ### 本批次先不要动的依赖
@@ -147,6 +155,7 @@ pnpm docs:build
 - `@modelcontextprotocol/sdk`
 - `ai`
 - `@ai-sdk/openai`
+- `@ai-sdk/anthropic`
 - `drizzle-orm`
 - `drizzle-kit`
 
@@ -228,6 +237,8 @@ pnpm docs:build
 
 直接进入 Zod 4，会扩大本批次的范围。
 
+另外，AI SDK 5 / 6 的官方迁移文档更推荐 `zod >= 4.1.8`。当前这里仍先停在 `3.25.76`，不是因为 `3.25.76` 不可用，而是为了先满足 peer dependency，再把 Zod 4 的语义变化留到后续独立批次。
+
 ### 验证要求
 
 ```bash
@@ -263,7 +274,7 @@ pnpm --filter @tavern/api smoke
 
 当前直接使用点较集中，主要在：
 
-- `apps/api/src/mcp/mcp-connection.ts`
+- `apps/api/src/services/tooling/mcp/mcp-connection.ts`
 
 ### 验证要求
 
@@ -291,8 +302,9 @@ pnpm --filter @tavern/api smoke
 
 | 依赖 | 当前版本 | 直接目标版本 |
 | ---- | ---- | ---- |
-| `ai` | `4.1.18` | `6.0.149` |
-| `@ai-sdk/openai` | `1.0.17` | `3.0.51` |
+| `ai` | `4.1.18` | `6.0.173` |
+| `@ai-sdk/openai` | `1.0.17` | `3.0.57` |
+| `@ai-sdk/anthropic` | `1.0.0` | `3.0.74` |
 
 ### 可选的两步路径
 
@@ -300,13 +312,16 @@ pnpm --filter @tavern/api smoke
 
 | 依赖 | 当前版本 | 中间版本 | 最终版本 |
 | ---- | ---- | ---- | ---- |
-| `ai` | `4.1.18` | `5.0.169` | `6.0.149` |
-| `@ai-sdk/openai` | `1.0.17` | `2.0.102` | `3.0.51` |
+| `ai` | `4.1.18` | `5.0.169` | `6.0.173` |
+| `@ai-sdk/openai` | `1.0.17` | `2.0.102` | `3.0.57` |
+
+如果继续保留 `anthropic` provider 类型，`@ai-sdk/anthropic` 也要在同一批次内同步升级，不要把 `1.x` 留在仓库里。
 
 ### 建议
 
-- 如果希望减少总次数，可以直接升到最新稳定版，但必须单独一个 PR
+- 如果希望减少总次数，可以直接升到最新稳定版，但必须单独一个 PR，并同步处理 `@ai-sdk/anthropic`
 - 如果希望更稳，可以先做 `4.x -> 5.x`，验证通过后再做 `5.x -> 6.x`
+- 如果继续保留 `openai-compatible` provider 类型，这一批还要明确评估是否改为显式引入 `@ai-sdk/openai-compatible`
 
 ### 代码影响点
 
@@ -314,6 +329,7 @@ pnpm --filter @tavern/api smoke
 
 - `packages/core/src/llm/provider-registry.ts`
 - `packages/core/src/llm/llm-service.ts`
+- `packages/core/src/tools/tool-executor.ts`
 
 主要使用的能力包括：
 
@@ -326,6 +342,14 @@ pnpm --filter @tavern/api smoke
 - `finishReason`
 - `steps`
 - `toolCalls`
+- 工具 schema 适配层
+
+### 本批次要重点确认的兼容点
+
+- `LLMService` 当前把 `maxOutputTokens` 映射成 `maxTokens`，升级时要按新版参数重新核对
+- `ToolExecutor.buildLLMTools()` 当前输出 `{ description, parameters, execute }`，升级时要核对新版是否要求 `inputSchema`
+- `LLMService` 当前流式步骤提取依赖 `result._stepsResult` 这类私有字段，跨主版本时必须重点回归
+- 当前 `openai-compatible` provider 仍通过 `createOpenAI({ compatibility: 'compatible' })` 处理，升级时要明确是否改为 `@ai-sdk/openai-compatible`
 
 ### 验证要求
 
@@ -347,7 +371,11 @@ pnpm test:ci
 6. 多 provider 初始化
 7. OpenAI compatible provider 调用
 
-如果项目有真实 provider 回归脚本，应一并执行。
+如果有可用的真实 provider 凭据，还应执行仓库现有脚本：
+
+```bash
+pnpm --filter @tavern/api real-provider:regression -- --operator <name>
+```
 
 ---
 
@@ -479,11 +507,11 @@ pnpm docs:build
 
 | 依赖 | 目标版本 |
 | ---- | ---- |
-| Node.js | 22 LTS |
+| Node.js | 22.22.2 LTS |
 | `better-sqlite3` | `12.8.0` |
-| `fastify` | `5.8.4` |
+| `fastify` | `5.8.5` |
 | `@fastify/swagger` | `9.7.0` |
-| `@fastify/swagger-ui` | `5.2.5` |
+| `@fastify/swagger-ui` | `5.2.6` |
 | `@fastify/sensible` | `6.0.4` |
 
 首个 PR 中建议保持不变的依赖：
@@ -493,6 +521,7 @@ pnpm docs:build
 - `@modelcontextprotocol/sdk`
 - `ai`
 - `@ai-sdk/openai`
+- `@ai-sdk/anthropic`
 - `drizzle-orm`
 - `drizzle-kit`
 

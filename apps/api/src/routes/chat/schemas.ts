@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { buildZodObjectSchema } from "../schemas/json-schema-zod.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "../schemas/common.js";
+import { SESSION_STATE_NAMESPACE_PATTERN } from "../../session-state/session-state-types.js";
 import {
   generationParamsJsonSchema,
   sessionIdParamsJsonSchema,
@@ -172,28 +173,25 @@ export const promptSourceSelectionBodySchema = buildZodObjectSchema<PromptSource
 export const dryRunVisibilityBodySchema = buildZodObjectSchema<DryRunVisibilityBody>(dryRunVisibilityJsonSchema);
 export const liveDebugOptionsBodySchema = buildZodObjectSchema<LiveDebugOptionsBody>(liveDebugOptionsJsonSchema);
 
-export const turnSessionStateWriteBodySchema: z.ZodType<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody> = z.object({
-  namespace: z.string().min(1),
-  slot: z.string().min(1),
-  value: z.unknown().optional(),
-  delete: z.literal(true).optional(),
-}).strict().superRefine((value, context) => {
-  const hasValue = Object.prototype.hasOwnProperty.call(value, "value");
-  const isDelete = value.delete === true;
-  if (!hasValue && !isDelete) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Either 'value' or 'delete: true' is required",
-    });
-    return;
-  }
-  if (hasValue && isDelete) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "'value' and 'delete: true' cannot be sent together",
-    });
-  }
-});
+const turnSessionStateWriteBaseSchema = {
+  namespace: z.string().min(1).max(128).regex(SESSION_STATE_NAMESPACE_PATTERN),
+  slot: z.string().min(1).max(256),
+} as const;
+
+const turnSessionStateWriteValueBodySchema = z.object({
+  ...turnSessionStateWriteBaseSchema,
+  value: z.unknown(),
+}).strict();
+
+const turnSessionStateWriteDeleteBodySchema = z.object({
+  ...turnSessionStateWriteBaseSchema,
+  delete: z.literal(true),
+}).strict();
+
+export const turnSessionStateWriteBodySchema: z.ZodType<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody> = z.union([
+  turnSessionStateWriteValueBodySchema,
+  turnSessionStateWriteDeleteBodySchema,
+]);
 
 export const respondBodySchema: z.ZodType<RespondBody> = z.object({
   message: z.string().min(1),

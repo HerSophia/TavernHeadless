@@ -35,6 +35,21 @@ export class SessionBranchRegistryService {
     return row ? toSessionBranchRegistryRecord(row) : null;
   }
 
+  listBySession(accountId: string, sessionId: string): SessionBranchRegistryRecord[] {
+    return this.db
+      .select()
+      .from(sessionBranches)
+      .where(
+        and(
+          eq(sessionBranches.accountId, accountId),
+          eq(sessionBranches.sessionId, sessionId),
+        ),
+      )
+      .all()
+      .map(toSessionBranchRegistryRecord)
+      .sort((left, right) => left.branchId.localeCompare(right.branchId) || left.createdAt - right.createdAt);
+  }
+
   listByBranchId(
     accountId: string,
     branchId: string,

@@ -43,14 +43,13 @@ describe("session-state observation routes", () => {
     return built;
   }
 
-  it("returns 503 feature_unavailable when client-data is disabled", async () => {
+  it("returns 404 when client-data is disabled and observation routes are not registered", async () => {
     const built = await buildObservationApp({ enableClientData: false });
     const response = await built.app.inject({
       method: "GET",
       url: "/sessions/any-session/session-state/bindings",
     });
-    // Route is not registered when client-data is off, so Fastify returns 404
-    expect([404, 503]).toContain(response.statusCode);
+    expect(response.statusCode).toBe(404);
   });
 
   it("returns 404 when the session belongs to a different account", async () => {

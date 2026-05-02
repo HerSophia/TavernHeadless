@@ -150,6 +150,31 @@ function mapSqliteConstraintErrorCode(message: string): { code: string; publicMe
   return null;
 }
 
+function shouldExposeInternalErrorMessage(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+function buildInternalErrorDetails(input: {
+  requestId: string;
+  errorCode?: string;
+  nativePipelineNodeName?: string;
+}) {
+  const details: Record<string, unknown> = {
+    request_id: input.requestId,
+  };
+
+  if (shouldExposeInternalErrorMessage()) {
+    if (input.errorCode) {
+      details.error_code = input.errorCode;
+    }
+    if (input.nativePipelineNodeName) {
+      details.native_pipeline_node = input.nativePipelineNodeName;
+    }
+  }
+
+  return details;
+}
+
 export type BuildAppOptions = {
   databasePath?: string;
   logger?: boolean;
@@ -408,7 +433,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       });
     }
 
-    return sendError(reply, 500, "internal_error", "Unexpected server error");
+    return sendError(
+      reply,
+      500,
+      "internal_error",
+      shouldExposeInternalErrorMessage() ? errorMessage : "Unexpected server error",
+      buildInternalErrorDetails({
+        requestId: request.id,
+        errorCode: typeof code === "string" ? code : undefined,
+        nativePipelineNodeName: nativePipelineError?.nodeName,
+      }),
+    );
   });
 
   app.get(

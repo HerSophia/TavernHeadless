@@ -95,6 +95,7 @@ describe("SessionBranchRegistryService", () => {
 
     expect(service.get(ACCOUNT_ID, sessionId, "main")).toEqual(main);
     expect(service.listByBranchId(ACCOUNT_ID, "alt")).toEqual([alt]);
+    expect(service.listBySession(ACCOUNT_ID, sessionId)).toEqual([main]);
 
     const updated = service.ensure({
       accountId: ACCOUNT_ID,
@@ -115,6 +116,7 @@ describe("SessionBranchRegistryService", () => {
     });
 
     expect(service.listByBranchId(ACCOUNT_ID, "main", [sessionId])).toEqual([updated]);
+    expect(service.listBySession(ACCOUNT_ID, otherSessionId)).toEqual([alt]);
     expect(service.remove(ACCOUNT_ID, sessionId, "main")).toMatchObject({ id: main.id, branchId: "main" });
     expect(service.get(ACCOUNT_ID, sessionId, "main")).toBeNull();
   });

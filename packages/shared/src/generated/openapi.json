@@ -14526,26 +14526,74 @@
                     "type": "object"
                   },
                   "session_state_writes": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "delete": {
-                          "enum": [
-                            true
-                          ],
-                          "type": "boolean"
-                        },
-                        "namespace": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "slot": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "value": {}
+                    "example": [
+                      {
+                        "namespace": "quest_flags",
+                        "slot": "companion",
+                        "value": {
+                          "mood": "ally"
+                        }
                       },
-                      "type": "object"
+                      {
+                        "delete": true,
+                        "namespace": "quest_flags",
+                        "slot": "expired_hint"
+                      }
+                    ],
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "delete": {
+                              "enum": [
+                                true
+                              ],
+                              "type": "boolean"
+                            },
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "delete"
+                          ],
+                          "type": "object"
+                        }
+                      ]
                     },
                     "type": "array"
                   },
@@ -32768,26 +32816,74 @@
                     "type": "object"
                   },
                   "session_state_writes": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "delete": {
-                          "enum": [
-                            true
-                          ],
-                          "type": "boolean"
-                        },
-                        "namespace": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "slot": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "value": {}
+                    "example": [
+                      {
+                        "namespace": "quest_flags",
+                        "slot": "companion",
+                        "value": {
+                          "mood": "ally"
+                        }
                       },
-                      "type": "object"
+                      {
+                        "delete": true,
+                        "namespace": "quest_flags",
+                        "slot": "expired_hint"
+                      }
+                    ],
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "delete": {
+                              "enum": [
+                                true
+                              ],
+                              "type": "boolean"
+                            },
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "delete"
+                          ],
+                          "type": "object"
+                        }
+                      ]
                     },
                     "type": "array"
                   },
@@ -44464,14 +44560,35 @@
                             "type": "integer"
                           },
                           "latest_floor_id": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "latest_floor_no": {
-                            "minimum": 0,
-                            "type": "integer"
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "latest_state": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "updated_at": {
                             "minimum": 0,
@@ -50161,26 +50278,74 @@
                     "type": "string"
                   },
                   "session_state_writes": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "delete": {
-                          "enum": [
-                            true
-                          ],
-                          "type": "boolean"
-                        },
-                        "namespace": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "slot": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "value": {}
+                    "example": [
+                      {
+                        "namespace": "quest_flags",
+                        "slot": "companion",
+                        "value": {
+                          "mood": "ally"
+                        }
                       },
-                      "type": "object"
+                      {
+                        "delete": true,
+                        "namespace": "quest_flags",
+                        "slot": "expired_hint"
+                      }
+                    ],
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "delete": {
+                              "enum": [
+                                true
+                              ],
+                              "type": "boolean"
+                            },
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "delete"
+                          ],
+                          "type": "object"
+                        }
+                      ]
                     },
                     "type": "array"
                   },
@@ -57886,26 +58051,74 @@
                     "type": "object"
                   },
                   "session_state_writes": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "delete": {
-                          "enum": [
-                            true
-                          ],
-                          "type": "boolean"
-                        },
-                        "namespace": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "slot": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "value": {}
+                    "example": [
+                      {
+                        "namespace": "quest_flags",
+                        "slot": "companion",
+                        "value": {
+                          "mood": "ally"
+                        }
                       },
-                      "type": "object"
+                      {
+                        "delete": true,
+                        "namespace": "quest_flags",
+                        "slot": "expired_hint"
+                      }
+                    ],
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "delete": {
+                              "enum": [
+                                true
+                              ],
+                              "type": "boolean"
+                            },
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "delete"
+                          ],
+                          "type": "object"
+                        }
+                      ]
                     },
                     "type": "array"
                   },
@@ -60889,26 +61102,74 @@
                     "type": "string"
                   },
                   "session_state_writes": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "delete": {
-                          "enum": [
-                            true
-                          ],
-                          "type": "boolean"
-                        },
-                        "namespace": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "slot": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "value": {}
+                    "example": [
+                      {
+                        "namespace": "quest_flags",
+                        "slot": "companion",
+                        "value": {
+                          "mood": "ally"
+                        }
                       },
-                      "type": "object"
+                      {
+                        "delete": true,
+                        "namespace": "quest_flags",
+                        "slot": "expired_hint"
+                      }
+                    ],
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "delete": {
+                              "enum": [
+                                true
+                              ],
+                              "type": "boolean"
+                            },
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "delete"
+                          ],
+                          "type": "object"
+                        }
+                      ]
                     },
                     "type": "array"
                   },
@@ -67114,26 +67375,74 @@
                     "type": "string"
                   },
                   "session_state_writes": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "delete": {
-                          "enum": [
-                            true
-                          ],
-                          "type": "boolean"
-                        },
-                        "namespace": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "slot": {
-                          "minLength": 1,
-                          "type": "string"
-                        },
-                        "value": {}
+                    "example": [
+                      {
+                        "namespace": "quest_flags",
+                        "slot": "companion",
+                        "value": {
+                          "mood": "ally"
+                        }
                       },
-                      "type": "object"
+                      {
+                        "delete": true,
+                        "namespace": "quest_flags",
+                        "slot": "expired_hint"
+                      }
+                    ],
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "delete": {
+                              "enum": [
+                                true
+                              ],
+                              "type": "boolean"
+                            },
+                            "namespace": {
+                              "maxLength": 128,
+                              "minLength": 1,
+                              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+                              "type": "string"
+                            },
+                            "slot": {
+                              "maxLength": 256,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "namespace",
+                            "slot",
+                            "delete"
+                          ],
+                          "type": "object"
+                        }
+                      ]
                     },
                     "type": "array"
                   },

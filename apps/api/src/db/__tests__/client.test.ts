@@ -21,6 +21,13 @@ function getTableColumns(sqlite: Database.Database, tableName: string): TableInf
   return sqlite.prepare(`PRAGMA table_info(\`${tableName}\`)`).all() as TableInfoRow[];
 }
 
+function getTableNames(sqlite: Database.Database): string[] {
+  return sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name ASC")
+    .all()
+    .map((row) => (row as { name: string }).name);
+}
+
 function replaceMigrationHistory(
   targetSqlite: Database.Database,
   sourceSqlite: Database.Database,
@@ -272,5 +279,95 @@ describe("createDatabase", () => {
     expect(
       verifySqlite.prepare("SELECT snapshot_version, provenance_json FROM branch_local_variable_snapshot WHERE floor_id = ?").get("floor-1")
     ).toEqual({ snapshot_version: 1, provenance_json: null });
+  });
+
+  it("repairs additive client-data, session-state, and session-branch structures even when migration history is already up to date", () => {
+    tempDir = mkdtempSync(join(tmpdir(), "tavern-db-"));
+    tempMigrationsDir = createMigrationsDirBeforeIndex(38);
+
+    const databasePath = join(tempDir, "tavern.db");
+    const now = 1_735_700_100_000;
+
+    seedSqlite = new Database(databasePath);
+    seedSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(seedSqlite, { schema }), { migrationsFolder: tempMigrationsDir });
+
+    expect(getTableColumns(seedSqlite, "client_data_domain").map((column) => column.name)).not.toContain("version");
+    expect(getTableColumns(seedSqlite, "client_data_collection").map((column) => column.name)).not.toContain("version");
+    expect(getTableNames(seedSqlite)).not.toEqual(expect.arrayContaining([
+      "client_data_domain_grant",
+      "client_data_audit_log",
+      "client_data_managed_domain",
+      "session_state_mutation",
+      "session_state_namespace_registration",
+      "session_branch",
+    ]));
+
+    seedSqlite.prepare(
+      `INSERT OR IGNORE INTO account (
+        id,
+        name,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?)`
+    ).run("default-admin", "default-admin", now, now);
+
+    seedSqlite.prepare(
+      `INSERT INTO session (
+        id,
+        account_id,
+        status,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?)`
+    ).run("session-drift", "default-admin", "active", now, now + 50);
+
+    seedSqlite.prepare(
+      `INSERT INTO floor (
+        id,
+        session_id,
+        floor_no,
+        branch_id,
+        parent_floor_id,
+        state,
+        token_in,
+        token_out,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run("floor-alt", "session-drift", 1, "alt", null, "committed", 0, 0, now + 10, now + 20);
+
+    migrationSourceSqlite = new Database(":memory:");
+    migrationSourceSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(migrationSourceSqlite, { schema }), { migrationsFolder: MIGRATIONS_PATH });
+
+    replaceMigrationHistory(seedSqlite, migrationSourceSqlite);
+
+    seedSqlite.close();
+    seedSqlite = undefined;
+
+    connection = createDatabase(databasePath);
+    connection.close();
+    connection = undefined;
+
+    verifySqlite = new Database(databasePath);
+
+    expect(getTableColumns(verifySqlite, "client_data_domain").map((column) => column.name)).toContain("version");
+    expect(getTableColumns(verifySqlite, "client_data_collection").map((column) => column.name)).toContain("version");
+    expect(getTableNames(verifySqlite)).toEqual(expect.arrayContaining([
+      "client_data_domain_grant",
+      "client_data_audit_log",
+      "client_data_managed_domain",
+      "session_state_mutation",
+      "session_state_namespace_registration",
+      "session_branch",
+    ]));
+
+    expect(
+      verifySqlite.prepare("SELECT branch_id FROM session_branch WHERE session_id = ? ORDER BY branch_id ASC").all("session-drift")
+    ).toEqual([
+      { branch_id: "alt" },
+      { branch_id: "main" },
+    ]);
   });
 });

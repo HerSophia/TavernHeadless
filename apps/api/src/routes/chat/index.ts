@@ -9,7 +9,7 @@
  * POST /sessions/:id/regenerate      — 重新生成最后一轮 AI 回复
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
   type DryRunRequest,
@@ -84,6 +84,32 @@ export async function registerChatRoutes(
   const enableClientData = options.enableClientData === true;
   const cors = options.cors ?? { origins: true, credentials: false };
 
+  function hasSessionStateWritesField(body: unknown): boolean {
+    return typeof body === "object" && body !== null && "session_state_writes" in body;
+  }
+
+  function validateTurnSessionStateWritesShape(reply: FastifyReply, body: unknown): boolean {
+    if (!hasSessionStateWritesField(body)) {
+      return true;
+    }
+    const writes = (body as { session_state_writes?: unknown }).session_state_writes;
+    if (!Array.isArray(writes)) {
+      return true;
+    }
+    for (const write of writes) {
+      if (typeof write !== "object" || write === null) {
+        continue;
+      }
+      const hasValue = Object.prototype.hasOwnProperty.call(write, "value");
+      const isDelete = (write as { delete?: unknown }).delete === true;
+      if (hasValue === isDelete) {
+        sendError(reply, 400, "validation_error", "Each session_state_write must provide exactly one of 'value' or 'delete: true'");
+        return false;
+      }
+    }
+    return true;
+  }
+
   app.post("/sessions/:id/respond/dry-run", {
     schema: {
       tags: ["chat"],
@@ -98,6 +124,11 @@ export async function registerChatRoutes(
         409: chatMutationErrorResponses[409],
         500: chatMutationErrorResponses[500],
       },
+    },
+    preValidation: async (request, reply) => {
+      if (hasSessionStateWritesField(request.body)) {
+        return sendError(reply, 400, "validation_error", "Dry-run does not accept session_state_writes");
+      }
     },
   }, async (request, reply) => {
     if (!enablePromptDryRun) {
@@ -182,6 +213,11 @@ export async function registerChatRoutes(
         400: chatMutationErrorResponses[400],
         404: chatMutationErrorResponses[404],
       },
+    },
+    preValidation: async (request, reply) => {
+      if (!validateTurnSessionStateWritesShape(reply, request.body)) {
+        return;
+      }
     },
   }, async (request, reply) => {
     if (!enableSseChat) {
@@ -321,6 +357,11 @@ export async function registerChatRoutes(
         ...chatMutationErrorResponses,
       },
     },
+    preValidation: async (request, reply) => {
+      if (!validateTurnSessionStateWritesShape(reply, request.body)) {
+        return;
+      }
+    },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
@@ -380,9 +421,11 @@ export async function registerChatRoutes(
         ...chatMutationErrorResponses,
       },
     },
-    preValidation: (request, _reply, done) => {
+    preValidation: async (request, reply) => {
       ensureOptionalObjectBody(request);
-      done();
+      if (!validateTurnSessionStateWritesShape(reply, request.body)) {
+        return;
+      }
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
@@ -447,9 +490,11 @@ export async function registerChatRoutes(
         ...chatMutationErrorResponses,
       },
     },
-    preValidation: (request, _reply, done) => {
+    preValidation: async (request, reply) => {
       ensureOptionalObjectBody(request);
-      done();
+      if (!validateTurnSessionStateWritesShape(reply, request.body)) {
+        return;
+      }
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(floorIdParamsSchema, request.params, reply);
@@ -509,6 +554,11 @@ export async function registerChatRoutes(
         200: editAndRegenerateSuccessResponseJsonSchema,
         ...chatMutationErrorResponses,
       },
+    },
+    preValidation: async (request, reply) => {
+      if (!validateTurnSessionStateWritesShape(reply, request.body)) {
+        return;
+      }
     },
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(messageIdParamsSchema, request.params, reply);

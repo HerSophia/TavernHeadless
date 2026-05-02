@@ -381,10 +381,15 @@ console.log(values[0]?.source, values[0]?.value);
   - `session_state_namespace_count_limit_exceeded`、`session_state_namespace_item_limit_exceeded`、`session_state_namespace_byte_limit_exceeded`
   - `session_state_account_item_limit_exceeded`、`session_state_account_byte_limit_exceeded`
   - `session_state_payload_too_large`
+- 当前实现里，如果部署关闭了 `enableClientData`：
+  - `/sessions/:sessionId/state/*` 这组 public route family 默认不会注册，外部通常直接看到 `404`
+  - turn API 如果携带了 `sessionStateWrites`，会返回 `503 feature_unavailable`
 
 ### 内部 observation 面仍不在 SDK 包装范围内
 
 `/sessions/:id/session-state/*` 与 `/floors/:id/session-state/*` 仍然是内部观察面。它们不会进入 `@tavern/sdk` 和 `@tavern/client-helpers`。如果确实需要对接，请基于 OpenAPI 自行封装，并接受该契约可能变化。
+
+最小联调顺序见 [`vitepress/guide/session-state-client-checklist.md`](../../../vitepress/guide/session-state-client-checklist.md)。
 
 ### 列出会话，然后生成一次回复
 

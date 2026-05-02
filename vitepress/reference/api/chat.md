@@ -240,6 +240,8 @@ POST /sessions/:id/respond/dry-run
 
 dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot 只会在 live 聊天链成功 commit 时产生。
 
+因为 dry-run 明确没有副作用，所以它也不接受 `session_state_writes`。
+
 如果需要查看命中的世界书条目、来源、注入位置和首个命中位置，可以在请求体里打开 `debug_options.include_worldbook_matches`。
 
 如果只想对单段文本做宏 preview，而不需要 `messages`、`assembly` 和 `prompt_snapshot`，请使用 `POST /sessions/:id/prompt-runtime/preview`。preview 与 dry-run 共享同一条宏求值主线，但 preview 只返回单段文本和 `runtime_trace`。
@@ -257,6 +259,7 @@ dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot
 
 - `budget`：当前首轮支持 `max_input_tokens`、`reserved_completion_tokens`
 - `source_selection`：当前首轮支持 `history` / `memory` / `worldbook` / `examples`
+- 不接受 `session_state_writes`；传入时会走 `validation_error`
 
 ### 响应 `200`
 

@@ -17,7 +17,9 @@ outline: [2, 3]
 
 这一层的设计依据在仓库内的 `.limcode/design/client-data-会话状态治理层-phase3-内部观察面.md`。
 
-所有端点在 `enableClientData=false` 的部署下不可用。账号不匹配或路径指向其他账号的资源时一律返回 `404 not_found`，不会暴露资源是否存在。
+当前这组内部路由面就是 `/sessions/:sessionId/session-state/*` 与 `/floors/:floorId/session-state/*`。
+
+当前实现里，`enableClientData=false` 时这组 route family 默认不会注册，外部通常直接看到 `404 not_found`。账号不匹配或路径指向其他账号的资源时也一律返回 `404 not_found`，不会暴露资源是否存在。
 
 ## 什么时候需要看这页
 
@@ -363,9 +365,11 @@ GET /floors/:floorId/session-state/diff
 | 400 | `validation_error` | 查询参数不合法（如 `against` 格式错、`status` 不在枚举中） |
 | 404 | `not_found` | session / floor / mutation 不存在，或不归属当前账号 |
 | 409 | `session_state_namespace_not_registered` | 访问未在 slot registry 注册的 namespace/slot |
-| 503 | `feature_unavailable` | `enableClientData` 关闭时端点不可用（或直接 404，由部署决定） |
+
+当前默认实现里，`enableClientData=false` 时 observation route family 不会注册，因此更常见的是路由层直接返回 `404 not_found`。
 
 ## 设计参考
 
 - 设计文档：`.limcode/design/client-data-会话状态治理层-phase3-内部观察面.md`
 - 实施计划：`.limcode/plans/client-data-会话状态治理层-phase3-内部观察面-implementation-plan.md`
+- 最小联调清单：[`guide/session-state-client-checklist.md`](../../guide/session-state-client-checklist.md)

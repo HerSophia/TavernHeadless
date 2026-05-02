@@ -215,9 +215,9 @@ export type SessionRegenerateResult = RespondResult & {
 export type SessionBranchSummary = {
   branchId: string;
   floorCount: number;
-  latestFloorId: string;
-  latestFloorNo: number;
-  latestState: string;
+  latestFloorId: string | null;
+  latestFloorNo: number | null;
+  latestState: string | null;
   updatedAt: number;
 };
 
@@ -1444,9 +1444,9 @@ function mapBranchSummary(value: unknown): SessionBranchSummary | null {
   return {
     branchId: readString(record.branch_id),
     floorCount: readNumber(record.floor_count),
-    latestFloorId: readString(record.latest_floor_id),
-    latestFloorNo: readNumber(record.latest_floor_no),
-    latestState: readString(record.latest_state),
+    latestFloorId: readNullableString(record.latest_floor_id),
+    latestFloorNo: readNullableNumber(record.latest_floor_no),
+    latestState: readNullableString(record.latest_state),
     updatedAt: readNumber(record.updated_at),
   };
 }
