@@ -11,10 +11,10 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "2.0.0",
-    "@ai-sdk/openai": "2.0.102",
+    "@ai-sdk/anthropic": "3.0.74",
+    "@ai-sdk/openai": "3.0.57",
     "@tavern/shared": "workspace:*",
-    "ai": "5.0.169",
+    "ai": "6.0.173",
     "emittery": "^1.1.0",
     "lru-cache": "^11.0.2",
     "nanoid": "^5.0.9",

@@ -140,6 +140,19 @@ describe('ProviderRegistry', () => {
       expect((model as any).provider).toBe('turn-scope');
       expect(registry.has('turn-scope')).toBe(false);
     });
+
+    it('creates an openai-compatible model handle with the configured provider identity', () => {
+      const registry = new ProviderRegistry();
+      registry.register({
+        id: 'proxy-provider',
+        type: 'openai-compatible',
+        apiKey: 'test-key',
+        baseURL: 'http://127.0.0.1:11434/v1',
+      });
+
+      const model = registry.getModel('proxy-provider', 'gpt-4o-mini');
+      expect((model as any).provider).toContain('proxy-provider');
+    });
   });
 
   describe('listProviders', () => {

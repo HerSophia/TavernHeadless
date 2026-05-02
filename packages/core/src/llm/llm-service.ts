@@ -138,7 +138,7 @@ function normalizeFinishReason(finishReason: unknown): string {
 
   return typeof (finishReason as { unified?: unknown } | null | undefined)?.unified === 'string'
     ? (finishReason as { unified: string }).unified
-    : 'unknown';
+    : 'other';
 }
 
 /**
