@@ -2356,6 +2356,16 @@ describe("ChatService", () => {
       expect(regenResult.generatedText).toBe(REGEN_TEXT);
     });
 
+    it("should force non-stream generation params on regenerate JSON flows", async () => {
+      await chatService.respond(sessionId, { message: "Hello, brave knight!" });
+
+      await chatService.regenerate(sessionId);
+
+      const calls = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls;
+      const regenTurnInput = calls[1]![0];
+      expect(regenTurnInput.generationParams.stream).toBe(false);
+    });
+
     it("should regenerate on databases that still keep the legacy superseded_by_floor_id foreign key", async () => {
       const tempDir = mkdtempSync(join(tmpdir(), "tavern-regenerate-legacy-floor-fk-"));
       const databasePath = join(tempDir, "legacy-floor-fk.sqlite");
@@ -3058,6 +3068,22 @@ describe("ChatService", () => {
       expect(pages.some((page) => page.pageKind === "output")).toBe(true);
     });
 
+    it("should force non-stream generation params on retryFloor JSON flows", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Retry seed" });
+
+      await database.db
+        .update(floors)
+        .set({ state: "committed", updatedAt: Date.now() })
+        .where(eq(floors.id, baseTurn.floorId));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.retryFloor(baseTurn.floorId);
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.generationParams.stream).toBe(false);
+    });
+
     it("should apply delivery noAssistant on retryFloor send path", async () => {
       await chatService.respond(sessionId, { message: "First turn" });
       const retriedTurn = await chatService.respond(sessionId, { message: "Retry delivery seed" });
@@ -3434,6 +3460,30 @@ describe("ChatService", () => {
         .where(and(eq(messages.pageId, newInputPage!.id), eq(messages.role, "user")));
 
       expect(editedUserMessage?.content).toBe("Edited user line");
+    });
+
+    it("should force non-stream generation params on editAndRegenerate JSON flows", async () => {
+      const baseTurn = await chatService.respond(sessionId, { message: "Original user line" });
+
+      const [inputPage] = await database.db
+        .select({ id: messagePages.id })
+        .from(messagePages)
+        .where(and(eq(messagePages.floorId, baseTurn.floorId), eq(messagePages.pageKind, "input")));
+
+      const [sourceMessage] = await database.db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.pageId, inputPage!.id), eq(messages.role, "user")));
+
+      (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mockClear();
+
+      await chatService.editAndRegenerate(sourceMessage!.id, {
+        content: "Edited user line",
+        branchId: "edit-no-stream",
+      });
+
+      const turnInput = (mockOrchestrator.executeTurn as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      expect(turnInput.generationParams.stream).toBe(false);
     });
 
     it("should fail editAndRegenerate when the source floor snapshot is missing", async () => {
