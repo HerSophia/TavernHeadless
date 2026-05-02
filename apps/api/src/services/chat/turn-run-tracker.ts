@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import type { FloorRunType, TurnRunObserver } from "@tavern/core";
 import type { AppDb } from "../../db/client.js";
 import { floors } from "../../db/schema.js";
@@ -131,10 +131,12 @@ export class TurnRunTracker {
           supersededByFloorId: null,
           updatedAt: Date.now(),
         })
-        .where(and(
-          eq(floors.id, sourceFloorId),
-          eq(floors.supersededByFloorId, supersededByFloorId),
-        ))
+        .where(
+          and(
+            eq(floors.id, sourceFloorId),
+            or(eq(floors.supersededByFloorId, supersededByFloorId), isNull(floors.supersededByFloorId)),
+          ),
+        )
         .run();
     } catch {
       // best-effort compensation; avoid overriding the originating error.
