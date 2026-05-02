@@ -1,10 +1,12 @@
 // ── ToolExecutor ──────────────────────────────────────
 
 import { randomUUID } from 'node:crypto';
+import { jsonSchema } from 'ai';
+import type { JSONSchema7, Schema } from 'ai';
 
 import type { CoreEventBus } from '../events/event-bus.js';
 import type { ToolExecutionRepository } from '../ports/tool-execution-repository.js';
-import type { InstanceSlot } from '../llm/types.js';
+import type { InstanceSlot, LLMToolDefinition } from '../llm/types.js';
 import type {
   ExecutedToolCallRecord,
   BufferedToolVariableMutation,
@@ -28,10 +30,10 @@ import type { ToolRegistry } from './tool-registry.js';
 import { ToolMutationBuffer } from './tool-mutation-buffer.js';
 
 /** Vercel AI SDK 兼容的工具定义格式 */
-export interface LLMToolEntry {
+export interface LLMToolEntry extends LLMToolDefinition {
   description: string;
-  parameters: ToolDefinition['parameters'];
   execute: (args: Record<string, unknown>) => Promise<unknown>;
+  inputSchema: Schema<unknown>;
 }
 
 type FinalToolExecutionStatus = Exclude<ToolExecutionStatus, 'running' | 'queued'>;
@@ -527,7 +529,7 @@ export class ToolExecutor {
     for (const def of definitions) {
       tools[def.name] = {
         description: def.description,
-        parameters: def.parameters,
+        inputSchema: jsonSchema(def.parameters as JSONSchema7),
         execute: async (args: Record<string, unknown>) => {
           const result = await this.execute(def.name, args, context, permissions);
           if (result.error) {

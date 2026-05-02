@@ -399,7 +399,7 @@ jobs:
     needs: changes
     runs-on: ubuntu-latest
     steps:
-      # checkout + setup pnpm + setup node + install
+      # checkout + setup pnpm + setup node (22.22.2) + install
       - run: pnpm exec markdownlint-cli2 <changed-doc-files>   # docs-only PR
       - run: pnpm lint        # 其他 PR 与 push
 
@@ -472,7 +472,7 @@ jobs:
     needs: [lint, typecheck, build, test-shard-1, test-shard-2, test-shard-3]
     runs-on: ubuntu-latest
     steps:
-      # checkout + setup pnpm + setup node + install
+      # checkout + setup pnpm + setup node (22.22.2) + install
       - run: pnpm test:ci:coverage
 
   api-smoke:
@@ -480,7 +480,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "Docs-only PR: skipped"
-      # checkout + setup pnpm + setup node + install
+      # checkout + setup pnpm + setup node (22.22.2) + install
       - run: pnpm --filter @tavern/api exec tsx src/index.ts > api.log 2>&1 &
       - run: |
           for i in {1..60}; do

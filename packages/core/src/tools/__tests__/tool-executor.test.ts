@@ -648,7 +648,7 @@ describe('ToolExecutor', () => {
 
       expect(Object.keys(llmTools)).toEqual(['dice']);
       expect(llmTools.dice!.description).toBe('Roll a dice');
-      expect(llmTools.dice!.parameters).toEqual(tool.parameters);
+      expect(llmTools.dice!.inputSchema.jsonSchema).toEqual(tool.parameters);
       expect(typeof llmTools.dice!.execute).toBe('function');
     });
 
