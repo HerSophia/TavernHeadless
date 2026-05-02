@@ -4,6 +4,8 @@ import { spawn } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
 
+import { createLocalNodeEnv } from "./local-node-env.mjs";
+
 const MODES = {
   api: {
     label: "Backend only (@tavern/api)",
@@ -93,19 +95,17 @@ async function promptMode() {
 }
 
 function runPnpm(args) {
+  const childEnv = createLocalNodeEnv(process.env);
+
   return new Promise((resolve) => {
     const child = spawn("pnpm", args, {
+      env: childEnv,
       stdio: "inherit",
       shell: true,
     });
 
-    child.on("exit", (code) => {
-      resolve(code ?? 0);
-    });
-
-    child.on("error", () => {
-      resolve(1);
-    });
+    child.on("exit", (code) => resolve(code ?? 0));
+    child.on("error", () => resolve(1));
   });
 }
 

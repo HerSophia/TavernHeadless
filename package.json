@@ -17,9 +17,13 @@
   "scripts": {
     "dev": "node scripts/dev-select.mjs",
     "dev:api": "pnpm --filter @tavern/api dev",
+    "dev:api:local": "node scripts/run-with-local-node.mjs pnpm --filter @tavern/api dev",
     "dev:web": "pnpm --filter @tavern/web dev",
     "dev:both": "concurrently \"pnpm --filter @tavern/api dev\" \"pnpm --filter @tavern/web dev\"",
+    "dev:local": "node scripts/run-with-local-node.mjs pnpm dev",
     "dev:select": "node scripts/dev-select.mjs",
+    "node:local": "node scripts/run-with-local-node.mjs",
+    "rebuild:native": "node scripts/run-with-local-node.mjs pnpm rebuild better-sqlite3",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest",
