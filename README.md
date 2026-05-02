@@ -101,6 +101,23 @@ pnpm dev
 
 Windows 用户也可以双击 `dev-select.bat` 启动。
 
+如果本机默认 Node 版本不是仓库固定的 `22.22.2`，并且遇到 `better-sqlite3`
+原生模块加载错误，可以改用下面这些命令：
+
+```bash
+pnpm dev:local
+pnpm dev:api:local
+pnpm rebuild:native
+```
+
+PowerShell 也可以先执行：
+
+```powershell
+.\scripts\use-local-node.ps1
+```
+
+再继续运行 `pnpm dev`、`pnpm --filter @tavern/api dev` 或其他命令。
+
 如果不想用交互菜单，可以直接运行：
 
 ```bash
@@ -134,6 +151,9 @@ pnpm dev:both   # 同时启动
 pnpm dev                          # 交互式启动
 pnpm --filter @tavern/api test    # 运行测试
 pnpm --filter @tavern/api typecheck  # 类型检查
+pnpm dev:local                    # 用仓库内置 Node 22 启动开发流程
+pnpm dev:api:local                # 用仓库内置 Node 22 只启动后端
+pnpm rebuild:native               # 用仓库内置 Node 22 重建 better-sqlite3
 pnpm sdk:generate                 # 导出 OpenAPI + 生成 SDK
 pnpm sdk:check                    # 检查 SDK 是否最新
 ```

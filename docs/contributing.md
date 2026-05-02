@@ -72,6 +72,18 @@ pnpm sdk:check
 pnpm docs:build
 ```
 
+如果本机默认 Node 版本不是仓库固定的 `22.22.2`，并且遇到
+`better-sqlite3` 原生模块的 `NODE_MODULE_VERSION` 不匹配问题，
+可以改用下面这些命令：
+
+```bash
+pnpm dev:local
+pnpm dev:api:local
+pnpm rebuild:native
+```
+
+PowerShell 里也可以先运行 `./scripts/use-local-node.ps1`，再继续执行其他命令。
+
 ---
 
 ## 2. 项目结构与分层
