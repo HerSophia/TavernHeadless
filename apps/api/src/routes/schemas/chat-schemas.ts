@@ -139,6 +139,22 @@ export const dryRunRuntimeTraceMacroExample = {
   ],
 } as const;
 
+export const historyNormalizationExample = {
+  raw_entry_count: 4,
+  effective_turn_count: 2,
+  selected_turn_count: 2,
+  trailing_user_source_floor_ids: ["floor_11", "floor_12"],
+  merged_user_groups: [
+    {
+      effective_role: "user",
+      source_floor_ids: ["floor_11", "floor_12"],
+      source_message_ids: ["msg_19", "msg_21"],
+      includes_current_input: true,
+    },
+  ],
+  violations: [],
+} as const;
+
 export const liveRuntimeTraceExample = {
   preset: {
     selected_prompt_order_character_id: 100000,
@@ -251,6 +267,7 @@ export const liveRuntimeTraceExample = {
     degraded: true,
     degrade_reasons: ["require_last_user"],
   },
+  history_normalization: historyNormalizationExample,
 } as const;
 
 export const respondBodyExample = {
@@ -631,6 +648,7 @@ export const dryRunSuccessResponseExample = {
         ],
         filtered_floor_nos: [1, 2],
       },
+      history_normalization: historyNormalizationExample,
     },
   },
 } as const;
@@ -1236,6 +1254,45 @@ export const runtimeTraceMemoryJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeTraceHistoryNormalizationViolationJsonSchema = {
+  type: "object",
+  required: ["code", "message", "source_floor_ids", "source_message_ids"],
+  properties: {
+    code: { type: "string", enum: ["adjacent_assistant_floors"] },
+    message: { type: "string" },
+    source_floor_ids: { type: "array", items: { type: "string" } },
+    source_message_ids: { type: "array", items: { type: "string" } },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceMergedUserGroupJsonSchema = {
+  type: "object",
+  required: ["effective_role", "source_floor_ids", "source_message_ids", "includes_current_input"],
+  properties: {
+    effective_role: { type: "string", enum: ["user"] },
+    source_floor_ids: { type: "array", items: { type: "string" } },
+    source_message_ids: { type: "array", items: { type: "string" } },
+    includes_current_input: { type: "boolean" },
+  },
+  additionalProperties: false,
+} as const;
+
+export const runtimeTraceHistoryNormalizationJsonSchema = {
+  type: "object",
+  required: ["raw_entry_count", "effective_turn_count", "selected_turn_count", "trailing_user_source_floor_ids", "merged_user_groups", "violations"],
+  properties: {
+    raw_entry_count: { type: "integer", minimum: 0 },
+    effective_turn_count: { type: "integer", minimum: 0 },
+    selected_turn_count: { type: "integer", minimum: 0 },
+    trailing_user_source_floor_ids: { type: "array", items: { type: "string" } },
+    merged_user_groups: { type: "array", items: runtimeTraceMergedUserGroupJsonSchema },
+    violations: { type: "array", items: runtimeTraceHistoryNormalizationViolationJsonSchema },
+  },
+  examples: [historyNormalizationExample],
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceMacroWarningJsonSchema = {
   type: "object",
   required: ["code", "message"],
@@ -1355,6 +1412,7 @@ const runtimeTraceBaseProperties = {
   memory: runtimeTraceMemoryJsonSchema,
   macro: runtimeTraceMacroJsonSchema,
   delivery: runtimeTraceDeliveryJsonSchema,
+  history_normalization: runtimeTraceHistoryNormalizationJsonSchema,
 } as const;
 
 const dryRunRuntimeTraceProperties = {

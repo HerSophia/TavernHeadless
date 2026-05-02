@@ -27,7 +27,9 @@ import {
   promptStructureJsonSchema,
   turnConfigJsonSchema,
   dryRunRuntimeTraceJsonSchema,
+  historyNormalizationExample,
   runtimeTraceMemoryJsonSchema,
+  runtimeTraceHistoryNormalizationJsonSchema,
   turnSessionStateWritesJsonSchema,
 } from "./chat-schemas.js";
 
@@ -400,6 +402,7 @@ export const promptRuntimePreviewResponseExample = {
       hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
       filtered_floor_nos: [1, 2],
     },
+    history_normalization: historyNormalizationExample,
   },
   memory: {
     summary_injected: true,
@@ -547,6 +550,7 @@ export const promptRuntimeInspectResponseExample = {
   policy: promptRuntimePolicyViewExample.resolved_policy,
   source_map: promptRuntimeSourceMapExample,
   diagnostics: promptRuntimeDiagnosticsExample,
+  history_normalization: historyNormalizationExample,
   trim_reasons: [
     {
       group: "history",
@@ -685,7 +689,7 @@ export const promptRuntimeCapabilitiesExample = {
       creates_floor: false,
       writes_prompt_snapshot: false,
       commits_side_effects: false,
-      trace_subset: ["macro", "source_selection", "visibility"],
+      trace_subset: ["macro", "source_selection", "visibility", "history_normalization"],
     },
     explain: {
       enabled: true,
@@ -1338,6 +1342,7 @@ const promptRuntimePreviewRuntimeTraceJsonSchema = {
   properties: {
     macro: promptRuntimePreviewMacroJsonSchema,
     source_selection: promptRuntimePreviewSourceSelectionTraceJsonSchema,
+    history_normalization: runtimeTraceHistoryNormalizationJsonSchema,
     visibility: {
       type: "object",
       required: ["filtered_floor_nos"],
@@ -1540,7 +1545,7 @@ export const promptRuntimeCapabilitiesJsonSchema = {
             commits_side_effects: { const: false },
             trace_subset: {
               type: "array",
-              items: { type: "string", enum: ["macro", "source_selection", "visibility"] },
+              items: { type: "string", enum: ["macro", "source_selection", "visibility", "history_normalization"] },
             },
           },
           additionalProperties: false,
@@ -1704,12 +1709,13 @@ export const promptRuntimeInspectResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["scope", "policy", "source_map", "diagnostics", "trim_reasons", "excluded_sources", "section_stats", "limitations", "prepared_turn", "governance"],
+      required: ["scope", "policy", "source_map", "diagnostics", "history_normalization", "trim_reasons", "excluded_sources", "section_stats", "limitations", "prepared_turn", "governance"],
       properties: {
         scope: promptRuntimeScopeJsonSchema,
         policy: promptRuntimeResolvedPolicyJsonSchema,
         source_map: promptRuntimeSourceMapJsonSchema,
         diagnostics: { type: "array", items: promptRuntimeDiagnosticJsonSchema },
+        history_normalization: runtimeTraceHistoryNormalizationJsonSchema,
         trim_reasons: { type: "array", items: promptRuntimeHistoricalExplainTrimReasonJsonSchema },
         excluded_sources: { type: "array", items: promptRuntimeHistoricalExplainSourceExclusionJsonSchema },
         section_stats: { type: "array", items: promptRuntimeSectionStatJsonSchema },

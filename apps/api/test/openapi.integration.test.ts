@@ -317,6 +317,7 @@ describe("OpenAPI integration", () => {
     const previewRuntimeTraceProperties = readRecordNode(previewRuntimeTraceSchema?.properties);
     expect(previewRuntimeTraceSchema?.additionalProperties).toBe(false);
     expect(Object.keys(previewRuntimeTraceProperties ?? {}).sort()).toEqual([
+      "history_normalization",
       "macro",
       "source_selection",
       "visibility",

@@ -8,6 +8,7 @@ import type {
 
 import type { PromptLiveDebugOptions, ResolvedTurnModels } from "./contracts.js";
 import type { FirstPartyStateContext, PreparedTurnContext } from "./types.js";
+import type { PromptRuntimeConversationWindow } from "./prompt-preparation-service.js";
 import { PreparedPromptArtifactsBuilder } from "./prepared-prompt-artifacts-builder.js";
 import { TurnModelService } from "./turn-model-service.js";
 import { TurnToolingService } from "./turn-tooling-service.js";
@@ -30,7 +31,8 @@ export class PreparedTurnContextBuilder {
     sessionId: string;
     branchId?: string;
     floorId: string;
-    pageId: string;
+    pageId?: string;
+    pageMessageId?: string;
     accountId: string;
     session: {
       presetId: string | null;
@@ -52,8 +54,7 @@ export class PreparedTurnContextBuilder {
       debugOptions?: PromptLiveDebugOptions;
     };
     executionContext: import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
-    history: import("@tavern/core").ChatMessage[];
-    visibilityTrace?: import("../chat-history-loader.js").PromptVisibilityTrace;
+    conversationWindow?: PromptRuntimeConversationWindow;
     resolvedTurnModels: ResolvedTurnModels;
     firstPartyStateContext?: FirstPartyStateContext;
     abortSignal?: AbortSignal;
@@ -67,6 +68,7 @@ export class PreparedTurnContextBuilder {
       branchId: args.branchId,
       floorId: args.floorId,
       pageId: args.pageId,
+      pageMessageId: args.pageMessageId,
       accountId: args.accountId,
       session: args.session,
       sessionInfo: args.sessionInfo,
@@ -74,8 +76,7 @@ export class PreparedTurnContextBuilder {
       preprocessedUserMessage: args.userMessage,
       request: args.request,
       executionContext: args.executionContext,
-      history: args.history,
-      visibilityTrace: args.visibilityTrace,
+      conversationWindow: args.conversationWindow,
       resolvedTurnModels: args.resolvedTurnModels,
       firstPartyStateContext: args.firstPartyStateContext,
       includeRuntimeTrace: args.request.debugOptions?.includeRuntimeTrace === true,
@@ -117,7 +118,7 @@ export class PreparedTurnContextBuilder {
       sessionId: args.sessionId,
       branchId: args.branchId,
       floorId: args.floorId,
-      pageId: args.pageId,
+      ...(args.pageId ? { pageId: args.pageId } : {}),
       accountId: args.accountId,
       messages: artifacts.materialized.messages,
       generationParams,
@@ -140,7 +141,7 @@ export class PreparedTurnContextBuilder {
       sessionId: args.sessionId,
       branchId: args.branchId,
       floorId: args.floorId,
-      pageId: args.pageId,
+      ...(args.pageId ? { pageId: args.pageId } : {}),
       accountId: args.accountId,
       userMessage: artifacts.userMessage,
       executionContext: artifacts.executionContext,
@@ -150,6 +151,8 @@ export class PreparedTurnContextBuilder {
       resolvedTurnModels: artifacts.resolvedTurnModels,
       assembled: artifacts.assembled,
       materialized: artifacts.materialized,
+      conversationInputSnapshot: artifacts.conversationInputSnapshot,
+      historyNormalization: artifacts.historyNormalization,
       inspection,
       promptDebug: {
         availableForReply: artifacts.availableForReply,

@@ -44,12 +44,6 @@ export class DryRunService {
       historySourceMode: "existing_branch",
       request,
     });
-    const { history, visibilityTrace } = await this.promptPreparationService.loadPromptRuntimeHistoryWindow({
-      sessionId,
-      branchId: "main",
-      visibility: executionContext.resolvedPolicy.visibility,
-      sourceSelection: executionContext.effectivePolicy?.sourceSelection,
-    });
     const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, accountId);
     const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(undefined, resolvedTurnModels);
     const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
@@ -80,13 +74,31 @@ export class DryRunService {
       rawUserMessage: request.message,
       regexChannel: "persist",
     });
+    const conversationState = await this.promptPreparationService.loadPromptRuntimeConversationWindow({
+      sessionId,
+      branchId: "main",
+      visibility: executionContext.resolvedPolicy.visibility,
+      sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+      currentInput: {
+        content: persistedUserMessage.text,
+      },
+    });
+    if (conversationState.historyNormalization.violations.length > 0) {
+      throw new ChatServiceError(
+        "adjacent_assistant_floors",
+        "Cannot dry-run prompt runtime when consecutive assistant floors are present in the visible history.",
+      );
+    }
+    if (!conversationState.effectiveUserMessage) {
+      throw new ChatServiceError("missing_effective_user_tail", "Prompt runtime dry-run requires a trailing effective user turn.");
+    }
 
     const assembled = await assemblePrompt(
       this.db,
       accountId,
       sessionInfo,
-      history,
-      persistedUserMessage.text,
+      conversationState.history,
+      conversationState.effectiveUserMessage,
       this.tokenCounter,
       effectiveMemorySummary,
       {
@@ -116,22 +128,23 @@ export class DryRunService {
       accountId,
       context: executionContext,
       phase: "dry_run",
-      history,
-      visibilityTrace,
+      history: conversationState.history,
+      visibilityTrace: conversationState.visibilityTrace,
       memorySummary: effectiveMemorySummary,
       assembled,
       memoryTrace,
+      historyNormalization: conversationState.historyNormalization,
       worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
     });
     const execution = buildPromptRuntimeExecutionResult({
       tokenCounter: this.tokenCounter,
-      userMessage: persistedUserMessage.text,
+      userMessage: conversationState.effectiveUserMessage,
       includeRuntimeTrace: true,
       artifacts: {
         inspection,
         assembled,
         materialized,
-        visibilityTrace,
+        visibilityTrace: conversationState.visibilityTrace,
         ...(persistedUserMessage.runtimeTrace ? { baseRuntimeTrace: { regex: persistedUserMessage.runtimeTrace } } : {}),
       },
     });

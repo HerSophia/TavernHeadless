@@ -16,6 +16,8 @@ import type { PromptRuntimeExecutionResult, PromptRuntimeResolvedContext } from 
 import type { PromptRuntimeInspectionResult } from "../prompt-runtime-control-service.js";
 import type { FirstPartySceneContext, FirstPartyWorldContext } from "../../session-state/session-state-types.js";
 import type { ResolvedTurnModels } from "./contracts.js";
+import type { PromptRuntimeHistoryNormalizationSummary } from "./conversation-history-normalizer.js";
+import type { FloorConversationInputSnapshot } from "./shared/metadata.js";
 
 export type ChatWorkflowMode =
   | "respond"
@@ -98,6 +100,8 @@ export interface PreparedPromptArtifacts {
   resolvedTurnModels: ResolvedTurnModels;
   assembled: AssembleResult;
   materialized: MaterializePromptRuntimeMessagesResult;
+  conversationInputSnapshot?: FloorConversationInputSnapshot;
+  historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   inspection: PromptRuntimeInspectionResult;
   tokenEstimate: number;
   availableForReply: number;
@@ -116,7 +120,7 @@ export interface PreparedTurnContext {
   sessionId: string;
   branchId?: string;
   floorId: string;
-  pageId: string;
+  pageId?: string;
   accountId: string;
   userMessage: string;
   executionContext: PromptRuntimeResolvedContext;
@@ -126,6 +130,8 @@ export interface PreparedTurnContext {
   resolvedTurnModels: ResolvedTurnModels;
   assembled: AssembleResult;
   materialized: MaterializePromptRuntimeMessagesResult;
+  conversationInputSnapshot?: FloorConversationInputSnapshot;
+  historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   inspection: PromptRuntimeInspectionResult;
   promptDebug: PreparedTurnPromptDebugArtifacts;
   generationParams: GenerationParams;

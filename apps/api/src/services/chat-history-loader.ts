@@ -29,6 +29,18 @@ export interface PromptVisibilityTrace {
   filteredFloorNos?: number[];
 }
 
+export interface PromptHistoryMessageEntry {
+  floorId: string | null;
+  floorNo: number | null;
+  pageId: string | null;
+  pageNo: number | null;
+  messageId: string | null;
+  seq: number;
+  role: ChatMessage["role"];
+  content: string;
+  fromCurrentInput?: boolean;
+}
+
 export class ChatHistoryLoader {
   private readonly lineageService: FloorLineageService;
 
@@ -46,8 +58,18 @@ export class ChatHistoryLoader {
     beforeFloorNo?: number,
     visibility?: PromptVisibilityPolicy,
   ): Promise<ChatMessage[]> {
+    const historyEntries = await this.loadHistoryEntries(sessionId, branchId, beforeFloorNo, visibility);
+    return historyEntries.map((entry) => ({ role: entry.role, content: entry.content }));
+  }
+
+  async loadHistoryEntries(
+    sessionId: string,
+    branchId = "main",
+    beforeFloorNo?: number,
+    visibility?: PromptVisibilityPolicy,
+  ): Promise<PromptHistoryMessageEntry[]> {
     const floorScope = await this.selectHistoryFloorScope(sessionId, branchId, beforeFloorNo, visibility);
-    return this.loadMessagesFromFloorScope(floorScope);
+    return this.loadHistoryEntriesFromFloorScope(floorScope);
   }
 
   async loadHistoryBeforeFloor(
@@ -199,9 +221,9 @@ export class ChatHistoryLoader {
       .map((node) => ({ id: node.id, floorNo: node.floorNo }));
   }
 
-  private async loadMessagesFromFloorScope(
+  private async loadHistoryEntriesFromFloorScope(
     floorScope: Array<{ id: string; floorNo: number }>
-  ): Promise<ChatMessage[]> {
+  ): Promise<PromptHistoryMessageEntry[]> {
     if (floorScope.length === 0) {
       return [];
     }
@@ -212,8 +234,10 @@ export class ChatHistoryLoader {
     const historyRows = await this.db
       .select({
         floorId: messagePages.floorId,
+        pageId: messagePages.id,
         role: messages.role,
         content: messages.content,
+        messageId: messages.id,
         pageNo: messagePages.pageNo,
         seq: messages.seq,
       })
@@ -232,7 +256,16 @@ export class ChatHistoryLoader {
       return a.seq - b.seq;
     });
 
-    return historyRows.map((row) => ({ role: mapRole(row.role), content: row.content }));
+    return historyRows.map((row) => ({
+      floorId: row.floorId,
+      floorNo: floorNoById.get(row.floorId) ?? null,
+      pageId: row.pageId,
+      pageNo: row.pageNo,
+      messageId: row.messageId,
+      seq: row.seq,
+      role: mapRole(row.role),
+      content: row.content,
+    }));
   }
 }
 

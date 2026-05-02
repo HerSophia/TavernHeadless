@@ -135,6 +135,8 @@ POST /sessions/:id/respond
 
 如果本轮 prompt 组装实际命中了宏系统，`runtime_trace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
 
+如果这次运行把多个连续 `user floor` 归并成了一个有效 user turn，或者命中了 assistant floor 护栏诊断，`runtime_trace.history_normalization` 会返回原始 entry 数、有效 turn 数、归并来源和违规列表。
+
 当 mutation value 是对象时，`runtime_trace.macro.mutation_preview` 和 `runtime_trace.macro.staged_mutations` 会返回稳定 JSON 字符串，而不是 `[object Object]`。
 
 当 `structure.mode=flattened` 时，`runtime_trace.structure` 还会附带 `transcriptized`、`transcript_message_count` 与 `assistant_prefill_transcriptized`。如果 assistant prefill 被转写进 transcript，`runtime_trace.delivery.assistant_prefill_strategy` 会返回 `transcript_append`。
@@ -403,6 +405,7 @@ Phase 2 首轮里，`runtime_trace` 新增两类更正式的 explain 输出：
 
 - `budgets.trim_reasons`：回答“为什么被裁剪”
 - `source_selection.excluded_sources`：回答“为什么没有进入 prompt”
+- `history_normalization`：回答“连续 user floor 是怎样归并的，以及是否出现了跨 floor 的连续 assistant 段”
 
 这里需要区分两层名字：
 

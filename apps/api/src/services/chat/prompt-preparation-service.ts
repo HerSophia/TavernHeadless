@@ -14,7 +14,7 @@ import {
   type PromptSourceSelectionPolicy,
   type PromptStructurePolicy,
 } from "../prompt-assembler.js";
-import type { PromptVisibilityPolicy, PromptVisibilityTrace } from "../chat-history-loader.js";
+import type { PromptHistoryMessageEntry, PromptVisibilityPolicy, PromptVisibilityTrace } from "../chat-history-loader.js";
 import { ChatHistoryLoader } from "../chat-history-loader.js";
 import { buildPromptRuntimeExecutionResult, type PromptRuntimeExecutionResult, type PromptRuntimeResolvedContext } from "../prompt-runtime-execution.js";
 import {
@@ -35,12 +35,37 @@ import {
 } from "../prompt-runtime-control-service.js";
 import type { AppDb } from "../../db/client.js";
 
+import {
+  buildConversationHistoryWindow,
+  type EffectiveConversationTurn,
+  type PromptRuntimeHistoryNormalizationSummary,
+} from "./conversation-history-normalizer.js";
+
 export interface PromptLiveDebugArtifacts {
   availableForReply: number;
   inspection: PromptRuntimeInspectionResult;
   promptSnapshotRecord: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
   promptSnapshot?: PromptSnapshotPreview;
   runtimeTrace?: PromptRuntimeTrace;
+}
+
+export interface PromptRuntimeConversationInput {
+  content: string;
+  floorId?: string | null;
+  floorNo?: number | null;
+  pageId?: string | null;
+  pageNo?: number | null;
+  messageId?: string | null;
+  seq?: number;
+}
+
+export interface PromptRuntimeConversationWindow {
+  history: ChatMessage[];
+  effectiveUserMessage?: string;
+  effectiveTurns: EffectiveConversationTurn[];
+  selectedTurns: EffectiveConversationTurn[];
+  visibilityTrace: PromptVisibilityTrace;
+  historyNormalization: PromptRuntimeHistoryNormalizationSummary;
 }
 
 export class PromptPreparationService {
@@ -65,6 +90,37 @@ export class PromptPreparationService {
     return {
       history: this.applyPromptRuntimeHistorySourceSelection(history, args.sourceSelection),
       visibilityTrace,
+    };
+  }
+
+  async loadPromptRuntimeConversationWindow(args: {
+    sessionId: string;
+    branchId: string;
+    beforeFloorNo?: number;
+    visibility: PromptVisibilityPolicy;
+    sourceSelection?: PromptSourceSelectionPolicy;
+    currentInput?: PromptRuntimeConversationInput;
+  }): Promise<PromptRuntimeConversationWindow> {
+    const [historyEntries, visibilityTrace] = await Promise.all([
+      this.historyLoader.loadHistoryEntries(args.sessionId, args.branchId, args.beforeFloorNo, args.visibility),
+      this.historyLoader.previewVisibility(args.sessionId, args.branchId, args.beforeFloorNo, args.visibility),
+    ]);
+    const entries = args.currentInput
+      ? [...historyEntries, this.buildCurrentInputEntry(args.currentInput)]
+      : historyEntries;
+    const historyMaxTurns = resolvePromptRuntimeHistoryMaxTurns(args.sourceSelection);
+    const window = buildConversationHistoryWindow({
+      entries,
+      ...(historyMaxTurns !== undefined ? { maxSelectedTurns: historyMaxTurns } : {}),
+    });
+
+    return {
+      history: window.history,
+      effectiveTurns: window.effectiveTurns,
+      selectedTurns: window.selectedTurns,
+      visibilityTrace,
+      historyNormalization: window.historyNormalization,
+      ...(window.effectiveUserMessage !== undefined ? { effectiveUserMessage: window.effectiveUserMessage } : {}),
     };
   }
 
@@ -96,6 +152,7 @@ export class PromptPreparationService {
     memoryTrace?: PromptRuntimeTrace["memory"];
     worldbookHitCount?: number;
     extraDiagnostics?: PromptRuntimeDiagnostic[];
+    historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   } | {
     accountId: string;
     sessionId: string;
@@ -118,6 +175,7 @@ export class PromptPreparationService {
     memoryTrace?: PromptRuntimeTrace["memory"];
     worldbookHitCount?: number;
     extraDiagnostics?: PromptRuntimeDiagnostic[];
+    historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   })): Promise<PromptRuntimeInspectionResult> {
     const context: PromptRuntimeResolvedContext = "context" in args
       ? args.context
@@ -190,6 +248,7 @@ export class PromptPreparationService {
       }) ?? {},
       diagnostics,
       trimReasons,
+      ...(args.historyNormalization ? { historyNormalization: args.historyNormalization } : {}),
       excludedSources: sourceSelectionTrace?.excludedSources ?? [],
       sectionStats: this.buildPromptRuntimeSectionStats(args.assembled?.tokenUsage.bySection),
       limitations: [...PROMPT_RUNTIME_LIMITATIONS],
@@ -247,6 +306,20 @@ export class PromptPreparationService {
       deliveryPolicy,
       materializeAssistantPrefillFallback: true,
     });
+  }
+
+  private buildCurrentInputEntry(input: PromptRuntimeConversationInput): PromptHistoryMessageEntry {
+    return {
+      floorId: input.floorId ?? null,
+      floorNo: input.floorNo ?? null,
+      pageId: input.pageId ?? null,
+      pageNo: input.pageNo ?? null,
+      messageId: input.messageId ?? null,
+      seq: input.seq ?? 1,
+      role: "user",
+      content: input.content,
+      fromCurrentInput: true,
+    };
   }
 
   private buildPromptRuntimeTrimReasons(args: {
@@ -379,4 +452,15 @@ function normalizePositiveInt(value: unknown): number | undefined {
     return undefined;
   }
   return value;
+}
+
+function resolvePromptRuntimeHistoryMaxTurns(
+  sourceSelection?: PromptSourceSelectionPolicy,
+): number | undefined {
+  const mode = sourceSelection?.history?.mode;
+  if (mode === "full") {
+    return undefined;
+  }
+
+  return normalizePositiveInt(sourceSelection?.history?.maxMessages);
 }
