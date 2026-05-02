@@ -7,6 +7,7 @@ import { parseJsonField } from "../lib/http.js";
 import {
   ClientDataService,
   ClientDataServiceError,
+  type ClientDataAuditActor,
   type ClientDataConfig,
 } from "../client-data/client-data-service.js";
 import {
@@ -360,6 +361,50 @@ export class SessionStateService {
       mutations: appliedMutations,
       snapshots,
     };
+  }
+
+  releaseManagedDomainsForSession(input: {
+    accountId: string;
+    sessionId: string;
+    actor?: ClientDataAuditActor;
+  }, executor?: DbExecutor): string[] {
+    if (!executor) {
+      return this.executeTransaction((tx) => this.releaseManagedDomainsForSession(input, tx));
+    }
+
+    const tx = executor;
+    const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: false });
+    const bindings = this.clientDataRepository(tx).listManagedDomainsByHost({
+      accountId: host.accountId,
+      managerKind: SESSION_STATE_MANAGER_KIND,
+      hostType: SESSION_STATE_HOST_TYPE,
+      hostId: host.id,
+    });
+    const clientDataRepository = this.clientDataRepository(tx);
+    const clientDataService = this.getClientDataService(tx);
+    const releasedDomainIds: string[] = [];
+    const releasedDomainIdSet = new Set<string>();
+    const actor = input.actor ?? { actorType: "system:session_state", actorId: host.id };
+
+    for (const binding of bindings) {
+      if (releasedDomainIdSet.has(binding.domainId)) {
+        continue;
+      }
+      const domain = clientDataRepository.getDomainById(binding.domainId);
+      if (!domain || domain.status === "deleted") {
+        continue;
+      }
+      clientDataService.deleteDomain(
+        host.accountId,
+        binding.domainId,
+        actor,
+        `session-state-host-delete:${host.id}:${binding.stateNamespace}`,
+      );
+      releasedDomainIdSet.add(binding.domainId);
+      releasedDomainIds.push(binding.domainId);
+    }
+
+    return releasedDomainIds;
   }
 
   resolveLiveValue(input: {

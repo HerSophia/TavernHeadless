@@ -11,6 +11,7 @@ import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination
 import { getRequestAuthContext } from "../plugins/auth";
 import { FloorResultService } from "../services/floor-result-service";
 import { FloorRunService } from "../services/floor-run-service";
+import type { FloorRunServiceOptions } from "../services/floor-run-service.js";
 import { getOwnedFloorById, getOwnedSessionIds } from "../services/resource-ownership";
 import { deleteVariablesForBranch, deleteVariablesForFloor } from "../services/variables/cleanup/variable-owned-resource-cleanup.js";
 import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
@@ -375,10 +376,13 @@ function toFloorResultResponse(result: Awaited<ReturnType<FloorResultService["fi
 
 export async function registerFloorRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: {
+    floorRun?: FloorRunServiceOptions;
+  } = {},
 ): Promise<void> {
   const { db } = connection;
-  const floorRunService = new FloorRunService(db);
+  const floorRunService = new FloorRunService(db, undefined, options.floorRun);
   const floorResultService = new FloorResultService(db);
   const branchRegistry = new SessionBranchRegistryService(db);
 

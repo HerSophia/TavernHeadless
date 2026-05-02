@@ -15,8 +15,21 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
-import { floors } from "../src/db/schema";
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
+import { clientDataDomains, clientDataManagedDomains, floors } from "../src/db/schema";
 import type { DatabaseConnection } from "../src/db/client";
+import { SessionStateService } from "../src/session-state";
+
+const CLIENT_DATA_CONFIG = {
+  expirationIntervalMs: 300_000,
+  domainPurgeGracePeriodMs: 604_800_000,
+  defaultMaxItemSizeBytes: 1_048_576,
+  defaultQuotaMaxEntries: 10_000,
+  defaultQuotaMaxBytes: 10_485_760,
+  maxDomainsPerAccount: 64,
+  maxTotalEntriesPerAccount: 100_000,
+  maxTotalBytesPerAccount: 104_857_600,
+};
 
 type D<T> = { data: T };
 type E={ error: { code: string; message: string } };
@@ -59,12 +72,65 @@ describe("Sessions route extra branch coverage", () => {
   let database: DatabaseConnection["db"];
 
   beforeEach(async () => {
-    ({ app, database } = await buildApp({databasePath: ":memory:", logger: false }));
+    ({ app, database } = await buildApp({
+      databasePath: ":memory:",
+      logger: false,
+      enableClientData: true,
+      clientData: CLIENT_DATA_CONFIG,
+    }));
   });
 
   afterEach(async () => {
     if (app) await app.close();
   });
+
+  async function materializeGameState(sessionId: string, floorId = `floor-${sessionId}`) {
+    const service = new SessionStateService(database, { clientData: CLIENT_DATA_CONFIG });
+    const now = Date.now();
+
+    await database.insert(floors).values({
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      state: "committed",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    service.stageCommitBoundValue({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      sourceFloorId: floorId,
+      namespace: "game_state",
+      slot: "scene",
+      value: { label: "scene-state" },
+    });
+    service.applyStagedMutationsForFloor({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId,
+      committedAt: now + 1,
+    });
+  }
+
+  async function getManagedDomainForSession(sessionId: string) {
+    const [binding] = await database
+      .select()
+      .from(clientDataManagedDomains)
+      .where(eq(clientDataManagedDomains.hostId, sessionId));
+    expect(binding).toBeDefined();
+
+    const [domain] = await database
+      .select()
+      .from(clientDataDomains)
+      .where(eq(clientDataDomains.id, binding!.domainId));
+    expect(domain).toBeDefined();
+
+    return { binding: binding!, domain: domain! };
+  }
 
   // ── POST /sessions snapshot-only bindings ──────────
 
@@ -274,6 +340,60 @@ expect(res.json<E>().error.code).toBe("user_not_active");
     const body = res.json<D<BatchResult>>().data;
     expect(body.meta.deleted).toBe(1);
     expect(body.meta.not_found).toBe(1);
+  });
+
+  it("DELETE /sessions/:id soft-deletes managed game_state domains before removing the session", async () => {
+    const session = await createSession(app, { title: "Managed Delete" });
+    await materializeGameState(session.id);
+
+    const before = await getManagedDomainForSession(session.id);
+    expect(before.binding.stateNamespace).toBe("game_state");
+    expect(before.domain.status).toBe("active");
+    expect(before.domain.deletedAt).toBeNull();
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: `/sessions/${session.id}`,
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+
+    const [deletedDomain] = await database
+      .select()
+      .from(clientDataDomains)
+      .where(eq(clientDataDomains.id, before.domain.id));
+    expect(deletedDomain).toBeDefined();
+    expect(deletedDomain!.status).toBe("deleted");
+    expect(deletedDomain!.deletedAt).not.toBeNull();
+  });
+
+  it("POST /sessions/batch/delete soft-deletes managed game_state domains for deleted sessions", async () => {
+    const sessionA = await createSession(app, { title: "Batch Managed A" });
+    const sessionB = await createSession(app, { title: "Batch Managed B" });
+    await materializeGameState(sessionA.id);
+    await materializeGameState(sessionB.id);
+
+    const beforeA = await getManagedDomainForSession(sessionA.id);
+    const beforeB = await getManagedDomainForSession(sessionB.id);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/batch/delete",
+      payload: { ids: [sessionA.id, sessionB.id] },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json<D<BatchResult>>().data;
+    expect(body.meta.deleted).toBe(2);
+
+    const deletedDomains = await database
+      .select()
+      .from(clientDataDomains)
+      .where(eq(clientDataDomains.status, "deleted"));
+    expect(deletedDomains.map((domain) => domain.id)).toEqual(expect.arrayContaining([
+      beforeA.domain.id,
+      beforeB.domain.id,
+    ]));
   });
 
   it("POST /sessions/batch/delete returns 400 for empty ids", async () => {

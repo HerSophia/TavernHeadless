@@ -185,6 +185,7 @@ GET /sessions/:id/active-run
 - `latest_floor_id`
 
 如果当前没有活跃运行，`active_run` 返回 `null`。
+服务端会先修正已经超过运行超时窗口、且长时间没有继续更新的陈旧 generating run；这类 run 不再作为活跃运行返回。
 
 ### 错误
 
@@ -234,7 +235,7 @@ DELETE /sessions/:id
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `404` | `not_found` | 会话不存在 |
-| `409` | `active_run_in_progress` | 当前会话仍有活跃运行，不能删除 |
+| `409` | `active_run_in_progress` | 当前会话仍有活跃运行，不能删除。已经超过运行超时窗口的陈旧 generating run 会先被回收 |
 
 ## 同步角色绑定
 
@@ -511,6 +512,7 @@ POST /sessions/batch/delete
 ```
 
 其中 `action = "conflict"` 表示该会话仍有活跃运行，本次批量删除不会删除它。
+已经超过运行超时窗口、且长时间没有继续更新的陈旧 generating run 会先被服务端回收，不再计入 `conflict`。
 
 ### 错误
 

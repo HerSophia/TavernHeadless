@@ -554,7 +554,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       toolExecutionRepo,
     );
 
-    floorRunService = new FloorRunService(database.db, orchestrationContext.eventBus);
+    floorRunService = new FloorRunService(database.db, orchestrationContext.eventBus, {
+      staleRunTimeoutMs: options.llmDefaultTimeoutMs,
+    });
   }
 
   if (options.enableClientData === true && options.clientData) {
@@ -689,6 +691,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     accountMode,
     enableClientData: options.enableClientData,
     clientData: options.clientData,
+    floorRun: {
+      staleRunTimeoutMs: options.llmDefaultTimeoutMs,
+    },
   });
 
   const promptRuntimeControlService = new PromptRuntimeControlService(database.db, {
