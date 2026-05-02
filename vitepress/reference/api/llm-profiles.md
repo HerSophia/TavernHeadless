@@ -336,13 +336,13 @@ GET /llm-profiles/runtime
 
 `source` 可能的值：`env`（环境变量 fallback）、`global_profile`、`session_profile`。
 
+如果某个更高优先级 binding 指向的 Profile 密文无法解密，或者服务端当前没有可用的主密钥，运行时解析会跳过该 binding，继续尝试更低优先级 binding；如果没有可用 Profile，则回退到 `env`。
+
 ### 错误
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `400` | `validation_error` | 查询参数校验失败 |
-| `500` | `secret_invalid_format` | 数据库中的密文无法解密，通常表示主密钥不匹配或数据已损坏 |
-| `503` | `secret_unavailable` | 服务端未配置 `APP_SECRETS_MASTER_KEY` |
 
 这个接口描述的是 **Profile 侧** 的 provider / model 解析结果。若还需要查看实例侧的 `enabled`、`preset_id`、`params` 最终解析，应再查询 `GET /llm-instances/resolved`。
 

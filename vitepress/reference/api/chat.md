@@ -152,11 +152,13 @@ POST /sessions/:id/respond
 | `400` | `validation_error` / `invalid_message_scope` | 参数校验失败、消息作用域错误，或 `session_state_writes` 同时传入 `value` 和 `delete: true` / 两者都未传 |
 | `404` | `not_found` / `session_state_namespace_not_registered` | 会话不存在，或 turn 内声明的 custom namespace 尚未注册 |
 | `409` | `session_archived` / `generation_conflict` / `commit_conflict` / `generation_target_stale` / `branch_local_snapshot_missing` / `session_state_public_write_forbidden` / `session_state_namespace_item_limit_exceeded` / `session_state_namespace_byte_limit_exceeded` / `session_state_account_item_limit_exceeded` / `session_state_account_byte_limit_exceeded` / `session_state_payload_too_large` | 会话状态冲突、提交边界冲突、排队请求等待期间目标上下文已经变化、新分支所依赖的 source floor 缺少精确 local snapshot，或 turn 内 Session State 写入不被允许、命中规模限制或超出 payload budget |
-| `503` | `feature_unavailable` / `secret_unavailable` / `commit_busy` / `generation_queue_timeout` | client-data 未启用，密钥不可用，或生成 / 提交等待阶段已超时 |
+| `503` | `feature_unavailable` / `commit_busy` / `generation_queue_timeout` | client-data 未启用，或生成 / 提交等待阶段已超时 |
 | `504` | `generation_timeout` | LLM 执行超时 |
-| `500` | `secret_invalid_format` / `orchestration_failed` / `turn_commit_failed` / `session_state_stage_failed` | 已保存的密文无法解密，生成过程出现未分类内部错误，或 turn 内 session-state staging 失败 |
+| `500` | `orchestration_failed` / `turn_commit_failed` / `session_state_stage_failed` | 生成过程出现未分类内部错误，或 turn 内 session-state staging 失败 |
 
 上表列出的是常见错误，不是穷尽列表。
+
+当前 turn model 解析在遇到无法解密的 stored profile binding，或服务端当前没有可用主密钥时，会跳过该 binding，继续尝试更低优先级 binding；如果没有可用 Profile，则回退到 env。因此，旧 binding 或损坏密文通常不会再单独阻断 `/sessions/:id/respond`。
 
 当前聊天链路还可能返回：`source_floor_not_found`、`invalid_tool_mode`、`tool_replay_blocked`、`tool_replay_confirmation_required`、`session_state_replay_blocked`、`session_state_replay_confirmation_required`、`replay_confirmation_required`、`profile_not_found`、`profile_disabled`、`instance_slot_disabled_required`、`tool_catalog_conflict`、`generation_cancelled`（`499`）等 code。客户端应按 `error.code` 做分支处理，而不应只依赖状态码。
 
@@ -224,7 +226,7 @@ event: error
 data: {"code":"generation_timeout","message":"Turn orchestration failed: LLM request timed out after 60000ms"}
 ```
 
-一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict`、`secret_invalid_format` 等值。资源写入路径上的 `resource_busy` 不会通过这里复用。
+一旦 SSE 连接已经建立，运行期错误会通过 `error` 事件返回，不再切换 HTTP 状态码。`code` 可能为 `generation_conflict`、`generation_queue_timeout`、`generation_timeout`、`commit_busy`、`commit_conflict` 等值。资源写入路径上的 `resource_busy` 不会通过这里复用。
 
 客户端断开连接时，服务端会自动中止生成。
 

@@ -2,11 +2,12 @@
  * llm-profiles.ts extra branch coverage.
  *
  * Targets:
- *   - sendServiceError: profile_inactive, secret_unavailable, secret_invalid_format
+ *   - sendServiceError: profile_inactive, secret_unavailable
  *   - activate inactive profile -> 409
  *   - delete missing profile -> 404
  *   - patch deleted profile -> 409
  *   - rename conflict on patch
+ *   - runtime route falls back to env when active profile secret cannot be decrypted
  */
 
 import { rmSync } from "node:fs";
@@ -126,7 +127,7 @@ describe("LLM Profiles extra branch coverage", () => {
     expect((res.json() as { error: { code: string } }).error.code).toBe("secret_unavailable");
   });
 
-  it("returns 500 secret_invalid_format when runtime profile secret cannot be decrypted", async () => {
+  it("falls back to env when runtime profile secret cannot be decrypted", async () => {
     await app.close();
     persistedDatabasePath = `data/test-llm-profile-secret-format-${Date.now()}.db`;
 
@@ -163,11 +164,12 @@ describe("LLM Profiles extra branch coverage", () => {
       url: "/llm-profiles/runtime",
     });
 
-    expect(runtimeRes.statusCode).toBe(500);
-    expect((runtimeRes.json() as { error: { code: string; message: string } }).error).toEqual({
-      code: "secret_invalid_format",
-      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
-    });
+    expect(runtimeRes.statusCode).toBe(200);
+    expect((runtimeRes.json() as {
+      data: { slots: Array<{ slot: string; source: string; scope: string | null; profile_id: string | null }> };
+    }).data.slots).toEqual(expect.arrayContaining([
+      expect.objectContaining({ slot: "narrator", source: "env", scope: null, profile_id: null }),
+    ]));
   });
 
   it("returns 404 when unbinding a missing binding", async () => {
