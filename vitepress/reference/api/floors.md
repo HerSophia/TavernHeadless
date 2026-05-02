@@ -176,6 +176,7 @@ PATCH /floors/:id
 返回更新后的 Floor 对象。
 
 如果目标 floor 当前仍有活跃运行，接口返回 `409 active_run_in_progress`。
+已经超过运行超时窗口、且长时间没有继续更新的陈旧 generating run 会先被服务端回收；只有仍在活动窗口内的运行才会触发这个冲突。
 
 ## 删除楼层
 
@@ -190,6 +191,7 @@ DELETE /floors/:id
 ```
 
 如果目标 floor 当前仍有活跃运行，接口返回 `409 active_run_in_progress`。
+已经超过运行超时窗口、且长时间没有继续更新的陈旧 generating run 会先被服务端回收；只有仍在活动窗口内的运行才会触发这个冲突。
 
 ## 从楼层创建分支
 
@@ -233,7 +235,7 @@ DELETE /branches/:id
 - `main` 分支不可删除，服务端返回 `409 protected_branch`
 - 如果同名 `branch_id` 同时存在于多个 session，不传 `session_id` 会返回 `409 ambiguous_branch`
 - 删除分支前，服务端会先清理该 branch 对应的 branch-scope 变量
-- 如果目标 branch 当前仍有活跃运行，接口返回 `409 active_run_in_progress`
+- 如果目标 branch 当前仍有活跃运行，接口返回 `409 active_run_in_progress`；已经超过运行超时窗口、且长时间没有继续更新的陈旧 generating run 会先被服务端回收
 
 ### 查询参数
 

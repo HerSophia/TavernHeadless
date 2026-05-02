@@ -45,6 +45,8 @@ interface PendingOutputPersistState {
 export interface FloorRunServiceOptions {
   pendingOutputMinPersistIntervalMs?: number;
   pendingOutputMinPersistChars?: number;
+  staleRunTimeoutMs?: number;
+  staleRunGracePeriodMs?: number;
 }
 
 function toPublicPhase(phase: FloorRunPhase): FloorRunPublicPhase {
@@ -95,6 +97,7 @@ export class FloorRunService {
   private readonly pendingOutputMinPersistIntervalMs: number;
   private readonly pendingOutputMinPersistChars: number;
   private readonly pendingOutputStates = new Map<string, PendingOutputPersistState>();
+  private readonly staleRunMaxAgeMs: number;
 
   constructor(
     private readonly db: AppDb,
@@ -108,6 +111,10 @@ export class FloorRunService {
     this.pendingOutputMinPersistChars = Math.max(
       1,
       options.pendingOutputMinPersistChars ?? 1024,
+    );
+    this.staleRunMaxAgeMs = Math.max(
+      1_000,
+      (options.staleRunTimeoutMs ?? 60_000) + (options.staleRunGracePeriodMs ?? 30_000),
     );
   }
 
@@ -387,10 +394,13 @@ export class FloorRunService {
       return null;
     }
 
+    const run = await this.getSnapshot(floorId);
+    const latestFloorRow = await this.getFloorRow(floorId);
+
     return {
-      floorId: floorRow.id,
-      state: floorRow.state,
-      run: await this.getSnapshot(floorId),
+      floorId: (latestFloorRow ?? floorRow).id,
+      state: (latestFloorRow ?? floorRow).state,
+      run,
     };
   }
 
@@ -405,35 +415,35 @@ export class FloorRunService {
       conditions.push(eq(floors.branchId, branchId));
     }
 
-    const row = await this.db
+    const rows = await this.db
       .select({
         branchId: floors.branchId,
         floorId: floors.id,
-        publicPhase: floorRunStates.publicPhase,
-        runId: floorRunStates.runId,
-        runType: floorRunStates.runType,
-        updatedAt: floorRunStates.updatedAt,
       })
       .from(floorRunStates)
       .innerJoin(floors, eq(floorRunStates.floorId, floors.id))
       .where(and(...conditions))
       .orderBy(desc(floorRunStates.updatedAt))
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
+      .all();
 
-    if (!row) {
-      return null;
+    for (const row of rows) {
+      const snapshot = await this.getSnapshot(row.floorId);
+      if (!snapshot || snapshot.status !== "running") {
+        continue;
+      }
+
+      return {
+        branchId: row.branchId,
+        latestFloorId: row.floorId,
+        activeRunId: snapshot.runId,
+        activeRunType: snapshot.runType,
+        busy: true,
+        publicPhase: snapshot.publicPhase,
+        updatedAt: snapshot.updatedAt,
+      };
     }
 
-    return {
-      branchId: row.branchId,
-      latestFloorId: row.floorId,
-      activeRunId: row.runId,
-      activeRunType: row.runType as FloorRunType,
-      busy: true,
-      publicPhase: row.publicPhase as FloorRunPublicPhase,
-      updatedAt: row.updatedAt,
-    };
+    return null;
   }
 
   async getSnapshot(floorId: string): Promise<FloorRunSnapshot | null> {
@@ -447,23 +457,71 @@ export class FloorRunService {
       return null;
     }
 
+    const reconciledRunRow = await this.reconcileStaleRunRow(floorRow, runRow);
     return {
       sessionId: floorRow.sessionId,
-      floorId: runRow.floorId,
-      runId: runRow.runId,
-      runType: runRow.runType as FloorRunType,
-      status: runRow.status as FloorRunStatus,
-      phase: runRow.phase as FloorRunPhase,
-      publicPhase: runRow.publicPhase as FloorRunPublicPhase,
-      phaseSeq: runRow.phaseSeq,
-      attemptNo: runRow.attemptNo,
-      startedAt: runRow.startedAt,
-      updatedAt: runRow.updatedAt,
-      completedAt: runRow.completedAt,
-      pendingOutput: safeParseJson<FloorRunPendingOutput>(runRow.pendingOutputJson),
-      verifier: safeParseJson<FloorRunVerifierSnapshot>(runRow.verifierJson),
-      error: safeParseJson<FloorRunError>(runRow.errorJson),
+      floorId: reconciledRunRow.floorId,
+      runId: reconciledRunRow.runId,
+      runType: reconciledRunRow.runType as FloorRunType,
+      status: reconciledRunRow.status as FloorRunStatus,
+      phase: reconciledRunRow.phase as FloorRunPhase,
+      publicPhase: reconciledRunRow.publicPhase as FloorRunPublicPhase,
+      phaseSeq: reconciledRunRow.phaseSeq,
+      attemptNo: reconciledRunRow.attemptNo,
+      startedAt: reconciledRunRow.startedAt,
+      updatedAt: reconciledRunRow.updatedAt,
+      completedAt: reconciledRunRow.completedAt,
+      pendingOutput: safeParseJson<FloorRunPendingOutput>(reconciledRunRow.pendingOutputJson),
+      verifier: safeParseJson<FloorRunVerifierSnapshot>(reconciledRunRow.verifierJson),
+      error: safeParseJson<FloorRunError>(reconciledRunRow.errorJson),
     };
+  }
+
+  private async reconcileStaleRunRow(
+    floorRow: typeof floors.$inferSelect,
+    runRow: typeof floorRunStates.$inferSelect,
+  ): Promise<typeof floorRunStates.$inferSelect> {
+    if (runRow.status !== "running") {
+      return runRow;
+    }
+
+    const updatedAt = Math.max(Date.now(), floorRow.updatedAt, runRow.updatedAt);
+    if (floorRow.state === "committed") {
+      await this.markCompleted(floorRow.id, { updatedAt });
+      return (await this.getRunRow(floorRow.id)) ?? runRow;
+    }
+
+    if (floorRow.state === "failed") {
+      await this.markFailed(
+        floorRow.id,
+        {
+          code: "stale_floor_run_reconciled",
+          message: `Floor '${floorRow.id}' was already failed while its run snapshot was still marked running`,
+        },
+        { updatedAt },
+      );
+      return (await this.getRunRow(floorRow.id)) ?? runRow;
+    }
+
+    const lastProgressAt = Math.max(floorRow.updatedAt, runRow.updatedAt);
+    if (floorRow.state === "generating" && Date.now() - lastProgressAt > this.staleRunMaxAgeMs) {
+      await this.markFailed(
+        floorRow.id,
+        {
+          code: "stale_floor_run_timeout",
+          message: `Floor run '${runRow.runId}' exceeded the stale timeout window while floor '${floorRow.id}' remained generating`,
+        },
+        { updatedAt },
+      );
+      await this.db
+        .update(floors)
+        .set({ state: "failed", updatedAt })
+        .where(and(eq(floors.id, floorRow.id), eq(floors.state, "generating")))
+        .run();
+      return (await this.getRunRow(floorRow.id)) ?? runRow;
+    }
+
+    return runRow;
   }
 
   private async getFloorRow(floorId: string): Promise<typeof floors.$inferSelect | null> {

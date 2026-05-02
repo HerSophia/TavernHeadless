@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import type { DatabaseConnection } from "../db/client";
 import type { ClientDataConfig } from "../client-data/client-data-service.js";
 import type { SessionToolRegistryService } from "../services/tooling/session-tool-registry-service.js";
+import type { FloorRunServiceOptions } from "../services/floor-run-service.js";
 import type { McpConnectionManager } from "../services/tooling/mcp/mcp-connection-manager.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 import { registerCharacterRoutes } from "./characters";
@@ -39,6 +40,7 @@ export interface CrudRoutesOptions {
   accountMode?: AccountMode;
   enableClientData?: boolean;
   clientData?: ClientDataConfig;
+  floorRun?: FloorRunServiceOptions;
 }
 
 export async function registerCrudRoutes(
@@ -49,12 +51,17 @@ export async function registerCrudRoutes(
   await registerAccountRoutes(app, connection, {
     accountMode: options.accountMode,
   });
-  await registerSessionRoutes(app, connection);
+  await registerSessionRoutes(app, connection, {
+    clientData: options.enableClientData ? options.clientData : undefined,
+    floorRun: options.floorRun,
+  });
   await registerSessionRuntimeToolRoutes(app, {
     sessionToolRegistryService: options.sessionToolRegistryService,
   });
   await registerCharacterRoutes(app, connection);
-  await registerFloorRoutes(app, connection);
+  await registerFloorRoutes(app, connection, {
+    floorRun: options.floorRun,
+  });
   await registerUserRoutes(app, connection);
   await registerMessagePageRoutes(app, connection);
   await registerMessageRoutes(app, connection);
