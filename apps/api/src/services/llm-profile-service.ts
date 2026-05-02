@@ -362,7 +362,8 @@ export class LlmProfileService {
     sessionId: string | undefined,
     slot: string,
   ): LlmProfileResolved | null {
-    // 按优先级搜索
+    // 按优先级搜索。若某个 candidate 的密文无法解密，则继续尝试更低优先级 candidate，
+    // 避免坏 binding 阻断 runtime fallback。
     const candidates: { scope: LlmProfileScope; scopeId: string; slot: string }[] = [];
     if (sessionId) {
       candidates.push({ scope: 'session', scopeId: sessionId, slot });
@@ -380,21 +381,39 @@ export class LlmProfileService {
       const found = bindings.find(
         (b) => b.scope === c.scope && b.scopeId === c.scopeId && b.instanceSlot === c.slot,
       );
-      if (found) {
-        return {
-          source: found.scope,
-          profileId: found.profileId,
-          presetName: found.presetName,
-          provider: found.provider,
-          modelId: found.modelId,
-          baseUrl: found.baseUrl,
-          apiKey: this.decrypt(found.apiKeyEncrypted),
-          params: normalizeBindingParams(parseBindingParamsJson(found.paramsJson), false) ?? {},
-        };
+      if (!found) {
+        continue;
+      }
+
+      try {
+        return this.resolveBinding(found);
+      } catch (error) {
+        if (this.shouldSkipBrokenRuntimeBinding(error)) {
+          continue;
+        }
+        throw error;
       }
     }
 
     return null;
+  }
+
+  private resolveBinding(found: BindingRow): LlmProfileResolved {
+    return {
+      source: found.scope,
+      profileId: found.profileId,
+      presetName: found.presetName,
+      provider: found.provider,
+      modelId: found.modelId,
+      baseUrl: found.baseUrl,
+      apiKey: this.decrypt(found.apiKeyEncrypted),
+      params: normalizeBindingParams(parseBindingParamsJson(found.paramsJson), false) ?? {},
+    };
+  }
+
+  private shouldSkipBrokenRuntimeBinding(error: unknown): boolean {
+    return error instanceof LlmProfileServiceError
+      && (error.code === "secret_invalid_format" || error.code === "secret_unavailable");
   }
 
   private async loadAllBindings(sessionId: string | undefined, accountId: string): Promise<BindingRow[]> {

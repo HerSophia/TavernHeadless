@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 
+import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 const runtimeWiringState = vi.hoisted(() => ({
   lastChatServiceOptions: null as Record<string, unknown> | null,
 }));
@@ -48,7 +48,6 @@ vi.mock("../src/services/chat/chat-service", async () => {
 });
 
 import { buildApp } from "../src/app";
-import { ChatServiceError } from "../src/services/chat/chat-service";
 
 describe("buildApp LLM runtime wiring", () => {
   let app: FastifyInstance;
@@ -290,7 +289,7 @@ describe("buildApp LLM runtime wiring", () => {
     expect(second.narrator?.model?.languageModel).toBeDefined();
   });
 
-  it("wraps profile secret decryption failures as ChatServiceError during turn model resolution", async () => {
+  it("falls back to env model when profile secret cannot be decrypted during turn model resolution", async () => {
     await app.close();
     persistedDatabasePath = `data/test-llm-runtime-secret-format-${Date.now()}.db`;
 
@@ -338,18 +337,90 @@ describe("buildApp LLM runtime wiring", () => {
     }));
 
     const resolveTurnModels = getResolveTurnModels();
-    const resolutionError = await resolveTurnModels(sessionId, "default-admin")
-      .then(() => null)
-      .catch((error) => error);
+    const resolved = await resolveTurnModels(sessionId, "default-admin") as {
+      narrator?: {
+        enabled?: boolean;
+        source?: string;
+        profileId?: string;
+        model?: { providerId: string; modelId: string };
+      };
+    };
 
-    expect(resolutionError).toBeInstanceOf(ChatServiceError);
-    expect(resolutionError).toMatchObject({
-      code: "secret_invalid_format",
-      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
+    expect(resolved.narrator).toMatchObject({
+      enabled: true,
+      source: "env",
     });
-    expect((resolutionError as ChatServiceError).cause).toMatchObject({
-      code: "secret_invalid_format",
-      message: "Stored profile secret cannot be decrypted. Check APP_SECRETS_MASTER_KEY or data integrity.",
+    expect(resolved.narrator?.profileId).toBeUndefined();
+    expect(resolved.narrator?.model).toBeUndefined();
+  });
+
+  it("skips a broken higher-priority profile and continues to a lower-priority healthy binding", async () => {
+    await app.close();
+    persistedDatabasePath = `data/test-llm-runtime-secret-priority-${Date.now()}.db`;
+
+    process.env.APP_SECRETS_MASTER_KEY = "priority-master-key";
+    ({ app } = await buildApp({
+      databasePath: persistedDatabasePath,
+      logger: false,
+      enableWebSocket: false,
+      orchestration: {
+        providers: [{ id: "default-openai", type: "openai-compatible", apiKey: "sk-default" }],
+        defaultModel: { providerId: "default-openai", modelId: "gpt-4o-mini" },
+      },
+    }));
+
+    const sessionId = await createSession();
+    const wildcardProfileId = await createProfile({ preset_name: "Healthy Wildcard Profile", model_id: "gpt-4o-mini" });
+    const brokenNarratorProfileId = await createProfile({ preset_name: "Broken Narrator Profile", model_id: "gpt-4.1" });
+
+    const activateWildcardRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${wildcardProfileId}/activate`,
+      payload: { scope: "global", instance_slot: "*" },
+    });
+    expect(activateWildcardRes.statusCode).toBe(200);
+
+    const activateBrokenRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${brokenNarratorProfileId}/activate`,
+      payload: { scope: "global", instance_slot: "narrator" },
+    });
+    expect(activateBrokenRes.statusCode).toBe(200);
+
+    await app.close();
+
+    const sqlite = new Database(persistedDatabasePath);
+    try {
+      sqlite.prepare("UPDATE llm_profile SET api_key_encrypted = ? WHERE id = ?").run("not-a-valid-secret", brokenNarratorProfileId);
+    } finally {
+      sqlite.close();
+    }
+
+    ({ app } = await buildApp({
+      databasePath: persistedDatabasePath,
+      logger: false,
+      enableWebSocket: false,
+      orchestration: {
+        providers: [{ id: "default-openai", type: "openai-compatible", apiKey: "sk-default" }],
+        defaultModel: { providerId: "default-openai", modelId: "gpt-4o-mini" },
+      },
+    }));
+
+    const resolveTurnModels = getResolveTurnModels();
+    const resolved = await resolveTurnModels(sessionId, "default-admin") as {
+      narrator?: {
+        enabled?: boolean;
+        source?: string;
+        profileId?: string;
+        model?: { providerId: string; modelId: string };
+      };
+    };
+
+    expect(resolved.narrator).toMatchObject({
+      enabled: true,
+      source: "global_profile",
+      profileId: wildcardProfileId,
+      model: { modelId: "gpt-4o-mini" },
     });
   });
 });
