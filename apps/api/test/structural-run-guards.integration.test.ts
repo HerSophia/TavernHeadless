@@ -86,8 +86,11 @@ describe("structural run guards", () => {
     branchId?: string;
     floorNo?: number;
     state?: "draft" | "generating" | "committed" | "failed";
+    createdAt?: number;
+    updatedAt?: number;
   }): Promise<void> {
-    const now = Date.now();
+    const createdAt = args.createdAt ?? Date.now();
+    const updatedAt = args.updatedAt ?? createdAt;
     await database.db.insert(floors).values({
       id: args.floorId,
       sessionId: args.sessionId,
@@ -97,20 +100,25 @@ describe("structural run guards", () => {
       state: args.state ?? "generating",
       tokenIn: 0,
       tokenOut: 0,
-      createdAt: now,
-      updatedAt: now,
+      createdAt,
+      updatedAt,
     });
     new SessionBranchRegistryService(database.db).ensure({
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
       sessionId: args.sessionId,
       branchId: args.branchId ?? "main",
-      createdAt: now,
-      updatedAt: now,
+      createdAt,
+      updatedAt,
     });
   }
 
-  async function seedRunningRun(floorId: string, runType: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate" = "respond"): Promise<void> {
-    const now = Date.now();
+  async function seedRunningRun(
+    floorId: string,
+    runType: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate" = "respond",
+    options: { startedAt?: number; updatedAt?: number } = {},
+  ): Promise<void> {
+    const startedAt = options.startedAt ?? Date.now();
+    const updatedAt = options.updatedAt ?? startedAt;
     await database.db.insert(floorRunStates).values({
       floorId,
       runId: `run-${floorId}`,
@@ -123,8 +131,8 @@ describe("structural run guards", () => {
       pendingOutputJson: null,
       verifierJson: null,
       errorJson: null,
-      startedAt: now,
-      updatedAt: now,
+      startedAt,
+      updatedAt,
       completedAt: null,
     });
   }
@@ -144,6 +152,60 @@ describe("structural run guards", () => {
 
     const [sessionRow] = await database.db.select({ id: sessions.id }).from(sessions).where(eq(sessions.id, "session-running"));
     expect(sessionRow?.id).toBe("session-running");
+  });
+
+  it("GET /sessions/:id/active-run reconciles stale committed runs and returns null", async () => {
+    await seedSession("session-stale", "Stale Session");
+    await seedFloor({ floorId: "floor-stale", sessionId: "session-stale", floorNo: 1, state: "committed" });
+    await seedRunningRun("floor-stale");
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/sessions/session-stale/active-run",
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toEqual({
+      data: {
+        session_id: "session-stale",
+        active_run: null,
+      },
+    });
+
+    const [runRow] = await database.db
+      .select()
+      .from(floorRunStates)
+      .where(eq(floorRunStates.floorId, "floor-stale"));
+    expect(runRow?.status).toBe("completed");
+    expect(runRow?.completedAt).not.toBeNull();
+  });
+
+  it("GET /sessions/:id/active-run reconciles stale generating runs to failed and returns null", async () => {
+    const staleAt = Date.now() - 200_000;
+    await seedSession("session-stale-generating", "Stale Generating Session");
+    await seedFloor({
+      floorId: "floor-stale-generating",
+      sessionId: "session-stale-generating",
+      floorNo: 1,
+      state: "generating",
+      createdAt: staleAt,
+      updatedAt: staleAt,
+    });
+    await seedRunningRun("floor-stale-generating", "respond", { startedAt: staleAt, updatedAt: staleAt });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/sessions/session-stale-generating/active-run",
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toEqual({ data: { session_id: "session-stale-generating", active_run: null } });
+
+    const [floorRow] = await database.db.select().from(floors).where(eq(floors.id, "floor-stale-generating"));
+    const [runRow] = await database.db.select().from(floorRunStates).where(eq(floorRunStates.floorId, "floor-stale-generating"));
+    expect(floorRow?.state).toBe("failed");
+    expect(runRow?.status).toBe("failed");
+    expect(JSON.parse(runRow?.errorJson ?? "{}")).toMatchObject({ code: "stale_floor_run_timeout" });
   });
 
   it("POST /sessions/batch/delete marks active sessions as conflict", async () => {
@@ -182,6 +244,66 @@ describe("structural run guards", () => {
     expect(remainingSessions.map((row) => row.id)).toEqual(["session-running"]);
   });
 
+  it("POST /sessions/batch/delete deletes stale committed runs instead of reporting conflict", async () => {
+    await seedSession("session-stale", "Stale Session");
+    await seedSession("session-running", "Running Session");
+    await seedFloor({ floorId: "floor-stale", sessionId: "session-stale", floorNo: 1, state: "committed" });
+    await seedFloor({ floorId: "floor-running", sessionId: "session-running", floorNo: 1, state: "generating" });
+    await seedRunningRun("floor-stale");
+    await seedRunningRun("floor-running");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/batch/delete",
+      payload: { ids: ["session-stale", "session-running"] },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<BatchDeleteResponse>()).toEqual({
+      data: {
+        results: [
+          { index: 0, id: "session-stale", action: "deleted" },
+          { index: 1, id: "session-running", action: "conflict" },
+        ],
+        meta: {
+          total: 2,
+          deleted: 1,
+          not_found: 0,
+          conflicts: 1,
+        },
+      },
+    });
+  });
+
+  it("POST /sessions/batch/delete deletes stale generating runs instead of reporting conflict", async () => {
+    const staleAt = Date.now() - 200_000;
+    await seedSession("session-stale-generating", "Stale Generating Session");
+    await seedSession("session-running", "Running Session");
+    await seedFloor({
+      floorId: "floor-stale-generating",
+      sessionId: "session-stale-generating",
+      floorNo: 1,
+      state: "generating",
+      createdAt: staleAt,
+      updatedAt: staleAt,
+    });
+    await seedFloor({ floorId: "floor-running", sessionId: "session-running", floorNo: 1, state: "generating" });
+    await seedRunningRun("floor-stale-generating", "respond", { startedAt: staleAt, updatedAt: staleAt });
+    await seedRunningRun("floor-running");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/batch/delete",
+      payload: { ids: ["session-stale-generating", "session-running"] },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json<BatchDeleteResponse>().data.results).toEqual([
+      { index: 0, id: "session-stale-generating", action: "deleted" },
+      { index: 1, id: "session-running", action: "conflict" },
+    ]);
+  });
+
   it("PATCH /floors/:id and DELETE /floors/:id reject floors with active runs", async () => {
     await seedSession("session-1");
     await seedFloor({ floorId: "floor-1", sessionId: "session-1", floorNo: 2, state: "generating" });
@@ -206,6 +328,56 @@ describe("structural run guards", () => {
 
     const [floorRow] = await database.db.select().from(floors).where(eq(floors.id, "floor-1"));
     expect(floorRow?.floorNo).toBe(2);
+  });
+
+  it("DELETE /floors/:id allows stale committed runs after reconciliation", async () => {
+    await seedSession("session-stale-floor");
+    await seedFloor({
+      floorId: "floor-stale-delete",
+      sessionId: "session-stale-floor",
+      floorNo: 2,
+      state: "committed",
+    });
+    await seedRunningRun("floor-stale-delete", "retry_turn");
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/floors/floor-stale-delete",
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+
+    const [floorRow] = await database.db
+      .select({ id: floors.id })
+      .from(floors)
+      .where(eq(floors.id, "floor-stale-delete"));
+    expect(floorRow).toBeUndefined();
+  });
+
+  it("DELETE /floors/:id allows stale generating runs after reconciliation", async () => {
+    const staleAt = Date.now() - 200_000;
+    await seedSession("session-stale-floor");
+    await seedFloor({
+      floorId: "floor-stale-generating-delete",
+      sessionId: "session-stale-floor",
+      floorNo: 2,
+      state: "generating",
+      createdAt: staleAt,
+      updatedAt: staleAt,
+    });
+    await seedRunningRun("floor-stale-generating-delete", "retry_turn", {
+      startedAt: staleAt,
+      updatedAt: staleAt,
+    });
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/floors/floor-stale-generating-delete",
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    const [floorRow] = await database.db.select({ id: floors.id }).from(floors).where(eq(floors.id, "floor-stale-generating-delete"));
+    expect(floorRow).toBeUndefined();
   });
 
   it("DELETE /branches/:id rejects branches with active runs", async () => {

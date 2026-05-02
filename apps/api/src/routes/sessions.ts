@@ -12,6 +12,7 @@ import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination
 import { getRequestAuthContext } from "../plugins/auth";
 import { getLatestOwnedActiveCharacterVersion, getOwnedActiveCharacterVersionById } from "../services/resource-ownership";
 import { FloorRunService } from "../services/floor-run-service";
+import type { FloorRunServiceOptions } from "../services/floor-run-service.js";
 import { FloorLineageService } from "../services/floor-lineage-service.js";
 import {
   getGreetingCandidates,
@@ -24,6 +25,8 @@ import {
 } from "../lib/character-snapshot.js";
 import { deleteVariablesForSession } from "../services/variables/cleanup/variable-owned-resource-cleanup.js";
 import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
+import type { ClientDataConfig } from "../client-data/client-data-service.js";
+import { SessionStateService } from "../session-state/session-state-service.js";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
@@ -1046,7 +1049,16 @@ function deleteSessionOwnedProfileBindings(tx: DbExecutor, sessionId: string, ac
     .run();
 }
 
-function deleteOwnedSessionAndBindings(tx: DbExecutor, sessionId: string, accountId: string) {
+type DeleteOwnedSessionAndBindingsOptions = {
+  sessionStateService?: SessionStateService;
+};
+
+function deleteOwnedSessionAndBindings(
+  tx: DbExecutor,
+  sessionId: string,
+  accountId: string,
+  options: DeleteOwnedSessionAndBindingsOptions = {},
+) {
   const existing = tx
     .select({ id: sessions.id })
     .from(sessions)
@@ -1060,6 +1072,7 @@ function deleteOwnedSessionAndBindings(tx: DbExecutor, sessionId: string, accoun
 
   deleteVariablesForSession(tx, { accountId, sessionId });
   deleteSessionOwnedProfileBindings(tx, sessionId, accountId);
+  options.sessionStateService?.releaseManagedDomainsForSession({ accountId, sessionId }, tx);
 
   const deleted = tx.delete(sessions).where(sessionOwnershipFilter(sessionId, accountId)).returning({ id: sessions.id }).all();
 
@@ -1115,12 +1128,19 @@ async function syncCharacterBinding(
 
 export async function registerSessionRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: {
+    clientData?: ClientDataConfig;
+    floorRun?: FloorRunServiceOptions;
+  } = {},
 ): Promise<void> {
   const { db } = connection;
-  const floorRunService = new FloorRunService(db);
+  const floorRunService = new FloorRunService(db, undefined, options.floorRun);
   const lineageService = new FloorLineageService(db);
   const branchRegistry = new SessionBranchRegistryService(db);
+  const sessionStateService = options.clientData
+    ? new SessionStateService(db, { clientData: options.clientData })
+    : undefined;
 
   app.post("/sessions", {
     schema: {
@@ -1629,7 +1649,7 @@ export async function registerSessionRoutes(
       return sendError(reply, 409, "active_run_in_progress", `Session '${sessionRow.id}' cannot be deleted while a run is in progress`);
     }
     const deleted = db.transaction((tx) => (
-      deleteOwnedSessionAndBindings(tx, parsedParams.data.id, auth.accountId)
+      deleteOwnedSessionAndBindings(tx, parsedParams.data.id, auth.accountId, { sessionStateService })
     ));
 
     if (deleted.length === 0) {
@@ -2179,7 +2199,7 @@ export async function registerSessionRoutes(
           return;
         }
 
-        const rows = deleteOwnedSessionAndBindings(tx, id, auth.accountId);
+        const rows = deleteOwnedSessionAndBindings(tx, id, auth.accountId, { sessionStateService });
 
         if (rows.length > 0) {
           results.push({ index, id, action: "deleted" });
