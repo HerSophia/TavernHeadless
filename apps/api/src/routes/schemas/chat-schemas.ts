@@ -4,6 +4,10 @@
  * Extracted from chat.ts to reduce file size (F012).
  */
 
+import {
+  SESSION_STATE_NAMESPACE_PATTERN,
+} from "../../session-state/session-state-types.js";
+
 export const promptIntentValues = ["normal", "continue", "impersonate", "swipe", "regenerate", "quiet"] as const;
 export const promptStructureModeValues = ["default", "strict_alternating", "no_assistant", "flattened"] as const;
 export const promptStructureAssistantRewriteStrategyValues = ["to_system", "to_user_transcript"] as const;
@@ -1371,20 +1375,47 @@ export const dryRunRuntimeTraceJsonSchema = {
   additionalProperties: false,
 } as const;
 
-export const turnSessionStateWriteJsonSchema = {
+const turnSessionStateWriteBaseProperties = {
+  namespace: {
+    type: "string",
+    minLength: 1,
+    maxLength: 128,
+    pattern: SESSION_STATE_NAMESPACE_PATTERN.source,
+  },
+  slot: { type: "string", minLength: 1, maxLength: 256 },
+} as const;
+
+const turnSessionStateWriteValueJsonSchema = {
   type: "object",
+  required: ["namespace", "slot", "value"],
   properties: {
-    namespace: { type: "string", minLength: 1 },
-    slot: { type: "string", minLength: 1 },
+    ...turnSessionStateWriteBaseProperties,
     value: {},
+  },
+  additionalProperties: false,
+} as const;
+
+const turnSessionStateWriteDeleteJsonSchema = {
+  type: "object",
+  required: ["namespace", "slot", "delete"],
+  properties: {
+    ...turnSessionStateWriteBaseProperties,
     delete: { type: "boolean", enum: [true] },
   },
   additionalProperties: false,
 } as const;
 
+export const turnSessionStateWriteJsonSchema = {
+  oneOf: [turnSessionStateWriteValueJsonSchema, turnSessionStateWriteDeleteJsonSchema],
+} as const;
+
 export const turnSessionStateWritesJsonSchema = {
   type: "array",
   items: turnSessionStateWriteJsonSchema,
+  examples: [[
+    { namespace: "quest_flags", slot: "companion", value: { mood: "ally" } },
+    { namespace: "quest_flags", slot: "expired_hint", delete: true },
+  ]],
 } as const;
 
 export const editAndRegenerateBodyJsonSchema = {

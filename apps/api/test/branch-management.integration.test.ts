@@ -52,6 +52,27 @@ describe("branch management routes", () => {
     return (response.json() as ItemResponse<{ id: string }>).data.id;
   }
 
+  it("lists the default main branch even before any floor is created", async () => {
+    const sessionId = await createSession();
+
+    const response = await app.inject({ method: "GET", url: `/sessions/${sessionId}/branches` });
+    expect(response.statusCode).toBe(200);
+
+    const body = response.json() as {
+      data: Array<{
+        branch_id: string;
+        floor_count: number;
+        latest_floor_no: number | null;
+        latest_floor_id: string | null;
+        latest_state: string | null;
+      }>;
+    };
+
+    expect(body.data).toEqual([
+      { branch_id: "main", floor_count: 0, latest_floor_no: null, latest_floor_id: null, latest_state: null, updated_at: expect.any(Number) },
+    ]);
+  });
+
   it("lists branches for a session", async () => {
     const sessionId = await createSession();
 
@@ -63,7 +84,7 @@ describe("branch management routes", () => {
     expect(response.statusCode).toBe(200);
 
     const body = response.json() as {
-      data: Array<{ branch_id: string; floor_count: number; latest_floor_no: number }>;
+      data: Array<{ branch_id: string; floor_count: number; latest_floor_no: number | null }>;
     };
 
     const main = body.data.find((row) => row.branch_id === "main");

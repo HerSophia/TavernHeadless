@@ -466,6 +466,14 @@ describe("sdk sessions expanded resource", () => {
         data: [
           null,
           {
+            branch_id: "draft-main",
+            floor_count: 0,
+            latest_floor_id: null,
+            latest_floor_no: null,
+            latest_state: null,
+            updated_at: 90,
+          },
+          {
             branch_id: "main",
             floor_count: 3,
             latest_floor_id: "floor-3",
@@ -479,6 +487,14 @@ describe("sdk sessions expanded resource", () => {
     const client = createTavernClient({ baseUrl, fetchImpl });
 
     await expect(client.sessions.listBranches({ sessionId: "session-1" })).resolves.toEqual([
+      {
+        branchId: "draft-main",
+        floorCount: 0,
+        latestFloorId: null,
+        latestFloorNo: null,
+        latestState: null,
+        updatedAt: 90,
+      },
       {
         branchId: "main",
         floorCount: 3,

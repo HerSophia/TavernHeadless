@@ -84,6 +84,28 @@ describe("chat routes", () => {
     }
   });
 
+  it("rejects session_state_writes on dry-run because dry-run has no side effects", async () => {
+    const mocked = await buildChatApp();
+
+    const response = await mocked.serviceApp.inject({
+      method: "POST",
+      payload: {
+        message: "Preview only.",
+        session_state_writes: [
+          {
+            namespace: "quest_flags",
+            slot: "companion",
+            value: { mood: "ally" },
+          },
+        ],
+      },
+      url: "/sessions/session-1/respond/dry-run",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(mocked.dryRun).not.toHaveBeenCalled();
+  });
+
   it("parses the same session_state_writes body for respond and respond/stream", async () => {
     const mocked = await buildChatApp();
     const payload = {

@@ -17,6 +17,11 @@ type ErrorResponse = {
   error: {
     code: string;
     message: string;
+    details?: {
+      request_id?: string;
+      error_code?: string;
+      native_pipeline_node?: string;
+    };
   };
 };
 
@@ -67,5 +72,7 @@ describe("Export chat route mocked branches", () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.json<ErrorResponse>().error.code).toBe("internal_error");
+    expect(res.json<ErrorResponse>().error.message).toBe("boom");
+    expect(typeof res.json<ErrorResponse>().error.details?.request_id).toBe("string");
   });
 });

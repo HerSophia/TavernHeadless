@@ -182,7 +182,7 @@ WebSocket 也遵循相同边界：
 - 提供治理动作审计日志
 - 支持导入、导出、恢复、配额与并发控制
 
-`Session State` 当前公开的是 `/sessions/:sessionId/state/*` 这组受治理公开接口，以及 turn API 中的 `session_state_writes`。它们一起覆盖自定义命名空间注册、当前值写入、随回合一起提交的写入、删除、读取和比较。官方 SDK 会封装这组端点。内部观察面 `/sessions/:sessionId/session-state/*` 与 `/floors/:floorId/session-state/*` 仍保持内部定位，不进入官方包。
+`Session State` 当前真实公开路由面由 `/sessions/:sessionId/state/*` 这组受治理公开接口，以及 turn API 中的 `session_state_writes` 共同组成。它们一起覆盖自定义命名空间注册、当前值写入、随回合一起提交的写入、删除、读取和比较。官方 SDK 会封装这组端点。内部观察面 `/sessions/:sessionId/session-state/*` 与 `/floors/:floorId/session-state/*` 仍保持内部定位，不进入官方包。
 
 如果接入方只需要普通聊天能力，不需要优先接入这组资源。
 
