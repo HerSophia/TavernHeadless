@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "3.0.57",
-    "@fastify/cors": "^10.0.1",
+    "@fastify/cors": "11.2.0",
     "@fastify/sensible": "^6.0.4",
     "ai": "6.0.173",
     "better-sqlite3": "12.8.0",
