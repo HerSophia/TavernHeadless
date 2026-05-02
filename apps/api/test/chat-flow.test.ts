@@ -7,6 +7,11 @@
  * - 验证数据落库正确性
  */
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -56,6 +61,38 @@ interface RespondResponse {
     total_tokens: number;
   };
   final_state: string;
+}
+
+function addLegacySupersededByFloorForeignKey(databasePath: string): void {
+  const sqlite = new Database(databasePath);
+
+  try {
+    sqlite.pragma("foreign_keys = OFF");
+    sqlite.pragma("legacy_alter_table = ON");
+
+    const floorTable = sqlite
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'floor' LIMIT 1")
+      .get() as { sql?: string } | undefined;
+    if (!floorTable?.sql) {
+      throw new Error("Floor table definition not found");
+    }
+
+    const floorIndexRows = sqlite
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'floor' AND sql IS NOT NULL ORDER BY name")
+      .all() as Array<{ sql: string }>;
+    const legacyFloorSql = floorTable.sql.replace(
+      /\)\s*$/,
+      ", FOREIGN KEY (`superseded_by_floor_id`) REFERENCES `floor`(`id`) ON UPDATE no action ON DELETE set null)",
+    );
+
+    sqlite.exec("ALTER TABLE `floor` RENAME TO `floor_old`;");
+    sqlite.exec(legacyFloorSql);
+    sqlite.exec("INSERT INTO `floor` SELECT * FROM `floor_old`;");
+    sqlite.exec("DROP TABLE `floor_old`;");
+    floorIndexRows.forEach((row) => sqlite.exec(row.sql));
+  } finally {
+    sqlite.close();
+  }
 }
 
 // ── Tests ─────────────────────────────────────────────
@@ -2317,6 +2354,90 @@ describe("ChatService", () => {
       expect(regenResult.floorNo).toBe(0); // 同 floorNo
       expect(regenResult.previousFloorId).toBe(respondResult.floorId);
       expect(regenResult.generatedText).toBe(REGEN_TEXT);
+    });
+
+    it("should regenerate on databases that still keep the legacy superseded_by_floor_id foreign key", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "tavern-regenerate-legacy-floor-fk-"));
+      const databasePath = join(tempDir, "legacy-floor-fk.sqlite");
+
+      const seededConnection = createDatabase(databasePath);
+      seededConnection.close();
+      addLegacySupersededByFloorForeignKey(databasePath);
+
+      const legacyDatabase = createDatabase(databasePath);
+      const legacySessionId = nanoid();
+      const now = Date.now();
+      const legacyOrchestrator = {
+        executeTurn: vi.fn(async (input) => {
+          const executionRecord = {
+            id: `tec-${input.floorId}`,
+            runId: input.toolExecutionRunId ?? `run-${input.floorId}`,
+            floorId: input.floorId,
+            pageId: input.pageId,
+            callerSlot: "narrator",
+            providerId: "builtin",
+            providerType: "builtin",
+            toolName: "roll_dice",
+            argsJson: JSON.stringify({ sides: 20 }),
+            resultJson: JSON.stringify({ total: 12 }),
+            status: "success",
+            lifecycleState: "finished",
+            commitOutcome: "pending",
+            sideEffectLevel: "none",
+            durationMs: 5,
+            startedAt: now,
+            finishedAt: now + 5,
+            attemptNo: 1,
+            createdAt: now,
+          } as const;
+
+          await legacyDatabase.db
+            .update(floors)
+            .set({ state: "generating", updatedAt: Date.now() })
+            .where(eq(floors.id, input.floorId));
+
+          await legacyDatabase.db
+            .insert(toolExecutionRecords)
+            .values(executionRecord)
+            .onConflictDoNothing()
+            .run();
+
+          return {
+            ...MOCK_TURN_OUTPUT,
+            floorId: input.floorId,
+            toolExecutionRecords: [executionRecord],
+          };
+        }),
+      } as unknown as TurnOrchestrator;
+      const legacyChatService = new ChatService(legacyDatabase.db, legacyOrchestrator, new SimpleTokenCounter());
+
+      try {
+        await legacyDatabase.db.insert(sessions).values({
+          id: legacySessionId,
+          title: "Legacy FK Session",
+          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const initial = await legacyChatService.respond(legacySessionId, { message: "Seed for legacy floor FK" });
+        const regenerated = await legacyChatService.regenerate(legacySessionId);
+
+        expect(regenerated.previousFloorId).toBe(initial.floorId);
+
+        const [sourceFloor] = await legacyDatabase.db
+          .select({ supersededAt: floors.supersededAt, supersededByFloorId: floors.supersededByFloorId })
+          .from(floors)
+          .where(eq(floors.id, initial.floorId));
+        expect(sourceFloor).toMatchObject({
+          supersededAt: expect.any(Number),
+          supersededByFloorId: regenerated.floorId,
+        });
+      } finally {
+        legacyDatabase.close();
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
 
     it("should apply delivery noAssistant on regenerate send path", async () => {
