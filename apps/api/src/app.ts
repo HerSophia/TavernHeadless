@@ -193,6 +193,18 @@ export type BuildAppOptions = {
   enablePromptDryRun?: boolean;
   enableMemoryConsolidation?: boolean;
   enableAsyncMemoryIngest?: boolean;
+  enableBackupWorker?: boolean;
+  backupWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
+  backupArtifactDir?: string;
+  backupImportMaxBytes?: number;
+  backupExportArtifactTtlMs?: number;
   enableMacroCompaction?: boolean;
   enableDualSummaryInjection?: boolean;
   enableDeferredIrreversibleTools?: boolean;
@@ -366,6 +378,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         "validation_error",
         "Request validation failed",
         toValidationDetails(error));
+    }
+
+    if ((error as { code?: string }).code === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      const routePath = request.routeOptions.url ?? request.url.split("?")[0] ?? "/";
+      const isBackupRoute = routePath.startsWith("/backup/");
+      return sendError(
+        reply,
+        413,
+        isBackupRoute ? "backup_payload_too_large" : "payload_too_large",
+        isBackupRoute
+          ? "Backup request payload exceeds the configured size limit"
+          : "Request payload exceeds the configured size limit",
+      );
     }
 
     const nativePipelineError = findNativePipelineError(error);
@@ -684,6 +709,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       importMaxBytes: options.chatImportMaxBytes,
       exportSyncMaxMessages: options.chatExportSyncMaxMessages,
       exportArtifactTtlMs: options.chatExportArtifactTtlMs,
+      eventBus: orchestrationContext?.eventBus,
+    },
+    backupJobs: {
+      artifactDir: options.backupArtifactDir,
+      importMaxBytes: options.backupImportMaxBytes,
+      exportArtifactTtlMs: options.backupExportArtifactTtlMs,
       eventBus: orchestrationContext?.eventBus,
     },
     mcpManager,

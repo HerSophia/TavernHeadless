@@ -75,6 +75,18 @@ AUTH_MODE=off
 # MEMORY_WORKER_MAX_RETRY_DELAY_MS=30000
 # MEMORY_WORKER_CANDIDATE_SCAN_LIMIT=32
 
+# 核心资产备份（可选）
+# ENABLE_BACKUP_WORKER=true
+# BACKUP_WORKER_POLL_INTERVAL_MS=2000
+# BACKUP_WORKER_LEASE_TTL_MS=120000
+# BACKUP_WORKER_MAX_CONCURRENT_JOBS=1
+# BACKUP_WORKER_RETRY_BASE_DELAY_MS=1000
+# BACKUP_WORKER_MAX_RETRY_DELAY_MS=30000
+# BACKUP_WORKER_CANDIDATE_SCAN_LIMIT=32
+# BACKUP_ARTIFACT_DIR=data/backup-artifacts
+# BACKUP_IMPORT_MAX_BYTES=50000000
+# BACKUP_EXPORT_ARTIFACT_TTL_MS=86400000
+
 # MCP 工具集成（可选）
 # ENABLE_MCP=true
 ```
@@ -103,6 +115,16 @@ pnpm dev:api    # 仅后端
 pnpm dev:web    # 仅前端
 pnpm dev:both   # 同时启动
 ```
+
+如果你要执行异步核心资产备份，还需要单独启动 backup worker：
+
+```bash
+# 先在 .env 中设置 ENABLE_BACKUP_WORKER=true
+pnpm --filter @tavern/api jobs:backup
+```
+
+`POST /backup/jobs/export`、`POST /backup/jobs/restore` 和 `GET /backup-jobs/*`
+这组接口都依赖后台 worker 持续处理作业。
 
 ## 验证
 
@@ -134,4 +156,7 @@ pnpm lint
 
 # 文档站开发
 pnpm --filter @tavern/docs dev
+
+# 运行核心资产备份 worker
+pnpm --filter @tavern/api jobs:backup
 ```

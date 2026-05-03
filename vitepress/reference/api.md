@@ -146,6 +146,8 @@ WebSocket 也遵循相同边界：
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
 | Exports | 资源导出 | [Exports](./api/exports) |
+| Backup | 核心资产备份导出、restore preview 与恢复入队 | [Backup](./api/backup) |
+| Backup Jobs | 核心资产备份作业查询、控制与导出文件下载 | [Backup Jobs](./api/backup-jobs) |
 | Chat Transfer Jobs | 异步聊天导入导出作业观测、控制与产物下载 | [Chat Transfer Jobs](./api/chat-transfer-jobs) |
 | Presets | 预设管理、编辑器视图、条目级 CRUD | [Presets](./api/presets) |
 | Worldbooks | 世界书管理 | [Worldbooks](./api/worldbooks) |
@@ -166,6 +168,8 @@ WebSocket 也遵循相同边界：
 
 - [Memory Jobs](./api/memory-jobs)
 - [Chat Transfer Jobs](./api/chat-transfer-jobs)
+- [Backup](./api/backup)
+- [Backup Jobs](./api/backup-jobs)
 - [Macros](./api/macros)
 - [Prompt Runtime](./api/prompt-runtime)
 

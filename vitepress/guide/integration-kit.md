@@ -255,10 +255,19 @@ const promotionGroups = groupVariablePromotionTrace(promotionSnapshot);
 | 会话与内容结构 | `health`、`sessions`、`messages`、`floors`、`pages`、`branches` |
 | 提示词运行时高级资源 | `promptRuntime` |
 | 角色、资料与配置 | `characters`、`users`、`presets`、`presetEntries`、`worldbooks`、`worldbookEntries`、`regexProfiles` |
-| 导入、导出与模型 | `imports`、`exports`、`chatTransferJobs`、`llmProfiles`、`llmInstances` |
+| 导入、导出、备份与模型 | `imports`、`exports`、`backup`、`backupJobs`、`chatTransferJobs`、`llmProfiles`、`llmInstances` |
 | 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |
 | 工具与运行集成 | `tools`、`mcp` |
 | 高级客户端数据系统 | `clientData`、`sessionState` |
+
+其中 `backup` 与 `backupJobs` 对应核心资产备份 v1：
+
+- `backup.createExportJob(...)`
+- `backup.previewRestore(...)`
+- `backup.createRestoreJob(...)`
+- `backupJobs.list(...)` / `getDetail(...)` / `cancel(...)` / `retry(...)` / `downloadFile(...)`
+
+`.thbackup` 文件本身继续使用 `snake_case` 契约。SDK 返回值仍按既有约定映射为 `camelCase`。
 
 ## 记忆 scope 约定
 

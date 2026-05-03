@@ -1,6 +1,8 @@
 import type { ApiClient } from "@tavern/shared";
 
 import { createAccountsResource, type AccountsResource } from "../resources/accounts.js";
+import { createBackupJobsResource, type BackupJobsResource } from "../resources/backup-jobs.js";
+import { createBackupResource, type BackupResource } from "../resources/backup.js";
 import { createBranchesResource, type BranchesResource } from "../resources/branches.js";
 import { createCharactersResource, type CharactersResource } from "../resources/characters.js";
 import { createChatTransferJobsResource, type ChatTransferJobsResource } from "../resources/chat-transfer-jobs.js";
@@ -35,6 +37,8 @@ import { createTransportClient, type TavernClientOptions } from "./transport.js"
 export type TavernClient = ApiClient & {
   accounts: AccountsResource;
   branches: BranchesResource;
+  backup: BackupResource;
+  backupJobs: BackupJobsResource;
   clientData: ClientDataResource;
 
   characters: CharactersResource;
@@ -75,6 +79,8 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     clientData: createClientDataResource(transport),
 
     accounts: createAccountsResource(transport),
+    backup: createBackupResource(transport),
+    backupJobs: createBackupJobsResource(transport),
     branches: createBranchesResource(transport),
     characters: createCharactersResource(transport),
     chatTransferJobs: createChatTransferJobsResource(transport),

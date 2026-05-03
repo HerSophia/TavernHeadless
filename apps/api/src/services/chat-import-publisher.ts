@@ -39,6 +39,7 @@ import type {
   ThChatBranchLocalVariableProvenance,
   ThChatBranchLocalVariableSnapshot,
 } from "@tavern/shared";
+import { buildImportedMemoryScopeStateRowsFromResolvedData } from "./imported-memory-scope-state-builder.js";
 
 export interface PublishChatImportManifestOptions {
   manifest: ChatImportManifest;
@@ -509,12 +510,24 @@ function publishThChatManifest(
     }
   }
 
-  const scopeStateRows = buildImportedMemoryScopeStateRows({
+  const resolvedMemoryItems = (data.memories?.items ?? []).map((item) => ({
+    scope: item.scope,
+    scopeId: resolveThChatImportMemoryScopeId({
+      scope: item.scope,
+      scopeIdRef: item.scope_id_ref,
+      sessionId,
+      idMap: manifest.idMap,
+    }),
+    type: item.type,
+    summaryTier: item.type === "summary" ? item.summary_tier ?? null : null,
+    status: item.status,
+  }));
+  const scopeStateRows = buildImportedMemoryScopeStateRowsFromResolvedData({
     accountId: manifest.accountId,
-    data,
-    idMap: manifest.idMap,
     now: manifest.importedAt,
     sessionId,
+    floors: data.floors.map((floor) => ({ id: manifest.idMap[floor._original_id]!, branchId: floor.branch_id, floorNo: floor.floor_no })),
+    items: resolvedMemoryItems,
   });
   if (scopeStateRows.length > 0) {
     tx.insert(runtimeScopeStates).values(scopeStateRows).run();

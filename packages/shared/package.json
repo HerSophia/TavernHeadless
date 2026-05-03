@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./types/backup-file": {
+      "types": "./dist/types/backup-file.d.ts",
+      "import": "./src/types/backup-file.ts",
+      "default": "./dist/types/backup-file.js"
     }
   },
   "scripts": {
