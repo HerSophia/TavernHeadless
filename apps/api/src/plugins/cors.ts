@@ -4,6 +4,8 @@ import type { FastifyInstance } from "fastify";
 const DEFAULT_DEV_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
   "http://localhost:4173",
   "http://127.0.0.1:4173"
 ] as const;
@@ -96,7 +98,14 @@ export async function registerCors(app: FastifyInstance, config: CorsConfig): Pr
     origin: config.origins,
     credentials: config.credentials ?? false,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "X-Account-Id"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-API-Key",
+      "X-Account-Id",
+      "X-Client-Owner-Type",
+      "X-Client-Owner-Id",
+    ],
     maxAge: 86400,
     strictPreflight: false,
   };
