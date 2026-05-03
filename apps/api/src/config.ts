@@ -52,6 +52,16 @@
  * - CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT: 单账号最大域数（默认 64）
  * - CLIENT_DATA_MAX_TOTAL_ENTRIES_PER_ACCOUNT: 单账号客户端数据总条目数（默认 100000）
  * - CLIENT_DATA_MAX_TOTAL_BYTES_PER_ACCOUNT: 单账号客户端数据总字节数（默认 104857600）
+ * - ENABLE_BACKUP_WORKER: 是否启用 backup worker（默认 false）
+ * - BACKUP_WORKER_POLL_INTERVAL_MS: 可选，BackupWorker 轮询间隔（默认沿用 RuntimeWorker 默认值）
+ * - BACKUP_WORKER_LEASE_TTL_MS: 可选，BackupWorker lease TTL
+ * - BACKUP_WORKER_MAX_CONCURRENT_JOBS: 可选，BackupWorker 最大并发作业数（默认 1）
+ * - BACKUP_WORKER_RETRY_BASE_DELAY_MS: 可选，BackupWorker 重试基础退避
+ * - BACKUP_WORKER_MAX_RETRY_DELAY_MS: 可选，BackupWorker 最大重试退避
+ * - BACKUP_WORKER_CANDIDATE_SCAN_LIMIT: 可选，BackupWorker 单轮候选扫描上限
+ * - BACKUP_ARTIFACT_DIR: backup 产物目录（默认 data/backup-artifacts）
+ * - BACKUP_IMPORT_MAX_BYTES: backup preview / restore JSON 请求体大小上限（默认 50000000）
+ * - BACKUP_EXPORT_ARTIFACT_TTL_MS: backup 导出产物 TTL（默认 86400000）
  * - AUTH_MODE: 认证模式（off | api_key | jwt，默认 off）
  * - AUTH_API_KEYS: API Key 模式下的 key 列表（逗号分隔）
  * - AUTH_API_KEY_ACCOUNTS: 多账号 + API Key 模式下的账号映射（key:account_id，逗号分隔）
@@ -141,6 +151,23 @@ export interface AppConfig {
   chatExportSyncMaxMessages?: number;
   /** 导出产物 TTL（毫秒） */
   chatExportArtifactTtlMs?: number;
+  /** 是否启用 backup worker（供独立 worker 进程使用） */
+  enableBackupWorker: boolean;
+  /** 可选：BackupWorker 运行参数 */
+  backupWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
+  /** backup 产物目录 */
+  backupArtifactDir: string;
+  /** backup preview / restore 请求体大小上限 */
+  backupImportMaxBytes: number;
+  /** backup 导出产物 TTL（毫秒） */
+  backupExportArtifactTtlMs: number;
   /** 服务端默认生成超时（毫秒） */
   llmDefaultTimeoutMs: number;
   /** commit 的 SQLITE_BUSY / SQLITE_LOCKED 有限重试次数 */
@@ -244,6 +271,18 @@ export function loadConfig(): AppConfig {
   const chatImportMaxBytes = parsePositiveInt(process.env.CHAT_IMPORT_MAX_BYTES);
   const chatExportSyncMaxMessages = parsePositiveInt(process.env.CHAT_EXPORT_SYNC_MAX_MESSAGES);
   const chatExportArtifactTtlMs = parsePositiveInt(process.env.CHAT_EXPORT_ARTIFACT_TTL_MS);
+  const enableBackupWorker = process.env.ENABLE_BACKUP_WORKER === "true";
+  const backupWorker = parseBackupWorkerConfig(
+    process.env.BACKUP_WORKER_POLL_INTERVAL_MS,
+    process.env.BACKUP_WORKER_LEASE_TTL_MS,
+    process.env.BACKUP_WORKER_MAX_CONCURRENT_JOBS,
+    process.env.BACKUP_WORKER_RETRY_BASE_DELAY_MS,
+    process.env.BACKUP_WORKER_MAX_RETRY_DELAY_MS,
+    process.env.BACKUP_WORKER_CANDIDATE_SCAN_LIMIT,
+  );
+  const backupArtifactDir = parseOptionalNonEmpty(process.env.BACKUP_ARTIFACT_DIR) ?? "data/backup-artifacts";
+  const backupImportMaxBytes = parsePositiveInt(process.env.BACKUP_IMPORT_MAX_BYTES) ?? 50_000_000;
+  const backupExportArtifactTtlMs = parsePositiveInt(process.env.BACKUP_EXPORT_ARTIFACT_TTL_MS) ?? 86_400_000;
 
   const memoryMaintenance = parseMemoryMaintenanceConfig(
     process.env.ENABLE_MEMORY_MAINTENANCE,
@@ -304,6 +343,11 @@ export function loadConfig(): AppConfig {
       chatImportMaxBytes,
       chatExportSyncMaxMessages,
       chatExportArtifactTtlMs,
+      enableBackupWorker,
+      backupWorker,
+      backupArtifactDir,
+      backupImportMaxBytes,
+      backupExportArtifactTtlMs,
       llmDefaultTimeoutMs,
       turnCommitMaxRetries,
       generationQueueMode,
@@ -379,6 +423,11 @@ export function loadConfig(): AppConfig {
     chatImportMaxBytes,
     chatExportSyncMaxMessages,
     chatExportArtifactTtlMs,
+    enableBackupWorker,
+    backupWorker,
+    backupArtifactDir,
+    backupImportMaxBytes,
+    backupExportArtifactTtlMs,
     llmDefaultTimeoutMs,
     turnCommitMaxRetries,
     generationQueueMode,
@@ -571,6 +620,42 @@ function parseChatTransferWorkerConfig(
   maxRetryDelayMsRaw: string | undefined,
   candidateScanLimitRaw: string | undefined,
 ): AppConfig["chatTransferWorker"] | undefined {
+  const pollIntervalMs = parsePositiveInt(pollIntervalMsRaw);
+  const leaseTtlMs = parsePositiveInt(leaseTtlMsRaw);
+  const maxConcurrentJobs = parsePositiveInt(maxConcurrentJobsRaw);
+  const retryBaseDelayMs = parsePositiveInt(retryBaseDelayMsRaw);
+  const maxRetryDelayMs = parsePositiveInt(maxRetryDelayMsRaw);
+  const candidateScanLimit = parsePositiveInt(candidateScanLimitRaw);
+
+  if (
+    pollIntervalMs === undefined
+    && leaseTtlMs === undefined
+    && maxConcurrentJobs === undefined
+    && retryBaseDelayMs === undefined
+    && maxRetryDelayMs === undefined
+    && candidateScanLimit === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+    ...(leaseTtlMs !== undefined ? { leaseTtlMs } : {}),
+    ...(maxConcurrentJobs !== undefined ? { maxConcurrentJobs } : {}),
+    ...(retryBaseDelayMs !== undefined ? { retryBaseDelayMs } : {}),
+    ...(maxRetryDelayMs !== undefined ? { maxRetryDelayMs } : {}),
+    ...(candidateScanLimit !== undefined ? { candidateScanLimit } : {}),
+  };
+}
+
+function parseBackupWorkerConfig(
+  pollIntervalMsRaw: string | undefined,
+  leaseTtlMsRaw: string | undefined,
+  maxConcurrentJobsRaw: string | undefined,
+  retryBaseDelayMsRaw: string | undefined,
+  maxRetryDelayMsRaw: string | undefined,
+  candidateScanLimitRaw: string | undefined,
+): AppConfig["backupWorker"] | undefined {
   const pollIntervalMs = parsePositiveInt(pollIntervalMsRaw);
   const leaseTtlMs = parsePositiveInt(leaseTtlMsRaw);
   const maxConcurrentJobs = parsePositiveInt(maxConcurrentJobsRaw);

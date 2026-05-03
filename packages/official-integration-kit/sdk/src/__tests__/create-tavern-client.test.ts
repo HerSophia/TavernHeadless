@@ -123,6 +123,13 @@ describe("createTavernClient", () => {
     expect(client.accounts).toBeDefined();
     expect(typeof client.accounts.list).toBe("function");
 
+    expect(client.backup).toBeDefined();
+    expect(typeof client.backup.createExportJob).toBe("function");
+    expect(typeof client.backup.previewRestore).toBe("function");
+
+    expect(client.backupJobs).toBeDefined();
+    expect(typeof client.backupJobs.getDetail).toBe("function");
+
     expect(client.variables).toBeDefined();
     expect(typeof client.variables.upsertMany).toBe("function");
 

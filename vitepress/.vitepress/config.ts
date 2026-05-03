@@ -117,6 +117,8 @@ export default defineConfig({
           text: '高级 API 资源',
           items: [
             { text: 'Prompt Runtime（提示词运行时）', link: '/reference/api/prompt-runtime' },
+            { text: 'Backup（核心资产备份）', link: '/reference/api/backup' },
+            { text: 'Backup Jobs（备份作业）', link: '/reference/api/backup-jobs' },
             { text: 'Chat Transfer Jobs（聊天传输作业）', link: '/reference/api/chat-transfer-jobs' },
             { text: 'Memory Jobs（记忆后台作业）', link: '/reference/api/memory-jobs' },
             { text: 'Client Data（客户端专属数据域）', link: '/reference/api/client-data' },

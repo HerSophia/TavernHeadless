@@ -453,6 +453,52 @@ Chat 相关方法会保留后端返回的这些字段：
 
 其中 `finalState === "committed"` 表示生成结果已经越过提交边界，相关持久化写入已经完成。
 
+### 核心资产备份与恢复
+
+`client.backup` 与 `client.backupJobs` 用于核心资产备份 v1。
+
+- `client.backup.createExportJob(...)`：创建 `characters` / `worldbooks` / `sessions` 的导出作业
+- `client.backup.previewRestore(...)`：对 `.thbackup` JSON 做同步 restore preview
+- `client.backup.createRestoreJob(...)`：创建异步恢复作业
+- `client.backupJobs.list(...)` / `getDetail(...)` / `retry(...)` / `cancel(...)`：观察和控制作业
+- `client.backupJobs.downloadFile(...)`：下载导出完成后的 `.thbackup` 文件
+
+```ts
+import { createTavernClient, type BackupFile } from "@tavern/sdk";
+
+const backupJsonText = await yourFileReader();
+const backupFile = JSON.parse(backupJsonText) as BackupFile;
+
+const exportJob = await client.backup.createExportJob({
+  accountId: "account-1",
+  sessionIds: ["session-1"],
+  includeLinkedAssets: true,
+});
+
+const preview = await client.backup.previewRestore({
+  accountId: "account-1",
+  data: backupFile,
+  mode: "create_copy",
+});
+
+const restoreJob = await client.backup.createRestoreJob({
+  accountId: "account-1",
+  data: backupFile,
+  mode: "create_copy",
+});
+
+const restoreDetail = await client.backupJobs.getDetail({
+  accountId: "account-1",
+  jobId: restoreJob.jobId,
+});
+
+console.log(exportJob.jobId);
+console.log(preview.renamedResources);
+console.log(restoreDetail.result);
+```
+
+`BackupFile` 直接复用 `.thbackup` 文件契约本身，因此它保持文件格式使用的 `snake_case` 字段名。SDK 资源方法的返回值仍然会按既有约定映射为 `camelCase`。
+
 ### 会话级工具目录与会话基础权限
 
 工具相关接入目前分成两层：
@@ -730,4 +776,4 @@ console.log(capabilities.unsupported);
 
 ## 当前状态
 
-当前 `@tavern/sdk` 已经覆盖会话、内容结构、变量、记忆、Prompt Runtime 结构化 memory truth、导入、导出、LLM Profiles、LLM Instances、Tools、MCP、Client Data 等主要接入域。Client Data 第二期已补齐 grant / audit 之前的核心资源调用面，grant / audit 的高层 SDK 封装将在后续阶段继续扩展。
+当前 `@tavern/sdk` 已经覆盖会话、内容结构、变量、记忆、Prompt Runtime 结构化 memory truth、导入、导出、核心资产备份、LLM Profiles、LLM Instances、Tools、MCP、Client Data 等主要接入域。Client Data 第二期已补齐 grant / audit 之前的核心资源调用面，grant / audit 的高层 SDK 封装将在后续阶段继续扩展。

@@ -979,6 +979,2779 @@
         ]
       }
     },
+    "/backup-jobs": {
+      "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。",
+        "operationId": "listBackupJobs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_order",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "enum": [
+                "created_at",
+                "updated_at",
+                "available_at"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_kind",
+            "required": false,
+            "schema": {
+              "enum": [
+                "export_core_assets",
+                "restore_core_assets"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "pending",
+                "leased",
+                "running",
+                "retry_waiting",
+                "succeeded",
+                "dead_letter",
+                "cancelled"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "attempt_count": 1,
+                      "available_at": 1735689600000,
+                      "created_at": 1735689600000,
+                      "finished_at": 1735689650000,
+                      "id": "backup-job-export-1",
+                      "job_kind": "export_core_assets",
+                      "last_error": null,
+                      "lease_owner": null,
+                      "lease_until": null,
+                      "max_attempts": 5,
+                      "output_artifact_path": "backup-job-export-1/output.thbackup",
+                      "output_expires_at": 1735689700000,
+                      "phase": "completed",
+                      "progress_current": 4,
+                      "progress_message": "completed",
+                      "progress_total": 4,
+                      "request": {
+                        "character_ids": [],
+                        "domains": null,
+                        "include_linked_assets": true,
+                        "include_secrets": false,
+                        "session_ids": [
+                          "sess_demo"
+                        ],
+                        "worldbook_ids": []
+                      },
+                      "result": {
+                        "byte_length": 2048,
+                        "content_type": "application/json; charset=utf-8",
+                        "counts": {
+                          "branch_local_variable_snapshots": 1,
+                          "character_versions": 1,
+                          "characters": 1,
+                          "floors": 4,
+                          "memory_edges": 2,
+                          "memory_items": 3,
+                          "messages": 8,
+                          "pages": 4,
+                          "session_branches": 2,
+                          "sessions": 1,
+                          "variables": 6,
+                          "worldbook_entries": 3,
+                          "worldbooks": 1
+                        },
+                        "file_name": "core-assets-20250101-120000.thbackup",
+                        "included_domains": [
+                          "characters",
+                          "worldbooks",
+                          "sessions"
+                        ]
+                      },
+                      "status": "succeeded",
+                      "updated_at": 1735689650000
+                    }
+                  ],
+                  "meta": {
+                    "has_more": false,
+                    "limit": 20,
+                    "offset": 0,
+                    "sort_by": "created_at",
+                    "sort_order": "desc",
+                    "total": 1
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "attempt_count": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "available_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "finished_at": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "job_kind": {
+                            "enum": [
+                              "export_core_assets",
+                              "restore_core_assets"
+                            ],
+                            "type": "string"
+                          },
+                          "last_error": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_owner": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lease_until": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "max_attempts": {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          "output_artifact_path": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "output_expires_at": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "phase": {
+                            "enum": [
+                              "queued",
+                              "collecting",
+                              "serializing",
+                              "writing_artifact",
+                              "validating",
+                              "normalizing",
+                              "remapping",
+                              "publishing",
+                              "rebuilding_runtime_state",
+                              "finalizing",
+                              "completed"
+                            ],
+                            "type": "string"
+                          },
+                          "progress_current": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "progress_message": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "progress_total": {
+                            "anyOf": [
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "request": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "character_ids": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "domains": {
+                                    "anyOf": [
+                                      {
+                                        "items": {
+                                          "enum": [
+                                            "characters",
+                                            "worldbooks",
+                                            "sessions"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "include_linked_assets": {
+                                    "type": "boolean"
+                                  },
+                                  "include_secrets": {
+                                    "enum": [
+                                      false
+                                    ],
+                                    "type": "boolean"
+                                  },
+                                  "session_ids": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "worldbook_ids": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  }
+                                },
+                                "required": [
+                                  "domains",
+                                  "session_ids",
+                                  "character_ids",
+                                  "worldbook_ids",
+                                  "include_linked_assets",
+                                  "include_secrets"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "backup_kind": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "created_at": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "included_domains": {
+                                    "anyOf": [
+                                      {
+                                        "items": {
+                                          "enum": [
+                                            "characters",
+                                            "worldbooks",
+                                            "sessions"
+                                          ],
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "mode": {
+                                    "enum": [
+                                      "create_copy"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "source": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": true,
+                                        "type": "object"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "mode",
+                                  "backup_kind",
+                                  "included_domains",
+                                  "created_at",
+                                  "source"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "byte_length": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "content_type": {
+                                    "type": "string"
+                                  },
+                                  "counts": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "branch_local_variable_snapshots": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "character_versions": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "characters": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "floors": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "memory_edges": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "memory_items": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "messages": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "pages": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "session_branches": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "sessions": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "variables": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "worldbook_entries": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "worldbooks": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "characters",
+                                      "character_versions",
+                                      "worldbooks",
+                                      "worldbook_entries",
+                                      "sessions",
+                                      "session_branches",
+                                      "floors",
+                                      "pages",
+                                      "messages",
+                                      "variables",
+                                      "branch_local_variable_snapshots",
+                                      "memory_items",
+                                      "memory_edges"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "file_name": {
+                                    "type": "string"
+                                  },
+                                  "included_domains": {
+                                    "items": {
+                                      "enum": [
+                                        "characters",
+                                        "worldbooks",
+                                        "sessions"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  }
+                                },
+                                "required": [
+                                  "file_name",
+                                  "content_type",
+                                  "byte_length",
+                                  "included_domains",
+                                  "counts"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "created": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "branch_local_variable_snapshots": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "character_versions": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "characters": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "floors": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "memory_edges": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "memory_items": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "messages": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "pages": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "runtime_scope_states": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "session_branches": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "sessions": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "variables": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "worldbook_entries": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "worldbooks": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "characters",
+                                      "character_versions",
+                                      "worldbooks",
+                                      "worldbook_entries",
+                                      "sessions",
+                                      "session_branches",
+                                      "floors",
+                                      "pages",
+                                      "messages",
+                                      "variables",
+                                      "branch_local_variable_snapshots",
+                                      "memory_items",
+                                      "memory_edges",
+                                      "runtime_scope_states"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "dropped_bindings": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "presets": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "regex_profiles": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "users": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "users",
+                                      "presets",
+                                      "regex_profiles"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "mode": {
+                                    "enum": [
+                                      "create_copy"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "renamed_resources": {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "new_name": {
+                                          "type": "string"
+                                        },
+                                        "old_name": {
+                                          "type": "string"
+                                        },
+                                        "type": {
+                                          "enum": [
+                                            "character",
+                                            "worldbook",
+                                            "session"
+                                          ],
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "old_name",
+                                        "new_name"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "warnings": {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "code": {
+                                          "type": "string"
+                                        },
+                                        "message": {
+                                          "type": "string"
+                                        },
+                                        "session_id": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "code",
+                                        "message"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "type": "array"
+                                  }
+                                },
+                                "required": [
+                                  "mode",
+                                  "created",
+                                  "renamed_resources",
+                                  "dropped_bindings",
+                                  "warnings"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "pending",
+                              "leased",
+                              "running",
+                              "retry_waiting",
+                              "succeeded",
+                              "dead_letter",
+                              "cancelled"
+                            ],
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "job_kind",
+                          "status",
+                          "phase",
+                          "attempt_count",
+                          "max_attempts",
+                          "available_at",
+                          "created_at",
+                          "updated_at",
+                          "progress_current"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "meta": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "has_more": {
+                          "type": "boolean"
+                        },
+                        "limit": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "sort_by": {
+                          "type": "string"
+                        },
+                        "sort_order": {
+                          "enum": [
+                            "asc",
+                            "desc"
+                          ],
+                          "type": "string"
+                        },
+                        "total": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "limit",
+                        "offset",
+                        "has_more",
+                        "sort_by",
+                        "sort_order"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List backup jobs",
+        "tags": [
+          "backup-jobs"
+        ]
+      }
+    },
+    "/backup-jobs/{id}": {
+      "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。",
+        "operationId": "getBackupJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "attempt_count": 1,
+                    "available_at": 1735689600000,
+                    "created_at": 1735689600000,
+                    "finished_at": 1735689650000,
+                    "id": "backup-job-export-1",
+                    "job_kind": "export_core_assets",
+                    "last_error": null,
+                    "lease_owner": null,
+                    "lease_until": null,
+                    "max_attempts": 5,
+                    "output_artifact_path": "backup-job-export-1/output.thbackup",
+                    "output_expires_at": 1735689700000,
+                    "phase": "completed",
+                    "progress_current": 4,
+                    "progress_message": "completed",
+                    "progress_total": 4,
+                    "request": {
+                      "character_ids": [],
+                      "domains": null,
+                      "include_linked_assets": true,
+                      "include_secrets": false,
+                      "session_ids": [
+                        "sess_demo"
+                      ],
+                      "worldbook_ids": []
+                    },
+                    "result": {
+                      "byte_length": 2048,
+                      "content_type": "application/json; charset=utf-8",
+                      "counts": {
+                        "branch_local_variable_snapshots": 1,
+                        "character_versions": 1,
+                        "characters": 1,
+                        "floors": 4,
+                        "memory_edges": 2,
+                        "memory_items": 3,
+                        "messages": 8,
+                        "pages": 4,
+                        "session_branches": 2,
+                        "sessions": 1,
+                        "variables": 6,
+                        "worldbook_entries": 3,
+                        "worldbooks": 1
+                      },
+                      "file_name": "core-assets-20250101-120000.thbackup",
+                      "included_domains": [
+                        "characters",
+                        "worldbooks",
+                        "sessions"
+                      ]
+                    },
+                    "status": "succeeded",
+                    "updated_at": 1735689650000
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "attempt_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "available_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "finished_at": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "job_kind": {
+                          "enum": [
+                            "export_core_assets",
+                            "restore_core_assets"
+                          ],
+                          "type": "string"
+                        },
+                        "last_error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lease_owner": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lease_until": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "max_attempts": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "output_artifact_path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "output_expires_at": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "phase": {
+                          "enum": [
+                            "queued",
+                            "collecting",
+                            "serializing",
+                            "writing_artifact",
+                            "validating",
+                            "normalizing",
+                            "remapping",
+                            "publishing",
+                            "rebuilding_runtime_state",
+                            "finalizing",
+                            "completed"
+                          ],
+                          "type": "string"
+                        },
+                        "progress_current": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "progress_message": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "progress_total": {
+                          "anyOf": [
+                            {
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "request": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "character_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "domains": {
+                                  "anyOf": [
+                                    {
+                                      "items": {
+                                        "enum": [
+                                          "characters",
+                                          "worldbooks",
+                                          "sessions"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "include_linked_assets": {
+                                  "type": "boolean"
+                                },
+                                "include_secrets": {
+                                  "enum": [
+                                    false
+                                  ],
+                                  "type": "boolean"
+                                },
+                                "session_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                },
+                                "worldbook_ids": {
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "domains",
+                                "session_ids",
+                                "character_ids",
+                                "worldbook_ids",
+                                "include_linked_assets",
+                                "include_secrets"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "backup_kind": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "created_at": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "included_domains": {
+                                  "anyOf": [
+                                    {
+                                      "items": {
+                                        "enum": [
+                                          "characters",
+                                          "worldbooks",
+                                          "sessions"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "type": "array"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "create_copy"
+                                  ],
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": true,
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "backup_kind",
+                                "included_domains",
+                                "created_at",
+                                "source"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "result": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "byte_length": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "content_type": {
+                                  "type": "string"
+                                },
+                                "counts": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "branch_local_variable_snapshots": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "character_versions": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "characters": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "floors": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "memory_edges": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "memory_items": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "messages": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "pages": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "session_branches": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "sessions": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "variables": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "worldbook_entries": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "worldbooks": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "characters",
+                                    "character_versions",
+                                    "worldbooks",
+                                    "worldbook_entries",
+                                    "sessions",
+                                    "session_branches",
+                                    "floors",
+                                    "pages",
+                                    "messages",
+                                    "variables",
+                                    "branch_local_variable_snapshots",
+                                    "memory_items",
+                                    "memory_edges"
+                                  ],
+                                  "type": "object"
+                                },
+                                "file_name": {
+                                  "type": "string"
+                                },
+                                "included_domains": {
+                                  "items": {
+                                    "enum": [
+                                      "characters",
+                                      "worldbooks",
+                                      "sessions"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "file_name",
+                                "content_type",
+                                "byte_length",
+                                "included_domains",
+                                "counts"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "created": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "branch_local_variable_snapshots": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "character_versions": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "characters": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "floors": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "memory_edges": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "memory_items": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "messages": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "pages": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "runtime_scope_states": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "session_branches": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "sessions": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "variables": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "worldbook_entries": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "worldbooks": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "characters",
+                                    "character_versions",
+                                    "worldbooks",
+                                    "worldbook_entries",
+                                    "sessions",
+                                    "session_branches",
+                                    "floors",
+                                    "pages",
+                                    "messages",
+                                    "variables",
+                                    "branch_local_variable_snapshots",
+                                    "memory_items",
+                                    "memory_edges",
+                                    "runtime_scope_states"
+                                  ],
+                                  "type": "object"
+                                },
+                                "dropped_bindings": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "presets": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "regex_profiles": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "users": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "users",
+                                    "presets",
+                                    "regex_profiles"
+                                  ],
+                                  "type": "object"
+                                },
+                                "mode": {
+                                  "enum": [
+                                    "create_copy"
+                                  ],
+                                  "type": "string"
+                                },
+                                "renamed_resources": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "new_name": {
+                                        "type": "string"
+                                      },
+                                      "old_name": {
+                                        "type": "string"
+                                      },
+                                      "type": {
+                                        "enum": [
+                                          "character",
+                                          "worldbook",
+                                          "session"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "old_name",
+                                      "new_name"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                },
+                                "warnings": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "code": {
+                                        "type": "string"
+                                      },
+                                      "message": {
+                                        "type": "string"
+                                      },
+                                      "session_id": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "message"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "mode",
+                                "created",
+                                "renamed_resources",
+                                "dropped_bindings",
+                                "warnings"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "leased",
+                            "running",
+                            "retry_waiting",
+                            "succeeded",
+                            "dead_letter",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "job_kind",
+                        "status",
+                        "phase",
+                        "attempt_count",
+                        "max_attempts",
+                        "available_at",
+                        "created_at",
+                        "updated_at",
+                        "progress_current"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get backup job detail",
+        "tags": [
+          "backup-jobs"
+        ]
+      }
+    },
+    "/backup-jobs/{id}/cancel": {
+      "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。",
+        "operationId": "cancelBackupJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "job_id": "backup-job-export-1",
+                    "status": "cancelled"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "leased",
+                            "running",
+                            "retry_waiting",
+                            "succeeded",
+                            "dead_letter",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "status"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Cancel a backup job",
+        "tags": [
+          "backup-jobs"
+        ]
+      }
+    },
+    "/backup-jobs/{id}/file": {
+      "get": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。 只有 export_core_assets 且 succeeded 的作业可以下载文件。",
+        "operationId": "downloadBackupJobFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Download backup export artifact",
+        "tags": [
+          "backup-jobs"
+        ]
+      }
+    },
+    "/backup-jobs/{id}/retry": {
+      "post": {
+        "description": "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。",
+        "operationId": "retryBackupJob",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "job_id": "backup-job-export-1",
+                    "status": "cancelled"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "leased",
+                            "running",
+                            "retry_waiting",
+                            "succeeded",
+                            "dead_letter",
+                            "cancelled"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "status"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Retry a backup job",
+        "tags": [
+          "backup-jobs"
+        ]
+      }
+    },
+    "/backup/jobs/export": {
+      "post": {
+        "description": "高级开发特性。该组路由用于导出 TavernHeadless 核心资产备份、执行 restore preview，以及把恢复任务写入 Background Job Runtime。请求体固定为 JSON，不提供 multipart 上传。 该接口只负责入队。导出完成后需要通过 /backup-jobs/:id/file 下载 .thbackup 文件。",
+        "operationId": "createBackupExportJob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "include_linked_assets": true,
+                "session_ids": [
+                  "sess_001"
+                ]
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "character_ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "domains": {
+                    "items": {
+                      "enum": [
+                        "characters",
+                        "worldbooks",
+                        "sessions"
+                      ],
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "include_linked_assets": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "include_secrets": {
+                    "default": false,
+                    "enum": [
+                      false
+                    ],
+                    "type": "boolean"
+                  },
+                  "session_ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "worldbook_ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "job_id": "backup-job:export_core_assets:abc123",
+                    "job_kind": "export_core_assets",
+                    "phase": "queued",
+                    "status": "pending"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "job_kind": {
+                          "enum": [
+                            "export_core_assets",
+                            "restore_core_assets"
+                          ],
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "queued"
+                          ],
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "job_kind",
+                        "status",
+                        "phase"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create core asset backup export job",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/backup/jobs/restore": {
+      "post": {
+        "description": "高级开发特性。该组路由用于导出 TavernHeadless 核心资产备份、执行 restore preview，以及把恢复任务写入 Background Job Runtime。请求体固定为 JSON，不提供 multipart 上传。 v1 只支持 create_copy。真正的写库、ID 重映射和 runtime state 重建会在后台 worker 中完成。",
+        "operationId": "createBackupRestoreJob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "data": {
+                  "backup_kind": "account_core_assets",
+                  "created_at": 1735689600000,
+                  "extensions": {
+                    "secrets": {
+                      "mode": "excluded"
+                    }
+                  },
+                  "included_domains": [
+                    "characters",
+                    "worldbooks",
+                    "sessions"
+                  ],
+                  "options": {
+                    "include_secrets": false
+                  },
+                  "resources": {
+                    "characters": [],
+                    "worldbooks": []
+                  },
+                  "sessions": [],
+                  "source": {
+                    "account_id": "acc_demo",
+                    "app_version": "0.2.0-beta.3"
+                  },
+                  "spec": "tavern_headless_backup",
+                  "spec_version": "1.0.0"
+                },
+                "mode": "create_copy"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "additionalProperties": true,
+                    "description": "已解析的 .thbackup JSON 文档对象。",
+                    "type": "object"
+                  },
+                  "mode": {
+                    "default": "create_copy",
+                    "enum": [
+                      "create_copy"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "job_id": "backup-job:restore_core_assets:def456",
+                    "job_kind": "restore_core_assets",
+                    "phase": "queued",
+                    "status": "pending"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "job_id": {
+                          "type": "string"
+                        },
+                        "job_kind": {
+                          "enum": [
+                            "export_core_assets",
+                            "restore_core_assets"
+                          ],
+                          "type": "string"
+                        },
+                        "phase": {
+                          "enum": [
+                            "queued"
+                          ],
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "job_id",
+                        "job_kind",
+                        "status",
+                        "phase"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create core asset backup restore job",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/backup/restore/preview": {
+      "post": {
+        "description": "高级开发特性。该组路由用于导出 TavernHeadless 核心资产备份、执行 restore preview，以及把恢复任务写入 Background Job Runtime。请求体固定为 JSON，不提供 multipart 上传。 该接口只做同步校验和恢复规划，不会写数据库。",
+        "operationId": "previewBackupRestore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "data": {
+                  "backup_kind": "account_core_assets",
+                  "created_at": 1735689600000,
+                  "extensions": {
+                    "secrets": {
+                      "mode": "excluded"
+                    }
+                  },
+                  "included_domains": [
+                    "characters",
+                    "worldbooks",
+                    "sessions"
+                  ],
+                  "options": {
+                    "include_secrets": false
+                  },
+                  "resources": {
+                    "characters": [],
+                    "worldbooks": []
+                  },
+                  "sessions": [],
+                  "source": {
+                    "account_id": "acc_demo",
+                    "app_version": "0.2.0-beta.3"
+                  },
+                  "spec": "tavern_headless_backup",
+                  "spec_version": "1.0.0"
+                },
+                "mode": "create_copy"
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "data": {
+                    "additionalProperties": true,
+                    "description": "已解析的 .thbackup JSON 文档对象。",
+                    "type": "object"
+                  },
+                  "mode": {
+                    "default": "create_copy",
+                    "enum": [
+                      "create_copy"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "backup_kind": "account_core_assets",
+                    "counts": {
+                      "branch_local_variable_snapshots": 1,
+                      "character_versions": 1,
+                      "characters": 1,
+                      "floors": 4,
+                      "memory_edges": 2,
+                      "memory_items": 3,
+                      "messages": 8,
+                      "pages": 4,
+                      "session_branches": 2,
+                      "sessions": 1,
+                      "variables": 6,
+                      "worldbook_entries": 3,
+                      "worldbooks": 1
+                    },
+                    "dropped_bindings": {
+                      "presets": 1,
+                      "regex_profiles": 1,
+                      "users": 1
+                    },
+                    "included_domains": [
+                      "characters",
+                      "worldbooks",
+                      "sessions"
+                    ],
+                    "renamed_resources": [
+                      {
+                        "new_name": "Story A (restored)",
+                        "old_name": "Story A",
+                        "type": "session"
+                      }
+                    ],
+                    "restore_mode": "create_copy",
+                    "warnings": [
+                      {
+                        "code": "restore_drops_user_binding",
+                        "message": "1 个 session 的 user 绑定将在 restore 时清空"
+                      }
+                    ],
+                    "will_create": {
+                      "characters": 1,
+                      "sessions": 1,
+                      "worldbooks": 1
+                    }
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "backup_kind": {
+                          "enum": [
+                            "account_core_assets"
+                          ],
+                          "type": "string"
+                        },
+                        "counts": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branch_local_variable_snapshots": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "character_versions": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "characters": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "floors": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "memory_edges": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "memory_items": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "messages": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "pages": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "session_branches": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "sessions": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "variables": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "worldbook_entries": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "worldbooks": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "characters",
+                            "character_versions",
+                            "worldbooks",
+                            "worldbook_entries",
+                            "sessions",
+                            "session_branches",
+                            "floors",
+                            "pages",
+                            "messages",
+                            "variables",
+                            "branch_local_variable_snapshots",
+                            "memory_items",
+                            "memory_edges"
+                          ],
+                          "type": "object"
+                        },
+                        "dropped_bindings": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "presets": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "regex_profiles": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "users": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "users",
+                            "presets",
+                            "regex_profiles"
+                          ],
+                          "type": "object"
+                        },
+                        "included_domains": {
+                          "items": {
+                            "enum": [
+                              "characters",
+                              "worldbooks",
+                              "sessions"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "renamed_resources": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "new_name": {
+                                "type": "string"
+                              },
+                              "old_name": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "enum": [
+                                  "character",
+                                  "worldbook",
+                                  "session"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "old_name",
+                              "new_name"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "restore_mode": {
+                          "enum": [
+                            "create_copy"
+                          ],
+                          "type": "string"
+                        },
+                        "warnings": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              },
+                              "session_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "will_create": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "characters": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "sessions": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "worldbooks": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "characters",
+                            "worldbooks",
+                            "sessions"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "backup_kind",
+                        "restore_mode",
+                        "included_domains",
+                        "counts",
+                        "will_create",
+                        "renamed_resources",
+                        "dropped_bindings",
+                        "warnings"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Preview core asset backup restore",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
     "/branches/{id}": {
       "delete": {
         "parameters": [
@@ -83572,12 +86345,20 @@
       "name": "exports"
     },
     {
+      "description": "Core asset backup export, restore preview, and restore job APIs",
+      "name": "backup"
+    },
+    {
       "description": "Advanced developer APIs for async chat import/export job observation and artifact download",
       "name": "chat-transfer-jobs"
     },
     {
       "description": "Character lifecycle and versioning",
       "name": "characters"
+    },
+    {
+      "description": "Advanced developer APIs for backup job observation, control, and artifact download",
+      "name": "backup-jobs"
     },
     {
       "description": "Chat respond and regenerate",

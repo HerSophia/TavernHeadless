@@ -26,6 +26,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - Prompt Runtime 已支持分支感知 control plane、结构化 memory truth（preview / inspect / historical explain）、budget / source selection explain、已提交楼层的 historical explain（只读持久化真相）、committed floor compare/diff，以及 session / branch policy envelope governance
 - 三种认证模式、多账号隔离、LLM 密钥加密存储
 - 变量、记忆、消息、会话、用户等批量操作接口
+- 核心资产备份 v1：支持 `characters`、`worldbooks`、`sessions` 的导出、restore preview、异步恢复与作业查询
 - LLM Profiles / Instance Slots 已接入真实执行链路，并使用 turn 级 provider 快照隔离运行中的配置
 
 当前重点：部署文档完善、正式发布准备。真实 LLM 集成回归已通过。
@@ -39,6 +40,7 @@ TavernHeadless 是一个没有内置聊天界面的 AI 角色扮演系统。
 - **Prompt Runtime 观测面** — 支持 live debug、dry-run、单段 `macro_text_preview`（宏/source selection/visibility 子视图）、结构化 memory truth、budget / source selection explain、committed floor 的 historical explain（只读持久化真相），以及 committed floor compare / diff
 - **记忆系统** — 支持 Memory V2 双层摘要、结构化存储、默认分支隔离的记忆注入、page-local proposal + accepted-page promotion 语义和后台维护
 - **开发者友好** — TypeScript 全栈、OpenAPI 导出、类型化 SDK
+- **核心资产备份 v1** — 支持 `characters`、`worldbooks`、`sessions` 的 `.thbackup` 导出、restore preview 与异步恢复
 - **官方集成层** — 提供 `@tavern/sdk` 和 `@tavern/client-helpers`
 
 ## 技术栈
@@ -156,7 +158,29 @@ pnpm dev:api:local                # 用仓库内置 Node 22 只启动后端
 pnpm rebuild:native               # 用仓库内置 Node 22 重建 better-sqlite3
 pnpm sdk:generate                 # 导出 OpenAPI + 生成 SDK
 pnpm sdk:check                    # 检查 SDK 是否最新
+pnpm --filter @tavern/api jobs:backup  # 运行核心资产备份 worker
 ```
+
+## 后台作业 worker
+
+如果你要使用异步核心资产备份，请先在 `.env` 中启用：
+
+- `ENABLE_BACKUP_WORKER=true`
+
+然后运行：
+
+```bash
+pnpm --filter @tavern/api jobs:backup
+```
+
+常用配置项包括：
+
+- `ENABLE_BACKUP_WORKER`
+- `BACKUP_WORKER_POLL_INTERVAL_MS`、`BACKUP_WORKER_LEASE_TTL_MS`、`BACKUP_WORKER_MAX_CONCURRENT_JOBS`
+- `BACKUP_WORKER_RETRY_BASE_DELAY_MS`、`BACKUP_WORKER_MAX_RETRY_DELAY_MS`、`BACKUP_WORKER_CANDIDATE_SCAN_LIMIT`
+- `BACKUP_ARTIFACT_DIR`、`BACKUP_IMPORT_MAX_BYTES`、`BACKUP_EXPORT_ARTIFACT_TTL_MS`
+
+完整说明见 `.env.example`。
 
 ## 文档
 
