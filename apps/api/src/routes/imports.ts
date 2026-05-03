@@ -96,6 +96,7 @@ import { SessionBranchRegistryService } from "../services/variables/host/session
 import { LocalChatTransferArtifactStore } from "../services/chat-transfer-artifacts.js";
 import { ChatTransferJobScheduler } from "../services/chat-transfer-job-scheduler.js";
 import { MEMORY_RUNTIME_SCOPE_TYPE, buildMemoryRuntimeScopeKey } from "../services/memory-runtime-job-definitions.js";
+import { buildImportedMemoryScopeStateRowsFromResolvedData } from "../services/imported-memory-scope-state-builder.js";
 import {
   executeResourceWrite as executeResourceWriteOrThrow,
   ResourceWriteRouteError,
@@ -3181,12 +3182,24 @@ function createSessionFromThChatImport(
     }
 
     // 7. 为导入的聊天与楼层 scope 合成记忆状态，便于后续维护、重建与手动 compact
-    const scopeStateRows = buildImportedMemoryScopeStateRows({
+    const resolvedMemoryItems = data.memories?.items.map((item) => ({
+      scope: item.scope,
+      scopeId: resolveThChatImportMemoryScopeId({
+        scope: item.scope,
+        scopeIdRef: item.scope_id_ref,
+        sessionId,
+        idMap: input.idMap,
+      }),
+      type: item.type,
+      summaryTier: item.type === "summary" ? item.summary_tier ?? null : null,
+      status: item.status,
+    })) ?? [];
+    const scopeStateRows = buildImportedMemoryScopeStateRowsFromResolvedData({
       accountId: input.accountId,
-      data,
-      idMap: input.idMap,
       now: input.now,
       sessionId,
+      floors: data.floors.map((floor) => ({ id: input.idMap.get(floor._original_id)!, branchId: floor.branch_id, floorNo: floor.floor_no })),
+      items: resolvedMemoryItems,
     });
     if (scopeStateRows.length > 0) {
       tx.insert(runtimeScopeStates).values(scopeStateRows).run();

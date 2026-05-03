@@ -41,6 +41,166 @@ export interface paths {
         patch: operations["updateAccount"];
         trace?: never;
     };
+    "/backup-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List backup jobs
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。
+         */
+        get: operations["listBackupJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get backup job detail
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。
+         */
+        get: operations["getBackupJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-jobs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a backup job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。
+         */
+        post: operations["cancelBackupJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-jobs/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download backup export artifact
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。 只有 export_core_assets 且 succeeded 的作业可以下载文件。
+         */
+        get: operations["downloadBackupJobFile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup-jobs/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a backup job
+         * @description 高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。
+         */
+        post: operations["retryBackupJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup/jobs/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create core asset backup export job
+         * @description 高级开发特性。该组路由用于导出 TavernHeadless 核心资产备份、执行 restore preview，以及把恢复任务写入 Background Job Runtime。请求体固定为 JSON，不提供 multipart 上传。 该接口只负责入队。导出完成后需要通过 /backup-jobs/:id/file 下载 .thbackup 文件。
+         */
+        post: operations["createBackupExportJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup/jobs/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create core asset backup restore job
+         * @description 高级开发特性。该组路由用于导出 TavernHeadless 核心资产备份、执行 restore preview，以及把恢复任务写入 Background Job Runtime。请求体固定为 JSON，不提供 multipart 上传。 v1 只支持 create_copy。真正的写库、ID 重映射和 runtime state 重建会在后台 worker 中完成。
+         */
+        post: operations["createBackupRestoreJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backup/restore/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview core asset backup restore
+         * @description 高级开发特性。该组路由用于导出 TavernHeadless 核心资产备份、执行 restore preview，以及把恢复任务写入 Background Job Runtime。请求体固定为 JSON，不提供 multipart 上传。 该接口只做同步校验和恢复规划，不会写数据库。
+         */
+        post: operations["previewBackupRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/branches/{id}": {
         parameters: {
             query?: never;
@@ -18995,6 +19155,1067 @@ export interface operations {
             };
             /** @description Default Response */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listBackupJobs: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+                sort_by?: "created_at" | "updated_at" | "available_at";
+                job_kind?: "export_core_assets" | "restore_core_assets";
+                status?: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "attempt_count": 1,
+                     *           "available_at": 1735689600000,
+                     *           "created_at": 1735689600000,
+                     *           "finished_at": 1735689650000,
+                     *           "id": "backup-job-export-1",
+                     *           "job_kind": "export_core_assets",
+                     *           "last_error": null,
+                     *           "lease_owner": null,
+                     *           "lease_until": null,
+                     *           "max_attempts": 5,
+                     *           "output_artifact_path": "backup-job-export-1/output.thbackup",
+                     *           "output_expires_at": 1735689700000,
+                     *           "phase": "completed",
+                     *           "progress_current": 4,
+                     *           "progress_message": "completed",
+                     *           "progress_total": 4,
+                     *           "request": {
+                     *             "character_ids": [],
+                     *             "domains": null,
+                     *             "include_linked_assets": true,
+                     *             "include_secrets": false,
+                     *             "session_ids": [
+                     *               "sess_demo"
+                     *             ],
+                     *             "worldbook_ids": []
+                     *           },
+                     *           "result": {
+                     *             "byte_length": 2048,
+                     *             "content_type": "application/json; charset=utf-8",
+                     *             "counts": {
+                     *               "branch_local_variable_snapshots": 1,
+                     *               "character_versions": 1,
+                     *               "characters": 1,
+                     *               "floors": 4,
+                     *               "memory_edges": 2,
+                     *               "memory_items": 3,
+                     *               "messages": 8,
+                     *               "pages": 4,
+                     *               "session_branches": 2,
+                     *               "sessions": 1,
+                     *               "variables": 6,
+                     *               "worldbook_entries": 3,
+                     *               "worldbooks": 1
+                     *             },
+                     *             "file_name": "core-assets-20250101-120000.thbackup",
+                     *             "included_domains": [
+                     *               "characters",
+                     *               "worldbooks",
+                     *               "sessions"
+                     *             ]
+                     *           },
+                     *           "status": "succeeded",
+                     *           "updated_at": 1735689650000
+                     *         }
+                     *       ],
+                     *       "meta": {
+                     *         "has_more": false,
+                     *         "limit": 20,
+                     *         "offset": 0,
+                     *         "sort_by": "created_at",
+                     *         "sort_order": "desc",
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            attempt_count: number;
+                            available_at: number;
+                            created_at: number;
+                            finished_at?: number | null;
+                            id: string;
+                            /** @enum {string} */
+                            job_kind: "export_core_assets" | "restore_core_assets";
+                            last_error?: string | null;
+                            lease_owner?: string | null;
+                            lease_until?: number | null;
+                            max_attempts: number;
+                            output_artifact_path?: string | null;
+                            output_expires_at?: number | null;
+                            /** @enum {string} */
+                            phase: "queued" | "collecting" | "serializing" | "writing_artifact" | "validating" | "normalizing" | "remapping" | "publishing" | "rebuilding_runtime_state" | "finalizing" | "completed";
+                            progress_current: number;
+                            progress_message?: string | null;
+                            progress_total?: number | null;
+                            request?: {
+                                character_ids: string[];
+                                domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                include_linked_assets: boolean;
+                                /** @enum {boolean} */
+                                include_secrets: false;
+                                session_ids: string[];
+                                worldbook_ids: string[];
+                            } | {
+                                backup_kind: string | null;
+                                created_at: number | null;
+                                included_domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                /** @enum {string} */
+                                mode: "create_copy";
+                                source: {
+                                    [key: string]: unknown;
+                                } | null;
+                            } | null;
+                            result?: {
+                                byte_length: number;
+                                content_type: string;
+                                counts: {
+                                    branch_local_variable_snapshots: number;
+                                    character_versions: number;
+                                    characters: number;
+                                    floors: number;
+                                    memory_edges: number;
+                                    memory_items: number;
+                                    messages: number;
+                                    pages: number;
+                                    session_branches: number;
+                                    sessions: number;
+                                    variables: number;
+                                    worldbook_entries: number;
+                                    worldbooks: number;
+                                };
+                                file_name: string;
+                                included_domains: ("characters" | "worldbooks" | "sessions")[];
+                            } | {
+                                created: {
+                                    branch_local_variable_snapshots: number;
+                                    character_versions: number;
+                                    characters: number;
+                                    floors: number;
+                                    memory_edges: number;
+                                    memory_items: number;
+                                    messages: number;
+                                    pages: number;
+                                    runtime_scope_states: number;
+                                    session_branches: number;
+                                    sessions: number;
+                                    variables: number;
+                                    worldbook_entries: number;
+                                    worldbooks: number;
+                                };
+                                dropped_bindings: {
+                                    presets: number;
+                                    regex_profiles: number;
+                                    users: number;
+                                };
+                                /** @enum {string} */
+                                mode: "create_copy";
+                                renamed_resources: {
+                                    new_name: string;
+                                    old_name: string;
+                                    /** @enum {string} */
+                                    type: "character" | "worldbook" | "session";
+                                }[];
+                                warnings: {
+                                    code: string;
+                                    message: string;
+                                    session_id?: string;
+                                }[];
+                            } | null;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                            updated_at: number;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getBackupJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "attempt_count": 1,
+                     *         "available_at": 1735689600000,
+                     *         "created_at": 1735689600000,
+                     *         "finished_at": 1735689650000,
+                     *         "id": "backup-job-export-1",
+                     *         "job_kind": "export_core_assets",
+                     *         "last_error": null,
+                     *         "lease_owner": null,
+                     *         "lease_until": null,
+                     *         "max_attempts": 5,
+                     *         "output_artifact_path": "backup-job-export-1/output.thbackup",
+                     *         "output_expires_at": 1735689700000,
+                     *         "phase": "completed",
+                     *         "progress_current": 4,
+                     *         "progress_message": "completed",
+                     *         "progress_total": 4,
+                     *         "request": {
+                     *           "character_ids": [],
+                     *           "domains": null,
+                     *           "include_linked_assets": true,
+                     *           "include_secrets": false,
+                     *           "session_ids": [
+                     *             "sess_demo"
+                     *           ],
+                     *           "worldbook_ids": []
+                     *         },
+                     *         "result": {
+                     *           "byte_length": 2048,
+                     *           "content_type": "application/json; charset=utf-8",
+                     *           "counts": {
+                     *             "branch_local_variable_snapshots": 1,
+                     *             "character_versions": 1,
+                     *             "characters": 1,
+                     *             "floors": 4,
+                     *             "memory_edges": 2,
+                     *             "memory_items": 3,
+                     *             "messages": 8,
+                     *             "pages": 4,
+                     *             "session_branches": 2,
+                     *             "sessions": 1,
+                     *             "variables": 6,
+                     *             "worldbook_entries": 3,
+                     *             "worldbooks": 1
+                     *           },
+                     *           "file_name": "core-assets-20250101-120000.thbackup",
+                     *           "included_domains": [
+                     *             "characters",
+                     *             "worldbooks",
+                     *             "sessions"
+                     *           ]
+                     *         },
+                     *         "status": "succeeded",
+                     *         "updated_at": 1735689650000
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            attempt_count: number;
+                            available_at: number;
+                            created_at: number;
+                            finished_at?: number | null;
+                            id: string;
+                            /** @enum {string} */
+                            job_kind: "export_core_assets" | "restore_core_assets";
+                            last_error?: string | null;
+                            lease_owner?: string | null;
+                            lease_until?: number | null;
+                            max_attempts: number;
+                            output_artifact_path?: string | null;
+                            output_expires_at?: number | null;
+                            /** @enum {string} */
+                            phase: "queued" | "collecting" | "serializing" | "writing_artifact" | "validating" | "normalizing" | "remapping" | "publishing" | "rebuilding_runtime_state" | "finalizing" | "completed";
+                            progress_current: number;
+                            progress_message?: string | null;
+                            progress_total?: number | null;
+                            request?: {
+                                character_ids: string[];
+                                domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                include_linked_assets: boolean;
+                                /** @enum {boolean} */
+                                include_secrets: false;
+                                session_ids: string[];
+                                worldbook_ids: string[];
+                            } | {
+                                backup_kind: string | null;
+                                created_at: number | null;
+                                included_domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                /** @enum {string} */
+                                mode: "create_copy";
+                                source: {
+                                    [key: string]: unknown;
+                                } | null;
+                            } | null;
+                            result?: {
+                                byte_length: number;
+                                content_type: string;
+                                counts: {
+                                    branch_local_variable_snapshots: number;
+                                    character_versions: number;
+                                    characters: number;
+                                    floors: number;
+                                    memory_edges: number;
+                                    memory_items: number;
+                                    messages: number;
+                                    pages: number;
+                                    session_branches: number;
+                                    sessions: number;
+                                    variables: number;
+                                    worldbook_entries: number;
+                                    worldbooks: number;
+                                };
+                                file_name: string;
+                                included_domains: ("characters" | "worldbooks" | "sessions")[];
+                            } | {
+                                created: {
+                                    branch_local_variable_snapshots: number;
+                                    character_versions: number;
+                                    characters: number;
+                                    floors: number;
+                                    memory_edges: number;
+                                    memory_items: number;
+                                    messages: number;
+                                    pages: number;
+                                    runtime_scope_states: number;
+                                    session_branches: number;
+                                    sessions: number;
+                                    variables: number;
+                                    worldbook_entries: number;
+                                    worldbooks: number;
+                                };
+                                dropped_bindings: {
+                                    presets: number;
+                                    regex_profiles: number;
+                                    users: number;
+                                };
+                                /** @enum {string} */
+                                mode: "create_copy";
+                                renamed_resources: {
+                                    new_name: string;
+                                    old_name: string;
+                                    /** @enum {string} */
+                                    type: "character" | "worldbook" | "session";
+                                }[];
+                                warnings: {
+                                    code: string;
+                                    message: string;
+                                    session_id?: string;
+                                }[];
+                            } | null;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    cancelBackupJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "job_id": "backup-job-export-1",
+                     *         "status": "cancelled"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            job_id: string;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    downloadBackupJobFile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    retryBackupJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "job_id": "backup-job-export-1",
+                     *         "status": "cancelled"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            job_id: string;
+                            /** @enum {string} */
+                            status: "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createBackupExportJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "include_linked_assets": true,
+                 *       "session_ids": [
+                 *         "sess_001"
+                 *       ]
+                 *     }
+                 */
+                "application/json": {
+                    character_ids?: string[];
+                    domains?: ("characters" | "worldbooks" | "sessions")[];
+                    /** @default true */
+                    include_linked_assets?: boolean;
+                    /**
+                     * @default false
+                     * @enum {boolean}
+                     */
+                    include_secrets?: false;
+                    session_ids?: string[];
+                    worldbook_ids?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "job_id": "backup-job:export_core_assets:abc123",
+                     *         "job_kind": "export_core_assets",
+                     *         "phase": "queued",
+                     *         "status": "pending"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            job_id: string;
+                            /** @enum {string} */
+                            job_kind: "export_core_assets" | "restore_core_assets";
+                            /** @enum {string} */
+                            phase: "queued";
+                            /** @enum {string} */
+                            status: "pending";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createBackupRestoreJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "data": {
+                 *         "backup_kind": "account_core_assets",
+                 *         "created_at": 1735689600000,
+                 *         "extensions": {
+                 *           "secrets": {
+                 *             "mode": "excluded"
+                 *           }
+                 *         },
+                 *         "included_domains": [
+                 *           "characters",
+                 *           "worldbooks",
+                 *           "sessions"
+                 *         ],
+                 *         "options": {
+                 *           "include_secrets": false
+                 *         },
+                 *         "resources": {
+                 *           "characters": [],
+                 *           "worldbooks": []
+                 *         },
+                 *         "sessions": [],
+                 *         "source": {
+                 *           "account_id": "acc_demo",
+                 *           "app_version": "0.2.0-beta.3"
+                 *         },
+                 *         "spec": "tavern_headless_backup",
+                 *         "spec_version": "1.0.0"
+                 *       },
+                 *       "mode": "create_copy"
+                 *     }
+                 */
+                "application/json": {
+                    /** @description 已解析的 .thbackup JSON 文档对象。 */
+                    data: {
+                        [key: string]: unknown;
+                    };
+                    /**
+                     * @default create_copy
+                     * @enum {string}
+                     */
+                    mode?: "create_copy";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "job_id": "backup-job:restore_core_assets:def456",
+                     *         "job_kind": "restore_core_assets",
+                     *         "phase": "queued",
+                     *         "status": "pending"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            job_id: string;
+                            /** @enum {string} */
+                            job_kind: "export_core_assets" | "restore_core_assets";
+                            /** @enum {string} */
+                            phase: "queued";
+                            /** @enum {string} */
+                            status: "pending";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    previewBackupRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "data": {
+                 *         "backup_kind": "account_core_assets",
+                 *         "created_at": 1735689600000,
+                 *         "extensions": {
+                 *           "secrets": {
+                 *             "mode": "excluded"
+                 *           }
+                 *         },
+                 *         "included_domains": [
+                 *           "characters",
+                 *           "worldbooks",
+                 *           "sessions"
+                 *         ],
+                 *         "options": {
+                 *           "include_secrets": false
+                 *         },
+                 *         "resources": {
+                 *           "characters": [],
+                 *           "worldbooks": []
+                 *         },
+                 *         "sessions": [],
+                 *         "source": {
+                 *           "account_id": "acc_demo",
+                 *           "app_version": "0.2.0-beta.3"
+                 *         },
+                 *         "spec": "tavern_headless_backup",
+                 *         "spec_version": "1.0.0"
+                 *       },
+                 *       "mode": "create_copy"
+                 *     }
+                 */
+                "application/json": {
+                    /** @description 已解析的 .thbackup JSON 文档对象。 */
+                    data: {
+                        [key: string]: unknown;
+                    };
+                    /**
+                     * @default create_copy
+                     * @enum {string}
+                     */
+                    mode?: "create_copy";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "backup_kind": "account_core_assets",
+                     *         "counts": {
+                     *           "branch_local_variable_snapshots": 1,
+                     *           "character_versions": 1,
+                     *           "characters": 1,
+                     *           "floors": 4,
+                     *           "memory_edges": 2,
+                     *           "memory_items": 3,
+                     *           "messages": 8,
+                     *           "pages": 4,
+                     *           "session_branches": 2,
+                     *           "sessions": 1,
+                     *           "variables": 6,
+                     *           "worldbook_entries": 3,
+                     *           "worldbooks": 1
+                     *         },
+                     *         "dropped_bindings": {
+                     *           "presets": 1,
+                     *           "regex_profiles": 1,
+                     *           "users": 1
+                     *         },
+                     *         "included_domains": [
+                     *           "characters",
+                     *           "worldbooks",
+                     *           "sessions"
+                     *         ],
+                     *         "renamed_resources": [
+                     *           {
+                     *             "new_name": "Story A (restored)",
+                     *             "old_name": "Story A",
+                     *             "type": "session"
+                     *           }
+                     *         ],
+                     *         "restore_mode": "create_copy",
+                     *         "warnings": [
+                     *           {
+                     *             "code": "restore_drops_user_binding",
+                     *             "message": "1 个 session 的 user 绑定将在 restore 时清空"
+                     *           }
+                     *         ],
+                     *         "will_create": {
+                     *           "characters": 1,
+                     *           "sessions": 1,
+                     *           "worldbooks": 1
+                     *         }
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            /** @enum {string} */
+                            backup_kind: "account_core_assets";
+                            counts: {
+                                branch_local_variable_snapshots: number;
+                                character_versions: number;
+                                characters: number;
+                                floors: number;
+                                memory_edges: number;
+                                memory_items: number;
+                                messages: number;
+                                pages: number;
+                                session_branches: number;
+                                sessions: number;
+                                variables: number;
+                                worldbook_entries: number;
+                                worldbooks: number;
+                            };
+                            dropped_bindings: {
+                                presets: number;
+                                regex_profiles: number;
+                                users: number;
+                            };
+                            included_domains: ("characters" | "worldbooks" | "sessions")[];
+                            renamed_resources: {
+                                new_name: string;
+                                old_name: string;
+                                /** @enum {string} */
+                                type: "character" | "worldbook" | "session";
+                            }[];
+                            /** @enum {string} */
+                            restore_mode: "create_copy";
+                            warnings: {
+                                code: string;
+                                message: string;
+                                session_id?: string;
+                            }[];
+                            will_create: {
+                                characters: number;
+                                sessions: number;
+                                worldbooks: number;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

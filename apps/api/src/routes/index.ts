@@ -19,6 +19,8 @@ import { registerMessagePageRoutes } from "./pages";
 import { registerChatTransferJobRoutes, type ChatTransferJobRoutesOptions } from "./chat-transfer-jobs";
 import { registerLlmProfileRoutes } from "./llm-profiles";
 import { registerLlmInstanceRoutes } from "./llm-instances";
+import { registerBackupRoutes, type BackupRoutesOptions } from "./backup";
+import { registerBackupJobRoutes, type BackupJobRoutesOptions } from "./backup-jobs";
 import { registerSessionRoutes } from "./sessions";
 import { registerMcpConfigRoutes, registerSessionRuntimeToolRoutes, registerToolRoutes } from "./tooling";
 import { registerVariableRoutes } from "./variables";
@@ -34,6 +36,7 @@ export interface CrudRoutesOptions {
   sessionToolRegistryService?: SessionToolRegistryService;
   memoryJobs?: MemoryJobRoutesOptions;
   chatTransferJobs?: ChatTransferJobRoutesOptions & { importMaxBytes?: number; exportSyncMaxMessages?: number; exportArtifactTtlMs?: number };
+  backupJobs?: BackupRoutesOptions & BackupJobRoutesOptions & { importMaxBytes?: number; exportArtifactTtlMs?: number };
   mutationRuntime?: MutationRuntime;
   mcpManager?: McpConnectionManager;
   enableUnsafeScriptHandler?: boolean;
@@ -78,6 +81,7 @@ export async function registerCrudRoutes(
     mutationRuntime: options.mutationRuntime,
     accountMode: options.accountMode,
   });
+  await registerBackupRoutes(app, connection, options.backupJobs);
   await registerLlmInstanceRoutes(app, connection, { mutationRuntime: options.mutationRuntime });
   await registerChatTransferJobRoutes(app, connection, options.chatTransferJobs);
   await registerWorldbookEntryRoutes(app, connection);
@@ -85,6 +89,7 @@ export async function registerCrudRoutes(
   await registerToolRoutes(app, connection, {
     enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
   });
+  await registerBackupJobRoutes(app, connection, options.backupJobs);
   await registerMcpConfigRoutes(app, connection, {
     mcpManager: options.mcpManager,
   });
