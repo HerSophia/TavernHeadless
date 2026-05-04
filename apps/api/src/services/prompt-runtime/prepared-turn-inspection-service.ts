@@ -1,6 +1,7 @@
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 import { resolvePromptRuntimeExecutionContext } from "../prompt-runtime-execution.js";
 import type { AppDb } from "../../db/client.js";
+import { parseJsonField } from "../../lib/http.js";
 
 import { ChatServiceError } from "../chat/errors.js";
 import { buildInspectionPromptRuntimeRequestPolicy } from "../chat/shared/request-policy.js";
@@ -12,6 +13,7 @@ import { FirstPartyStateContextService } from "../chat/first-party-state-context
 import { PreparedPromptArtifactsBuilder } from "../chat/prepared-prompt-artifacts-builder.js";
 
 import { buildPromptRuntimeGovernanceView } from "./governance-view-builder.js";
+import { resolvePromptModeDetails, type SessionMetadata } from "../prompt-assembler.js";
 import type { PromptRuntimeInspectRequest, PromptRuntimeInspectResult } from "./types.js";
 import { createUnmaterializedBranchInspectDiagnostic } from "./shared/diagnostics.js";
 import { mapPromptRuntimeSessionStateWritesSummary } from "./shared/mappers.js";
@@ -96,9 +98,27 @@ export class PreparedTurnInspectionService {
     const governance = buildPromptRuntimeGovernanceView({
       assembled: prepared.assembled,
     });
+    const modeDetails = resolvePromptModeDetails(
+      { promptMode: session.promptMode ?? null },
+      (() => {
+        const metadata = parseJsonField(session.metadataJson);
+        return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+          ? (metadata as SessionMetadata)
+          : {};
+      })(),
+    );
+    const mode = {
+      promptMode: modeDetails.promptMode,
+      sessionPromptMode: modeDetails.sessionPromptMode,
+      effectivePromptMode: modeDetails.effectivePromptMode,
+      defaultPromptMode: modeDetails.defaultPromptMode,
+      legacyFallback: modeDetails.legacyFallback,
+      source: modeDetails.source,
+    };
 
     return {
       scope: prepared.inspection.scope,
+      mode,
       policy: prepared.executionContext.resolvedPolicy,
       sourceMap: prepared.inspection.sourceMap,
       diagnostics: prepared.inspection.diagnostics,

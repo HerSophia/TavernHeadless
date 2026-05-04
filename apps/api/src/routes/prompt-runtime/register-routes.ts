@@ -11,6 +11,8 @@ import {
   promptRuntimeCapabilitiesResponseJsonSchema,
   promptRuntimePolicyViewResponseJsonSchema,
   promptRuntimeHistoricalExplainResponseJsonSchema,
+  promptRuntimeModePatchBodyJsonSchema,
+  promptRuntimeModeResponseJsonSchema,
   promptRuntimePolicyPatchBodyJsonSchema,
   promptRuntimePreviewBodyJsonSchema,
   promptRuntimeInspectBodyJsonSchema,
@@ -48,8 +50,14 @@ import type {
   PromptRuntimeInspectRequest,
   PromptRuntimeInspectResult,
 } from "../../services/prompt-runtime/types.js";
-import { promptRuntimeInspectBodySchema } from "./schemas.js";
-import { mapPromptRuntimeInspectBodyToCamelCase } from "./mappers.js";
+import {
+  promptRuntimeInspectBodySchema,
+  promptRuntimeModePatchBodySchema,
+  type PromptRuntimeModePatchBody,
+} from "./schemas.js";
+import {
+  mapModeViewToCamelCase, mapModeViewToSnakeCase, mapPromptRuntimeInspectBodyToCamelCase,
+} from "./mappers.js";
 import { mapPromptRuntimeInspectResultToSnakeCase } from "./presenters.js";
 import {
   mapPromptRuntimeHistoryNormalizationToSnakeCase,
@@ -195,6 +203,71 @@ export async function registerPromptRuntimeRoutes(
       const auth = getRequestAuthContext(request);
       const state = await promptRuntimeControlService.getResolvedState(parsedParams.data.id, auth.accountId, parsedQuery.data.branch_id);
       return reply.send({ data: mapResolvedStateToSnakeCase(state) });
+    } catch (error) {
+      return sendPromptRuntimeControlServiceError(reply, error);
+    }
+  });
+
+  app.get("/sessions/:id/prompt-runtime/mode", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Get session prompt runtime mode",
+      operationId: "getSessionPromptRuntimeMode",
+      params: idParamsJsonSchema,
+      response: {
+        200: promptRuntimeModeResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const mode = await promptRuntimeControlService.getMode(parsedParams.data.id, auth.accountId);
+      return reply.send({ data: mapModeViewToSnakeCase(mode) });
+    } catch (error) {
+      return sendPromptRuntimeControlServiceError(reply, error);
+    }
+  });
+
+  app.patch("/sessions/:id/prompt-runtime/mode", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Patch session prompt runtime mode",
+      operationId: "patchSessionPromptRuntimeMode",
+      params: idParamsJsonSchema,
+      body: promptRuntimeModePatchBodyJsonSchema,
+      response: {
+        200: promptRuntimeModeResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimeModePatchBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const mode = await promptRuntimeControlService.updateMode(
+        parsedParams.data.id,
+        auth.accountId,
+        mapModeViewToCamelCase(parsedBody.data as PromptRuntimeModePatchBody).promptMode,
+        auth.subject ?? auth.accountId,
+      );
+      return reply.send({ data: mapModeViewToSnakeCase(mode) });
     } catch (error) {
       return sendPromptRuntimeControlServiceError(reply, error);
     }
@@ -547,6 +620,7 @@ export async function registerPromptRuntimeRoutes(
 function mapResolvedStateToSnakeCase(state: PromptRuntimeResolvedState): Record<string, unknown> {
   return {
     scope: mapScopeToSnakeCase(state.scope),
+    mode: mapModeViewToSnakeCase(state.mode),
     policy: mapResolvedPolicyToSnakeCase(state.policy),
     ...(state.persistentPolicy ? { persistent_policy: mapPersistentPolicyToSnakeCase(state.persistentPolicy) } : {}),
     ...(state.persistentPolicyEnvelope !== undefined
@@ -1246,6 +1320,8 @@ function mapDiagnosticToSnakeCase(
 
 function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Record<string, unknown> {
   return {
+    default_prompt_mode: capabilities.defaultPromptMode,
+    prompt_modes: capabilities.promptModes.map((mode) => ({ name: mode.name, description: mode.description, agentic_scope: mode.agenticScope })),
     structure: {
       modes: [...capabilities.structure.modes],
       defaults: mapResolvedStructurePolicyToSnakeCase(capabilities.structure.defaults),

@@ -141,7 +141,7 @@ WebSocket 也遵循相同边界：
 | Users          | 用户卡管理                                                   | [Users](./api/users)                   |
 | Variables      | 五级变量系统                                                 | [Variables](./api/variables)           |
 | Macros         | 宏展开规则、兼容边界，以及 dry-run / preview 能看到的结果    | [Macros](./api/macros)                 |
-| Prompt Runtime | 查看当前提示词资源、策略、结构化 memory truth 和调试能力     | [Prompt Runtime](./api/prompt-runtime) |
+| Prompt Runtime | 查看 Prompt Runtime 总览、mode、policy、assets、inspection 与 capabilities | [Prompt Runtime](./api/prompt-runtime) |
 
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
@@ -171,7 +171,12 @@ WebSocket 也遵循相同边界：
 - [Backup](./api/backup)
 - [Backup Jobs](./api/backup-jobs)
 - [Macros](./api/macros)
-- [Prompt Runtime](./api/prompt-runtime)
+- [Prompt Runtime 总览](./api/prompt-runtime)
+- [Prompt Runtime Mode](./api/prompt-runtime-mode)
+- [Prompt Runtime Policy](./api/prompt-runtime-policy)
+- [Prompt Runtime Assets](./api/prompt-runtime-assets)
+- [Prompt Runtime Inspection](./api/prompt-runtime-inspection)
+- [Prompt Runtime Capabilities](./api/prompt-runtime-capabilities)
 
 - [Tools](./api/tools)
 - [MCP Servers](./api/mcp)

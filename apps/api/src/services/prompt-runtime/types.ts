@@ -20,6 +20,7 @@ import type {
   PromptRuntimeDiagnostic,
   PromptRuntimeGovernanceView as PromptRuntimeGovernanceViewModel,
   PromptRuntimeScopeRef,
+  PromptRuntimeModeView,
   PromptRuntimeSectionStat,
   PromptRuntimeSourceMap,
   ResolvedPromptRuntimePolicy,
@@ -35,6 +36,9 @@ export type {
   PromptRuntimeGovernanceMismatch,
   PromptRuntimeGovernanceMismatchCode,
   PromptRuntimeGovernanceView,
+  PromptRuntimeModeSource,
+  PromptRuntimeModeView,
+  PromptRuntimeCapabilityMode,
 } from "./control-service.js";
 
 export interface PromptRuntimeSessionStateWriteSummary {
@@ -80,6 +84,7 @@ export interface PromptRuntimeInspectRequest {
 
 export interface PromptRuntimeInspectResult {
   scope: PromptRuntimeScopeRef;
+  mode: PromptRuntimeModeView;
   policy: ResolvedPromptRuntimePolicy;
   sourceMap: PromptRuntimeSourceMap;
   diagnostics: PromptRuntimeDiagnostic[];

@@ -9,8 +9,10 @@ import {
   assemblePrompt,
   buildPromptAssemblyCompat,
   buildPromptRuntimeTrace,
+  DEFAULT_PROMPT_MODE,
   materializePromptRuntimeMessages,
   resolveEffectivePromptBudget,
+  resolvePromptModeDetails,
   type AssembleDebugInfo,
   type PromptRuntimeTrace,
   type SessionPromptInfo,
@@ -84,6 +86,50 @@ const SAMPLE_PRESET_DATA = {
   names_behavior: 0,
   stream_openai: true,
 };
+
+describe("resolvePromptModeDetails", () => {
+  it("prefers the explicit session prompt mode and disables legacy fallback", () => {
+    expect(resolvePromptModeDetails(
+      { promptMode: "native" },
+      { promptMode: "compat_plus", prompt_mode: "compat_strict" },
+    )).toEqual({
+      promptMode: "native",
+      sessionPromptMode: "native",
+      effectivePromptMode: "native",
+      defaultPromptMode: DEFAULT_PROMPT_MODE,
+      legacyFallback: false,
+      source: "session",
+    });
+  });
+
+  it("uses legacy metadata as a visible fallback when the session prompt mode is unset", () => {
+    expect(resolvePromptModeDetails(
+      { promptMode: null },
+      { promptMode: "compat_plus" },
+    )).toEqual({
+      promptMode: "compat_plus",
+      sessionPromptMode: null,
+      effectivePromptMode: "compat_plus",
+      defaultPromptMode: DEFAULT_PROMPT_MODE,
+      legacyFallback: true,
+      source: "legacy_metadata",
+    });
+  });
+
+  it("falls back to compat_strict when neither session nor legacy metadata defines a mode", () => {
+    expect(resolvePromptModeDetails(
+      { promptMode: null },
+      {},
+    )).toEqual({
+      promptMode: DEFAULT_PROMPT_MODE,
+      sessionPromptMode: null,
+      effectivePromptMode: DEFAULT_PROMPT_MODE,
+      defaultPromptMode: DEFAULT_PROMPT_MODE,
+      legacyFallback: false,
+      source: "default",
+    });
+  });
+});
 
 describe("assemblePrompt", () => {
   let database: { db: DatabaseConnection["db"]; close: () => void };

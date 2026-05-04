@@ -27,6 +27,25 @@ import {
   readString,
 } from "./utils.js";
 
+export type PromptRuntimeModeSource = "session" | "legacy_metadata" | "default";
+
+type PromptRuntimeModeName = PromptSnapshotPreview["promptMode"];
+
+export type PromptRuntimeModeView = {
+  promptMode: PromptRuntimeModeName;
+  sessionPromptMode: PromptRuntimeModeName | null;
+  effectivePromptMode: PromptRuntimeModeName;
+  defaultPromptMode: PromptRuntimeModeName;
+  legacyFallback: boolean;
+  source: PromptRuntimeModeSource;
+};
+
+export type PromptRuntimeCapabilityMode = {
+  name: PromptRuntimeModeName;
+  description: string;
+  agenticScope: "none" | "limited" | "primary";
+};
+
 export type PromptRuntimeStructureMode = "default" | "strict_alternating" | "no_assistant" | "flattened";
 export type PromptRuntimeAssistantRewriteStrategy = "to_system" | "to_user_transcript";
 export type PromptRuntimePolicySource =
@@ -266,6 +285,7 @@ export type PromptRuntimeResolvedState = {
   persistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
   persistentPolicy?: PromptRuntimePersistentPolicy;
   scope: PromptRuntimeScopeRef;
+  mode: PromptRuntimeModeView;
   policy: PromptRuntimeResolvedPolicy;
   sourceMap?: PromptRuntimeSourceMap;
   warnings: string[];
@@ -279,6 +299,8 @@ export type PromptRuntimePolicyView = {
 };
 
 export type PromptRuntimeCapabilities = {
+  defaultPromptMode: PromptRuntimeModeView["defaultPromptMode"];
+  promptModes: PromptRuntimeCapabilityMode[];
   delivery: {
     defaults: PromptRuntimeResolvedDeliveryPolicy;
   };
@@ -544,6 +566,7 @@ export type PromptRuntimeInspectOptions = PromptRuntimeGetSessionOptions & {
 
 export type PromptRuntimeInspectResult = {
   scope: PromptRuntimeScopeRef;
+  mode: PromptRuntimeModeView;
   policy: PromptRuntimeResolvedPolicy;
   sourceMap: PromptRuntimeSourceMap;
   historyNormalization?: PromptRuntimeTrace["historyNormalization"];
@@ -599,17 +622,26 @@ export type PromptRuntimeCompareOptions = PromptRuntimeGetSessionOptions & {
 
 export type PromptRuntimeGetFloorExplainOptions = { accountId?: AccountIdHint; floorId: string };
 
+export type PromptRuntimeGetModeOptions = {
+  accountId?: AccountIdHint;
+};
+
+export type PromptRuntimeUpdateModeOptions = PromptRuntimeGetModeOptions;
+export type PromptRuntimeUpdateModeRequest = { promptMode: PromptRuntimeModeView["sessionPromptMode"] };
+
 export type PromptRuntimeResource = {
   compare(options: PromptRuntimeCompareOptions): Promise<PromptRuntimeExplainDiff>;
   getAssets(options: PromptRuntimeGetAssetsOptions): Promise<PromptRuntimeAssetsView>;
   inspect(options: PromptRuntimeInspectOptions): Promise<PromptRuntimeInspectResult>;
   getBranchPolicy(options: PromptRuntimeGetBranchPolicyOptions): Promise<PromptRuntimePolicyView>;
   getCapabilities(options?: PromptRuntimeGetCapabilitiesOptions): Promise<PromptRuntimeCapabilities>;
+  getMode(sessionId: string, options?: PromptRuntimeGetModeOptions): Promise<PromptRuntimeModeView>;
   getPolicy(options: PromptRuntimeGetPolicyOptions): Promise<PromptRuntimePolicyView>;
   getSession(options: PromptRuntimeGetResolvedStateOptions): Promise<PromptRuntimeResolvedState>;
   getFloorExplain(options: PromptRuntimeGetFloorExplainOptions): Promise<PromptRuntimeHistoricalExplain>;
   patchBranchPolicy(options: PromptRuntimePatchBranchPolicyOptions): Promise<PromptRuntimePolicyView>;
   patchPolicy(options: PromptRuntimePatchPolicyOptions): Promise<PromptRuntimePolicyView>;
+  updateMode(sessionId: string, input: PromptRuntimeUpdateModeRequest, options?: PromptRuntimeUpdateModeOptions): Promise<PromptRuntimeModeView>;
   previewText(options: PromptRuntimePreviewOptions): Promise<PromptRuntimePreviewResult>;
 };
 
@@ -693,6 +725,22 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
       const payload = mapPromptRuntimeCapabilities(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Prompt Runtime capabilities payload is missing");
+      }
+
+      return payload;
+    },
+    async getMode(sessionId, options: PromptRuntimeGetModeOptions = {}): Promise<PromptRuntimeModeView> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(sessionId)}/prompt-runtime/mode`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+
+      const payload = mapPromptRuntimeModeView(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime mode payload is missing");
       }
 
       return payload;
@@ -795,6 +843,27 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
 
       return payload;
     },
+    async updateMode(
+      sessionId,
+      input,
+      options: PromptRuntimeUpdateModeOptions = {},
+    ): Promise<PromptRuntimeModeView> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(sessionId)}/prompt-runtime/mode`,
+        {
+          body: { prompt_mode: input.promptMode },
+          headers: buildAccountHeaders(options.accountId),
+          method: "PATCH",
+        },
+      );
+
+      const payload = mapPromptRuntimeModeView(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime mode patch payload is missing");
+      }
+
+      return payload;
+    },
     async previewText(options): Promise<PromptRuntimePreviewResult> {
       const response = await client.fetchJson<Record<string, unknown>>(
         `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/preview`,
@@ -832,8 +901,9 @@ function mapPromptRuntimeResolvedState(value: unknown): PromptRuntimeResolvedSta
 
   const policy = mapPromptRuntimeResolvedPolicy(record.policy);
   const assets = mapPromptRuntimeAssetsView(record.assets);
+  const mode = mapPromptRuntimeModeView(record.mode);
   const scope = mapPromptRuntimeScopeRef(record.scope);
-  if (!policy || !assets) {
+  if (!policy || !assets || !mode) {
     return null;
   }
 
@@ -858,6 +928,7 @@ function mapPromptRuntimeResolvedState(value: unknown): PromptRuntimeResolvedSta
       historySourceBranchId: "main",
       historySourceMode: "existing_branch",
     },
+    mode,
     policy,
     ...(sourceMap ? { sourceMap } : {}),
     warnings: mapStringArray(record.warnings),
@@ -905,6 +976,33 @@ function mapPromptRuntimePersistentPolicyEnvelope(value: unknown): PromptRuntime
   };
 }
 
+function mapPromptRuntimeModeView(value: unknown): PromptRuntimeModeView | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    promptMode: readPromptRuntimeModeName(record.prompt_mode),
+    sessionPromptMode: readNullablePromptRuntimeModeName(record.session_prompt_mode),
+    effectivePromptMode: readPromptRuntimeModeName(record.effective_prompt_mode),
+    defaultPromptMode: readPromptRuntimeModeName(record.default_prompt_mode, "compat_strict"),
+    legacyFallback: readBoolean(record.legacy_fallback),
+    source: readPromptRuntimeModeSource(record.source),
+  };
+}
+
+function mapPromptRuntimeCapabilityModes(value: unknown): PromptRuntimeCapabilityMode[] {
+  return readArray(value)
+    .map((item) => readRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .map((item) => ({
+      name: readPromptRuntimeModeName(item.name),
+      description: readString(item.description),
+      agenticScope: readPromptRuntimeAgenticScope(item.agentic_scope),
+    }));
+}
+
 function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities | null {
   const record = readRecord(value);
   if (!record) {
@@ -937,6 +1035,8 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
   }
 
   return {
+    defaultPromptMode: readPromptRuntimeModeName(record.default_prompt_mode, "compat_strict"),
+    promptModes: mapPromptRuntimeCapabilityModes(record.prompt_modes),
     budget: {
       defaults: defaultsBudget,
       persistentPatchSupported: readBoolean(budget.persistent_patch_supported),
@@ -1447,15 +1547,17 @@ function mapPromptRuntimeInspectResult(value: unknown): PromptRuntimeInspectResu
 
   const scope = mapPromptRuntimeScopeRef(record.scope);
   const policy = mapPromptRuntimeResolvedPolicy(record.policy);
+  const mode = mapPromptRuntimeModeView(record.mode);
   const preparedTurn = mapPromptRuntimeInspectPreparedTurn(record.prepared_turn);
   const governance = mapPromptRuntimeGovernanceView(record.governance);
-  if (!scope || !policy || !preparedTurn || !governance) {
+  if (!scope || !policy || !mode || !preparedTurn || !governance) {
     return null;
   }
 
   const historyNormalization = mapPromptRuntimeTracePayload({ history_normalization: record.history_normalization })?.historyNormalization;
   return {
     scope,
+    mode,
     policy,
     sourceMap: mapPromptRuntimeSourceMap(record.source_map) ?? {},
     diagnostics: mapPromptRuntimeDiagnostics(record.diagnostics),
@@ -2021,6 +2123,39 @@ function readPromptRuntimePolicySource(value: unknown): PromptRuntimePolicySourc
     default:
       return undefined;
   }
+}
+
+function readPromptRuntimeModeName(
+  value: unknown,
+  fallback: PromptRuntimeModeName = "compat_strict",
+): PromptRuntimeModeName {
+  const mode = readString(value, fallback);
+  return mode === "compat_plus" || mode === "native" || mode === "compat_strict"
+    ? mode
+    : fallback;
+}
+
+function readNullablePromptRuntimeModeName(value: unknown): PromptRuntimeModeName | null {
+  const mode = readOptionalString(value);
+  if (mode === undefined || mode === null) {
+    return null;
+  }
+
+  return readPromptRuntimeModeName(mode);
+}
+
+function readPromptRuntimeModeSource(value: unknown): PromptRuntimeModeSource {
+  const source = readOptionalString(value);
+  return source === "session" || source === "legacy_metadata" || source === "default"
+    ? source
+    : "default";
+}
+
+function readPromptRuntimeAgenticScope(value: unknown): PromptRuntimeCapabilityMode["agenticScope"] {
+  const scope = readOptionalString(value);
+  return scope === "limited" || scope === "primary" || scope === "none"
+    ? scope
+    : "none";
 }
 
 function readPromptRuntimeStreamPromptDebugPayloadMode(

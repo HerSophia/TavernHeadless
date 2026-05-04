@@ -169,7 +169,7 @@ const blob = await response.blob();
 | 属性               | 类型                       | 参考文档                                                             |
 | ------------------ | -------------------------- | -------------------------------------------------------------------- |
 | `sessions`         | `SessionsResource`         | [Sessions](/reference/api/sessions)、[Chat](/reference/api/chat)     |
-| `promptRuntime`    | `PromptRuntimeResource`    | [Prompt Runtime](/reference/api/prompt-runtime)                      |
+| `promptRuntime`    | `PromptRuntimeResource`    | [Prompt Runtime](/reference/api/prompt-runtime)、[Mode](/reference/api/prompt-runtime-mode)、[Inspection](/reference/api/prompt-runtime-inspection) |
 | `floors`           | `FloorsResource`           | [Floors](/reference/api/floors)                                      |
 | `pages`            | `PagesResource`            | [Pages](/reference/api/pages)                                        |
 | `messages`         | `MessagesResource`         | [Messages](/reference/api/messages)                                  |
