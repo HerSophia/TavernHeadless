@@ -107,6 +107,13 @@ draft → generating → committed
 
 会话创建时通过 `prompt_mode` 字段选择。
 
+运行中如果要显式查看或改写它，推荐使用 Prompt Runtime 的独立 mode 控制面：
+
+- `GET /sessions/:id/prompt-runtime/mode`
+- `PATCH /sessions/:id/prompt-runtime/mode`
+
+无论你走 Sessions 通用更新面，还是走 Prompt Runtime `/mode` 子路由，底层持久化真相都只有一份：`sessions.prompt_mode`。
+
 导入 ST preset 时，建议默认使用 `compat_strict`。`native` 当前不承诺 ST preset 的保真执行。
 
 ---

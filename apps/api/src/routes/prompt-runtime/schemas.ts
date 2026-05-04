@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { PromptMode } from "../../services/prompt-assembler.js";
+import { PROMPT_MODE_VALUES } from "../../services/prompt-assembler.js";
 import type {
   DryRunVisibilityBody,
   GenerationParamsBody,
@@ -55,4 +57,12 @@ export const promptRuntimeInspectBodySchema: z.ZodType<PromptRuntimeInspectBody>
   delivery: promptDeliveryBodySchema.optional(),
   budget: promptBudgetBodySchema.optional(),
   source_selection: promptSourceSelectionBodySchema.optional(),
+}).strict();
+
+export type PromptRuntimeModePatchBody = {
+  prompt_mode: PromptMode | null;
+};
+
+export const promptRuntimeModePatchBodySchema: z.ZodType<PromptRuntimeModePatchBody> = z.object({
+  prompt_mode: z.enum(PROMPT_MODE_VALUES).nullable(),
 }).strict();

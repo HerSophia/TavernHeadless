@@ -43682,6 +43682,7 @@
                       "limitations_instead_of_recompute": true,
                       "mixed_preview_supported": false
                     },
+                    "default_prompt_mode": "compat_strict",
                     "delivery": {
                       "defaults": {
                         "allow_assistant_prefill": true,
@@ -43792,6 +43793,23 @@
                         "prompt_debug_payload": "done_only"
                       }
                     },
+                    "prompt_modes": [
+                      {
+                        "agentic_scope": "none",
+                        "description": "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+                        "name": "compat_strict"
+                      },
+                      {
+                        "agentic_scope": "limited",
+                        "description": "Compatibility-first prompt assembly with light augmentation only.",
+                        "name": "compat_plus"
+                      },
+                      {
+                        "agentic_scope": "primary",
+                        "description": "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+                        "name": "native"
+                      }
+                    ],
                     "source_selection": {
                       "defaults": {
                         "examples": {
@@ -43944,6 +43962,14 @@
                             "limitations_instead_of_recompute"
                           ],
                           "type": "object"
+                        },
+                        "default_prompt_mode": {
+                          "enum": [
+                            "compat_strict",
+                            "compat_plus",
+                            "native"
+                          ],
+                          "type": "string"
                         },
                         "delivery": {
                           "additionalProperties": false,
@@ -44475,6 +44501,39 @@
                           ],
                           "type": "object"
                         },
+                        "prompt_modes": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "agentic_scope": {
+                                "enum": [
+                                  "none",
+                                  "limited",
+                                  "primary"
+                                ],
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "enum": [
+                                  "compat_strict",
+                                  "compat_plus",
+                                  "native"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "description",
+                              "agentic_scope"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "source_selection": {
                           "additionalProperties": false,
                           "properties": {
@@ -44666,6 +44725,8 @@
                         }
                       },
                       "required": [
+                        "default_prompt_mode",
+                        "prompt_modes",
                         "structure",
                         "delivery",
                         "budget",
@@ -48616,6 +48677,14 @@
                       "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                       "Variable commit remains page -> floor. Branch promotion is not automatic."
                     ],
+                    "mode": {
+                      "default_prompt_mode": "compat_strict",
+                      "effective_prompt_mode": "native",
+                      "legacy_fallback": true,
+                      "prompt_mode": "native",
+                      "session_prompt_mode": null,
+                      "source": "legacy_metadata"
+                    },
                     "persistent_policy": {
                       "delivery": {
                         "require_last_user": true
@@ -49354,6 +49423,78 @@
                             "type": "string"
                           },
                           "type": "array"
+                        },
+                        "mode": {
+                          "additionalProperties": false,
+                          "example": {
+                            "default_prompt_mode": "compat_strict",
+                            "effective_prompt_mode": "native",
+                            "legacy_fallback": true,
+                            "prompt_mode": "native",
+                            "session_prompt_mode": null,
+                            "source": "legacy_metadata"
+                          },
+                          "properties": {
+                            "default_prompt_mode": {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            "effective_prompt_mode": {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            "legacy_fallback": {
+                              "type": "boolean"
+                            },
+                            "prompt_mode": {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            "session_prompt_mode": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "compat_strict",
+                                    "compat_plus",
+                                    "native"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "source": {
+                              "enum": [
+                                "session",
+                                "legacy_metadata",
+                                "default"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "prompt_mode",
+                            "session_prompt_mode",
+                            "effective_prompt_mode",
+                            "default_prompt_mode",
+                            "legacy_fallback",
+                            "source"
+                          ],
+                          "type": "object"
                         },
                         "persistent_policy": {
                           "additionalProperties": false,
@@ -50356,6 +50497,7 @@
                       },
                       "required": [
                         "scope",
+                        "mode",
                         "policy",
                         "branch_persistent_policy",
                         "assets",
@@ -53767,6 +53909,14 @@
                       "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                       "Variable commit remains page -> floor. Branch promotion is not automatic."
                     ],
+                    "mode": {
+                      "default_prompt_mode": "compat_strict",
+                      "effective_prompt_mode": "native",
+                      "legacy_fallback": true,
+                      "prompt_mode": "native",
+                      "session_prompt_mode": null,
+                      "source": "legacy_metadata"
+                    },
                     "policy": {
                       "budget": {
                         "max_input_tokens": 4096,
@@ -54503,6 +54653,78 @@
                             "type": "string"
                           },
                           "type": "array"
+                        },
+                        "mode": {
+                          "additionalProperties": false,
+                          "example": {
+                            "default_prompt_mode": "compat_strict",
+                            "effective_prompt_mode": "native",
+                            "legacy_fallback": true,
+                            "prompt_mode": "native",
+                            "session_prompt_mode": null,
+                            "source": "legacy_metadata"
+                          },
+                          "properties": {
+                            "default_prompt_mode": {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            "effective_prompt_mode": {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            "legacy_fallback": {
+                              "type": "boolean"
+                            },
+                            "prompt_mode": {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            "session_prompt_mode": {
+                              "anyOf": [
+                                {
+                                  "enum": [
+                                    "compat_strict",
+                                    "compat_plus",
+                                    "native"
+                                  ],
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "source": {
+                              "enum": [
+                                "session",
+                                "legacy_metadata",
+                                "default"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "prompt_mode",
+                            "session_prompt_mode",
+                            "effective_prompt_mode",
+                            "default_prompt_mode",
+                            "legacy_fallback",
+                            "source"
+                          ],
+                          "type": "object"
                         },
                         "policy": {
                           "additionalProperties": false,
@@ -57332,6 +57554,7 @@
                       },
                       "required": [
                         "scope",
+                        "mode",
                         "policy",
                         "source_map",
                         "diagnostics",
@@ -57522,6 +57745,452 @@
           }
         },
         "summary": "Inspect branch-aware prepared prompt turn without side effects",
+        "tags": [
+          "prompt-runtime"
+        ]
+      }
+    },
+    "/sessions/{id}/prompt-runtime/mode": {
+      "get": {
+        "operationId": "getSessionPromptRuntimeMode",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "default_prompt_mode": "compat_strict",
+                    "effective_prompt_mode": "native",
+                    "legacy_fallback": true,
+                    "prompt_mode": "native",
+                    "session_prompt_mode": null,
+                    "source": "legacy_metadata"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "example": {
+                        "default_prompt_mode": "compat_strict",
+                        "effective_prompt_mode": "native",
+                        "legacy_fallback": true,
+                        "prompt_mode": "native",
+                        "session_prompt_mode": null,
+                        "source": "legacy_metadata"
+                      },
+                      "properties": {
+                        "default_prompt_mode": {
+                          "enum": [
+                            "compat_strict",
+                            "compat_plus",
+                            "native"
+                          ],
+                          "type": "string"
+                        },
+                        "effective_prompt_mode": {
+                          "enum": [
+                            "compat_strict",
+                            "compat_plus",
+                            "native"
+                          ],
+                          "type": "string"
+                        },
+                        "legacy_fallback": {
+                          "type": "boolean"
+                        },
+                        "prompt_mode": {
+                          "enum": [
+                            "compat_strict",
+                            "compat_plus",
+                            "native"
+                          ],
+                          "type": "string"
+                        },
+                        "session_prompt_mode": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source": {
+                          "enum": [
+                            "session",
+                            "legacy_metadata",
+                            "default"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "prompt_mode",
+                        "session_prompt_mode",
+                        "effective_prompt_mode",
+                        "default_prompt_mode",
+                        "legacy_fallback",
+                        "source"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get session prompt runtime mode",
+        "tags": [
+          "prompt-runtime"
+        ]
+      },
+      "patch": {
+        "operationId": "patchSessionPromptRuntimeMode",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "example1": {
+                  "value": {
+                    "prompt_mode": "native"
+                  }
+                },
+                "example2": {
+                  "value": {
+                    "prompt_mode": null
+                  }
+                }
+              },
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "prompt_mode": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "compat_strict",
+                          "compat_plus",
+                          "native"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "prompt_mode"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": {
+                    "default_prompt_mode": "compat_strict",
+                    "effective_prompt_mode": "native",
+                    "legacy_fallback": true,
+                    "prompt_mode": "native",
+                    "session_prompt_mode": null,
+                    "source": "legacy_metadata"
+                  }
+                },
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "example": {
+                        "default_prompt_mode": "compat_strict",
+                        "effective_prompt_mode": "native",
+                        "legacy_fallback": true,
+                        "prompt_mode": "native",
+                        "session_prompt_mode": null,
+                        "source": "legacy_metadata"
+                      },
+                      "properties": {
+                        "default_prompt_mode": {
+                          "enum": [
+                            "compat_strict",
+                            "compat_plus",
+                            "native"
+                          ],
+                          "type": "string"
+                        },
+                        "effective_prompt_mode": {
+                          "enum": [
+                            "compat_strict",
+                            "compat_plus",
+                            "native"
+                          ],
+                          "type": "string"
+                        },
+                        "legacy_fallback": {
+                          "type": "boolean"
+                        },
+                        "prompt_mode": {
+                          "enum": [
+                            "compat_strict",
+                            "compat_plus",
+                            "native"
+                          ],
+                          "type": "string"
+                        },
+                        "session_prompt_mode": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "compat_strict",
+                                "compat_plus",
+                                "native"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "source": {
+                          "enum": [
+                            "session",
+                            "legacy_metadata",
+                            "default"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "prompt_mode",
+                        "session_prompt_mode",
+                        "effective_prompt_mode",
+                        "default_prompt_mode",
+                        "legacy_fallback",
+                        "source"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Patch session prompt runtime mode",
         "tags": [
           "prompt-runtime"
         ]

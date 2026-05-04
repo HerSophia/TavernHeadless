@@ -15,17 +15,21 @@ import { parseMemoryProposalBatchResultJson } from "../memory/proposals/memory-p
 import { MEMORY_RUNTIME_JOB_TYPES, MEMORY_RUNTIME_SCOPE_TYPE } from "../memory-runtime-job-definitions.js";
 import type { PromptRuntimeHistoryNormalizationSummary } from "../chat/conversation-history-normalizer.js";
 import type {
+  PromptMode,
+  PromptModeSource,
   PromptBudgetPolicy,
   PromptDeliveryPolicy,
   PromptSnapshotPreview,
   PromptRuntimeTrace,
   PromptSourceExclusionReason,
   PromptSourceSelectionPolicy,
+  SessionMetadata,
   PromptStructureAssistantRewriteStrategy,
   PromptStructureMode,
   PromptStructurePolicy,
   PromptTrimReason,
 } from "../prompt-assembler.js";
+import { DEFAULT_PROMPT_MODE, resolvePromptModeDetails } from "../prompt-assembler.js";
 
 export const PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES = ["default", "strict_alternating", "no_assistant", "flattened"] as const satisfies readonly PromptStructureMode[];
 export const PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES = ["to_system", "to_user_transcript"] as const satisfies readonly PromptStructureAssistantRewriteStrategy[];
@@ -154,6 +158,29 @@ export interface PromptRuntimeAssetsView {
   worldbook: PromptRuntimeAssetSummary | null;
   regexProfile: PromptRuntimeAssetSummary | null;
 }
+
+export type PromptRuntimeModeSource = PromptModeSource;
+
+export interface PromptRuntimeModeView {
+  promptMode: PromptMode;
+  sessionPromptMode: PromptMode | null;
+  effectivePromptMode: PromptMode;
+  defaultPromptMode: PromptMode;
+  legacyFallback: boolean;
+  source: PromptRuntimeModeSource;
+}
+
+export interface PromptRuntimeCapabilityMode {
+  name: PromptMode;
+  description: string;
+  agenticScope: "none" | "limited" | "primary";
+}
+
+const PROMPT_RUNTIME_CAPABILITY_MODES = [
+  { name: "compat_strict", description: "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.", agenticScope: "none" },
+  { name: "compat_plus", description: "Compatibility-first prompt assembly with light augmentation only.", agenticScope: "limited" },
+  { name: "native", description: "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.", agenticScope: "primary" },
+] as const satisfies readonly PromptRuntimeCapabilityMode[];
 
 export interface PromptRuntimePersistentPolicy {
   structure?: PromptStructurePolicy;
@@ -305,6 +332,7 @@ export type PromptRuntimePolicySource = typeof PROMPT_RUNTIME_POLICY_SOURCES[num
 
 export interface PromptRuntimeResolvedState {
   scope: PromptRuntimeScopeRef;
+  mode: PromptRuntimeModeView;
   policy: ResolvedPromptRuntimePolicy;
   persistentPolicy?: PromptRuntimePersistentPolicy;
   persistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
@@ -524,6 +552,8 @@ export interface PromptRuntimePolicyView {
 }
 
 export interface PromptRuntimeCapabilities {
+  defaultPromptMode: PromptMode;
+  promptModes: readonly PromptRuntimeCapabilityMode[];
   structure: {
     modes: readonly PromptStructureMode[];
     defaults: ResolvedPromptStructurePolicy;
@@ -734,6 +764,7 @@ export class PromptRuntimeControlService {
         historySourceBranchId: targetBranchId,
         historySourceMode: "existing_branch",
       },
+      mode: this.buildModeView(session),
       policy: resolvedPolicy,
       ...(persistentPolicy ? { persistentPolicy } : {}),
       ...(persistentPolicyEnvelope !== undefined ? { persistentPolicyEnvelope } : {}),
@@ -750,6 +781,11 @@ export class PromptRuntimeControlService {
       diagnostics: buildPromptRuntimeDiagnostics(controlPlaneWarnings, { branchId: targetBranchId }),
       limitations: [...PROMPT_RUNTIME_LIMITATIONS],
     };
+  }
+
+  async getMode(sessionId: string, accountId: string): Promise<PromptRuntimeModeView> {
+    const session = await this.getOwnedSession(sessionId, accountId);
+    return this.buildModeView(session);
   }
 
   async getPolicy(sessionId: string, accountId: string): Promise<PromptRuntimePolicyView> {
@@ -984,6 +1020,26 @@ export class PromptRuntimeControlService {
     };
   }
 
+  async updateMode(
+    sessionId: string,
+    accountId: string,
+    promptMode: PromptMode | null,
+    _updatedBy?: string | null,
+  ): Promise<PromptRuntimeModeView> {
+    const session = await this.getOwnedSession(sessionId, accountId);
+    const updatedAt = Date.now();
+
+    await this.db
+      .update(sessions)
+      .set({ promptMode, updatedAt })
+      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)));
+
+    return this.buildModeView({
+      ...session,
+      promptMode,
+    });
+  }
+
   async updateBranchPolicy(
     sessionId: string,
     branchId: string,
@@ -1033,6 +1089,8 @@ export class PromptRuntimeControlService {
 
   getCapabilities(): PromptRuntimeCapabilities {
     return {
+      defaultPromptMode: DEFAULT_PROMPT_MODE,
+      promptModes: PROMPT_RUNTIME_CAPABILITY_MODES,
       structure: {
         modes: PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES,
         defaults: { ...DEFAULT_RESOLVED_PROMPT_RUNTIME_STRUCTURE_POLICY },
@@ -1161,6 +1219,7 @@ export class PromptRuntimeControlService {
         presetId: sessions.presetId,
         worldbookProfileId: sessions.worldbookProfileId,
         regexProfileId: sessions.regexProfileId,
+        promptMode: sessions.promptMode,
         metadataJson: sessions.metadataJson,
       })
       .from(sessions)
@@ -1270,6 +1329,25 @@ export class PromptRuntimeControlService {
       .limit(1);
 
     return row?.name ?? null;
+  }
+
+  private buildModeView(
+    session: Awaited<ReturnType<PromptRuntimeControlService["getOwnedSession"]>>,
+  ): PromptRuntimeModeView {
+    const metadata = parseMetadataRecord(session.metadataJson) as SessionMetadata;
+    const details = resolvePromptModeDetails(
+      { promptMode: session.promptMode ?? null },
+      metadata,
+    );
+
+    return {
+      promptMode: details.promptMode,
+      sessionPromptMode: details.sessionPromptMode,
+      effectivePromptMode: details.effectivePromptMode,
+      defaultPromptMode: details.defaultPromptMode,
+      legacyFallback: details.legacyFallback,
+      source: details.source,
+    };
   }
 
   private async readRegexProfileName(accountId: string, regexProfileId: string | null): Promise<string | null> {

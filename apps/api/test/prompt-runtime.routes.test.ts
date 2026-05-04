@@ -20,6 +20,8 @@ type PromptRuntimeControlServiceStub = {
   getResolvedState: ReturnType<typeof vi.fn>;
   getPolicy: ReturnType<typeof vi.fn>;
   getAssets: ReturnType<typeof vi.fn>;
+  getMode: ReturnType<typeof vi.fn>;
+  updateMode: ReturnType<typeof vi.fn>;
   getBranchPolicy: ReturnType<typeof vi.fn>;
   updatePolicy: ReturnType<typeof vi.fn>;
   updateBranchPolicy: ReturnType<typeof vi.fn>;
@@ -51,6 +53,8 @@ function createPromptRuntimeControlService(
     getResolvedState: vi.fn(),
     getPolicy: vi.fn(),
     getAssets: vi.fn(),
+    getMode: vi.fn(),
+    updateMode: vi.fn(),
     getBranchPolicy: vi.fn(),
     updatePolicy: vi.fn(),
     updateBranchPolicy: vi.fn(),
@@ -140,6 +144,14 @@ describe("prompt runtime routes", () => {
           historySourceBranchId: "alt-branch",
           historySourceMode: "existing_branch",
         },
+        mode: {
+          promptMode: "native",
+          sessionPromptMode: "native",
+          effectivePromptMode: "native",
+          defaultPromptMode: "compat_strict",
+          legacyFallback: false,
+          source: "session",
+        },
         policy: {
           structure: {
             mode: "no_assistant",
@@ -226,6 +238,14 @@ describe("prompt runtime routes", () => {
           source_floor_id: null,
           history_source_branch_id: "alt-branch",
           history_source_mode: "existing_branch",
+        },
+        mode: {
+          prompt_mode: "native",
+          session_prompt_mode: "native",
+          effective_prompt_mode: "native",
+          default_prompt_mode: "compat_strict",
+          legacy_fallback: false,
+          source: "session",
         },
         policy: {
           structure: {
@@ -1029,6 +1049,14 @@ describe("prompt runtime routes", () => {
           historySourceBranchId: "fork-branch",
           historySourceMode: "source_floor_branch",
         },
+        mode: {
+          promptMode: "native",
+          sessionPromptMode: null,
+          effectivePromptMode: "native",
+          defaultPromptMode: "compat_strict",
+          legacyFallback: true,
+          source: "legacy_metadata",
+        },
         policy: {
           structure: { mode: "no_assistant", mergeAdjacentSameRole: false, preserveSystemMessages: true, assistantRewriteStrategy: "to_system" },
           delivery: { allowAssistantPrefill: true, requireLastUser: false, noAssistant: true },
@@ -1121,6 +1149,14 @@ describe("prompt runtime routes", () => {
       source_floor_id: "floor-12",
       history_source_branch_id: "fork-branch",
       history_source_mode: "source_floor_branch",
+    });
+    expect(body.data.mode).toEqual({
+      prompt_mode: "native",
+      session_prompt_mode: null,
+      effective_prompt_mode: "native",
+      default_prompt_mode: "compat_strict",
+      legacy_fallback: true,
+      source: "legacy_metadata",
     });
     expect(body.data.source_map).toEqual({ delivery: { no_assistant: "request_override" }, history: { source_branch_id: "fork-branch", source_mode: "source_floor_branch" } });
     expect(body.data.history_normalization).toEqual({
@@ -1389,6 +1425,24 @@ describe("prompt runtime routes", () => {
   it("maps GET /prompt-runtime/capabilities response to snake_case", async () => {
     const controlService = createPromptRuntimeControlService({
       getCapabilities: vi.fn(() => ({
+        defaultPromptMode: "compat_strict",
+        promptModes: [
+          {
+            name: "compat_strict",
+            description: "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+            agenticScope: "none",
+          },
+          {
+            name: "compat_plus",
+            description: "Compatibility-first prompt assembly with light augmentation only.",
+            agenticScope: "limited",
+          },
+          {
+            name: "native",
+            description: "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+            agenticScope: "primary",
+          },
+        ],
         structure: {
           modes: ["default", "strict_alternating", "no_assistant", "flattened"],
           defaults: {
@@ -1530,6 +1584,24 @@ describe("prompt runtime routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       data: {
+        default_prompt_mode: "compat_strict",
+        prompt_modes: [
+          {
+            name: "compat_strict",
+            description: "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+            agentic_scope: "none",
+          },
+          {
+            name: "compat_plus",
+            description: "Compatibility-first prompt assembly with light augmentation only.",
+            agentic_scope: "limited",
+          },
+          {
+            name: "native",
+            description: "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+            agentic_scope: "primary",
+          },
+        ],
         structure: {
           modes: ["default", "strict_alternating", "no_assistant", "flattened"],
           defaults: {

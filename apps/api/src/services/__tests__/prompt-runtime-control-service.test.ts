@@ -58,6 +58,7 @@ describe("PromptRuntimeControlService", () => {
     presetId?: string | null;
     worldbookId?: string | null;
     regexProfileId?: string | null;
+    promptMode?: "compat_strict" | "compat_plus" | "native" | null;
   } = {}) {
     const now = Date.now();
     const sessionId = nanoid();
@@ -72,6 +73,7 @@ describe("PromptRuntimeControlService", () => {
       presetId: input.presetId ?? null,
       worldbookProfileId: input.worldbookId ?? null,
       regexProfileId: input.regexProfileId ?? null,
+      promptMode: input.promptMode ?? null,
       metadataJson: input.metadata === undefined ? null : JSON.stringify(input.metadata),
       createdAt: now,
       updatedAt: now,
@@ -184,6 +186,14 @@ describe("PromptRuntimeControlService", () => {
         historySourceBranchId: "main",
         historySourceMode: "existing_branch",
       },
+      mode: {
+        promptMode: "compat_strict",
+        sessionPromptMode: null,
+        effectivePromptMode: "compat_strict",
+        defaultPromptMode: "compat_strict",
+        legacyFallback: false,
+        source: "default",
+      },
       policy: {
         structure: {
           mode: "strict_alternating",
@@ -252,6 +262,60 @@ describe("PromptRuntimeControlService", () => {
       warnings: [],
       diagnostics: [],
       limitations: [...PROMPT_RUNTIME_LIMITATIONS],
+    });
+  });
+
+  it("returns a dedicated mode view with session source when sessions.prompt_mode is set", async () => {
+    const sessionId = await insertSession({
+      promptMode: "native",
+      metadata: {
+        promptMode: "compat_plus",
+      },
+    });
+
+    const service = new PromptRuntimeControlService(database.db);
+
+    await expect(service.getMode(sessionId, DEFAULT_ADMIN_ACCOUNT_ID)).resolves.toEqual({
+      promptMode: "native",
+      sessionPromptMode: "native",
+      effectivePromptMode: "native",
+      defaultPromptMode: "compat_strict",
+      legacyFallback: false,
+      source: "session",
+    });
+  });
+
+  it("surfaces legacy metadata fallback after clearing the session prompt mode", async () => {
+    const sessionId = await insertSession({
+      promptMode: "native",
+      metadata: {
+        prompt_mode: "compat_plus",
+      },
+    });
+
+    const service = new PromptRuntimeControlService(database.db);
+
+    await expect(service.updateMode(
+      sessionId,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      null,
+    )).resolves.toEqual({
+      promptMode: "compat_plus",
+      sessionPromptMode: null,
+      effectivePromptMode: "compat_plus",
+      defaultPromptMode: "compat_strict",
+      legacyFallback: true,
+      source: "legacy_metadata",
+    });
+
+    const state = await service.getResolvedState(sessionId, DEFAULT_ADMIN_ACCOUNT_ID);
+    expect(state.mode).toEqual({
+      promptMode: "compat_plus",
+      sessionPromptMode: null,
+      effectivePromptMode: "compat_plus",
+      defaultPromptMode: "compat_strict",
+      legacyFallback: true,
+      source: "legacy_metadata",
     });
   });
 
@@ -1609,7 +1673,18 @@ describe("PromptRuntimeControlService", () => {
       macro: expect.objectContaining({
         stCompatibilitySnapshotsPersistable: false,
       }),
+      defaultPromptMode: "compat_strict",
+      promptModes: [
+        expect.objectContaining({ name: "compat_strict", agenticScope: "none" }),
+        expect.objectContaining({ name: "compat_plus", agenticScope: "limited" }),
+        expect.objectContaining({ name: "native", agenticScope: "primary" }),
+      ],
     }));
+    expect(service.getCapabilities().promptModes).toEqual([
+      expect.objectContaining({ name: "compat_strict", description: expect.any(String), agenticScope: "none" }),
+      expect.objectContaining({ name: "compat_plus", description: expect.any(String), agenticScope: "limited" }),
+      expect.objectContaining({ name: "native", description: expect.any(String), agenticScope: "primary" }),
+    ]);
     expect(service.getCapabilities().unsupported).not.toContain("/sessions/:id/prompt-runtime/preview");
     expect(service.getCapabilities().unsupported).toContain("/sessions/:id/prompt-runtime/macros");
   });

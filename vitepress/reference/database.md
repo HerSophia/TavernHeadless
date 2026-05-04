@@ -90,7 +90,7 @@ outline: [2, 3]
 | `model_provider` | `TEXT` | `NULL` | 模型服务商 |
 | `model_name` | `TEXT` | `NULL` | 模型名称 |
 | `model_params_json` | `TEXT` | `NULL` | 模型参数 JSON |
-| `prompt_mode` | `TEXT` | `NULL` | Prompt 模式（`compat_strict \| compat_plus \| native`） |
+| `prompt_mode` | `TEXT` | `NULL` | Prompt 模式（`compat_strict \| compat_plus \| native`）。它是当前唯一持久化真相，同时由 Prompt Runtime 的 `/sessions/:id/prompt-runtime/mode` 独立控制面直接读写 |
 | `metadata_json` | `TEXT` | `NULL` | 扩展元信息 |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
