@@ -105,7 +105,7 @@ function scrollToOverview() {
     <div class="hero-content" :class="{ visible }">
       <p class="hero-badge">
         <span class="badge-dot"></span>
-        后端 Beta v0.2 · 项目整体 Alpha
+        后端 v0.2 · 项目整体已入轨
       </p>
 
       <h1 class="hero-title">
