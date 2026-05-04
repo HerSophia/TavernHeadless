@@ -109,6 +109,24 @@ export interface SessionPromptInfo {
 
 export type PromptMode = "compat_strict" | "compat_plus" | "native";
 
+export const PROMPT_MODE_VALUES = ["compat_strict", "compat_plus", "native"] as const satisfies readonly PromptMode[];
+export const DEFAULT_PROMPT_MODE: PromptMode = "compat_strict";
+
+export type PromptModeSource = "session" | "legacy_metadata" | "default";
+
+export interface ResolvedPromptModeDetails {
+  promptMode: PromptMode;
+  sessionPromptMode: PromptMode | null;
+  effectivePromptMode: PromptMode;
+  defaultPromptMode: PromptMode;
+  legacyFallback: boolean;
+  source: PromptModeSource;
+}
+
+function isPromptMode(value: unknown): value is PromptMode {
+  return value === "compat_strict" || value === "compat_plus" || value === "native";
+}
+
 export type PromptMacroRunKind = "dry_run" | "respond" | "regenerate" | "retry";
 export type CharacterSnapshot = SessionCharacterSnapshot;
 
@@ -1481,17 +1499,51 @@ export function createRegexMacroSubstituter(variables: Record<string, unknown>) 
   return createRegexMacroSubstituterFromFacade(variables);
 }
 
-function resolvePromptMode(session: SessionPromptInfo, metadata: SessionMetadata): PromptMode {
-  const source = session.promptMode
-    ?? metadata.promptMode
-    ?? metadata.prompt_mode
-    ?? "compat_strict";
+export function resolvePromptModeDetails(
+  session: Pick<SessionPromptInfo, "promptMode">,
+  metadata: SessionMetadata,
+): ResolvedPromptModeDetails {
+  const sessionPromptMode = isPromptMode(session.promptMode) ? session.promptMode : null;
+  const legacyMetadataPromptMode = isPromptMode(metadata.promptMode)
+    ? metadata.promptMode
+    : isPromptMode(metadata.prompt_mode)
+      ? metadata.prompt_mode
+      : null;
 
-  if (source === "compat_strict" || source === "compat_plus" || source === "native") {
-    return source;
+  if (sessionPromptMode) {
+    return {
+      promptMode: sessionPromptMode,
+      sessionPromptMode,
+      effectivePromptMode: sessionPromptMode,
+      defaultPromptMode: DEFAULT_PROMPT_MODE,
+      legacyFallback: false,
+      source: "session",
+    };
   }
 
-  return "compat_strict";
+  if (legacyMetadataPromptMode) {
+    return {
+      promptMode: legacyMetadataPromptMode,
+      sessionPromptMode: null,
+      effectivePromptMode: legacyMetadataPromptMode,
+      defaultPromptMode: DEFAULT_PROMPT_MODE,
+      legacyFallback: true,
+      source: "legacy_metadata",
+    };
+  }
+
+  return {
+    promptMode: DEFAULT_PROMPT_MODE,
+    sessionPromptMode: null,
+    effectivePromptMode: DEFAULT_PROMPT_MODE,
+    defaultPromptMode: DEFAULT_PROMPT_MODE,
+    legacyFallback: false,
+    source: "default",
+  };
+}
+
+export function resolvePromptMode(session: Pick<SessionPromptInfo, "promptMode">, metadata: SessionMetadata): PromptMode {
+  return resolvePromptModeDetails(session, metadata).effectivePromptMode;
 }
 
 function resolveNamesBehavior(value: unknown): "off" | "always" {

@@ -191,6 +191,13 @@ API 侧提供 `GET /variables/resolve`，用于解析当前 `session / branch / 
 并在 API 侧支持会话显式字段 `session.prompt_mode`。解析优先级是：
 `session.prompt_mode` > `metadata.promptMode` > `metadata.prompt_mode`。
 
+同时，Prompt Runtime 现在把 prompt mode 公开为独立控制面：
+
+- `GET /sessions/:id/prompt-runtime/mode`
+- `PATCH /sessions/:id/prompt-runtime/mode`
+
+但这只是更清晰的读写入口，不是第二份真相。底层持久化来源仍然只有 `sessions.prompt_mode`。
+
 ### 统一中间格式（Prompt IR）
 
 不管走哪条路径，最终都会先编译成一个统一的中间格式，再交给 LLM。这意味着：

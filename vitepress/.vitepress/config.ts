@@ -116,7 +116,17 @@ export default defineConfig({
         {
           text: '高级 API 资源',
           items: [
-            { text: 'Prompt Runtime（提示词运行时）', link: '/reference/api/prompt-runtime' },
+            {
+              text: 'Prompt Runtime（提示词运行时）',
+              items: [
+                { text: '总览', link: '/reference/api/prompt-runtime' },
+                { text: 'Mode（提示词模式）', link: '/reference/api/prompt-runtime-mode' },
+                { text: 'Policy（策略面）', link: '/reference/api/prompt-runtime-policy' },
+                { text: 'Assets（资源绑定）', link: '/reference/api/prompt-runtime-assets' },
+                { text: 'Inspection（预览与检查）', link: '/reference/api/prompt-runtime-inspection' },
+                { text: 'Capabilities（能力目录）', link: '/reference/api/prompt-runtime-capabilities' },
+              ],
+            },
             { text: 'Backup（核心资产备份）', link: '/reference/api/backup' },
             { text: 'Backup Jobs（备份作业）', link: '/reference/api/backup-jobs' },
             { text: 'Chat Transfer Jobs（聊天传输作业）', link: '/reference/api/chat-transfer-jobs' },

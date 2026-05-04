@@ -5,6 +5,7 @@ import {
   mapPromptRuntimeMemoryTraceToSnakeCase,
   mapRuntimeTraceToSnakeCase,
 } from "../chat/presenters.js";
+import { mapModeViewToSnakeCase } from "./mappers.js";
 
 function toSnakeCaseName(value: string): string {
   return value.replace(/[A-Z]/g, (segment) => `_${segment.toLowerCase()}`);
@@ -137,6 +138,7 @@ export function mapPromptRuntimeInspectResultToSnakeCase(
 ): Record<string, unknown> {
   return {
     scope: mapScopeToSnakeCase(result.scope),
+    mode: mapModeViewToSnakeCase(result.mode),
     policy: mapResolvedPolicyToSnakeCase(result.policy),
     source_map: mapSourceMapToSnakeCase(result.sourceMap),
     diagnostics: result.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),

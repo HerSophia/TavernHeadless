@@ -1,8 +1,10 @@
+import type { PromptMode } from "../../services/prompt-assembler.js";
 import type { PromptRuntimeInspectRequest } from "../../services/prompt-runtime/types.js";
+import type { PromptRuntimeModeView } from "../../services/prompt-runtime-control-service.js";
 
 import type { PromptRuntimePreviewRequest } from "../../services/chat/contracts.js";
 import type { RespondRequest } from "../../services/chat/contracts.js";
-import type { PromptRuntimeInspectBody } from "./schemas.js";
+import type { PromptRuntimeInspectBody, PromptRuntimeModePatchBody } from "./schemas.js";
 import {
   mapGenerationParams,
   mapLiveDebugOptionsRequest,
@@ -13,6 +15,27 @@ import {
   mapTurnSessionStateWritesRequest,
   mapDryRunVisibilityRequest,
 } from "../chat/mappers.js";
+
+function isPromptMode(value: unknown): value is PromptMode {
+  return value === "compat_strict" || value === "compat_plus" || value === "native";
+}
+
+export function mapModeViewToSnakeCase(view: PromptRuntimeModeView): Record<string, unknown> {
+  return {
+    prompt_mode: view.promptMode,
+    session_prompt_mode: view.sessionPromptMode,
+    effective_prompt_mode: view.effectivePromptMode,
+    default_prompt_mode: view.defaultPromptMode,
+    legacy_fallback: view.legacyFallback,
+    source: view.source,
+  };
+}
+
+export function mapModeViewToCamelCase(body: PromptRuntimeModePatchBody): { promptMode: PromptMode | null } {
+  return {
+    promptMode: isPromptMode(body.prompt_mode) ? body.prompt_mode : null,
+  };
+}
 
 interface PromptRuntimePreviewBody {
   text: string;

@@ -13,6 +13,7 @@ import {
   PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS,
   PROMPT_RUNTIME_UNSUPPORTED_ROUTES,
 } from "../../services/prompt-runtime-control-service.js";
+import { DEFAULT_PROMPT_MODE, PROMPT_MODE_VALUES } from "../../services/prompt-assembler.js";
 import {
   dryRunVisibilityJsonSchema,
   floorVisibilityRangeJsonSchema,
@@ -66,6 +67,21 @@ const promptRuntimeVisibilityExample = {
   mode: "allow_all_except_hidden",
   hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
 } as const;
+
+export const promptRuntimeModeViewExample = {
+  prompt_mode: "native",
+  session_prompt_mode: null,
+  effective_prompt_mode: "native",
+  default_prompt_mode: DEFAULT_PROMPT_MODE,
+  legacy_fallback: true,
+  source: "legacy_metadata",
+} as const;
+
+export const promptRuntimeModePatchBodyExample = {
+  prompt_mode: "native",
+} as const;
+
+const promptRuntimeModePatchBodyClearExample = { prompt_mode: null } as const;
 
 export const promptRuntimePreviewBodyExample = {
   text: "{{setvar::资产.金币::3}}{{getvar::资产}}",
@@ -237,6 +253,7 @@ const promptRuntimeSourceMapExample = {
 
 export const promptRuntimeResolvedStateExample = {
   scope: promptRuntimeScopeExample,
+  mode: promptRuntimeModeViewExample,
   policy: {
     structure: promptRuntimeResolvedStructureExample,
     delivery: promptRuntimeResolvedDeliveryExample,
@@ -547,6 +564,7 @@ export const promptRuntimeHistoricalExplainResponseExample = {
 
 export const promptRuntimeInspectResponseExample = {
   scope: promptRuntimeScopeExample,
+  mode: promptRuntimeModeViewExample,
   policy: promptRuntimePolicyViewExample.resolved_policy,
   source_map: promptRuntimeSourceMapExample,
   diagnostics: promptRuntimeDiagnosticsExample,
@@ -589,6 +607,24 @@ export const promptRuntimeInspectResponseExample = {
 } as const;
 
 export const promptRuntimeCapabilitiesExample = {
+  default_prompt_mode: DEFAULT_PROMPT_MODE,
+  prompt_modes: [
+    {
+      name: "compat_strict",
+      description: "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+      agentic_scope: "none",
+    },
+    {
+      name: "compat_plus",
+      description: "Compatibility-first prompt assembly with light augmentation only.",
+      agentic_scope: "limited",
+    },
+    {
+      name: "native",
+      description: "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+      agentic_scope: "primary",
+    },
+  ],
   structure: {
     modes: [...PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES],
     defaults: {
@@ -788,6 +824,64 @@ const promptRuntimeResolvedVisibilityJsonSchema = {
     hidden_floor_ids: { type: "array", items: { type: "string", minLength: 1 } },
     mode: { type: "string", enum: [...PROMPT_RUNTIME_SUPPORTED_VISIBILITY_MODES] },
   },
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeModeViewSchema = {
+  type: "object",
+  required: [
+    "prompt_mode",
+    "session_prompt_mode",
+    "effective_prompt_mode",
+    "default_prompt_mode",
+    "legacy_fallback",
+    "source",
+  ],
+  properties: {
+    prompt_mode: { type: "string", enum: [...PROMPT_MODE_VALUES] },
+    session_prompt_mode: { anyOf: [{ type: "string", enum: [...PROMPT_MODE_VALUES] }, { type: "null" }] },
+    effective_prompt_mode: { type: "string", enum: [...PROMPT_MODE_VALUES] },
+    default_prompt_mode: { type: "string", enum: [...PROMPT_MODE_VALUES] },
+    legacy_fallback: { type: "boolean" },
+    source: { type: "string", enum: ["session", "legacy_metadata", "default"] },
+  },
+  examples: [promptRuntimeModeViewExample],
+  additionalProperties: false,
+} as const;
+
+const promptRuntimeCapabilityModeJsonSchema = {
+  type: "object",
+  required: ["name", "description", "agentic_scope"],
+  properties: {
+    name: { type: "string", enum: [...PROMPT_MODE_VALUES] },
+    description: { type: "string" },
+    agentic_scope: { type: "string", enum: ["none", "limited", "primary"] },
+  },
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeModePatchBodyJsonSchema = {
+  type: "object",
+  required: ["prompt_mode"],
+  properties: {
+    prompt_mode: {
+      anyOf: [
+        { type: "string", enum: [...PROMPT_MODE_VALUES] },
+        { type: "null" },
+      ],
+    },
+  },
+  examples: [promptRuntimeModePatchBodyExample, promptRuntimeModePatchBodyClearExample],
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeModeResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: promptRuntimeModeViewSchema,
+  },
+  examples: [{ data: promptRuntimeModeViewExample }],
   additionalProperties: false,
 } as const;
 
@@ -1208,9 +1302,10 @@ const promptRuntimeHistoricalExplainResultJsonSchema = {
 
 export const promptRuntimeResolvedStateJsonSchema = {
   type: "object",
-  required: ["scope", "policy", "branch_persistent_policy", "assets", "warnings", "diagnostics", "limitations"],
+  required: ["scope", "mode", "policy", "branch_persistent_policy", "assets", "warnings", "diagnostics", "limitations"],
   properties: {
     scope: promptRuntimeScopeJsonSchema,
+    mode: promptRuntimeModeViewSchema,
     policy: promptRuntimeResolvedPolicyJsonSchema,
     persistent_policy: promptRuntimePersistentPolicyJsonSchema,
     persistent_policy_envelope: { anyOf: [promptRuntimePersistentPolicyEnvelopeJsonSchema, { type: "null" }] },
@@ -1358,8 +1453,13 @@ const promptRuntimePreviewRuntimeTraceJsonSchema = {
 
 export const promptRuntimeCapabilitiesJsonSchema = {
   type: "object",
-  required: ["structure", "delivery", "budget", "source_selection", "governance", "compare", "observability", "macro", "unsupported"],
+  required: ["default_prompt_mode", "prompt_modes", "structure", "delivery", "budget", "source_selection", "governance", "compare", "observability", "macro", "unsupported"],
   properties: {
+    default_prompt_mode: { type: "string", enum: [...PROMPT_MODE_VALUES] },
+    prompt_modes: {
+      type: "array",
+      items: promptRuntimeCapabilityModeJsonSchema,
+    },
     structure: {
       type: "object",
       required: ["modes", "defaults"],
@@ -1709,9 +1809,10 @@ export const promptRuntimeInspectResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["scope", "policy", "source_map", "diagnostics", "history_normalization", "trim_reasons", "excluded_sources", "section_stats", "limitations", "prepared_turn", "governance"],
+      required: ["scope", "mode", "policy", "source_map", "diagnostics", "history_normalization", "trim_reasons", "excluded_sources", "section_stats", "limitations", "prepared_turn", "governance"],
       properties: {
         scope: promptRuntimeScopeJsonSchema,
+        mode: promptRuntimeModeViewSchema,
         policy: promptRuntimeResolvedPolicyJsonSchema,
         source_map: promptRuntimeSourceMapJsonSchema,
         diagnostics: { type: "array", items: promptRuntimeDiagnosticJsonSchema },

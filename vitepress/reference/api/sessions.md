@@ -70,7 +70,7 @@ POST /sessions
 | `model_provider` | string | 否 | 模型供应商 |
 | `model_name` | string | 否 | 模型名称 |
 | `model_params` | object | 否 | 模型参数（如 temperature, top_p 等） |
-| `prompt_mode` | string | 否 | 提示词模式：`compat_strict` / `compat_plus` / `native` |
+| `prompt_mode` | string | 否 | 提示词模式：`compat_strict` / `compat_plus` / `native`。它仍写入 `sessions.prompt_mode`。如果你想在 Prompt Runtime 控制面里显式读取、清空或改写这个值，也可以使用 [Prompt Runtime Mode](./prompt-runtime-mode) |
 | `metadata` | object | 否 | 自定义元数据 |
 
 ### 响应 `201`
@@ -200,6 +200,8 @@ PATCH /sessions/:id
 ```
 
 至少提供一个字段。可更新的字段与创建时一致（除 `id`）。当前实现中，**只有用户绑定变化**会同步更新已有楼层的用户绑定元数据；角色绑定更新只会修改 session 自身字段。
+
+如果你只想改 `prompt_mode`，也可以改用 [Prompt Runtime Mode](./prompt-runtime-mode) 里的独立 `/mode` 控制面。两条写入口最终都落到同一份持久化真相：`sessions.prompt_mode`。
 
 ### 响应 `200`
 

@@ -100,6 +100,14 @@ describe("sdk prompt runtime resource", () => {
               history_source_branch_id: "alt-branch",
               history_source_mode: "existing_branch",
             },
+            mode: {
+              prompt_mode: "compat_plus",
+              session_prompt_mode: null,
+              effective_prompt_mode: "compat_plus",
+              default_prompt_mode: "compat_strict",
+              legacy_fallback: true,
+              source: "legacy_metadata",
+            },
             policy: {
               structure: {
                 mode: "strict_alternating",
@@ -229,6 +237,24 @@ describe("sdk prompt runtime resource", () => {
       .mockResolvedValueOnce(
         jsonResponse({
           data: {
+            default_prompt_mode: "compat_strict",
+            prompt_modes: [
+              {
+                name: "compat_strict",
+                description: "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+                agentic_scope: "none",
+              },
+              {
+                name: "compat_plus",
+                description: "Compatibility-first prompt assembly with light augmentation only.",
+                agentic_scope: "limited",
+              },
+              {
+                name: "native",
+                description: "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+                agentic_scope: "primary",
+              },
+            ],
             structure: {
               modes: ["default", "strict_alternating", "no_assistant", "flattened"],
               defaults: {
@@ -382,6 +408,14 @@ describe("sdk prompt runtime resource", () => {
         historySourceBranchId: "alt-branch",
         historySourceMode: "existing_branch",
       },
+      mode: {
+        promptMode: "compat_plus",
+        sessionPromptMode: null,
+        effectivePromptMode: "compat_plus",
+        defaultPromptMode: "compat_strict",
+        legacyFallback: true,
+        source: "legacy_metadata",
+      },
       policy: {
         structure: {
           mode: "strict_alternating",
@@ -512,6 +546,24 @@ describe("sdk prompt runtime resource", () => {
     });
 
     await expect(promptRuntime.getCapabilities({ accountId: "acc-1" })).resolves.toEqual({
+      defaultPromptMode: "compat_strict",
+      promptModes: [
+        {
+          name: "compat_strict",
+          description: "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+          agenticScope: "none",
+        },
+        {
+          name: "compat_plus",
+          description: "Compatibility-first prompt assembly with light augmentation only.",
+          agenticScope: "limited",
+        },
+        {
+          name: "native",
+          description: "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+          agenticScope: "primary",
+        },
+      ],
       structure: {
         modes: ["default", "strict_alternating", "no_assistant", "flattened"],
         defaults: {
@@ -654,6 +706,65 @@ describe("sdk prompt runtime resource", () => {
     const capabilitiesHeaders = fetchImpl.mock.calls[3]![1]?.headers as Headers;
     expect(sessionHeaders.get("x-account-id")).toBe("acc-1");
     expect(capabilitiesHeaders.get("x-account-id")).toBe("acc-1");
+  });
+
+  it("maps dedicated mode requests and mode responses", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          prompt_mode: "native",
+          session_prompt_mode: "native",
+          effective_prompt_mode: "native",
+          default_prompt_mode: "compat_strict",
+          legacy_fallback: false,
+          source: "session",
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          prompt_mode: "compat_plus",
+          session_prompt_mode: null,
+          effective_prompt_mode: "compat_plus",
+          default_prompt_mode: "compat_strict",
+          legacy_fallback: true,
+          source: "legacy_metadata",
+        },
+      }));
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const promptRuntime = createPromptRuntimeResource(transport);
+
+    await expect(promptRuntime.getMode("session 1", { accountId: "acc-1" })).resolves.toEqual({
+      promptMode: "native",
+      sessionPromptMode: "native",
+      effectivePromptMode: "native",
+      defaultPromptMode: "compat_strict",
+      legacyFallback: false,
+      source: "session",
+    });
+
+    await expect(
+      promptRuntime.updateMode(
+        "session 1",
+        { promptMode: null },
+        { accountId: "acc-1" },
+      ),
+    ).resolves.toEqual({
+      promptMode: "compat_plus",
+      sessionPromptMode: null,
+      effectivePromptMode: "compat_plus",
+      defaultPromptMode: "compat_strict",
+      legacyFallback: true,
+      source: "legacy_metadata",
+    });
+
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/mode");
+    expect(fetchImpl.mock.calls[0]![1]?.method).toBe("GET");
+    expect(String(fetchImpl.mock.calls[1]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/mode");
+    expect(fetchImpl.mock.calls[1]![1]?.method).toBe("PATCH");
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]?.body))).toEqual({
+      prompt_mode: null,
+    });
   });
 
   it("maps floor historical explain payload", async () => {
@@ -912,6 +1023,14 @@ describe("sdk prompt runtime resource", () => {
             history_source_branch_id: "fork-branch",
             history_source_mode: "source_floor_branch",
           },
+          mode: {
+            prompt_mode: "native",
+            session_prompt_mode: null,
+            effective_prompt_mode: "native",
+            default_prompt_mode: "compat_strict",
+            legacy_fallback: true,
+            source: "legacy_metadata",
+          },
           policy: {
             structure: { mode: "no_assistant", merge_adjacent_same_role: false, preserve_system_messages: true, assistant_rewrite_strategy: "to_system" },
             delivery: { allow_assistant_prefill: true, require_last_user: false, no_assistant: true },
@@ -1055,6 +1174,7 @@ describe("sdk prompt runtime resource", () => {
       }),
     ).resolves.toMatchObject({
       scope: { sessionId: "session 1", targetBranchId: "alt-inspect", branchExists: false, sourceFloorId: "floor-1", historySourceBranchId: "fork-branch", historySourceMode: "source_floor_branch" },
+      mode: { promptMode: "native", sessionPromptMode: null, effectivePromptMode: "native", defaultPromptMode: "compat_strict", legacyFallback: true, source: "legacy_metadata" },
       sourceMap: { delivery: { noAssistant: "request_override" }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
       diagnostics: [{ code: "unmaterialized_branch_inspect", message: "branch pending", severity: "info", source: "branch", phase: "assemble" }],
       trimReasons: [{ group: "history", reason: "group_limit_exceeded", prunedTokenCount: 32 }],

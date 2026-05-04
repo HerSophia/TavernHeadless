@@ -12059,6 +12059,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{id}/prompt-runtime/mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get session prompt runtime mode */
+        get: operations["getSessionPromptRuntimeMode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch session prompt runtime mode */
+        patch: operations["patchSessionPromptRuntimeMode"];
+        trace?: never;
+    };
     "/sessions/{id}/prompt-runtime/policy": {
         parameters: {
             query?: never;
@@ -28406,6 +28424,7 @@ export interface operations {
                      *           "limitations_instead_of_recompute": true,
                      *           "mixed_preview_supported": false
                      *         },
+                     *         "default_prompt_mode": "compat_strict",
                      *         "delivery": {
                      *           "defaults": {
                      *             "allow_assistant_prefill": true,
@@ -28516,6 +28535,23 @@ export interface operations {
                      *             "prompt_debug_payload": "done_only"
                      *           }
                      *         },
+                     *         "prompt_modes": [
+                     *           {
+                     *             "agentic_scope": "none",
+                     *             "description": "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+                     *             "name": "compat_strict"
+                     *           },
+                     *           {
+                     *             "agentic_scope": "limited",
+                     *             "description": "Compatibility-first prompt assembly with light augmentation only.",
+                     *             "name": "compat_plus"
+                     *           },
+                     *           {
+                     *             "agentic_scope": "primary",
+                     *             "description": "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+                     *             "name": "native"
+                     *           }
+                     *         ],
                      *         "source_selection": {
                      *           "defaults": {
                      *             "examples": {
@@ -28597,6 +28633,8 @@ export interface operations {
                                 /** @enum {unknown} */
                                 mixed_preview_supported: false;
                             };
+                            /** @enum {string} */
+                            default_prompt_mode: "compat_strict" | "compat_plus" | "native";
                             delivery: {
                                 defaults: {
                                     allow_assistant_prefill: boolean;
@@ -28746,6 +28784,13 @@ export interface operations {
                                     prompt_debug_payload: "done_only" | "unsupported";
                                 };
                             };
+                            prompt_modes: {
+                                /** @enum {string} */
+                                agentic_scope: "none" | "limited" | "primary";
+                                description: string;
+                                /** @enum {string} */
+                                name: "compat_strict" | "compat_plus" | "native";
+                            }[];
                             source_selection: {
                                 defaults: {
                                     examples: {
@@ -29257,6 +29302,14 @@ export interface operations {
                      *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
                      *         ],
+                     *         "mode": {
+                     *           "default_prompt_mode": "compat_strict",
+                     *           "effective_prompt_mode": "native",
+                     *           "legacy_fallback": true,
+                     *           "prompt_mode": "native",
+                     *           "session_prompt_mode": null,
+                     *           "source": "legacy_metadata"
+                     *         },
                      *         "persistent_policy": {
                      *           "delivery": {
                      *             "require_last_user": true
@@ -29542,6 +29595,28 @@ export interface operations {
                                 source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
                             }[];
                             limitations: string[];
+                            /**
+                             * @example {
+                             *       "default_prompt_mode": "compat_strict",
+                             *       "effective_prompt_mode": "native",
+                             *       "legacy_fallback": true,
+                             *       "prompt_mode": "native",
+                             *       "session_prompt_mode": null,
+                             *       "source": "legacy_metadata"
+                             *     }
+                             */
+                            mode: {
+                                /** @enum {string} */
+                                default_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                /** @enum {string} */
+                                effective_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                legacy_fallback: boolean;
+                                /** @enum {string} */
+                                prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                session_prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
+                                /** @enum {string} */
+                                source: "session" | "legacy_metadata" | "default";
+                            };
                             persistent_policy?: {
                                 budget?: {
                                     max_input_tokens?: number;
@@ -31182,6 +31257,14 @@ export interface operations {
                      *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
                      *         ],
+                     *         "mode": {
+                     *           "default_prompt_mode": "compat_strict",
+                     *           "effective_prompt_mode": "native",
+                     *           "legacy_fallback": true,
+                     *           "prompt_mode": "native",
+                     *           "session_prompt_mode": null,
+                     *           "source": "legacy_metadata"
+                     *         },
                      *         "policy": {
                      *           "budget": {
                      *             "max_input_tokens": 4096,
@@ -31616,6 +31699,28 @@ export interface operations {
                                 }[];
                             };
                             limitations: string[];
+                            /**
+                             * @example {
+                             *       "default_prompt_mode": "compat_strict",
+                             *       "effective_prompt_mode": "native",
+                             *       "legacy_fallback": true,
+                             *       "prompt_mode": "native",
+                             *       "session_prompt_mode": null,
+                             *       "source": "legacy_metadata"
+                             *     }
+                             */
+                            mode: {
+                                /** @enum {string} */
+                                default_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                /** @enum {string} */
+                                effective_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                legacy_fallback: boolean;
+                                /** @enum {string} */
+                                prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                session_prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
+                                /** @enum {string} */
+                                source: "session" | "legacy_metadata" | "default";
+                            };
                             policy: {
                                 budget: {
                                     max_input_tokens?: number;
@@ -32272,6 +32377,211 @@ export interface operations {
             };
             /** @description Default Response */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getSessionPromptRuntimeMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "default_prompt_mode": "compat_strict",
+                     *         "effective_prompt_mode": "native",
+                     *         "legacy_fallback": true,
+                     *         "prompt_mode": "native",
+                     *         "session_prompt_mode": null,
+                     *         "source": "legacy_metadata"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "default_prompt_mode": "compat_strict",
+                         *       "effective_prompt_mode": "native",
+                         *       "legacy_fallback": true,
+                         *       "prompt_mode": "native",
+                         *       "session_prompt_mode": null,
+                         *       "source": "legacy_metadata"
+                         *     }
+                         */
+                        data: {
+                            /** @enum {string} */
+                            default_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                            /** @enum {string} */
+                            effective_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                            legacy_fallback: boolean;
+                            /** @enum {string} */
+                            prompt_mode: "compat_strict" | "compat_plus" | "native";
+                            session_prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
+                            /** @enum {string} */
+                            source: "session" | "legacy_metadata" | "default";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    patchSessionPromptRuntimeMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "default_prompt_mode": "compat_strict",
+                     *         "effective_prompt_mode": "native",
+                     *         "legacy_fallback": true,
+                     *         "prompt_mode": "native",
+                     *         "session_prompt_mode": null,
+                     *         "source": "legacy_metadata"
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "default_prompt_mode": "compat_strict",
+                         *       "effective_prompt_mode": "native",
+                         *       "legacy_fallback": true,
+                         *       "prompt_mode": "native",
+                         *       "session_prompt_mode": null,
+                         *       "source": "legacy_metadata"
+                         *     }
+                         */
+                        data: {
+                            /** @enum {string} */
+                            default_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                            /** @enum {string} */
+                            effective_prompt_mode: "compat_strict" | "compat_plus" | "native";
+                            legacy_fallback: boolean;
+                            /** @enum {string} */
+                            prompt_mode: "compat_strict" | "compat_plus" | "native";
+                            session_prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
+                            /** @enum {string} */
+                            source: "session" | "legacy_metadata" | "default";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

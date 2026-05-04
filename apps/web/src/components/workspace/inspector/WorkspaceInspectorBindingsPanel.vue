@@ -3,6 +3,7 @@ import WorkspaceInspectorAccountScopePanel from "./WorkspaceInspectorAccountScop
 import WorkspaceInspectorCharacterBindingPanel from "./WorkspaceInspectorCharacterBindingPanel.vue";
 import WorkspaceInspectorSection from "./WorkspaceInspectorSection.vue";
 import WorkspaceInspectorUserBindingPanel from "./WorkspaceInspectorUserBindingPanel.vue";
+import WorkspaceInspectorPromptModePanel from "./WorkspaceInspectorPromptModePanel.vue";
 import WorkspaceInspectorVariablesPanel from "./WorkspaceInspectorVariablesPanel.vue";
 import WorkspaceInspectorWorldbookBindingPanel from "./WorkspaceInspectorWorldbookBindingPanel.vue";
 import type { TimelineMessage } from "../../../stores/workspace";
@@ -38,6 +39,12 @@ const emit = defineEmits<{
     <WorkspaceInspectorSection :title="props.t('inspector.bindingState')">
       <div class="space-y-2 rounded border border-white/5 bg-[#121215] p-3" :class="props.bindingFlash ? 'flash' : ''">
         <WorkspaceInspectorAccountScopePanel :current-account="props.currentAccount" :t="props.t" />
+
+        <WorkspaceInspectorPromptModePanel
+          :active-session-id="props.activeSessionId"
+          :current-account="props.currentAccount"
+          :t="props.t"
+        />
 
         <WorkspaceInspectorUserBindingPanel
           :runtime-user-name="props.runtimeUserName"
