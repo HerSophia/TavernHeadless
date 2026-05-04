@@ -11,6 +11,7 @@ layout: page
   <QuickStartSection />
   <AgentAssistSection />
   <TechStack />
+  <AgenticFutureSection />
   <FooterSection />
   <OriginStorySection />
 </div>

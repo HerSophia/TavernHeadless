@@ -4,9 +4,9 @@
 
 ## 当前里程碑
 
-- 里程碑：`M9-M12 - 后端高优先级能力 + Tool Calling + MCP 集成`
-- 状态：`进行中（Tool Calling Phase 1-5 完成，MCP 集成已完成，ResourceToolProvider 已完成）`
-- 最后更新：`2026-07-01`
+- 里程碑：`v0.2 — 正式发布准备与后续迭代`
+- 状态：`核心链路完整，转入正式发布与文档完善、Agentic 探索`
+- 最后更新：`2026-07-02`
 
 ## Tool Calling 系统（已完成 Phase 1-5）
 

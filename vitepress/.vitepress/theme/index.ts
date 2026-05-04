@@ -9,6 +9,7 @@ import AgentAssistSection from './components/AgentAssistSection.vue'
 import TechStack from './components/TechStack.vue'
 import FooterSection from './components/FooterSection.vue'
 import OriginStorySection from './components/OriginStorySection.vue'
+import AgenticFutureSection from './components/AgenticFutureSection.vue'
 import LandingNavigator from './components/LandingNavigator.vue'
 import ThemeAppearanceLayout from './components/ThemeAppearanceLayout.vue'
 import './style.css'
@@ -26,6 +27,7 @@ export default {
     app.component('TechStack', TechStack)
     app.component('FooterSection', FooterSection)
     app.component('OriginStorySection', OriginStorySection)
+    app.component('AgenticFutureSection', AgenticFutureSection)
     app.component('LandingNavigator', LandingNavigator)
   }
 } satisfies Theme
