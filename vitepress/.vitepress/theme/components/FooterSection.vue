@@ -18,6 +18,7 @@ const links = [
       { text: 'API 参考', link: '/reference/api' },
       { text: '数据库字典', link: '/reference/database' },
       { text: '开发进度', link: '/progress/' },
+      { text: '思路', link: '/ideas/' },
     ],
   },
   {

@@ -127,6 +127,7 @@ function scrollToOverview() {
           </svg>
         </a>
         <a class="btn btn-ghost" :href="withBase('/guide/architecture')">架构设计</a>
+        <a class="btn btn-ghost" :href="withBase('/ideas/')">思路</a>
         <a class="btn btn-ghost" href="https://github.com/HerSophia/TavernHeadless" target="_blank" rel="noreferrer">
           GitHub
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
