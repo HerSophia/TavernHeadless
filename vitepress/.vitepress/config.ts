@@ -54,6 +54,7 @@ export default defineConfig({
       },
       { text: 'Agent', link: '/agent/' },
       { text: '进度', link: '/progress/' },
+      { text: '思路', link: '/ideas/' },
     ],
 
     sidebar: {
@@ -201,6 +202,24 @@ export default defineConfig({
             { text: '核心引擎', link: '/progress/core' },
             { text: '后端 API', link: '/progress/api' },
             { text: '管理前端', link: '/progress/web' },
+          ],
+        },
+      ],
+      '/ideas/': [
+        {
+          text: '思路',
+          items: [
+            { text: '总览', link: '/ideas/' },
+            { text: 'Why TavernHeadless？', link: '/ideas/why-tavernheadless' },
+            { text: 'Know What & Know How', link: '/ideas/know-what-and-know-how' },
+            { text: '不一定得是一张角色卡', link: '/ideas/not-just-a-character-card' },
+            { text: '边界的规划', link: '/ideas/boundary-planning' },
+            { text: '为什么多了一层 Message？', link: '/ideas/why-message-layer' },
+            { text: '为什么多了一种变量？', link: '/ideas/why-branch-variable' },
+            { text: '它很小，但它很重要', link: '/ideas/why-worldbook-trace' },
+            { text: '因为它很重要，所以它被扩展', link: '/ideas/why-prompt-runtime' },
+            { text: '可追踪的记忆', link: '/ideas/traceable-memory' },
+            { text: 'LLM 实例化？其实是 Sub Agent 的前身', link: '/ideas/llm-instantiation-sub-agent' },
           ],
         },
       ],
