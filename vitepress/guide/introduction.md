@@ -377,3 +377,4 @@ apps/web  ──→  packages/shared
 - 想了解官方集成包，请阅读 [官方集成层](/guide/integration-kit)。
 - 想查阅 API 接口，请阅读 [API 参考](/reference/api)。
 - 想了解当前进度，请查看 [进度总览](/progress/)。
+- 想了解设计取舍和后续想法，请查看 [思路](/ideas/)。
