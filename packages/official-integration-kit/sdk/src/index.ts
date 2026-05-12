@@ -67,6 +67,7 @@ export {
   type BackupJobsListResult,
   type BackupJobsResource,
   type BackupJobStatus,
+  type BackupOperationLogIncludeMode,
   type BackupRenamedResource,
   type BackupRestoreCreatedSummary,
   type BackupRestoreJobRequest,

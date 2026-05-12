@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, or, type SQL } from "drizzle-orm";
 import {
   parseBranchMemoryScopeId,
   parseBranchVariableScopeId,
@@ -10,10 +10,14 @@ import {
   type ThBackupDomain,
   type ThBackupMemoryEdge,
   type ThBackupMemoryItem,
+  type ThBackupOperationLog,
   type ThBackupPreset,
   type ThBackupRegexProfile,
   type ThBackupSession,
   type ThBackupVariable,
+  type ThBackupVc,
+  type ThBackupVcAssetKind,
+  type ThBackupVcTag,
   type ThBackupWorldbook,
 } from "@tavern/shared/types/backup-file";
 
@@ -21,18 +25,24 @@ import type { AppDb } from "../db/client.js";
 import {
   characterVersions,
   characters,
+  operationLogs,
   presetVersions,
   presets,
   regexProfileVersions,
   regexProfiles,
   sessions,
   sessionBranches,
+  vcTags,
   worldbookVersions,
   worldbookEntries,
   worldbooks,
 } from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
-import { emptyBackupCountSummary, type BackupCountSummary } from "./backup-runtime-job-definitions.js";
+import {
+  emptyBackupCountSummary,
+  type BackupCountSummary,
+  type BackupOperationLogIncludeMode,
+} from "./backup-runtime-job-definitions.js";
 import { captureSessionExportSnapshot } from "./chat-export-snapshot.js";
 import { CoreAssetBackupError } from "./core-asset-backup-parser.js";
 
@@ -45,6 +55,8 @@ export interface CoreAssetBackupExportSelection {
   worldbookIds?: string[];
   regexProfileIds?: string[];
   includeLinkedAssets?: boolean;
+  includeVcTags?: boolean;
+  includeOperationLogs?: BackupOperationLogIncludeMode;
   includeSecrets?: boolean;
 }
 
@@ -62,11 +74,20 @@ export interface CoreAssetBackupSnapshot {
     regexProfiles: ThBackupRegexProfile[];
   };
   sessions: ThBackupSession[];
+  vc: ThBackupVc;
   counts: BackupCountSummary;
   isFullExport: boolean;
 }
 
 const BACKUP_DOMAIN_ORDER: readonly ThBackupDomain[] = ["characters", "presets", "worldbooks", "regex_profiles", "sessions"];
+
+type SessionBranchRow = typeof sessionBranches.$inferSelect;
+type OperationLogRow = typeof operationLogs.$inferSelect;
+
+type BackupVcTagExportItem = {
+  tag: ThBackupVcTag;
+  sourceOperationId: string | null;
+};
 
 export function captureCoreAssetBackupSnapshot(
   db: AppDb,
@@ -198,6 +219,19 @@ export function captureCoreAssetBackupSnapshot(
   const selectedWorldbookIds = new Set(selectedWorldbooks.map((row) => row.id));
   const selectedRegexProfileIds = new Set(selectedRegexProfiles.map((row) => row.id));
   const includeLinkedAssets = input.includeLinkedAssets ?? true;
+  const includeVcTags = input.includeVcTags ?? true;
+  const includeOperationLogs = input.includeOperationLogs ?? "none";
+
+  const selectedSessionIdListForBranches = selectedSessions.map((row) => row.id);
+  const selectedSessionBranchRows = selectedSessionIdListForBranches.length > 0
+    ? db
+        .select()
+        .from(sessionBranches)
+        .where(and(eq(sessionBranches.accountId, accountId), inArray(sessionBranches.sessionId, selectedSessionIdListForBranches)))
+        .orderBy(asc(sessionBranches.sessionId), asc(sessionBranches.createdAt), asc(sessionBranches.updatedAt), asc(sessionBranches.branchId))
+        .all()
+    : [];
+  const branchRowsBySession = groupRowsBy(selectedSessionBranchRows, (row) => row.sessionId);
 
   if (selectedSessions.length > 0) {
     for (const session of selectedSessions) {
@@ -307,6 +341,36 @@ export function captureCoreAssetBackupSnapshot(
     }
   }
 
+  if (selectedSessionBranchRows.length > 0) {
+    for (const branch of selectedSessionBranchRows) {
+      if (!hasBranchAssetBinding(branch)) {
+        continue;
+      }
+
+      if (!includeLinkedAssets) {
+        assertSelectedBranchAssetBindingIds(
+          branch,
+          selectedPresetIds,
+          selectedWorldbookIds,
+          selectedRegexProfileIds,
+        );
+        continue;
+      }
+
+      ensureSelectedPromptAssetRowsForBranchBinding(
+        db,
+        accountId,
+        branch,
+        selectedPresets,
+        selectedPresetIds,
+        selectedWorldbooks,
+        selectedWorldbookIds,
+        selectedRegexProfiles,
+        selectedRegexProfileIds,
+      );
+    }
+  }
+
   const includedDomainSet = new Set<ThBackupDomain>();
   if (!hasAnySelection) {
     for (const domain of requestedDomainSet) {
@@ -365,8 +429,10 @@ export function captureCoreAssetBackupSnapshot(
     : [];
   const presetVersionsByPreset = new Map<string, typeof presetVersionRows>();
   const presetVersionIdSet = new Set<string>();
+  const presetVersionToPresetId = new Map<string, string>();
   for (const row of presetVersionRows) {
     presetVersionIdSet.add(row.id);
+    presetVersionToPresetId.set(row.id, row.presetId);
     const list = presetVersionsByPreset.get(row.presetId);
     if (list) {
       list.push(row);
@@ -385,8 +451,10 @@ export function captureCoreAssetBackupSnapshot(
     : [];
   const worldbookVersionsByWorldbook = new Map<string, typeof worldbookVersionRows>();
   const worldbookVersionIdSet = new Set<string>();
+  const worldbookVersionToWorldbookId = new Map<string, string>();
   for (const row of worldbookVersionRows) {
     worldbookVersionIdSet.add(row.id);
+    worldbookVersionToWorldbookId.set(row.id, row.worldbookId);
     const list = worldbookVersionsByWorldbook.get(row.worldbookId);
     if (list) {
       list.push(row);
@@ -405,8 +473,10 @@ export function captureCoreAssetBackupSnapshot(
     : [];
   const regexProfileVersionsByProfile = new Map<string, typeof regexProfileVersionRows>();
   const regexProfileVersionIdSet = new Set<string>();
+  const regexProfileVersionToProfileId = new Map<string, string>();
   for (const row of regexProfileVersionRows) {
     regexProfileVersionIdSet.add(row.id);
+    regexProfileVersionToProfileId.set(row.id, row.regexProfileId);
     const list = regexProfileVersionsByProfile.get(row.regexProfileId);
     if (list) {
       list.push(row);
@@ -606,12 +676,21 @@ export function captureCoreAssetBackupSnapshot(
       includeVariables: true,
       includeMemories: true,
     });
-    const branchRows = db
-      .select()
-      .from(sessionBranches)
-      .where(and(eq(sessionBranches.accountId, accountId), eq(sessionBranches.sessionId, sessionRow.id)))
-      .orderBy(asc(sessionBranches.createdAt), asc(sessionBranches.updatedAt), asc(sessionBranches.branchId))
-      .all();
+    const branchRows = branchRowsBySession.get(sessionRow.id) ?? [];
+    for (const branch of branchRows) {
+      assertBranchAssetBindingInBackup({
+        branch,
+        presetIdSet,
+        presetVersionIdSet,
+        presetVersionToPresetId,
+        worldbookIdSet,
+        worldbookVersionIdSet,
+        worldbookVersionToWorldbookId,
+        regexProfileIdSet,
+        regexProfileVersionIdSet,
+        regexProfileVersionToProfileId,
+      });
+    }
 
     return {
       id: sessionRow.id,
@@ -647,6 +726,7 @@ export function captureCoreAssetBackupSnapshot(
         branch_id: branch.branchId,
         source_floor_id_ref: branch.sourceFloorId ?? null,
         source_branch_id: branch.sourceBranchId ?? null,
+        asset_binding: toBackupSessionBranchAssetBinding(branch),
         created_at: branch.createdAt,
         updated_at: branch.updatedAt,
       })),
@@ -736,6 +816,69 @@ export function captureCoreAssetBackupSnapshot(
     };
   });
 
+  const exportedSessionIds = new Set(sessionResources.map((session) => session.id));
+  const exportedFloorIds = new Set(
+    sessionResources.flatMap((session) => session.floors.map((floor) => floor.id)),
+  );
+  const characterVersionIds = new Set(versionRows.map((version) => version.id));
+  const presetVersionIds = new Set(presetVersionRows.map((version) => version.id));
+  const worldbookVersionIds = new Set(worldbookVersionRows.map((version) => version.id));
+  const regexProfileVersionIds = new Set(regexProfileVersionRows.map((version) => version.id));
+  const assetVersionKindById = new Map<string, ThBackupVcAssetKind>([
+    ...versionRows.map((version) => [version.id, "character"] as const),
+    ...presetVersionRows.map((version) => [version.id, "preset"] as const),
+    ...worldbookVersionRows.map((version) => [version.id, "worldbook"] as const),
+    ...regexProfileVersionRows.map((version) => [version.id, "regex_profile"] as const),
+  ]);
+  const vcTagExportItems = includeVcTags
+    ? collectBackupVcTags(db, accountId, exportedSessionIds, exportedFloorIds, assetVersionKindById)
+    : [];
+  const exportedVcTagIds = new Set(vcTagExportItems.map((item) => item.tag.id));
+  const referencedOperationIds = collectReferencedBackupOperationIds(
+    presetVersionRows,
+    worldbookVersionRows,
+    regexProfileVersionRows,
+    vcTagExportItems,
+  );
+  const operationLogRows = collectBackupOperationLogs(db, accountId, includeOperationLogs, {
+    referencedOperationIds,
+    exportedSessionIds,
+    exportedFloorIds,
+    exportedVcTagIds,
+    characterIds: new Set(characterResources.map((character) => character.id)),
+    characterVersionIds,
+    presetIds: new Set(presetResources.map((preset) => preset.id)),
+    presetVersionIds,
+    worldbookIds: new Set(worldbookResources.map((worldbook) => worldbook.id)),
+    worldbookVersionIds,
+    regexProfileIds: new Set(regexProfileResources.map((profile) => profile.id)),
+    regexProfileVersionIds,
+    assetVersionKindById,
+  });
+  const exportedOperationLogIds = new Set(operationLogRows.map((row) => row.id));
+  const vc: ThBackupVc = {
+    tags: vcTagExportItems.map(({ tag, sourceOperationId }) => ({
+      ...tag,
+      created_by_operation_id_ref: sourceOperationId && exportedOperationLogIds.has(sourceOperationId)
+        ? sourceOperationId
+        : null,
+    })),
+    operation_logs: operationLogRows.map((row) => toBackupOperationLog(row, {
+      exportedSessionIds,
+      exportedFloorIds,
+      exportedVcTagIds,
+      characterIds: new Set(characterResources.map((character) => character.id)),
+      characterVersionIds,
+      presetIds: new Set(presetResources.map((preset) => preset.id)),
+      presetVersionIds,
+      worldbookIds: new Set(worldbookResources.map((worldbook) => worldbook.id)),
+      worldbookVersionIds,
+      regexProfileIds: new Set(regexProfileResources.map((profile) => profile.id)),
+      regexProfileVersionIds,
+      assetVersionKindById,
+    })),
+  };
+
   const counts = emptyBackupCountSummary();
   counts.characters = characterResources.length;
   counts.character_versions = versionRows.length;
@@ -747,6 +890,8 @@ export function captureCoreAssetBackupSnapshot(
   counts.regex_profiles = regexProfileResources.length;
   counts.regex_profile_versions = regexProfileVersionRows.length;
   counts.sessions = sessionResources.length;
+  counts.vc_tags = vc.tags.length;
+  counts.operation_logs = vc.operation_logs.length;
   for (const session of sessionResources) {
     counts.session_branches += session.branches.length;
     counts.floors += session.floors.length;
@@ -775,9 +920,583 @@ export function captureCoreAssetBackupSnapshot(
       regexProfiles: regexProfileResources,
     },
     sessions: sessionResources,
+    vc,
     counts,
     isFullExport,
   };
+}
+
+function groupRowsBy<TRow, TKey>(rows: readonly TRow[], getKey: (row: TRow) => TKey): Map<TKey, TRow[]> {
+  const grouped = new Map<TKey, TRow[]>();
+  for (const row of rows) {
+    const key = getKey(row);
+    const list = grouped.get(key);
+    if (list) {
+      list.push(row);
+    } else {
+      grouped.set(key, [row]);
+    }
+  }
+  return grouped;
+}
+
+function hasBranchAssetBinding(branch: SessionBranchRow): boolean {
+  return branch.assetBindingDeepBinding !== null
+    || branch.assetBindingPresetId !== null
+    || branch.assetBindingPresetVersionId !== null
+    || branch.assetBindingWorldbookProfileId !== null
+    || branch.assetBindingWorldbookVersionId !== null
+    || branch.assetBindingRegexProfileId !== null
+    || branch.assetBindingRegexProfileVersionId !== null;
+}
+
+function assertSelectedBranchAssetBindingIds(
+  branch: SessionBranchRow,
+  selectedPresetIds: Set<string>,
+  selectedWorldbookIds: Set<string>,
+  selectedRegexProfileIds: Set<string>,
+): void {
+  if (branch.assetBindingPresetId && !selectedPresetIds.has(branch.assetBindingPresetId)) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} requires preset ${branch.assetBindingPresetId} to be included`,
+    );
+  }
+  if (branch.assetBindingWorldbookProfileId && !selectedWorldbookIds.has(branch.assetBindingWorldbookProfileId)) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} requires worldbook ${branch.assetBindingWorldbookProfileId} to be included`,
+    );
+  }
+  if (branch.assetBindingRegexProfileId && !selectedRegexProfileIds.has(branch.assetBindingRegexProfileId)) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} requires regex profile ${branch.assetBindingRegexProfileId} to be included`,
+    );
+  }
+}
+
+function ensureSelectedPromptAssetRowsForBranchBinding(
+  db: AppDb,
+  accountId: string,
+  branch: SessionBranchRow,
+  selectedPresets: Array<typeof presets.$inferSelect>,
+  selectedPresetIds: Set<string>,
+  selectedWorldbooks: Array<typeof worldbooks.$inferSelect>,
+  selectedWorldbookIds: Set<string>,
+  selectedRegexProfiles: Array<typeof regexProfiles.$inferSelect>,
+  selectedRegexProfileIds: Set<string>,
+): void {
+  if (branch.assetBindingPresetId) {
+    ensureSelectedPreset(db, accountId, branch.assetBindingPresetId, selectedPresets, selectedPresetIds, branch);
+  }
+  if (branch.assetBindingPresetVersionId) {
+    const version = db
+      .select({ presetId: presetVersions.presetId })
+      .from(presetVersions)
+      .where(eq(presetVersions.id, branch.assetBindingPresetVersionId))
+      .limit(1)
+      .all()[0];
+    if (!version) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} references missing preset version ${branch.assetBindingPresetVersionId}`,
+      );
+    }
+    ensureSelectedPreset(db, accountId, version.presetId, selectedPresets, selectedPresetIds, branch);
+  }
+
+  if (branch.assetBindingWorldbookProfileId) {
+    ensureSelectedWorldbook(
+      db,
+      accountId,
+      branch.assetBindingWorldbookProfileId,
+      selectedWorldbooks,
+      selectedWorldbookIds,
+      branch,
+    );
+  }
+  if (branch.assetBindingWorldbookVersionId) {
+    const version = db
+      .select({ worldbookId: worldbookVersions.worldbookId })
+      .from(worldbookVersions)
+      .where(eq(worldbookVersions.id, branch.assetBindingWorldbookVersionId))
+      .limit(1)
+      .all()[0];
+    if (!version) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} references missing worldbook version ${branch.assetBindingWorldbookVersionId}`,
+      );
+    }
+    ensureSelectedWorldbook(db, accountId, version.worldbookId, selectedWorldbooks, selectedWorldbookIds, branch);
+  }
+
+  if (branch.assetBindingRegexProfileId) {
+    ensureSelectedRegexProfile(
+      db,
+      accountId,
+      branch.assetBindingRegexProfileId,
+      selectedRegexProfiles,
+      selectedRegexProfileIds,
+      branch,
+    );
+  }
+  if (branch.assetBindingRegexProfileVersionId) {
+    const version = db
+      .select({ regexProfileId: regexProfileVersions.regexProfileId })
+      .from(regexProfileVersions)
+      .where(eq(regexProfileVersions.id, branch.assetBindingRegexProfileVersionId))
+      .limit(1)
+      .all()[0];
+    if (!version) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} references missing regex profile version ${branch.assetBindingRegexProfileVersionId}`,
+      );
+    }
+    ensureSelectedRegexProfile(db, accountId, version.regexProfileId, selectedRegexProfiles, selectedRegexProfileIds, branch);
+  }
+}
+
+function ensureSelectedPreset(
+  db: AppDb,
+  accountId: string,
+  presetId: string,
+  selectedPresets: Array<typeof presets.$inferSelect>,
+  selectedPresetIds: Set<string>,
+  branch: SessionBranchRow,
+): void {
+  if (selectedPresetIds.has(presetId)) {
+    return;
+  }
+  const row = db
+    .select()
+    .from(presets)
+    .where(and(eq(presets.accountId, accountId), eq(presets.id, presetId)))
+    .limit(1)
+    .all()[0];
+  if (!row) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} references missing preset ${presetId}`,
+    );
+  }
+  selectedPresets.push(row);
+  selectedPresetIds.add(row.id);
+}
+
+function ensureSelectedWorldbook(
+  db: AppDb,
+  accountId: string,
+  worldbookId: string,
+  selectedWorldbooks: Array<typeof worldbooks.$inferSelect>,
+  selectedWorldbookIds: Set<string>,
+  branch: SessionBranchRow,
+): void {
+  if (selectedWorldbookIds.has(worldbookId)) {
+    return;
+  }
+  const row = db
+    .select()
+    .from(worldbooks)
+    .where(and(eq(worldbooks.accountId, accountId), eq(worldbooks.id, worldbookId)))
+    .limit(1)
+    .all()[0];
+  if (!row) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} references missing worldbook ${worldbookId}`,
+    );
+  }
+  selectedWorldbooks.push(row);
+  selectedWorldbookIds.add(row.id);
+}
+
+function ensureSelectedRegexProfile(
+  db: AppDb,
+  accountId: string,
+  regexProfileId: string,
+  selectedRegexProfiles: Array<typeof regexProfiles.$inferSelect>,
+  selectedRegexProfileIds: Set<string>,
+  branch: SessionBranchRow,
+): void {
+  if (selectedRegexProfileIds.has(regexProfileId)) {
+    return;
+  }
+  const row = db
+    .select()
+    .from(regexProfiles)
+    .where(and(eq(regexProfiles.accountId, accountId), eq(regexProfiles.id, regexProfileId)))
+    .limit(1)
+    .all()[0];
+  if (!row) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} references missing regex profile ${regexProfileId}`,
+    );
+  }
+  selectedRegexProfiles.push(row);
+  selectedRegexProfileIds.add(row.id);
+}
+
+function toBackupSessionBranchAssetBinding(branch: SessionBranchRow): ThBackupSession["branches"][number]["asset_binding"] {
+  if (!hasBranchAssetBinding(branch)) {
+    return null;
+  }
+  return {
+    deep_binding: branch.assetBindingDeepBinding ?? false,
+    preset_id_ref: branch.assetBindingPresetId ?? null,
+    preset_version_id_ref: branch.assetBindingPresetVersionId ?? null,
+    worldbook_id_ref: branch.assetBindingWorldbookProfileId ?? null,
+    worldbook_version_id_ref: branch.assetBindingWorldbookVersionId ?? null,
+    regex_profile_id_ref: branch.assetBindingRegexProfileId ?? null,
+    regex_profile_version_id_ref: branch.assetBindingRegexProfileVersionId ?? null,
+  };
+}
+
+function assertBranchAssetBindingInBackup(input: {
+  branch: SessionBranchRow;
+  presetIdSet: Set<string>;
+  presetVersionIdSet: Set<string>;
+  presetVersionToPresetId: Map<string, string>;
+  worldbookIdSet: Set<string>;
+  worldbookVersionIdSet: Set<string>;
+  worldbookVersionToWorldbookId: Map<string, string>;
+  regexProfileIdSet: Set<string>;
+  regexProfileVersionIdSet: Set<string>;
+  regexProfileVersionToProfileId: Map<string, string>;
+}): void {
+  const { branch } = input;
+  if (branch.assetBindingPresetId && !input.presetIdSet.has(branch.assetBindingPresetId)) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} references preset ${branch.assetBindingPresetId} that is not present in the backup`,
+    );
+  }
+  if (branch.assetBindingPresetVersionId) {
+    const ownerId = input.presetVersionToPresetId.get(branch.assetBindingPresetVersionId);
+    if (!ownerId || !input.presetVersionIdSet.has(branch.assetBindingPresetVersionId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} references preset version ${branch.assetBindingPresetVersionId} that is not present in the backup`,
+      );
+    }
+    if (branch.assetBindingPresetId && ownerId !== branch.assetBindingPresetId) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} preset version ${branch.assetBindingPresetVersionId} does not belong to preset ${branch.assetBindingPresetId}`,
+      );
+    }
+  }
+
+  if (branch.assetBindingWorldbookProfileId && !input.worldbookIdSet.has(branch.assetBindingWorldbookProfileId)) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} references worldbook ${branch.assetBindingWorldbookProfileId} that is not present in the backup`,
+    );
+  }
+  if (branch.assetBindingWorldbookVersionId) {
+    const ownerId = input.worldbookVersionToWorldbookId.get(branch.assetBindingWorldbookVersionId);
+    if (!ownerId || !input.worldbookVersionIdSet.has(branch.assetBindingWorldbookVersionId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} references worldbook version ${branch.assetBindingWorldbookVersionId} that is not present in the backup`,
+      );
+    }
+    if (branch.assetBindingWorldbookProfileId && ownerId !== branch.assetBindingWorldbookProfileId) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} worldbook version ${branch.assetBindingWorldbookVersionId} does not belong to worldbook ${branch.assetBindingWorldbookProfileId}`,
+      );
+    }
+  }
+
+  if (branch.assetBindingRegexProfileId && !input.regexProfileIdSet.has(branch.assetBindingRegexProfileId)) {
+    throw new CoreAssetBackupError(
+      400,
+      "backup_incomplete_selection",
+      `Session branch ${branch.sessionId}:${branch.branchId} references regex profile ${branch.assetBindingRegexProfileId} that is not present in the backup`,
+    );
+  }
+  if (branch.assetBindingRegexProfileVersionId) {
+    const ownerId = input.regexProfileVersionToProfileId.get(branch.assetBindingRegexProfileVersionId);
+    if (!ownerId || !input.regexProfileVersionIdSet.has(branch.assetBindingRegexProfileVersionId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} references regex profile version ${branch.assetBindingRegexProfileVersionId} that is not present in the backup`,
+      );
+    }
+    if (branch.assetBindingRegexProfileId && ownerId !== branch.assetBindingRegexProfileId) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session branch ${branch.sessionId}:${branch.branchId} regex profile version ${branch.assetBindingRegexProfileVersionId} does not belong to regex profile ${branch.assetBindingRegexProfileId}`,
+      );
+    }
+  }
+}
+
+function collectBackupVcTags(
+  db: AppDb,
+  accountId: string,
+  exportedSessionIds: Set<string>,
+  exportedFloorIds: Set<string>,
+  assetVersionKindById: Map<string, ThBackupVcAssetKind>,
+): BackupVcTagExportItem[] {
+  const targetConditions = [];
+  const floorIds = [...exportedFloorIds];
+  const assetVersionIds = [...assetVersionKindById.keys()];
+
+  if (floorIds.length > 0) {
+    targetConditions.push(and(eq(vcTags.targetType, "floor"), inArray(vcTags.targetId, floorIds)));
+  }
+  if (assetVersionIds.length > 0) {
+    targetConditions.push(and(eq(vcTags.targetType, "asset_version"), inArray(vcTags.targetId, assetVersionIds)));
+  }
+  if (targetConditions.length === 0) {
+    return [];
+  }
+
+  const targetWhere = targetConditions.length === 1 ? targetConditions[0] : or(...targetConditions);
+  if (!targetWhere) {
+    return [];
+  }
+
+  return db
+    .select()
+    .from(vcTags)
+    .where(and(eq(vcTags.accountId, accountId), targetWhere))
+    .orderBy(asc(vcTags.createdAt), asc(vcTags.name), asc(vcTags.id))
+    .all()
+    .map((tag) => ({
+      tag: {
+        id: tag.id,
+        name: tag.name,
+        target_type: tag.targetType,
+        target_asset_kind: tag.targetType === "asset_version"
+          ? assetVersionKindById.get(tag.targetId) ?? null
+          : null,
+        target_id_ref: tag.targetId,
+        session_id_ref: tag.sessionId && exportedSessionIds.has(tag.sessionId) ? tag.sessionId : null,
+        metadata: parseJsonField(tag.metadataJson ?? null),
+        created_by_operation_id_ref: null,
+        created_at: tag.createdAt,
+      },
+      sourceOperationId: tag.createdByOperationId,
+    }));
+}
+
+function collectReferencedBackupOperationIds(
+  presetVersionRows: Array<typeof presetVersions.$inferSelect>,
+  worldbookVersionRows: Array<typeof worldbookVersions.$inferSelect>,
+  regexProfileVersionRows: Array<typeof regexProfileVersions.$inferSelect>,
+  vcTagExportItems: BackupVcTagExportItem[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const row of presetVersionRows) pushOptionalId(ids, row.createdByOperationId);
+  for (const row of worldbookVersionRows) pushOptionalId(ids, row.createdByOperationId);
+  for (const row of regexProfileVersionRows) pushOptionalId(ids, row.createdByOperationId);
+  for (const item of vcTagExportItems) pushOptionalId(ids, item.sourceOperationId);
+  return ids;
+}
+
+function collectBackupOperationLogs(
+  db: AppDb,
+  accountId: string,
+  mode: BackupOperationLogIncludeMode,
+  context: BackupOperationLogCollectionContext,
+): OperationLogRow[] {
+  if (mode === "none") {
+    return [];
+  }
+
+  const conditions: SQL[] = [];
+  const referencedOperationIds = toNonEmptyArray(context.referencedOperationIds);
+  if (referencedOperationIds.length > 0) {
+    conditions.push(inArray(operationLogs.id, referencedOperationIds));
+  }
+
+  if (mode === "selected_scope") {
+    const sessionIds = toNonEmptyArray(context.exportedSessionIds);
+    const floorIds = toNonEmptyArray(context.exportedFloorIds);
+    const vcTagIds = toNonEmptyArray(context.exportedVcTagIds);
+    const characterIds = toNonEmptyArray(context.characterIds);
+    const characterVersionIds = toNonEmptyArray(context.characterVersionIds);
+    const presetIds = toNonEmptyArray(context.presetIds);
+    const presetVersionIds = toNonEmptyArray(context.presetVersionIds);
+    const worldbookIds = toNonEmptyArray(context.worldbookIds);
+    const worldbookVersionIds = toNonEmptyArray(context.worldbookVersionIds);
+    const regexProfileIds = toNonEmptyArray(context.regexProfileIds);
+    const regexProfileVersionIds = toNonEmptyArray(context.regexProfileVersionIds);
+    const assetVersionIds = toNonEmptyArray(new Set(context.assetVersionKindById.keys()));
+
+    if (sessionIds.length > 0) {
+      conditions.push(inArray(operationLogs.sessionId, sessionIds));
+      pushOperationLogCondition(conditions, and(eq(operationLogs.targetType, "session"), inArray(operationLogs.targetId, sessionIds)));
+    }
+    if (floorIds.length > 0) {
+      conditions.push(inArray(operationLogs.floorId, floorIds));
+      pushOperationLogCondition(conditions, and(eq(operationLogs.targetType, "floor"), inArray(operationLogs.targetId, floorIds)));
+    }
+    if (vcTagIds.length > 0) {
+      pushOperationLogCondition(conditions, and(eq(operationLogs.targetType, "vc_tag"), inArray(operationLogs.targetId, vcTagIds)));
+    }
+    if (assetVersionIds.length > 0) {
+      pushOperationLogCondition(conditions, and(eq(operationLogs.targetType, "asset_version"), inArray(operationLogs.targetId, assetVersionIds)));
+    }
+    pushOperationLogTargetCondition(conditions, "character", characterIds);
+    pushOperationLogTargetCondition(conditions, "character_version", characterVersionIds);
+    pushOperationLogTargetCondition(conditions, "preset", presetIds);
+    pushOperationLogTargetCondition(conditions, "preset_version", presetVersionIds);
+    pushOperationLogTargetCondition(conditions, "worldbook", worldbookIds);
+    pushOperationLogTargetCondition(conditions, "worldbook_version", worldbookVersionIds);
+    pushOperationLogTargetCondition(conditions, "regex_profile", regexProfileIds);
+    pushOperationLogTargetCondition(conditions, "regex_profile_version", regexProfileVersionIds);
+  }
+
+  if (conditions.length === 0) {
+    return [];
+  }
+
+  const scopeWhere = conditions.length === 1 ? conditions[0] : or(...conditions);
+  if (!scopeWhere) {
+    return [];
+  }
+
+  return db
+    .select()
+    .from(operationLogs)
+    .where(and(eq(operationLogs.accountId, accountId), scopeWhere))
+    .orderBy(asc(operationLogs.createdAt), asc(operationLogs.id))
+    .all();
+}
+
+type BackupOperationLogCollectionContext = BackupOperationLogExportContext & {
+  referencedOperationIds: Set<string>;
+};
+
+type BackupOperationLogExportContext = {
+  exportedSessionIds: Set<string>;
+  exportedFloorIds: Set<string>;
+  exportedVcTagIds: Set<string>;
+  characterIds: Set<string>;
+  characterVersionIds: Set<string>;
+  presetIds: Set<string>;
+  presetVersionIds: Set<string>;
+  worldbookIds: Set<string>;
+  worldbookVersionIds: Set<string>;
+  regexProfileIds: Set<string>;
+  regexProfileVersionIds: Set<string>;
+  assetVersionKindById: Map<string, ThBackupVcAssetKind>;
+};
+
+function pushOperationLogTargetCondition(
+  conditions: SQL[],
+  targetType: string,
+  targetIds: string[],
+): void {
+  if (targetIds.length > 0) {
+    pushOperationLogCondition(conditions, and(eq(operationLogs.targetType, targetType), inArray(operationLogs.targetId, targetIds)));
+  }
+}
+
+function pushOperationLogCondition(conditions: SQL[], condition: SQL | undefined): void {
+  if (condition) {
+    conditions.push(condition);
+  }
+}
+
+function toBackupOperationLog(
+  row: OperationLogRow,
+  context: BackupOperationLogExportContext,
+): ThBackupOperationLog {
+  return {
+    id: row.id,
+    operation_group_id: row.operationGroupId ?? null,
+    request_id: row.requestId ?? null,
+    actor_type: row.actorType,
+    actor_id: row.actorId ?? null,
+    source_type: row.sourceType,
+    action: row.action,
+    status: row.status,
+    session_id_ref: row.sessionId && context.exportedSessionIds.has(row.sessionId) ? row.sessionId : null,
+    branch_id: row.branchId ?? null,
+    floor_id_ref: row.floorId && context.exportedFloorIds.has(row.floorId) ? row.floorId : null,
+    run_id: row.runId ?? null,
+    target_type: row.targetType,
+    target_id_ref: encodeBackupOperationLogTargetIdRef(row.targetType, row.targetId, context),
+    before_ref: parseJsonField(row.beforeRefJson ?? null),
+    after_ref: parseJsonField(row.afterRefJson ?? null),
+    diff: parseJsonField(row.diffJson ?? null),
+    metadata: parseJsonField(row.metadataJson ?? null),
+    created_at: row.createdAt,
+  };
+}
+
+function encodeBackupOperationLogTargetIdRef(
+  targetType: string,
+  targetId: string | null,
+  context: BackupOperationLogExportContext,
+): string | null {
+  if (!targetId) {
+    return null;
+  }
+
+  switch (targetType) {
+    case "session":
+      return context.exportedSessionIds.has(targetId) ? targetId : null;
+    case "floor":
+      return context.exportedFloorIds.has(targetId) ? targetId : null;
+    case "vc_tag":
+      return context.exportedVcTagIds.has(targetId) ? targetId : null;
+    case "asset_version":
+      return context.assetVersionKindById.has(targetId) ? targetId : null;
+    case "character":
+      return context.characterIds.has(targetId) ? targetId : null;
+    case "character_version":
+      return context.characterVersionIds.has(targetId) ? targetId : null;
+    case "preset":
+      return context.presetIds.has(targetId) ? targetId : null;
+    case "preset_version":
+      return context.presetVersionIds.has(targetId) ? targetId : null;
+    case "worldbook":
+      return context.worldbookIds.has(targetId) ? targetId : null;
+    case "worldbook_version":
+      return context.worldbookVersionIds.has(targetId) ? targetId : null;
+    case "regex_profile":
+      return context.regexProfileIds.has(targetId) ? targetId : null;
+    case "regex_profile_version":
+      return context.regexProfileVersionIds.has(targetId) ? targetId : null;
+    default:
+      return targetId;
+  }
+}
+
+function pushOptionalId(target: Set<string>, value: string | null | undefined): void {
+  if (typeof value === "string" && value.trim().length > 0) {
+    target.add(value);
+  }
+}
+
+function toNonEmptyArray(values: Iterable<string>): string[] {
+  return Array.from(new Set(values)).filter((value) => value.trim().length > 0);
 }
 
 function normalizeIdList(values: string[] | undefined): string[] {

@@ -30,6 +30,7 @@ export type {
   BackupRestorePreview,
   BackupTopLevelCreateSummary,
   BackupWarning,
+  BackupOperationLogIncludeMode,
   BackupExportJobRequest,
   BackupExportJobResult,
 } from "./backup-shared.js";
@@ -40,7 +41,9 @@ export type BackupResource = {
     characterIds?: string[];
     domains?: BackupDomain[];
     includeLinkedAssets?: boolean;
+    includeOperationLogs?: "none" | "referenced" | "selected_scope";
     includeSecrets?: false;
+    includeVcTags?: boolean;
     presetIds?: string[];
     regexProfileIds?: string[];
     sessionIds?: string[];
@@ -69,7 +72,9 @@ export function createBackupResource(client: TransportClient): BackupResource {
           character_ids: options.characterIds,
           domains: options.domains,
           include_linked_assets: options.includeLinkedAssets,
+          include_operation_logs: options.includeOperationLogs,
           include_secrets: options.includeSecrets,
+          include_vc_tags: options.includeVcTags,
           preset_ids: options.presetIds,
           regex_profile_ids: options.regexProfileIds,
           session_ids: options.sessionIds,

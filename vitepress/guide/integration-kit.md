@@ -258,6 +258,9 @@ const promotionGroups = groupVariablePromotionTrace(promotionSnapshot);
 | 导入、导出、备份与模型 | `imports`、`exports`、`backup`、`backupJobs`、`chatTransferJobs`、`llmProfiles`、`llmInstances` |
 | 账号、变量与记忆 | `accounts`、`variables`、`memories`、`memoryEdges`、`memoryJobs`、`memoryScopes` |
 | 工具与运行集成 | `tools`、`mcp` |
+
+Backup 资源支持核心资产导出和恢复作业。导出时可以通过 `includeVcTags` 保留 VC Tag，并通过 `includeOperationLogs: "referenced" | "selected_scope"` 选择是否导出相关 Operation Log。
+
 | 高级客户端数据系统 | `clientData`、`sessionState` |
 
 其中 `backup` 与 `backupJobs` 对应核心资产备份 v1：

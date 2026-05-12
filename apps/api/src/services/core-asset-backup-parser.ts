@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { TH_BACKUP_SPEC, TH_BACKUP_SPEC_VERSION, thBackupFileSchema } from "@tavern/shared";
+import {
+  TH_BACKUP_SPEC,
+  TH_BACKUP_SUPPORTED_SPEC_VERSIONS,
+  thBackupFileSchema,
+} from "@tavern/shared";
 import type { ThBackupFile } from "@tavern/shared/types/backup-file";
 
 import { RuntimeJobFatalError } from "./runtime-job-errors.js";
@@ -70,14 +74,14 @@ export function parseCoreAssetBackupFile(input: unknown): ThBackupFile {
     );
   }
 
-  if (parsed.data.spec_version !== TH_BACKUP_SPEC_VERSION) {
+  if (!new Set<string>(TH_BACKUP_SUPPORTED_SPEC_VERSIONS).has(parsed.data.spec_version)) {
     throw new CoreAssetBackupError(
       400,
       "backup_unsupported_version",
       `Unsupported backup spec_version: ${parsed.data.spec_version}`,
       {
         details: {
-          supported: TH_BACKUP_SPEC_VERSION,
+          supported: [...TH_BACKUP_SUPPORTED_SPEC_VERSIONS],
           received: parsed.data.spec_version,
         },
       },

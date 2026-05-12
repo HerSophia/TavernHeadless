@@ -35,6 +35,7 @@ export type BackupJobPhase =
   | "rebuilding_runtime_state"
   | "finalizing"
   | "completed";
+export type BackupOperationLogIncludeMode = "none" | "referenced" | "selected_scope";
 
 export type BackupCountSummary = {
   branchLocalVariableSnapshots: number;
@@ -44,6 +45,7 @@ export type BackupCountSummary = {
   memoryEdges: number;
   memoryItems: number;
   messages: number;
+  operationLogs: number;
   pages: number;
   presetVersions: number;
   presets: number;
@@ -52,6 +54,7 @@ export type BackupCountSummary = {
   sessionBranches: number;
   sessions: number;
   variables: number;
+  vcTags: number;
   worldbookEntries: number;
   worldbookVersions: number;
   worldbooks: number;
@@ -78,7 +81,7 @@ export type BackupWarning = {
 export type BackupRenamedResource = {
   newName: string;
   oldName: string;
-  type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
+  type: "character" | "preset" | "worldbook" | "regex_profile" | "session" | "vc_tag";
 };
 
 export type BackupDroppedBindingSummary = {
@@ -107,7 +110,9 @@ export type BackupExportJobRequest = {
   characterIds: string[];
   domains: BackupDomain[] | null;
   includeLinkedAssets: boolean;
+  includeOperationLogs: BackupOperationLogIncludeMode;
   includeSecrets: boolean;
+  includeVcTags: boolean;
   presetIds: string[];
   regexProfileIds: string[];
   sessionIds: string[];
@@ -206,6 +211,14 @@ function readNullableBackupDomains(value: unknown): BackupDomain[] | null {
   return Array.isArray(value) ? domains : null;
 }
 
+function readBackupOperationLogIncludeMode(value: unknown): BackupOperationLogIncludeMode {
+  if (value === "referenced" || value === "selected_scope") {
+    return value;
+  }
+
+  return "none";
+}
+
 function readStringArray(value: unknown): string[] {
   return readArray(value).filter((item): item is string => typeof item === "string");
 }
@@ -221,6 +234,7 @@ export function mapBackupCountSummary(value: unknown): BackupCountSummary {
     memoryEdges: readNumber(record?.memory_edges),
     memoryItems: readNumber(record?.memory_items),
     messages: readNumber(record?.messages),
+    operationLogs: readNumber(record?.operation_logs ?? record?.operationLogs),
     pages: readNumber(record?.pages),
     presetVersions: readNumber(record?.preset_versions ?? record?.presetVersions),
     presets: readNumber(record?.presets),
@@ -229,6 +243,7 @@ export function mapBackupCountSummary(value: unknown): BackupCountSummary {
     sessionBranches: readNumber(record?.session_branches),
     sessions: readNumber(record?.sessions),
     variables: readNumber(record?.variables),
+    vcTags: readNumber(record?.vc_tags ?? record?.vcTags),
     worldbookEntries: readNumber(record?.worldbook_entries),
     worldbookVersions: readNumber(record?.worldbook_versions ?? record?.worldbookVersions),
     worldbooks: readNumber(record?.worldbooks),
@@ -296,6 +311,7 @@ export function mapBackupRenamedResource(value: unknown): BackupRenamedResource 
     && type !== "worldbook"
     && type !== "regex_profile"
     && type !== "session"
+    && type !== "vc_tag"
   ) {
     return null;
   }
@@ -422,6 +438,8 @@ export function mapBackupJobRequest(value: unknown): BackupJobRequest | null {
     || hasField(record, "worldbook_ids")
     || hasField(record, "regex_profile_ids")
     || hasField(record, "include_linked_assets")
+    || hasField(record, "include_vc_tags")
+    || hasField(record, "include_operation_logs")
     || hasField(record, "include_secrets");
 
   if (hasRestoreShape) {
@@ -447,7 +465,9 @@ export function mapBackupJobRequest(value: unknown): BackupJobRequest | null {
     characterIds: readStringArray(record.character_ids),
     domains: readNullableBackupDomains(record.domains),
     includeLinkedAssets: readBoolean(record.include_linked_assets, true),
+    includeOperationLogs: readBackupOperationLogIncludeMode(record.include_operation_logs),
     includeSecrets: readBoolean(record.include_secrets, false),
+    includeVcTags: readBoolean(record.include_vc_tags, true),
     presetIds: readStringArray(record.preset_ids),
     regexProfileIds: readStringArray(record.regex_profile_ids),
     sessionIds: readStringArray(record.session_ids),

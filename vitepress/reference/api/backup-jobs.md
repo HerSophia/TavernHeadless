@@ -103,6 +103,8 @@ GET /backup-jobs
         "worldbook_ids": [],
         "regex_profile_ids": [],
         "include_linked_assets": true,
+        "include_vc_tags": true,
+        "include_operation_logs": "referenced",
         "include_secrets": false
       },
       "result": {
@@ -128,7 +130,9 @@ GET /backup-jobs
           "variables": 6,
           "branch_local_variable_snapshots": 1,
           "memory_items": 3,
-          "memory_edges": 2
+          "memory_edges": 2,
+          "vc_tags": 1,
+          "operation_logs": 1
         }
       },
       "output_artifact_path": "backup-job-export-1/output.thbackup",
