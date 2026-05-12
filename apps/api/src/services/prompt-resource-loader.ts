@@ -95,6 +95,17 @@ type PromptVersionInfo = {
 
 type PromptWorldbookEntryRow = typeof worldbookEntries.$inferSelect;
 
+type DeepBindingFallbackAssetType = "preset" | "worldbook" | "regex_profile";
+
+type DeepBindingVersionFallbackReason =
+  | "version_row_missing"
+  | "asset_row_missing"
+  | "version_parse_failed";
+
+type VersionLoadResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: DeepBindingVersionFallbackReason };
+
 /**
  * Prompt 资源读取器。
  *
@@ -103,6 +114,21 @@ type PromptWorldbookEntryRow = typeof worldbookEntries.$inferSelect;
  */
 export class PromptResourceLoader {
   constructor(private readonly db: AppDb) {}
+
+  private warnDeepBindingFallback(args: {
+    assetType: DeepBindingFallbackAssetType;
+    assetId: string;
+    requestedVersionId: string;
+    reason: DeepBindingVersionFallbackReason;
+  }): void {
+    console.warn("[PromptResourceLoader] deep binding fallback", {
+      assetType: args.assetType,
+      assetId: args.assetId,
+      requestedVersionId: args.requestedVersionId,
+      reason: args.reason,
+      fallback: "live_asset",
+    });
+  }
 
   async loadPreset(
     accountId: string,
@@ -160,7 +186,13 @@ export class PromptResourceLoader {
 
     if (params.deepBinding === true && params.presetVersionId) {
       const versionLoaded = this.loadPresetVersionInTransaction(tx, accountId, params.presetId, params.presetVersionId);
-      if (versionLoaded) return versionLoaded;
+      if (versionLoaded.ok) return versionLoaded.value;
+      this.warnDeepBindingFallback({
+        assetType: "preset",
+        assetId: params.presetId,
+        requestedVersionId: params.presetVersionId,
+        reason: versionLoaded.reason,
+      });
     }
 
     const row = tx
@@ -183,7 +215,13 @@ export class PromptResourceLoader {
 
     if (params.deepBinding === true && params.worldbookVersionId) {
       const versionLoaded = this.loadWorldbookVersionInTransaction(tx, accountId, params.worldbookProfileId, params.worldbookVersionId);
-      if (versionLoaded) return versionLoaded;
+      if (versionLoaded.ok) return versionLoaded.value;
+      this.warnDeepBindingFallback({
+        assetType: "worldbook",
+        assetId: params.worldbookProfileId,
+        requestedVersionId: params.worldbookVersionId,
+        reason: versionLoaded.reason,
+      });
     }
 
     const row = tx
@@ -214,7 +252,13 @@ export class PromptResourceLoader {
 
     if (params.deepBinding === true && params.regexProfileVersionId) {
       const versionLoaded = this.loadRegexProfileVersionInTransaction(tx, accountId, params.regexProfileId, params.regexProfileVersionId);
-      if (versionLoaded) return versionLoaded;
+      if (versionLoaded.ok) return versionLoaded.value;
+      this.warnDeepBindingFallback({
+        assetType: "regex_profile",
+        assetId: params.regexProfileId,
+        requestedVersionId: params.regexProfileVersionId,
+        reason: versionLoaded.reason,
+      });
     }
 
     const row = tx
@@ -233,27 +277,28 @@ export class PromptResourceLoader {
     accountId: string,
     presetId: string,
     versionId: string,
-  ): LoadedPromptPreset | null {
+  ): VersionLoadResult<LoadedPromptPreset> {
     const version = tx
       .select({ id: presetVersions.id, presetId: presetVersions.presetId, versionNo: presetVersions.versionNo, dataJson: presetVersions.dataJson, contentHash: presetVersions.contentHash })
       .from(presetVersions)
       .where(and(eq(presetVersions.id, versionId), eq(presetVersions.presetId, presetId)))
       .get();
-    if (!version) return null;
+    if (!version) return { ok: false, reason: "version_row_missing" };
 
     const asset = tx
       .select({ id: presets.id, updatedAt: presets.updatedAt })
       .from(presets)
       .where(and(eq(presets.id, version.presetId), eq(presets.accountId, accountId)))
       .get();
-    if (!asset) return null;
+    if (!asset) return { ok: false, reason: "asset_row_missing" };
 
-    return parseLoadedPresetVersionRow({
+    const loaded = parseLoadedPresetVersionRow({
       id: asset.id,
       updatedAt: asset.updatedAt,
       version: version.versionNo,
       dataJson: version.dataJson,
     }, version);
+    return loaded ? { ok: true, value: loaded } : { ok: false, reason: "version_parse_failed" };
   }
 
   private loadWorldbookVersionInTransaction(
@@ -261,27 +306,28 @@ export class PromptResourceLoader {
     accountId: string,
     worldbookId: string,
     versionId: string,
-  ): LoadedPromptWorldbook | null {
+  ): VersionLoadResult<LoadedPromptWorldbook> {
     const version = tx
       .select({ id: worldbookVersions.id, worldbookId: worldbookVersions.worldbookId, versionNo: worldbookVersions.versionNo, dataJson: worldbookVersions.dataJson, contentHash: worldbookVersions.contentHash })
       .from(worldbookVersions)
       .where(and(eq(worldbookVersions.id, versionId), eq(worldbookVersions.worldbookId, worldbookId)))
       .get();
-    if (!version) return null;
+    if (!version) return { ok: false, reason: "version_row_missing" };
 
     const asset = tx
       .select({ id: worldbooks.id, updatedAt: worldbooks.updatedAt })
       .from(worldbooks)
       .where(and(eq(worldbooks.id, version.worldbookId), eq(worldbooks.accountId, accountId)))
       .get();
-    if (!asset) return null;
+    if (!asset) return { ok: false, reason: "asset_row_missing" };
 
-    return parseLoadedWorldbookVersionRow({
+    const loaded = parseLoadedWorldbookVersionRow({
       id: asset.id,
       updatedAt: asset.updatedAt,
       version: version.versionNo,
       dataJson: version.dataJson,
     }, version);
+    return loaded ? { ok: true, value: loaded } : { ok: false, reason: "version_parse_failed" };
   }
 
   private loadRegexProfileVersionInTransaction(
@@ -289,27 +335,28 @@ export class PromptResourceLoader {
     accountId: string,
     regexProfileId: string,
     versionId: string,
-  ): LoadedPromptRegexProfile | null {
+  ): VersionLoadResult<LoadedPromptRegexProfile> {
     const version = tx
       .select({ id: regexProfileVersions.id, regexProfileId: regexProfileVersions.regexProfileId, versionNo: regexProfileVersions.versionNo, dataJson: regexProfileVersions.dataJson, contentHash: regexProfileVersions.contentHash })
       .from(regexProfileVersions)
       .where(and(eq(regexProfileVersions.id, versionId), eq(regexProfileVersions.regexProfileId, regexProfileId)))
       .get();
-    if (!version) return null;
+    if (!version) return { ok: false, reason: "version_row_missing" };
 
     const asset = tx
       .select({ id: regexProfiles.id, updatedAt: regexProfiles.updatedAt })
       .from(regexProfiles)
       .where(and(eq(regexProfiles.id, version.regexProfileId), eq(regexProfiles.accountId, accountId)))
       .get();
-    if (!asset) return null;
+    if (!asset) return { ok: false, reason: "asset_row_missing" };
 
-    return parseLoadedRegexProfileVersionRow({
+    const loaded = parseLoadedRegexProfileVersionRow({
       id: asset.id,
       updatedAt: asset.updatedAt,
       version: version.versionNo,
       dataJson: version.dataJson,
     }, version);
+    return loaded ? { ok: true, value: loaded } : { ok: false, reason: "version_parse_failed" };
   }
 }
 
