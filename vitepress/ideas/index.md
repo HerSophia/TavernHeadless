@@ -17,6 +17,7 @@
 | ---- | ---- |
 | [Why TavernHeadless？](/ideas/why-tavernheadless) | 说明项目缘起，它和 SillyTavern 的关系以及解决了什么问题 |
 | [Know What & Know How](/ideas/know-what-and-know-how) | 探讨 AI RP 场景下可治理与可审计为什么不是锦上添花，而是必须解决的前提 |
+| [好像哪里都是，那就干脆做个通用的。](/ideas/unified-version-control) | 说明为什么回合、资产版本、操作日志和 diff 需要收束到一套通用 VC 思路 |
 | [不一定得是一张角色卡](/ideas/not-just-a-character-card) | 说明为什么 TavernHeadless 把客户端项目也视为一种可运行的 AI RP 体验 |
 | [边界的规划](/ideas/boundary-planning) | 说明文档和测试如何共同构成项目的边界，防止项目在迭代中失控 |
 | [为什么多了一层 Message？](/ideas/why-message-layer) | 说明 TavernHeadless 在酒馆三层模型上增加 Message 层的原因 |

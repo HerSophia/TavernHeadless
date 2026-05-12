@@ -1,15 +1,18 @@
-import { computed, ref, watch } from "vue";
+import { computed } from "vue";
 
-import type { WorkspaceAsset } from "../../../stores/workspace";
+import type { SessionState, WorkspaceAsset } from "../../../stores/workspace";
 
 type UseWorkspacePresetSelectionOptions = {
+  activeSession: {
+    value: SessionState | null;
+  };
   libraryAssets: {
     value: WorkspaceAsset[];
   };
 };
 
 export function useWorkspacePresetSelection(options: UseWorkspacePresetSelectionOptions) {
-  const activePresetAssetId = ref("");
+  const activePresetAssetId = computed(() => options.activeSession.value?.presetId ?? "");
 
   const presetAssets = computed(() => {
     return options.libraryAssets.value.filter((asset) => asset.kind === "preset");
@@ -21,34 +24,15 @@ export function useWorkspacePresetSelection(options: UseWorkspacePresetSelection
       return null;
     }
 
-    const active = activePresetAssetId.value;
-    if (active) {
-      const matched = assets.find((asset) => asset.id === active);
-      if (matched) {
-        return matched;
-      }
+    const activePresetId = activePresetAssetId.value;
+    if (!activePresetId) {
+      return null;
     }
 
-    return assets[0] ?? null;
+    return assets.find((asset) => asset.id === activePresetId) ?? null;
   });
 
-  watch(
-    presetAssets,
-    (assets) => {
-      if (assets.length === 0) {
-        activePresetAssetId.value = "";
-        return;
-      }
-
-      if (!assets.some((asset) => asset.id === activePresetAssetId.value)) {
-        activePresetAssetId.value = assets[0]!.id;
-      }
-    },
-    { immediate: true }
-  );
-
   return {
-    activePresetAssetId,
     currentPresetAsset,
     presetAssets
   };

@@ -14,7 +14,7 @@
  */
 
 import { and, count, eq, inArray, like, max, or } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
@@ -25,6 +25,11 @@ import { parseJsonField, parseWithSchema, sendError } from "../lib/http";
 import { buildListMeta, toOrderBy } from "../lib/pagination";
 import { executeWithSqliteBusyRetry, ResourceBusyError } from "../lib/retry";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import { AssetVersionService } from "../services/asset-version-service.js";
+import {
+  appendPromptAssetOperationLog,
+  toPromptAssetOperationRef,
+} from "../services/prompt-asset-operation-log.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -674,11 +679,18 @@ function bumpWorldbookVersion(
   return updateResult.changes > 0;
 }
 
+type WorldbookWriteOperationLogOptions = {
+  request: FastifyRequest;
+  action: string;
+  metadata?: Record<string, unknown>;
+  operationId?: string;
+};
+
 async function withWorldbookWriteCas<T>(
   db: AppDb,
   worldbookId: string,
   accountId: string,
-  options: { expectedVersion?: number },
+  options: { expectedVersion?: number; operationLog?: WorldbookWriteOperationLogOptions },
   mutate: (tx: DbExecutor, worldbook: typeof worldbooks.$inferSelect, now: number) => WorldbookMutationResult<T>
 ): Promise<WorldbookMutationResult<T>> {
   try {
@@ -693,6 +705,13 @@ async function withWorldbookWriteCas<T>(
       }
 
       const now = Date.now();
+      const assetVersionService = new AssetVersionService(tx);
+      const beforeVersion = options.operationLog
+        ? assetVersionService.getLatestWorldbookVersion(accountId, worldbook.id)
+        : null;
+      const beforeRef = options.operationLog
+        ? toPromptAssetOperationRef("worldbook", worldbook, beforeVersion)
+        : null;
       const result = mutate(tx, worldbook, now);
       if (result.kind !== "ok") {
         return result;
@@ -700,8 +719,29 @@ async function withWorldbookWriteCas<T>(
       if (result.changed === false) {
         return result;
       }
+      const nextVersion = worldbook.version + 1;
       if (!bumpWorldbookVersion(tx, worldbook.id, accountId, worldbook.version, now)) {
         throw new WorldbookVersionConflictError();
+      }
+      const operationId = options.operationLog ? options.operationLog.operationId ?? nanoid() : undefined;
+      const afterVersion = assetVersionService.createWorldbookVersion(worldbook.id, {
+        versionNo: nextVersion,
+        createdByOperationId: operationId,
+        createdAt: now,
+      });
+      if (options.operationLog) {
+        const afterRow = { ...worldbook, updatedAt: now, version: nextVersion };
+        appendPromptAssetOperationLog(tx, options.operationLog.request, {
+          operationId,
+          accountId,
+          action: options.operationLog.action,
+          assetKind: "worldbook",
+          assetId: worldbook.id,
+          beforeRef,
+          afterRef: toPromptAssetOperationRef("worldbook", afterRow, afterVersion),
+          metadata: options.operationLog.metadata,
+          createdAt: now,
+        });
       }
       return result;
     }));
@@ -848,7 +888,17 @@ export async function registerWorldbookEntryRoutes(
       db,
       parsedParams.data.worldbook_id,
       auth.accountId,
-      { expectedVersion: parsedBody.data.expected_version },
+      {
+        expectedVersion: parsedBody.data.expected_version,
+        operationLog: {
+          request,
+          action: "create_worldbook_entry",
+          metadata: {
+            route: "POST /worldbooks/:worldbook_id/entries",
+            request_fields: Object.keys(parsedBody.data).sort(),
+          },
+        },
+      },
       (tx, worldbook, now) => {
         const maxUidRow = tx
           .select({ maxUid: max(worldbookEntries.uid) })
@@ -928,10 +978,21 @@ export async function registerWorldbookEntryRoutes(
     const parsedBody = parseWithSchema(batchUpdateEntriesSchema, request.body, reply);
     if (!parsedBody.ok) return;
 
+    const bodyFields = parsedBody.data.fields;
     const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "batch_update_worldbook_entries",
+        metadata: {
+          route: "PATCH /worldbooks/:worldbook_id/entries/batch/update",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          field_names: Object.keys(bodyFields).sort(),
+          entry_count: parsedBody.data.ids.length,
+        },
+      },
     }, (tx, worldbook, now) => {
-      const updates = buildEntryUpdates(parsedBody.data.fields, now);
+      const updates = buildEntryUpdates(bodyFields, now);
       const updatedRows = tx
         .update(worldbookEntries)
         .set(updates)
@@ -996,6 +1057,15 @@ export async function registerWorldbookEntryRoutes(
 
     const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "batch_delete_worldbook_entries",
+        metadata: {
+          route: "POST /worldbooks/:worldbook_id/entries/batch/delete",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          entry_count: parsedBody.data.ids.length,
+        },
+      },
     }, (tx, worldbook) => {
       const deletedRows = tx
         .delete(worldbookEntries)
@@ -1058,6 +1128,15 @@ export async function registerWorldbookEntryRoutes(
 
     const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "reorder_worldbook_entries",
+        metadata: {
+          route: "PUT /worldbooks/:worldbook_id/entries/batch/reorder",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          entry_count: parsedBody.data.items.length,
+        },
+      },
     }, (tx, worldbook, now) => {
       let updated = 0;
       const results = parsedBody.data.items.map((item, index) => {
@@ -1177,6 +1256,15 @@ export async function registerWorldbookEntryRoutes(
 
     const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "update_worldbook_entry",
+        metadata: {
+          route: "PATCH /worldbooks/:worldbook_id/entries/:id",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          entry_id: parsedParams.data.id,
+        },
+      },
     }, (tx, worldbook, now) => {
       const updates = buildEntryUpdates(parsedBody.data, now);
       const [updated] = tx
@@ -1226,6 +1314,15 @@ export async function registerWorldbookEntryRoutes(
     const auth = getRequestAuthContext(request);
     const mutation = await withWorldbookWriteCas(db, parsedParams.data.worldbook_id, auth.accountId, {
       expectedVersion: parsedQuery.data.expected_version,
+      operationLog: {
+        request,
+        action: "delete_worldbook_entry",
+        metadata: {
+          route: "DELETE /worldbooks/:worldbook_id/entries/:id",
+          query_fields: Object.keys(parsedQuery.data).sort(),
+          entry_id: parsedParams.data.id,
+        },
+      },
     }, (tx, worldbook) => {
       const deleted = tx
         .delete(worldbookEntries)

@@ -17,7 +17,7 @@ function makeMinimalBackup(overrides?: Record<string, unknown>) {
       account_id: 'default-admin',
       app_version: '0.2.0-beta.3',
     },
-    included_domains: ['characters', 'worldbooks', 'sessions'],
+    included_domains: ['characters', 'presets', 'worldbooks', 'regex_profiles', 'sessions'],
     options: {
       include_secrets: false,
     },
@@ -42,6 +42,28 @@ function makeMinimalBackup(overrides?: Record<string, unknown>) {
                 format: 'character_card_v2',
                 digest: 'sha256:test',
               },
+              created_at: 1700000000000,
+            },
+          ],
+        },
+      ],
+      presets: [
+        {
+          id: 'preset-old-1',
+          name: 'Default Preset',
+          source: 'sillytavern',
+          created_at: 1700000000000,
+          updated_at: 1700000001000,
+          version: 1,
+          data: { prompts: [] },
+          versions: [
+            {
+              id: 'presetver-old-1',
+              parent_version_id_ref: null,
+              version_no: 1,
+              data: { prompts: [] },
+              content_hash: 'sha256:preset-1',
+              created_by_operation_id: null,
               created_at: 1700000000000,
             },
           ],
@@ -84,6 +106,39 @@ function makeMinimalBackup(overrides?: Record<string, unknown>) {
               updated_at: 1700000001000,
             },
           ],
+          versions: [
+            {
+              id: 'wbver-old-1',
+              parent_version_id_ref: null,
+              version_no: 1,
+              data: { name: 'Lorebook', entries: [] },
+              content_hash: 'sha256:worldbook-1',
+              created_by_operation_id: null,
+              created_at: 1700000000000,
+            },
+          ],
+        },
+      ],
+      regex_profiles: [
+        {
+          id: 'regex-old-1',
+          name: 'Default Regex',
+          source: 'sillytavern',
+          created_at: 1700000000000,
+          updated_at: 1700000001000,
+          version: 1,
+          data: { scripts: [] },
+          versions: [
+            {
+              id: 'regexver-old-1',
+              parent_version_id_ref: null,
+              version_no: 1,
+              data: { scripts: [] },
+              content_hash: 'sha256:regex-1',
+              created_by_operation_id: null,
+              created_at: 1700000000000,
+            },
+          ],
         },
       ],
     },
@@ -110,9 +165,13 @@ function makeMinimalBackup(overrides?: Record<string, unknown>) {
           snapshot: { name: 'User' },
         },
         profile_binding: {
+          deep_binding: true,
+          preset_id_ref: 'preset-old-1',
+          preset_version_id_ref: 'presetver-old-1',
           worldbook_id_ref: 'wb-old-1',
-          preset_id: 'preset-old-1',
-          regex_profile_id: 'regex-old-1',
+          worldbook_version_id_ref: 'wbver-old-1',
+          regex_profile_id_ref: 'regex-old-1',
+          regex_profile_version_id_ref: 'regexver-old-1',
         },
         branches: [
           {
@@ -245,7 +304,12 @@ describe('thBackupFileSchema', () => {
   it('keeps canonical nested session structures', () => {
     const result = thBackupFileSchema.parse(makeMinimalBackup());
     expect(result.resources.characters[0]?.versions[0]?.source_artifact?.format).toBe('character_card_v2');
+    expect(result.resources.presets[0]?.versions[0]?.content_hash).toBe('sha256:preset-1');
     expect(result.resources.worldbooks[0]?.entries[0]?.keys).toEqual(['kingdom']);
+    expect(result.resources.worldbooks[0]?.versions[0]?.content_hash).toBe('sha256:worldbook-1');
+    expect(result.resources.regex_profiles[0]?.versions[0]?.content_hash).toBe('sha256:regex-1');
+    expect(result.sessions[0]?.profile_binding.deep_binding).toBe(true);
+    expect(result.sessions[0]?.profile_binding.preset_version_id_ref).toBe('presetver-old-1');
     expect(result.sessions[0]?.branches[0]?.branch_id).toBe('main');
     expect(result.sessions[0]?.branch_local_variable_snapshots[0]?.provenance?.mood?.source_scope_id_ref).toBe('main');
     expect(result.sessions[0]?.memories.items[0]?.summary_tier).toBe('macro');

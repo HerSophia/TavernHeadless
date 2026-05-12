@@ -15,7 +15,8 @@
  */
 
 import { and, eq } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import { parsePreset } from "@tavern/adapters-sillytavern";
@@ -39,6 +40,11 @@ import {
   getAllEditorEntriesFromRaw,
   normalizeStoredPreset,
 } from "../lib/preset-utils.js";
+import { AssetVersionService } from "../services/asset-version-service.js";
+import {
+  appendPromptAssetOperationLog,
+  toPromptAssetOperationRef,
+} from "../services/prompt-asset-operation-log.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -353,11 +359,18 @@ function buildEntryResponseFromRaw(raw: JsonRecord, identifier: string): PresetE
   return getEditorEntryFromRaw(raw, identifier);
 }
 
+type PresetWriteOperationLogOptions = {
+  request: FastifyRequest;
+  action: string;
+  metadata?: Record<string, unknown>;
+  operationId?: string;
+};
+
 async function withPresetWriteCas<T>(
   db: AppDb,
   presetId: string,
   accountId: string,
-  options: { expectedVersion?: number },
+  options: { expectedVersion?: number; operationLog?: PresetWriteOperationLogOptions },
   mutate: (state: { row: typeof presets.$inferSelect; raw: JsonRecord }) => PresetMutationResult<T>
 ): Promise<PresetMutationResult<T>> {
   try {
@@ -380,9 +393,39 @@ async function withPresetWriteCas<T>(
         return result;
       }
 
-      const persisted = savePresetRaw(tx, loaded.row.id, accountId, loaded.raw, Date.now(), loaded.row.version);
+      const assetVersionService = new AssetVersionService(tx);
+      const beforeVersion = options.operationLog
+        ? assetVersionService.getLatestPresetVersion(accountId, loaded.row.id)
+        : null;
+      const beforeRef = options.operationLog
+        ? toPromptAssetOperationRef("preset", loaded.row, beforeVersion)
+        : null;
+      const now = Date.now();
+      const nextVersion = loaded.row.version + 1;
+      const persisted = savePresetRaw(tx, loaded.row.id, accountId, loaded.raw, now, loaded.row.version);
       if (!persisted) {
         throw new PresetVersionConflictError();
+      }
+      const operationId = options.operationLog ? options.operationLog.operationId ?? nanoid() : undefined;
+      const afterVersion = assetVersionService.createPresetVersion(loaded.row.id, {
+        versionNo: nextVersion,
+        data: loaded.raw,
+        createdByOperationId: operationId,
+        createdAt: now,
+      });
+      if (options.operationLog) {
+        const afterRow = { ...loaded.row, updatedAt: now, version: nextVersion };
+        appendPromptAssetOperationLog(tx, options.operationLog.request, {
+          operationId,
+          accountId,
+          action: options.operationLog.action,
+          assetKind: "preset",
+          assetId: loaded.row.id,
+          beforeRef,
+          afterRef: toPromptAssetOperationRef("preset", afterRow, afterVersion),
+          metadata: options.operationLog.metadata,
+          createdAt: now,
+        });
       }
 
       return result;
@@ -480,6 +523,15 @@ export async function registerPresetEntryRoutes(
     const auth = getRequestAuthContext(request);
     const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "create_preset_entry",
+        metadata: {
+          route: "POST /presets/:preset_id/entries",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          identifier: parsedBody.data.identifier,
+        },
+      },
     }, (loaded) => {
       const { raw } = loaded;
       const identifier = parsedBody.data.identifier;
@@ -600,6 +652,15 @@ export async function registerPresetEntryRoutes(
 
     const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
       expectedVersion: body.expected_version,
+      operationLog: {
+        request,
+        action: "update_preset_entry",
+        metadata: {
+          route: "PATCH /presets/:preset_id/entries/:identifier",
+          request_fields: Object.keys(body).sort(),
+          identifier,
+        },
+      },
     }, ({ raw }) => {
       const fields: JsonRecord = {};
       if (body.name !== undefined) fields.name = body.name;
@@ -670,6 +731,15 @@ export async function registerPresetEntryRoutes(
 
     const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
       expectedVersion: parsedQuery.data.expected_version,
+      operationLog: {
+        request,
+        action: "delete_preset_entry",
+        metadata: {
+          route: "DELETE /presets/:preset_id/entries/:identifier",
+          query_fields: Object.keys(parsedQuery.data).sort(),
+          identifier,
+        },
+      },
     }, ({ raw }) => {
       const removed = removePromptFromRaw(raw, identifier);
       if (!removed) {
@@ -714,6 +784,15 @@ export async function registerPresetEntryRoutes(
 
     const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "reorder_preset_entries",
+        metadata: {
+          route: "PUT /presets/:preset_id/entries/reorder",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          identifier_count: parsedBody.data.identifiers.length,
+        },
+      },
     }, ({ row, raw }) => {
       reorderPromptsInRaw(raw, parsedBody.data.identifiers);
 
@@ -768,6 +847,16 @@ export async function registerPresetEntryRoutes(
     const bodyFields = parsedBody.data.fields;
     const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "batch_update_preset_entries",
+        metadata: {
+          route: "PATCH /presets/:preset_id/entries/batch/update",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          field_names: Object.keys(bodyFields).sort(),
+          identifier_count: parsedBody.data.identifiers.length,
+        },
+      },
     }, ({ raw }) => {
       const fields: JsonRecord = {};
       if (bodyFields.name !== undefined) fields.name = bodyFields.name;
@@ -848,6 +937,15 @@ export async function registerPresetEntryRoutes(
 
     const mutation = await withPresetWriteCas(db, parsedParams.data.preset_id, auth.accountId, {
       expectedVersion: parsedBody.data.expected_version,
+      operationLog: {
+        request,
+        action: "batch_delete_preset_entries",
+        metadata: {
+          route: "POST /presets/:preset_id/entries/batch/delete",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          identifier_count: parsedBody.data.identifiers.length,
+        },
+      },
     }, ({ raw }) => {
       const removedSet = new Set(removePromptsFromRaw(raw, parsedBody.data.identifiers));
 

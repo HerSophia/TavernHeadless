@@ -33,6 +33,15 @@ export {
   type BackupJobStatus,
 } from "./backup-jobs.js";
 export {
+  type PromptAssetVersionKind,
+  type PromptAssetRollbackResult,
+  type PromptAssetVersionCompareMode,
+  type PromptAssetVersionCompareResult,
+  type PromptAssetVersionRecord,
+  type VcDiff,
+  type VcDiffChange,
+} from "./asset-versions.js";
+export {
   createAccountsResource,
   type AccountDetail,
   type AccountRecord,
@@ -214,6 +223,16 @@ export {
   type PagesResource,
 } from "./pages.js";
 export {
+  createOperationLogsResource,
+  type OperationLogRecord,
+  type OperationLogsListMeta,
+  type OperationLogsListOptions,
+  type OperationLogsListResult,
+  type OperationLogsResource,
+  type OperationLogsScopedListOptions,
+  type OperationLogStatus,
+} from "./operation-logs.js";
+export {
   createPresetEntriesResource,
   type PresetEntriesBatchDeleteResult,
   type PresetEntriesBatchUpdateResult,
@@ -262,6 +281,12 @@ export {
   type RespondResult,
   type TurnSessionStateWrite,
   type SessionBranchDiff,
+  type SessionBranchMergeConflict,
+  type SessionBranchMergeFloorSummary,
+  type SessionBranchMergePreview,
+  type SessionBranchMergeResult,
+  type SessionBranchMergeStrategy,
+  type SessionBranchResetResult,
   type SessionBranchSummary,
   type SessionDetail,
   type SessionCharacterBinding,
@@ -289,6 +314,9 @@ export {
   type SessionToolPermissions,
   type SessionUserBinding,
   type SessionUserSnapshotInput,
+  type SessionsMergeOptions,
+  type SessionsMergePreviewOptions,
+  type SessionsResetBranchOptions,
   type SessionsResource,
   type TimelineFloor,
   type TimelineMessage,
@@ -428,6 +456,18 @@ export {
   type VariableScope,
   type VariablesUpsertManyResult,
 } from "./variables.js";
+export {
+  createVcTagsResource,
+  type VcTagRecord,
+  type VcTagsCreateOptions,
+  type VcTagsGetDetailOptions,
+  type VcTagsListMeta,
+  type VcTagsListOptions,
+  type VcTagsListResult,
+  type VcTagsRemoveOptions,
+  type VcTagsResource,
+  type VcTagTargetType,
+} from "./vc-tags.js";
 export {
   createWorldbookEntriesResource,
   type WorldbookEntriesBatchDeleteResult,

@@ -179,12 +179,18 @@ export interface PromptSnapshotRecord {
   presetId: string | null;
   presetUpdatedAt: number | null;
   presetVersion: number | null;
+  presetVersionId?: string | null;
+  presetContentHash?: string | null;
   worldbookId: string | null;
   worldbookUpdatedAt: number | null;
   worldbookVersion: number | null;
+  worldbookVersionId?: string | null;
+  worldbookContentHash?: string | null;
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
   regexProfileVersion: number | null;
+  regexProfileVersionId?: string | null;
+  regexProfileContentHash?: string | null;
   characterId: string | null;
   characterVersionId: string | null;
   characterImportedFormat: string | null;

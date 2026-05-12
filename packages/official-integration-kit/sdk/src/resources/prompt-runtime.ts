@@ -216,6 +216,9 @@ export type PromptRuntimeDiagnostic = { code: string; message: string; severity:
 export type PromptRuntimeAssetSummary = {
   id: string;
   name: string | null;
+  versionId?: string | null;
+  versionNo?: number | null;
+  contentHash?: string | null;
 };
 
 export type PromptRuntimeAssetsView = {
@@ -1979,6 +1982,9 @@ function mapPromptRuntimeAssetSummary(value: unknown): PromptRuntimeAssetSummary
   return {
     id: readString(record.id),
     name: typeof record.name === "string" ? record.name : null,
+    ...(record.version_id !== undefined ? { versionId: readNullableString(record.version_id) } : {}),
+    ...(record.version_no !== undefined ? { versionNo: readNullableNumber(record.version_no) } : {}),
+    ...(record.content_hash !== undefined ? { contentHash: readNullableString(record.content_hash) } : {}),
   };
 }
 

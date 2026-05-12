@@ -21,6 +21,7 @@ import { createMemoriesResource, type MemoriesResource } from "../resources/memo
 import { createMemoryEdgesResource, type MemoryEdgesResource } from "../resources/memory-edges.js";
 import { createMessagesResource, type MessagesResource } from "../resources/messages.js";
 import { createPagesResource, type PagesResource } from "../resources/pages.js";
+import { createOperationLogsResource, type OperationLogsResource } from "../resources/operation-logs.js";
 import { createPresetEntriesResource, type PresetEntriesResource } from "../resources/preset-entries.js";
 import { createPresetsResource, type PresetsResource } from "../resources/presets.js";
 import { createPromptRuntimeResource, type PromptRuntimeResource } from "../resources/prompt-runtime.js";
@@ -29,6 +30,7 @@ import { createSessionStateResource, type SessionStateResource } from "../resour
 import { createSessionsResource, type SessionsResource } from "../resources/sessions.js";
 import { createToolsResource, type ToolsResource } from "../resources/tools.js";
 import { createUsersResource, type UsersResource } from "../resources/users.js";
+import { createVcTagsResource, type VcTagsResource } from "../resources/vc-tags.js";
 import { createVariablesResource, type VariablesResource } from "../resources/variables.js";
 import { createWorldbookEntriesResource, type WorldbookEntriesResource } from "../resources/worldbook-entries.js";
 import { createWorldbooksResource, type WorldbooksResource } from "../resources/worldbooks.js";
@@ -55,6 +57,7 @@ export type TavernClient = ApiClient & {
   memoryEdges: MemoryEdgesResource;
   messages: MessagesResource;
   memoryScopes: MemoryScopesResource;
+  operationLogs: OperationLogsResource;
   pages: PagesResource;
   presetEntries: PresetEntriesResource;
   presets: PresetsResource;
@@ -64,6 +67,7 @@ export type TavernClient = ApiClient & {
   sessions: SessionsResource;
   tools: ToolsResource;
   users: UsersResource;
+  vcTags: VcTagsResource;
   variables: VariablesResource;
   worldbookEntries: WorldbookEntriesResource;
   worldbooks: WorldbooksResource;
@@ -96,6 +100,7 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     memoryEdges: createMemoryEdgesResource(transport),
     messages: createMessagesResource(transport),
     memoryScopes: createMemoryScopesResource(transport),
+    operationLogs: createOperationLogsResource(transport),
     pages: createPagesResource(transport),
     presetEntries: createPresetEntriesResource(transport),
     presets: createPresetsResource(transport),
@@ -105,6 +110,7 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     sessions: createSessionsResource(transport),
     tools: createToolsResource(transport),
     users: createUsersResource(transport),
+    vcTags: createVcTagsResource(transport),
     variables: createVariablesResource(transport),
     worldbookEntries: createWorldbookEntriesResource(transport),
     worldbooks: createWorldbooksResource(transport),

@@ -5,6 +5,10 @@ import { sendError, parseWithSchema } from "../../lib/http.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "../schemas/common.js";
 import { getRequestAuthContext } from "../../plugins/auth.js";
 import {
+  operationActorFromRequest,
+  operationRequestIdFromRequest,
+} from "../../services/operation-log-service.js";
+import {
   promptRuntimeAssetsResponseJsonSchema,
   promptRuntimeCompareBodyJsonSchema,
   promptRuntimeCompareResponseJsonSchema,
@@ -339,6 +343,12 @@ export async function registerPromptRuntimeRoutes(
         auth.accountId,
         mapPolicyPatchBodyToCamelCase(parsedBody.data),
         auth.subject ?? auth.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "PATCH /sessions/:id/prompt-runtime/policy",
+        },
       );
       return reply.send({ data: mapPolicyViewToSnakeCase(policy) });
     } catch (error) {
@@ -421,6 +431,12 @@ export async function registerPromptRuntimeRoutes(
         auth.accountId,
         mapPolicyPatchBodyToCamelCase(parsedBody.data),
         auth.subject ?? auth.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "PATCH /sessions/:id/prompt-runtime/branches/:branchId/policy",
+        },
       );
       return reply.send({ data: mapPolicyViewToSnakeCase(policy) });
     } catch (error) {
@@ -1145,12 +1161,18 @@ function mapPromptSnapshotToSnakeCase(snapshot: PromptRuntimeHistoricalExplain["
     preset_id: snapshot.presetId,
     preset_updated_at: snapshot.presetUpdatedAt,
     preset_version: snapshot.presetVersion,
+    preset_version_id: snapshot.presetVersionId ?? null,
+    preset_content_hash: snapshot.presetContentHash ?? null,
     worldbook_id: snapshot.worldbookId,
     worldbook_updated_at: snapshot.worldbookUpdatedAt,
     worldbook_version: snapshot.worldbookVersion,
+    worldbook_version_id: snapshot.worldbookVersionId ?? null,
+    worldbook_content_hash: snapshot.worldbookContentHash ?? null,
     regex_profile_id: snapshot.regexProfileId,
     regex_profile_updated_at: snapshot.regexProfileUpdatedAt,
     regex_profile_version: snapshot.regexProfileVersion,
+    regex_profile_version_id: snapshot.regexProfileVersionId ?? null,
+    regex_profile_content_hash: snapshot.regexProfileContentHash ?? null,
     character_id: snapshot.characterId ?? null,
     character_version_id: snapshot.characterVersionId ?? null,
     character_imported_format: snapshot.characterImportedFormat ?? null,
@@ -1174,6 +1196,9 @@ function mapAssetSummaryToSnakeCase(asset: PromptRuntimeAssetsView[keyof PromptR
   return {
     id: asset.id,
     name: asset.name,
+    ...(asset.versionId !== undefined ? { version_id: asset.versionId } : {}),
+    ...(asset.versionNo !== undefined ? { version_no: asset.versionNo } : {}),
+    ...(asset.contentHash !== undefined ? { content_hash: asset.contentHash } : {}),
   };
 }
 

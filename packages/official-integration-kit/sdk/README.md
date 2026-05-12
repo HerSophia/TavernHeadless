@@ -105,6 +105,35 @@ const rawSession = await client.request("GET", "/sessions/{id}", {
 
 下面用几个常见场景展示资源方法的用法。
 
+### Operation Logs 操作日志
+
+Operation Logs 用来读取审计记录。它保存操作来源、动作、目标、引用和摘要 diff，不保存完整提示词、完整消息、完整工具参数或模型密钥。
+
+```ts
+const logs = await client.operationLogs.list({
+  accountId: "account-1",
+  targetType: "session",
+  targetId: "session-1",
+  limit: 20,
+});
+
+const sessionLogs = await client.operationLogs.listForSession({
+  accountId: "account-1",
+  sessionId: "session-1",
+  action: "update_session",
+});
+
+const floorLogs = await client.operationLogs.listForFloor({
+  accountId: "account-1",
+  floorId: "floor-1",
+  runId: "run-1",
+});
+
+console.log(logs.logs[0]?.action);
+console.log(sessionLogs.meta.total);
+console.log(floorLogs.logs[0]?.diff);
+```
+
 ### Variables 的三个观察面
 
 变量资源现在同时提供三组方法：
@@ -438,6 +467,111 @@ console.log(result.promptSnapshot);
 console.log(result.runtimeTrace);
 ```
 
+### 更新会话资产绑定
+
+`sessions.update()` 可以更新会话绑定的预设、世界书和正则配置。
+
+这三个字段遵循同一套语义：
+
+- 省略字段：不改变现有绑定。
+- 传入字符串：绑定到该账号下对应资产。
+- 传入 `null`：明确解除绑定。
+
+SDK 的请求体压缩只会去掉 `undefined`，会保留显式传入的 `null`。
+
+如果需要会话级深度绑定，可以同时传入 `deepBinding` 和版本 ID：
+
+- `deepBinding: false`：按资产 ID 读取当前内容，并清空版本绑定。
+- `deepBinding: true`：按绑定版本读取内容；未传版本 ID 时，后端会使用该资产当前版本。
+- `presetVersionId`、`regexProfileVersionId`、`worldbookVersionId` 必须属于同一账号下的对应资产。
+
+```ts
+await client.sessions.update({
+  accountId: "account-1",
+  sessionId: "session-1",
+  presetId: null,
+  regexProfileId: null,
+  worldbookProfileId: null,
+});
+```
+
+```ts
+await client.sessions.update({
+  accountId: "account-1",
+  sessionId: "session-1",
+  deepBinding: true,
+  presetId: "preset-1",
+  presetVersionId: "preset-ver-3",
+});
+```
+
+三类资产版本可以直接读取：
+
+```ts
+const presetVersions = await client.presets.listVersions({ presetId: "preset-1" });
+const version = await client.presets.getVersion({ presetId: "preset-1", versionId: presetVersions[0]!.id });
+console.log(version.contentHash, version.snapshot);
+```
+
+
+也可以比较版本和执行显式回滚：
+
+```ts
+const diff = await client.presets.compareVersions({
+  presetId: "preset-1",
+  leftVersionId: "preset-ver-1",
+  rightVersionId: "preset-ver-2",
+});
+
+const rollback = await client.presets.rollbackVersion({
+  presetId: "preset-1",
+  versionId: "preset-ver-1",
+  expectedVersion: 2,
+});
+
+console.log(diff.diff.totalChanges, rollback.versionId);
+```
+
+VC 标签可以给 Floor 或资产版本保存一个账号内唯一的名字：
+
+```ts
+await client.vcTags.create({
+  name: "before-big-change",
+  targetType: "floor",
+  targetId: "floor-1",
+});
+
+const tags = await client.vcTags.list({ targetType: "floor", targetId: "floor-1" });
+console.log(tags.data.map((tag) => tag.name));
+```
+
+会话分支合并通过 `sessions` 资源提供。当前版本只自动执行无冲突的 fast-forward 合并；如果源分支已经包含在目标分支历史里，会返回 `no_op`。源分支和目标分支都在共同祖先之后有新 floor 时会被阻止。源分支待合入 floor 必须全部是 `committed`，两边分支都不能有活跃 run。
+
+```ts
+const preview = await client.sessions.mergePreview({
+  accountId: "account-1",
+  sessionId: "session-1",
+  branchId: "feature",
+  targetBranchId: "main",
+});
+
+if (preview.canMerge) {
+  const result = await client.sessions.merge({
+    accountId: "account-1",
+    sessionId: "session-1",
+    branchId: "feature",
+    targetBranchId: "main",
+    expectedTargetHeadFloorId: preview.targetHeadFloorId ?? "",
+  });
+
+  console.log(result.strategy, result.mergedFloorIds, result.operationId);
+} else {
+  console.log(preview.conflicts.map((conflict) => conflict.code));
+}
+```
+
+`merge()` 会把源分支独有 floor 克隆到目标分支，并克隆消息页、消息、prompt snapshot、result snapshot、explain snapshot 和 branch-local variable snapshot。成功后会写入 `merge_branch` 操作日志。
+
 Chat 相关方法会保留后端返回的这些字段：
 
 - `generatedText`
@@ -457,7 +591,7 @@ Chat 相关方法会保留后端返回的这些字段：
 
 `client.backup` 与 `client.backupJobs` 用于核心资产备份 v1。
 
-- `client.backup.createExportJob(...)`：创建 `characters` / `worldbooks` / `sessions` 的导出作业
+- `client.backup.createExportJob(...)`：创建 `characters` / `presets` / `worldbooks` / `regex_profiles` / `sessions` 的导出作业
 - `client.backup.previewRestore(...)`：对 `.thbackup` JSON 做同步 restore preview
 - `client.backup.createRestoreJob(...)`：创建异步恢复作业
 - `client.backupJobs.list(...)` / `getDetail(...)` / `retry(...)` / `cancel(...)`：观察和控制作业
@@ -474,6 +608,8 @@ const exportJob = await client.backup.createExportJob({
   sessionIds: ["session-1"],
   includeLinkedAssets: true,
 });
+
+// createExportJob 也支持 characterIds、presetIds、worldbookIds、regexProfileIds 和 domains。
 
 const preview = await client.backup.previewRestore({
   accountId: "account-1",
@@ -498,6 +634,8 @@ console.log(restoreDetail.result);
 ```
 
 `BackupFile` 直接复用 `.thbackup` 文件契约本身，因此它保持文件格式使用的 `snake_case` 字段名。SDK 资源方法的返回值仍然会按既有约定映射为 `camelCase`。
+
+如果备份文件中包含 session 的 `profile_binding.deep_binding` 与 preset / worldbook / regex profile 版本引用，restore 会把这些引用映射到新资源和新版本行。
 
 ### 会话级工具目录与会话基础权限
 

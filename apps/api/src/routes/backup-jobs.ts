@@ -29,7 +29,7 @@ import {
   RuntimeJobQueryService,
   type RuntimeJobView,
 } from "../services/runtime-job-query-service.js";
-import { thBackupFileSchema } from "@tavern/shared";
+import { TH_BACKUP_DOMAINS, thBackupFileSchema } from "@tavern/shared";
 
 const BACKUP_JOBS_DESCRIPTION = "高级开发特性。该组路由用于观察和管理 Background Job Runtime 中的核心资产备份作业，主要面向开发、调试、运维和自动化工具。";
 
@@ -49,8 +49,13 @@ function createBackupCountSummaryExample(): BackupCountSummary {
   return {
     characters: 1,
     character_versions: 1,
+    presets: 1,
+    preset_versions: 1,
     worldbooks: 1,
+    worldbook_versions: 1,
     worldbook_entries: 3,
+    regex_profiles: 1,
+    regex_profile_versions: 1,
     sessions: 1,
     session_branches: 2,
     floors: 4,
@@ -68,8 +73,13 @@ const backupCountSummaryJsonSchema = {
   required: [
     "characters",
     "character_versions",
+    "presets",
+    "preset_versions",
     "worldbooks",
+    "worldbook_versions",
     "worldbook_entries",
+    "regex_profiles",
+    "regex_profile_versions",
     "sessions",
     "session_branches",
     "floors",
@@ -83,8 +93,13 @@ const backupCountSummaryJsonSchema = {
   properties: {
     characters: { type: "integer", minimum: 0 },
     character_versions: { type: "integer", minimum: 0 },
+    presets: { type: "integer", minimum: 0 },
+    preset_versions: { type: "integer", minimum: 0 },
     worldbooks: { type: "integer", minimum: 0 },
+    worldbook_versions: { type: "integer", minimum: 0 },
     worldbook_entries: { type: "integer", minimum: 0 },
+    regex_profiles: { type: "integer", minimum: 0 },
+    regex_profile_versions: { type: "integer", minimum: 0 },
     sessions: { type: "integer", minimum: 0 },
     session_branches: { type: "integer", minimum: 0 },
     floors: { type: "integer", minimum: 0 },
@@ -103,8 +118,13 @@ const backupRestoreCreatedSummaryJsonSchema = {
   required: [
     "characters",
     "character_versions",
+    "presets",
+    "preset_versions",
     "worldbooks",
+    "worldbook_versions",
     "worldbook_entries",
+    "regex_profiles",
+    "regex_profile_versions",
     "sessions",
     "session_branches",
     "floors",
@@ -138,7 +158,7 @@ const backupRenamedResourceJsonSchema = {
   type: "object",
   required: ["type", "old_name", "new_name"],
   properties: {
-    type: { type: "string", enum: ["character", "worldbook", "session"] },
+    type: { type: "string", enum: ["character", "preset", "worldbook", "regex_profile", "session"] },
     old_name: { type: "string" },
     new_name: { type: "string" },
   },
@@ -158,17 +178,19 @@ const backupDroppedBindingSummaryJsonSchema = {
 
 const backupExportJobRequestSummaryJsonSchema = {
   type: "object",
-  required: ["domains", "session_ids", "character_ids", "worldbook_ids", "include_linked_assets", "include_secrets"],
+  required: ["domains", "session_ids", "character_ids", "preset_ids", "worldbook_ids", "regex_profile_ids", "include_linked_assets", "include_secrets"],
   properties: {
     domains: {
       anyOf: [
-        { type: "array", items: { type: "string", enum: ["characters", "worldbooks", "sessions"] } },
+        { type: "array", items: { type: "string", enum: [...TH_BACKUP_DOMAINS] } },
         { type: "null" },
       ],
     },
     session_ids: { type: "array", items: { type: "string" } },
     character_ids: { type: "array", items: { type: "string" } },
+    preset_ids: { type: "array", items: { type: "string" } },
     worldbook_ids: { type: "array", items: { type: "string" } },
+    regex_profile_ids: { type: "array", items: { type: "string" } },
     include_linked_assets: { type: "boolean" },
     include_secrets: { type: "boolean", enum: [false] },
   },
@@ -183,7 +205,7 @@ const backupRestoreJobRequestSummaryJsonSchema = {
     backup_kind: { anyOf: [{ type: "string" }, { type: "null" }] },
     included_domains: {
       anyOf: [
-        { type: "array", items: { type: "string", enum: ["characters", "worldbooks", "sessions"] } },
+        { type: "array", items: { type: "string", enum: [...TH_BACKUP_DOMAINS] } },
         { type: "null" },
       ],
     },
@@ -200,7 +222,7 @@ const backupExportJobResultJsonSchema = {
     file_name: { type: "string" },
     content_type: { type: "string" },
     byte_length: { type: "integer", minimum: 0 },
-    included_domains: { type: "array", items: { type: "string", enum: ["characters", "worldbooks", "sessions"] } },
+    included_domains: { type: "array", items: { type: "string", enum: [...TH_BACKUP_DOMAINS] } },
     counts: backupCountSummaryJsonSchema,
   },
   additionalProperties: false,
@@ -228,7 +250,9 @@ const backupJobExample = {
     domains: null,
     session_ids: ["sess_demo"],
     character_ids: [],
+    preset_ids: [],
     worldbook_ids: [],
+    regex_profile_ids: [],
     include_linked_assets: true,
     include_secrets: false,
   },
@@ -236,7 +260,7 @@ const backupJobExample = {
     file_name: "core-assets-20250101-120000.thbackup",
     content_type: "application/json; charset=utf-8",
     byte_length: 2048,
-    included_domains: ["characters", "worldbooks", "sessions"],
+    included_domains: ["characters", "presets", "worldbooks", "regex_profiles", "sessions"],
     counts: createBackupCountSummaryExample(),
   },
   output_artifact_path: "backup-job-export-1/output.thbackup",
@@ -386,7 +410,9 @@ function summarizeBackupJobRequest(job: RuntimeJobView) {
       domains: parsed.data.domains ?? null,
       session_ids: parsed.data.sessionIds ?? [],
       character_ids: parsed.data.characterIds ?? [],
+      preset_ids: parsed.data.presetIds ?? [],
       worldbook_ids: parsed.data.worldbookIds ?? [],
+      regex_profile_ids: parsed.data.regexProfileIds ?? [],
       include_linked_assets: parsed.data.includeLinkedAssets,
       include_secrets: parsed.data.includeSecrets,
     };

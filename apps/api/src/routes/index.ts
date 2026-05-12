@@ -28,6 +28,10 @@ import { registerAccountRoutes } from "./accounts";
 import { registerUserRoutes } from "./users";
 import { registerExportRoutes } from "./exports";
 import { registerClientDataRoutes } from "../client-data/client-data-routes.js";
+import { registerAssetVersionRoutes } from "./asset-versions.js";
+import { registerBranchVcRoutes } from "./branch-vc.js";
+import { registerOperationLogRoutes } from "./operation-logs.js";
+import { registerVcTagRoutes } from "./vc-tags.js";
 import type { AccountMode } from "../accounts/constants.js";
 
 export interface CrudRoutesOptions {
@@ -86,6 +90,12 @@ export async function registerCrudRoutes(
   await registerChatTransferJobRoutes(app, connection, options.chatTransferJobs);
   await registerWorldbookEntryRoutes(app, connection);
   await registerPresetEntryRoutes(app, connection);
+  await registerAssetVersionRoutes(app, connection);
+  await registerBranchVcRoutes(app, connection, {
+    floorRun: options.floorRun,
+  });
+  await registerOperationLogRoutes(app, connection);
+  await registerVcTagRoutes(app, connection);
   await registerToolRoutes(app, connection, {
     enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,
   });

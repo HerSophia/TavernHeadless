@@ -13,9 +13,9 @@ import type { EventTone } from "../../../stores/workspace-ui";
 type AddEvent = (key: string, tone?: EventTone, vars?: Record<string, number | string>) => void;
 
 type WorkspaceRuntimeStore = {
-  applyAssetFromLibrary: (assetId: string) => AssetApplyResult;
-  attachWorldbook: () => SessionState | null;
-  detachWorldbook: () => { guarded: boolean; session: SessionState | null };
+  applyAssetFromLibrary: (assetId: string) => Promise<AssetApplyResult>;
+  attachWorldbook: () => Promise<{ apiSyncFailed: boolean; session: SessionState | null }>;
+  detachWorldbook: () => Promise<{ apiSyncFailed: boolean; guarded: boolean; session: SessionState | null }>;
   previewLibraryAsset: (assetId: string) => WorkspaceAsset | null;
   replaceUser: () => SessionState | null;
   sendMessage: (content: string) => Promise<SendMessageResult>;
@@ -23,7 +23,6 @@ type WorkspaceRuntimeStore = {
 };
 
 type UseWorkspaceRuntimeActionsOptions = {
-  activePresetAssetId: Ref<string>;
   activeSession: ComputedRef<SessionState | null>;
   addEvent: AddEvent;
   flashBindingCard: () => void;
@@ -46,8 +45,9 @@ export function useWorkspaceRuntimeActions(options: UseWorkspaceRuntimeActionsOp
     });
   }
 
-  function attachWorldbook(): void {
-    const session = options.workspace.attachWorldbook();
+  async function attachWorldbook(): Promise<void> {
+    const result = await options.workspace.attachWorldbook();
+    const session = result.session;
     if (!session) {
       return;
     }
@@ -56,10 +56,13 @@ export function useWorkspaceRuntimeActions(options: UseWorkspaceRuntimeActionsOp
     options.addEvent("events.attachWorldbook", "success", {
       count: session.worldbookCount
     });
+    if (result.apiSyncFailed) {
+      options.addEvent("events.apiSyncFailed", "warn");
+    }
   }
 
-  function detachWorldbook(): void {
-    const result = options.workspace.detachWorldbook();
+  async function detachWorldbook(): Promise<void> {
+    const result = await options.workspace.detachWorldbook();
     if (!result.session) {
       return;
     }
@@ -73,6 +76,9 @@ export function useWorkspaceRuntimeActions(options: UseWorkspaceRuntimeActionsOp
     options.addEvent("events.detachWorldbook", "warn", {
       count: result.session.worldbookCount
     });
+    if (result.apiSyncFailed) {
+      options.addEvent("events.apiSyncFailed", "warn");
+    }
   }
 
   function applyUserAsset(): void {
@@ -93,8 +99,8 @@ export function useWorkspaceRuntimeActions(options: UseWorkspaceRuntimeActionsOp
     });
   }
 
-  function applyLibraryAsset(assetId: string): void {
-    const result = options.workspace.applyAssetFromLibrary(assetId);
+  async function applyLibraryAsset(assetId: string): Promise<void> {
+    const result = await options.workspace.applyAssetFromLibrary(assetId);
     if (!result.ok || !result.asset) {
       if (result.reason === "no_session") {
         options.addEvent("events.sessionNone", "warn");
@@ -109,14 +115,13 @@ export function useWorkspaceRuntimeActions(options: UseWorkspaceRuntimeActionsOp
       options.flashBindingCard();
     }
 
-    if (result.asset.kind === "preset") {
-      options.activePresetAssetId.value = result.asset.id;
-    }
-
     options.addEvent("events.assetApplied", "success", {
       asset: result.asset.name,
       kind: options.resolveAssetKindLabel(result.asset.kind)
     });
+    if (result.apiSyncFailed) {
+      options.addEvent("events.apiSyncFailed", "warn");
+    }
   }
 
   function toggleAssetFavorite(assetId: string): void {

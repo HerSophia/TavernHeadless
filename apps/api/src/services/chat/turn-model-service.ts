@@ -24,6 +24,7 @@ import type {
 } from "./contracts.js";
 import type { FirstPartyStateContext } from "./types.js";
 import { ChatServiceError } from "./errors.js";
+import type { SessionBranchAssetBindingState } from "../variables/host/session-branch-registry-service.js";
 import { mergeSessionMetadataWithFirstPartyState } from "./shared/metadata.js";
 import { resolveMemoryWritePolicy as resolveMemoryWritePolicyFromRuntimeMode } from "../memory/shared/index.js";
 
@@ -72,6 +73,10 @@ export class TurnModelService {
       presetId: string | null;
       worldbookProfileId: string | null;
       regexProfileId: string | null;
+      deepBinding?: boolean;
+      presetVersionId?: string | null;
+      worldbookVersionId?: string | null;
+      regexProfileVersionId?: string | null;
       metadataJson: string | null;
       characterSnapshotJson: string | null;
       characterId?: string | null;
@@ -81,11 +86,28 @@ export class TurnModelService {
     },
     resolvedTurnModels: ResolvedTurnModels,
     firstPartyStateContext?: FirstPartyStateContext,
+    branchAssetBinding?: SessionBranchAssetBindingState | null,
   ): SessionPromptInfo {
+    const binding = branchAssetBinding ?? null;
+    const bindingPresetId = binding ? binding.presetId : session.presetId;
+    const bindingWorldbookProfileId = binding ? binding.worldbookProfileId : session.worldbookProfileId;
+    const bindingRegexProfileId = binding ? binding.regexProfileId : session.regexProfileId;
+    const bindingDeepBinding = binding ? binding.deepBinding : session.deepBinding ?? false;
+    const resolvedPresetId = resolvedTurnModels.narrator?.presetId ?? bindingPresetId;
+    const presetVersionId = resolvedPresetId === bindingPresetId
+      ? binding
+        ? binding.presetVersionId
+        : session.presetVersionId ?? null
+      : null;
+
     return {
-      presetId: resolvedTurnModels.narrator?.presetId ?? session.presetId,
-      worldbookProfileId: session.worldbookProfileId,
-      regexProfileId: session.regexProfileId,
+      presetId: resolvedPresetId,
+      worldbookProfileId: bindingWorldbookProfileId,
+      regexProfileId: bindingRegexProfileId,
+      deepBinding: bindingDeepBinding,
+      presetVersionId,
+      worldbookVersionId: binding ? binding.worldbookVersionId : session.worldbookVersionId ?? null,
+      regexProfileVersionId: binding ? binding.regexProfileVersionId : session.regexProfileVersionId ?? null,
       metadataJson: mergeSessionMetadataWithFirstPartyState(session.metadataJson, firstPartyStateContext),
       characterSnapshotJson: session.characterSnapshotJson,
       characterId: session.characterId ?? null,

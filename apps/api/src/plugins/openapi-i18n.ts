@@ -38,6 +38,9 @@ const TAG_DESCRIPTION_ZH: Record<string, string> = {
   "llm-profiles": "LLM 配置档案与激活绑定",
   accounts: "账号管理",
   users: "账号用户卡管理",
+  "asset-versions": "Prompt 资产版本读取、比较与回滚接口",
+  "operation-logs": "Operation Journal 查询接口",
+  "vc-tags": "Floor 与资产版本的版本标签接口",
 };
 
 const TEXT_ZH_MAP: Record<string, string> = {

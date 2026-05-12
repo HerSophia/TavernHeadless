@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNull, like, sql } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
@@ -27,6 +27,13 @@ import { deleteVariablesForSession } from "../services/variables/cleanup/variabl
 import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
 import type { ClientDataConfig } from "../client-data/client-data-service.js";
 import { SessionStateService } from "../session-state/session-state-service.js";
+import { SessionAssetBindingService } from "../services/session-asset-binding-service.js";
+import {
+  OperationLogService,
+  operationActorFromRequest,
+  operationRequestIdFromRequest,
+} from "../services/operation-log-service.js";
+import { VcDiffService } from "../services/vc-diff-service.js";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
@@ -56,9 +63,13 @@ const createSessionSchema = z.object({
   character_snapshot: characterSnapshotSchema.optional(),
   user_id: z.string().trim().min(1).optional(),
   user_snapshot: userSnapshotSchema.optional(),
-  preset_id: z.string().trim().min(1).optional(),
-  regex_profile_id: z.string().trim().min(1).optional(),
-  worldbook_profile_id: z.string().trim().min(1).optional(),
+  preset_id: z.string().trim().min(1).nullable().optional(),
+  regex_profile_id: z.string().trim().min(1).nullable().optional(),
+  worldbook_profile_id: z.string().trim().min(1).nullable().optional(),
+  deep_binding: z.boolean().optional(),
+  preset_version_id: z.string().trim().min(1).nullable().optional(),
+  regex_profile_version_id: z.string().trim().min(1).nullable().optional(),
+  worldbook_version_id: z.string().trim().min(1).nullable().optional(),
   model_provider: z.string().trim().min(1).optional(),
   model_name: z.string().trim().min(1).optional(),
   model_params: z.unknown().optional(),
@@ -114,6 +125,10 @@ const sessionBodyExample = {
   preset_id: "preset_story",
   regex_profile_id: "regex_safe",
   worldbook_profile_id: "wb_world",
+  deep_binding: false,
+  preset_version_id: null,
+  regex_profile_version_id: null,
+  worldbook_version_id: null,
   model_provider: "openai",
   model_name: "gpt-4o-mini",
   model_params: {
@@ -149,6 +164,10 @@ const sessionExample = {
   preset_id: "preset_story",
   regex_profile_id: "regex_safe",
   worldbook_profile_id: "wb_world",
+  deep_binding: false,
+  preset_version_id: null,
+  regex_profile_version_id: null,
+  worldbook_version_id: null,
   model_provider: "openai",
   model_name: "gpt-4o-mini",
   model_params: {
@@ -213,9 +232,13 @@ const sessionBodyJsonSchema = {
     },
     user_id: { type: "string", minLength: 1 },
     user_snapshot: { type: "object", additionalProperties: true },
-    preset_id: { type: "string", minLength: 1 },
-    regex_profile_id: { type: "string", minLength: 1 },
-    worldbook_profile_id: { type: "string", minLength: 1 },
+    preset_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    regex_profile_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    worldbook_profile_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    deep_binding: { type: "boolean" },
+    preset_version_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    regex_profile_version_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+    worldbook_version_id: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
     model_provider: { type: "string", minLength: 1 },
     model_name: { type: "string", minLength: 1 },
     model_params: {},
@@ -296,6 +319,10 @@ const sessionJsonSchema = {
     "preset_id",
     "regex_profile_id",
     "worldbook_profile_id",
+    "deep_binding",
+    "preset_version_id",
+    "regex_profile_version_id",
+    "worldbook_version_id",
     "model_provider",
     "model_name",
     "model_params",
@@ -313,6 +340,10 @@ const sessionJsonSchema = {
     preset_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     regex_profile_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     worldbook_profile_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    deep_binding: { type: "boolean" },
+    preset_version_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    regex_profile_version_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    worldbook_version_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     model_provider: { anyOf: [{ type: "string" }, { type: "null" }] },
     model_name: { anyOf: [{ type: "string" }, { type: "null" }] },
     model_params: {},
@@ -818,6 +849,10 @@ function toSessionResponse(row: typeof sessions.$inferSelect) {
     preset_id: row.presetId,
     regex_profile_id: row.regexProfileId,
     worldbook_profile_id: row.worldbookProfileId,
+    deep_binding: row.deepBinding,
+    preset_version_id: row.presetVersionId,
+    regex_profile_version_id: row.regexProfileVersionId,
+    worldbook_version_id: row.worldbookVersionId,
     model_provider: row.modelProvider,
     model_name: row.modelName,
     model_params: parseJsonField(row.modelParamsJson),
@@ -826,6 +861,69 @@ function toSessionResponse(row: typeof sessions.$inferSelect) {
     created_at: row.createdAt,
     updated_at: row.updatedAt
   };
+}
+
+function toSessionOperationRef(row: typeof sessions.$inferSelect) {
+  return {
+    session_id: row.id,
+    title: row.title,
+    status: row.status,
+    character_id: row.characterId,
+    character_version_id: row.characterVersionId,
+    character_sync_policy: row.characterSyncPolicy,
+    user_id: row.userId,
+    preset_id: row.presetId,
+    preset_version_id: row.presetVersionId,
+    regex_profile_id: row.regexProfileId,
+    regex_profile_version_id: row.regexProfileVersionId,
+    worldbook_profile_id: row.worldbookProfileId,
+    worldbook_version_id: row.worldbookVersionId,
+    deep_binding: row.deepBinding,
+    model_provider: row.modelProvider,
+    model_name: row.modelName,
+    prompt_mode: row.promptMode,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+  };
+}
+
+type SessionOperationLogInput = {
+  accountId: string;
+  action: string;
+  sessionId: string;
+  branchId?: string | null;
+  targetId?: string | null;
+  beforeRef?: unknown;
+  afterRef?: unknown;
+  metadata?: unknown;
+  createdAt?: number;
+};
+
+function appendSessionOperationLog(
+  tx: DbExecutor,
+  request: FastifyRequest,
+  input: SessionOperationLogInput,
+): void {
+  const beforeRef = input.beforeRef ?? null;
+  const afterRef = input.afterRef ?? null;
+
+  new OperationLogService(tx).append({
+    ...operationActorFromRequest(request),
+    accountId: input.accountId,
+    requestId: operationRequestIdFromRequest(request),
+    sourceType: "http",
+    action: input.action,
+    status: "succeeded",
+    sessionId: input.sessionId,
+    branchId: input.branchId,
+    targetType: "session",
+    targetId: input.targetId ?? input.sessionId,
+    beforeRef,
+    afterRef,
+    diff: new VcDiffService().diff(beforeRef, afterRef),
+    metadata: input.metadata,
+    createdAt: input.createdAt,
+  });
 }
 
 function toSessionActiveRunResponse(summary: Awaited<ReturnType<FloorRunService["getActiveRunSummary"]>>) {
@@ -993,6 +1091,7 @@ async function resolveUserBinding(
   };
 }
 
+
 function buildFloorMetadataForUserBinding(userId: string | null, userSnapshotJson: string | null, replacedAt: number) {
   const snapshotSummary = parseUserSnapshotSummary(userSnapshotJson);
   if (!userId && !snapshotSummary) {
@@ -1031,8 +1130,10 @@ function mergeFloorMetadataWithUserBinding(
   return stringifyJsonField(metadata);
 }
 
-type SyncCharacterBindingResult = {
-  row: typeof sessions.$inferSelect;
+type SyncCharacterBindingPlan = {
+  latestVersionId: string;
+  snapshotJson: string;
+  changed: boolean;
 };
 
 function sessionOwnershipFilter(sessionId: string, accountId: string) {
@@ -1079,12 +1180,12 @@ function deleteOwnedSessionAndBindings(
   return deleted;
 }
 
-async function syncCharacterBinding(
+async function resolveCharacterBindingSync(
   db: DatabaseConnection["db"],
   accountId: string,
   sessionRow: typeof sessions.$inferSelect,
   force: boolean
-): Promise<SyncCharacterBindingResult | BindingResolutionError> {
+): Promise<SyncCharacterBindingPlan | BindingResolutionError> {
   if (!sessionRow.characterId) {
     return {
       statusCode: 409,
@@ -1107,23 +1208,21 @@ async function syncCharacterBinding(
     return { statusCode: 404, code: "character_not_found", message: "Character version not found" };
   }
 
+  if (!latestVersion.id) {
+    return { statusCode: 500, code: "invalid_character_version", message: "Stored character version is invalid" };
+  }
+
   const snapshot = normalizeSessionCharacterSnapshot(parseJsonField(latestVersion.dataJson));
   if (!snapshot) {
     return { statusCode: 500, code: "invalid_character_snapshot", message: "Stored character snapshot is invalid" };
   }
 
-  const snapshotJson = stringifyJsonField(snapshot);
+  const snapshotJson = stringifyJsonField(snapshot) ?? "{}";
   if (sessionRow.characterVersionId === latestVersion.id && sessionRow.characterSnapshotJson === snapshotJson) {
-    return { row: sessionRow };
+    return { latestVersionId: latestVersion.id, snapshotJson, changed: false };
   }
 
-  const [updatedRow] = await db
-    .update(sessions)
-    .set({ characterVersionId: latestVersion.id, characterSnapshotJson: snapshotJson, updatedAt: Date.now() })
-    .where(eq(sessions.id, sessionRow.id))
-    .returning();
-
-  return { row: requireRow(updatedRow, "Failed to sync session character binding") };
+  return { latestVersionId: latestVersion.id, snapshotJson, changed: true };
 }
 
 export async function registerSessionRoutes(
@@ -1141,6 +1240,7 @@ export async function registerSessionRoutes(
   const sessionStateService = options.clientData
     ? new SessionStateService(db, { clientData: options.clientData })
     : undefined;
+  const sessionAssetBindingService = new SessionAssetBindingService(db);
 
   app.post("/sessions", {
     schema: {
@@ -1166,11 +1266,15 @@ export async function registerSessionRoutes(
 
     const characterBinding = await resolveCharacterBinding(db, auth.accountId, parsedBody.data);
     const userBinding = await resolveUserBinding(db, auth.accountId, parsedBody.data);
+    const promptAssetBindings = sessionAssetBindingService.resolveCreate(auth.accountId, parsedBody.data);
     if ("statusCode" in characterBinding) {
       return sendError(reply, characterBinding.statusCode, characterBinding.code, characterBinding.message);
     }
     if ("statusCode" in userBinding) {
       return sendError(reply, userBinding.statusCode, userBinding.code, userBinding.message);
+    }
+    if ("statusCode" in promptAssetBindings) {
+      return sendError(reply, promptAssetBindings.statusCode, promptAssetBindings.code, promptAssetBindings.message);
     }
 
     const snapshot = parseSessionCharacterSnapshot(characterBinding.characterSnapshotJson);
@@ -1192,9 +1296,13 @@ export async function registerSessionRoutes(
           characterSnapshotJson: characterBinding.characterSnapshotJson,
           characterSyncPolicy: characterBinding.characterSyncPolicy,
           status: parsedBody.data.status ?? "active",
-          presetId: parsedBody.data.preset_id ?? null,
-          regexProfileId: parsedBody.data.regex_profile_id ?? null,
-          worldbookProfileId: parsedBody.data.worldbook_profile_id ?? null,
+          presetId: promptAssetBindings.presetId,
+          regexProfileId: promptAssetBindings.regexProfileId,
+          worldbookProfileId: promptAssetBindings.worldbookProfileId,
+          deepBinding: promptAssetBindings.deepBinding,
+          presetVersionId: promptAssetBindings.presetVersionId,
+          regexProfileVersionId: promptAssetBindings.regexProfileVersionId,
+          worldbookVersionId: promptAssetBindings.worldbookVersionId,
           modelProvider: parsedBody.data.model_provider ?? null,
           modelName: parsedBody.data.model_name ?? null,
           modelParamsJson: stringifyJsonField(parsedBody.data.model_params),
@@ -1268,6 +1376,20 @@ export async function registerSessionRoutes(
           }).run();
         }
       }
+
+      appendSessionOperationLog(tx, request, {
+        accountId: auth.accountId,
+        action: "create_session",
+        sessionId: createdSession.id,
+        branchId: "main",
+        afterRef: toSessionOperationRef(createdSession),
+        metadata: {
+          route: "POST /sessions",
+          request_fields: Object.keys(parsedBody.data).sort(),
+          greeting_message_count: greetingCandidates.length,
+        },
+        createdAt: now,
+      });
 
       return createdSession;
     });
@@ -1500,16 +1622,37 @@ export async function registerSessionRoutes(
       updates.status = parsedBody.data.status;
     }
 
-    if (parsedBody.data.preset_id !== undefined) {
-      updates.presetId = parsedBody.data.preset_id;
-    }
+    const hasPromptAssetBindingUpdate =
+      parsedBody.data.preset_id !== undefined
+      || parsedBody.data.regex_profile_id !== undefined
+      || parsedBody.data.worldbook_profile_id !== undefined
+      || parsedBody.data.deep_binding !== undefined
+      || parsedBody.data.preset_version_id !== undefined
+      || parsedBody.data.regex_profile_version_id !== undefined
+      || parsedBody.data.worldbook_version_id !== undefined;
 
-    if (parsedBody.data.regex_profile_id !== undefined) {
-      updates.regexProfileId = parsedBody.data.regex_profile_id;
-    }
+    if (hasPromptAssetBindingUpdate) {
+      const promptAssetBindings = sessionAssetBindingService.resolveUpdate(auth.accountId, {
+        presetId: existingSession.presetId,
+        regexProfileId: existingSession.regexProfileId,
+        worldbookProfileId: existingSession.worldbookProfileId,
+        deepBinding: existingSession.deepBinding,
+        presetVersionId: existingSession.presetVersionId,
+        regexProfileVersionId: existingSession.regexProfileVersionId,
+        worldbookVersionId: existingSession.worldbookVersionId,
+      }, parsedBody.data);
 
-    if (parsedBody.data.worldbook_profile_id !== undefined) {
-      updates.worldbookProfileId = parsedBody.data.worldbook_profile_id;
+      if ("statusCode" in promptAssetBindings) {
+        return sendError(reply, promptAssetBindings.statusCode, promptAssetBindings.code, promptAssetBindings.message);
+      }
+
+      updates.presetId = promptAssetBindings.presetId;
+      updates.regexProfileId = promptAssetBindings.regexProfileId;
+      updates.worldbookProfileId = promptAssetBindings.worldbookProfileId;
+      updates.deepBinding = promptAssetBindings.deepBinding;
+      updates.presetVersionId = promptAssetBindings.presetVersionId;
+      updates.regexProfileVersionId = promptAssetBindings.regexProfileVersionId;
+      updates.worldbookVersionId = promptAssetBindings.worldbookVersionId;
     }
 
     if (parsedBody.data.model_provider !== undefined) {
@@ -1535,6 +1678,8 @@ export async function registerSessionRoutes(
     const shouldReplaceFloorUserBinding =
       nextUserId !== existingSession.userId || nextUserSnapshotJson !== existingSession.userSnapshotJson;
 
+    const beforeRef = toSessionOperationRef(existingSession);
+    const requestFields = Object.keys(parsedBody.data).sort();
     const updated = db.transaction((tx) => {
       const [updatedRow] = tx
         .update(sessions)
@@ -1561,6 +1706,24 @@ export async function registerSessionRoutes(
             .where(eq(floors.id, floor.id))
             .run();
         }
+      }
+
+      if (updatedRow) {
+        appendSessionOperationLog(tx, request, {
+          accountId: auth.accountId,
+          action: "update_session",
+          sessionId: updatedRow.id,
+          beforeRef,
+          afterRef: toSessionOperationRef(updatedRow),
+          metadata: {
+            route: "PATCH /sessions/:id",
+            request_fields: requestFields,
+            character_binding_update: hasCharacterBindingUpdate,
+            user_binding_update: hasUserBindingUpdate,
+            prompt_asset_binding_update: hasPromptAssetBindingUpdate,
+            floor_user_binding_replaced: shouldReplaceFloorUserBinding,
+          },
+        });
       }
 
       return updatedRow ?? null;
@@ -1607,12 +1770,50 @@ export async function registerSessionRoutes(
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
-    const synced = await syncCharacterBinding(db, auth.accountId, sessionRow, parsedBody.data.force ?? false);
-    if ("statusCode" in synced) {
-      return sendError(reply, synced.statusCode, synced.code, synced.message);
+    const force = parsedBody.data.force ?? false;
+    const syncPlan = await resolveCharacterBindingSync(db, auth.accountId, sessionRow, force);
+    if ("statusCode" in syncPlan) {
+      return sendError(reply, syncPlan.statusCode, syncPlan.code, syncPlan.message);
     }
 
-    return reply.send({ data: toSessionResponse(synced.row) });
+    const beforeRef = toSessionOperationRef(sessionRow);
+    const syncedRow = db.transaction((tx) => {
+      let row = sessionRow;
+      const syncedAt = Date.now();
+
+      if (syncPlan.changed) {
+        const [updatedRow] = tx
+          .update(sessions)
+          .set({
+            characterVersionId: syncPlan.latestVersionId,
+            characterSnapshotJson: syncPlan.snapshotJson,
+            updatedAt: syncedAt,
+          })
+          .where(eq(sessions.id, sessionRow.id))
+          .returning()
+          .all();
+        row = requireRow(updatedRow, "Failed to sync session character binding");
+      }
+
+      appendSessionOperationLog(tx, request, {
+        accountId: auth.accountId,
+        action: "sync_session_character",
+        sessionId: sessionRow.id,
+        beforeRef,
+        afterRef: toSessionOperationRef(row),
+        metadata: {
+          route: "POST /sessions/:id/character/sync",
+          force,
+          changed: syncPlan.changed,
+          latest_character_version_id: syncPlan.latestVersionId,
+        },
+        createdAt: syncedAt,
+      });
+
+      return row;
+    });
+
+    return reply.send({ data: toSessionResponse(syncedRow) });
   });
 
   app.delete("/sessions/:id", {
@@ -1635,7 +1836,7 @@ export async function registerSessionRoutes(
 
     const auth = getRequestAuthContext(request);
     const [sessionRow] = await db
-      .select({ id: sessions.id })
+      .select()
       .from(sessions)
       .where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
       .limit(1);
@@ -1648,9 +1849,20 @@ export async function registerSessionRoutes(
     if (activeRun) {
       return sendError(reply, 409, "active_run_in_progress", `Session '${sessionRow.id}' cannot be deleted while a run is in progress`);
     }
-    const deleted = db.transaction((tx) => (
-      deleteOwnedSessionAndBindings(tx, parsedParams.data.id, auth.accountId, { sessionStateService })
-    ));
+    const beforeRef = toSessionOperationRef(sessionRow);
+    const deleted = db.transaction((tx) => {
+      const deletedRows = deleteOwnedSessionAndBindings(tx, parsedParams.data.id, auth.accountId, { sessionStateService });
+      if (deletedRows.length > 0) {
+        appendSessionOperationLog(tx, request, {
+          accountId: auth.accountId,
+          action: "delete_session",
+          sessionId: sessionRow.id,
+          beforeRef,
+          metadata: { route: "DELETE /sessions/:id" },
+        });
+      }
+      return deletedRows;
+    });
 
     if (deleted.length === 0) {
       return sendError(reply, 404, "not_found", "Session not found");
@@ -2126,16 +2338,44 @@ export async function registerSessionRoutes(
 
     db.transaction((tx) => {
       ids.forEach((id, index) => {
-        const rows = tx
-          .update(sessions)
-          .set({ status, updatedAt: Date.now() })
+        const beforeRow = tx
+          .select()
+          .from(sessions)
           .where(sessionOwnershipFilter(id, auth.accountId))
-          .returning({ id: sessions.id })
+          .limit(1)
+          .all()[0];
+
+        if (!beforeRow) {
+          results.push({ index, id, action: "not_found" });
+          notFound++;
+          return;
+        }
+
+        const updatedAt = Date.now();
+        const [updatedRow] = tx
+          .update(sessions)
+          .set({ status, updatedAt })
+          .where(eq(sessions.id, beforeRow.id))
+          .returning()
           .all();
 
-        if (rows.length > 0) {
+        if (updatedRow) {
           results.push({ index, id, action: "updated" });
           updated++;
+          appendSessionOperationLog(tx, request, {
+            accountId: auth.accountId,
+            action: "batch_update_session_status",
+            sessionId: updatedRow.id,
+            beforeRef: toSessionOperationRef(beforeRow),
+            afterRef: toSessionOperationRef(updatedRow),
+            metadata: {
+              route: "PATCH /sessions/batch/status",
+              batch_index: index,
+              batch_size: ids.length,
+              status,
+            },
+            createdAt: updatedAt,
+          });
         } else {
           results.push({ index, id, action: "not_found" });
           notFound++;
@@ -2172,10 +2412,11 @@ export async function registerSessionRoutes(
     let notFound = 0;
 
     const existingRows = await db
-      .select({ id: sessions.id })
+      .select()
       .from(sessions)
       .where(and(eq(sessions.accountId, auth.accountId), inArray(sessions.id, ids)));
     const existingSessionIds = new Set(existingRows.map((row) => row.id));
+    const existingRowsById = new Map(existingRows.map((row) => [row.id, row]));
     const activeRunSessionIds = new Set(
       (await Promise.all(
         existingRows.map(async (row) => {
@@ -2204,6 +2445,20 @@ export async function registerSessionRoutes(
         if (rows.length > 0) {
           results.push({ index, id, action: "deleted" });
           deleted++;
+          const beforeRow = existingRowsById.get(id);
+          if (beforeRow) {
+            appendSessionOperationLog(tx, request, {
+              accountId: auth.accountId,
+              action: "batch_delete_session",
+              sessionId: id,
+              beforeRef: toSessionOperationRef(beforeRow),
+              metadata: {
+                route: "POST /sessions/batch/delete",
+                batch_index: index,
+                batch_size: ids.length,
+              },
+            });
+          }
         } else {
           results.push({ index, id, action: "not_found" });
           notFound++;

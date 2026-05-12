@@ -72,6 +72,8 @@ import {
   mergeFloorMetadataConversationInput,
   type FloorConversationInputSnapshot,
 } from "./chat/shared/metadata.js";
+import { OperationLogService } from "./operation-log-service.js";
+import { VcDiffService } from "./vc-diff-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -90,6 +92,12 @@ interface VariableCommitOptions {
   pageId?: string;
   policy?: VariablePromotionPolicy;
   pageDecision?: PageVariableDecision;
+}
+
+export interface TurnCommitOperationLogContext {
+  requestId?: string | null;
+  operationGroupId?: string | null;
+  route?: string;
 }
 
 export interface TurnCommitInput {
@@ -119,6 +127,8 @@ export interface TurnCommitInput {
   conversationInputSnapshot?: FloorConversationInputSnapshot;
   memoryCommit?: MemoryCommitInput;
   macroStagedMutations?: StMacroStagedMutation[];
+  runId?: string | null;
+  operationLog?: TurnCommitOperationLogContext;
   /**
    * 仅用于 `regenerate()` 等“成功 commit 后替代旧楼层”的场景。
    *
@@ -222,12 +232,18 @@ function toPromptSnapshotInsert(record: PromptSnapshotRecord): PromptSnapshotIns
     presetId: record.presetId,
     presetUpdatedAt: record.presetUpdatedAt,
     presetVersion: record.presetVersion,
+    presetVersionId: record.presetVersionId ?? null,
+    presetContentHash: record.presetContentHash ?? null,
     worldbookId: record.worldbookId,
     worldbookUpdatedAt: record.worldbookUpdatedAt,
     worldbookVersion: record.worldbookVersion,
+    worldbookVersionId: record.worldbookVersionId ?? null,
+    worldbookContentHash: record.worldbookContentHash ?? null,
     regexProfileId: record.regexProfileId,
     regexProfileUpdatedAt: record.regexProfileUpdatedAt,
     regexProfileVersion: record.regexProfileVersion,
+    regexProfileVersionId: record.regexProfileVersionId ?? null,
+    regexProfileContentHash: record.regexProfileContentHash ?? null,
     worldbookActivatedEntryUidsJson: JSON.stringify(record.worldbookActivatedEntryUids),
     regexPreRuleNamesJson: JSON.stringify(record.regexPreRuleNames),
     regexPostRuleNamesJson: JSON.stringify(record.regexPostRuleNames),
@@ -378,6 +394,75 @@ function toBufferedMutationFromMacro(
   };
 }
 
+type FloorCommitOperationRefInput = {
+  floorId: string;
+  runId: string | null;
+  promptSnapshotPresent: boolean;
+  explainSnapshotPresent: boolean;
+  floorResultSnapshotPresent: boolean;
+  toolExecutionCount: number;
+  sessionStateMutationCount: number;
+};
+
+function normalizeNullableString(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function toFloorCommitOperationRef(input: FloorCommitOperationRefInput): Record<string, unknown> {
+  return {
+    floor_id: input.floorId,
+    run_id: input.runId,
+    prompt_snapshot_present: input.promptSnapshotPresent,
+    explain_snapshot_present: input.explainSnapshotPresent,
+    floor_result_snapshot_present: input.floorResultSnapshotPresent,
+    tool_execution_count: input.toolExecutionCount,
+    session_state_mutation_count: input.sessionStateMutationCount,
+  };
+}
+
+function appendFloorCommitOperationLog(
+  tx: DbExecutor,
+  input: FloorCommitOperationRefInput & {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    committedAt: number;
+    operationLog?: TurnCommitOperationLogContext;
+  },
+): void {
+  const afterRef = toFloorCommitOperationRef(input);
+  new OperationLogService(tx).append({
+    accountId: input.accountId,
+    actorType: "llm",
+    actorId: input.runId,
+    operationGroupId: input.operationLog?.operationGroupId,
+    requestId: input.operationLog?.requestId,
+    sourceType: "llm_run",
+    action: "commit_floor",
+    status: "succeeded",
+    sessionId: input.sessionId,
+    branchId: input.branchId,
+    floorId: input.floorId,
+    runId: input.runId,
+    targetType: "floor",
+    targetId: input.floorId,
+    beforeRef: null,
+    afterRef,
+    diff: new VcDiffService().diff(null, afterRef),
+    metadata: {
+      ...(input.operationLog?.route ? { route: input.operationLog.route } : {}),
+      prompt_snapshot_present: input.promptSnapshotPresent,
+      explain_snapshot_present: input.explainSnapshotPresent,
+      floor_result_snapshot_present: input.floorResultSnapshotPresent,
+      tool_execution_count: input.toolExecutionCount,
+      session_state_mutation_count: input.sessionStateMutationCount,
+    },
+    createdAt: input.committedAt,
+  });
+}
+
 export class TurnCommitService {
   private readonly variableCommitService: VariableCommitService;
   private readonly enableAsyncMemoryIngest: boolean;
@@ -479,6 +564,8 @@ export class TurnCommitService {
       input.toolExecutionRecords ?? input.execution.toolExecutionRecords ?? [];
     const actualToolExecutionRunIds = Array.from(
       new Set(actualToolExecutionRecords.map((record) => record.runId)));
+    const effectiveRunId = normalizeNullableString(input.runId)
+      ?? (actualToolExecutionRunIds.length === 1 ? normalizeNullableString(actualToolExecutionRunIds[0]) : null);
     const macroBufferedVariableMutations = (input.macroStagedMutations ?? [])
       .map((mutation) => toBufferedMutationFromMacro(mutation, {
         sessionId: input.sessionId,
@@ -577,12 +664,18 @@ export class TurnCommitService {
                 presetId: snapshot.presetId,
                 presetUpdatedAt: snapshot.presetUpdatedAt,
                 presetVersion: snapshot.presetVersion,
+                presetVersionId: snapshot.presetVersionId,
+                presetContentHash: snapshot.presetContentHash,
                 worldbookId: snapshot.worldbookId,
                 worldbookUpdatedAt: snapshot.worldbookUpdatedAt,
                 worldbookVersion: snapshot.worldbookVersion,
+                worldbookVersionId: snapshot.worldbookVersionId,
+                worldbookContentHash: snapshot.worldbookContentHash,
                 regexProfileId: snapshot.regexProfileId,
                 regexProfileUpdatedAt: snapshot.regexProfileUpdatedAt,
                 regexProfileVersion: snapshot.regexProfileVersion,
+                regexProfileVersionId: snapshot.regexProfileVersionId,
+                regexProfileContentHash: snapshot.regexProfileContentHash,
                 worldbookActivatedEntryUidsJson: snapshot.worldbookActivatedEntryUidsJson,
                 regexPreRuleNamesJson: snapshot.regexPreRuleNamesJson,
                 regexPostRuleNamesJson: snapshot.regexPostRuleNamesJson,
@@ -665,6 +758,7 @@ export class TurnCommitService {
           committedAt,
         });
         let variableCommit = createEmptyVariableCommitResult(input);
+        let sessionStateMutationCount = 0;
 
         const floorRow = tx
           .select()
@@ -838,13 +932,14 @@ export class TurnCommitService {
         });
 
         if (this.sessionStateService) {
-          this.sessionStateService.applyStagedMutationsForFloor({
+          const sessionStateApply = this.sessionStateService.applyStagedMutationsForFloor({
             accountId: input.accountId,
             sessionId: input.sessionId,
             branchId: effectiveBranchId,
             floorId: input.floorId,
             committedAt,
           }, tx);
+          sessionStateMutationCount = sessionStateApply.mutations.length;
         }
 
         new BranchLocalVariableSnapshotService(tx).persistFloorLocalSnapshot({
@@ -913,6 +1008,21 @@ export class TurnCommitService {
             throw new MemoryPersistError(`Memory persist failed: ${normalizeError(error).message}`, error);
           }
         }
+
+        appendFloorCommitOperationLog(tx, {
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          branchId: effectiveBranchId,
+          floorId: input.floorId,
+          runId: effectiveRunId,
+          promptSnapshotPresent: Boolean(input.promptSnapshot),
+          explainSnapshotPresent: Boolean(input.promptRuntimeInspection),
+          floorResultSnapshotPresent: true,
+          toolExecutionCount: actualToolExecutionRecords.length,
+          sessionStateMutationCount,
+          committedAt,
+          operationLog: input.operationLog,
+        });
 
         return {
           floor,

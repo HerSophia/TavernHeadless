@@ -42,6 +42,12 @@ import {
   SESSION_STATE_NAMESPACE_PATTERN_HINT,
   SESSION_STATE_SNAPSHOT_COLLECTION,
 } from "./session-state-types.js";
+import {
+  appendSessionStateOperationLog,
+  buildSessionStateNamespaceTargetId,
+  toSessionStateNamespaceOperationRef,
+  type SessionStateOperationLogContext,
+} from "./session-state-operation-log.js";
 
 export interface SessionStateCustomNamespaceServiceOptions {
   clientData: ClientDataConfig;
@@ -90,6 +96,7 @@ export class SessionStateCustomNamespaceService {
     namespace: SessionStateNamespace;
     logicalOwnerType: SessionStateLogicalOwnerType;
     logicalOwnerId: string;
+    operationLog?: SessionStateOperationLogContext;
   }): SessionStatePublicCustomNamespaceDefinition {
     const requestedNamespace = input.namespace.trim() || input.namespace;
     try {
@@ -138,6 +145,26 @@ export class SessionStateCustomNamespaceService {
             createdAt: this.now(),
             updatedAt: this.now(),
           });
+          if (input.operationLog) {
+            appendSessionStateOperationLog(tx, {
+              ...input.operationLog,
+              accountId: session.accountId,
+              action: "register_session_state_namespace",
+              sessionId: session.id,
+              targetType: "session_state_namespace",
+              targetId: buildSessionStateNamespaceTargetId(session.id, namespace),
+              beforeRef: null,
+              afterRef: toSessionStateNamespaceOperationRef(registration),
+              metadata: {
+                namespace,
+                logical_owner_type: logicalOwnerType,
+                logical_owner_id: logicalOwnerId,
+                default_visibility_mode: registration.defaultSlotTemplate.defaultVisibilityMode,
+                default_write_mode: registration.defaultSlotTemplate.defaultWriteMode,
+                default_replay_safety: registration.defaultSlotTemplate.defaultReplaySafety,
+              },
+            });
+          }
           return this.toPublicNamespaceDefinition(registration);
         } catch (error) {
           throw mapNamespaceRegistrationConstraintError(error) ?? error;

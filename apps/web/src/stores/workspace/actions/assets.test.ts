@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { TavernApiError } from "@tavern/sdk";
 
 import type { WorkspacePresetEditorDocument } from "../../../lib/workspace-api";
-import type { WorkspaceAsset } from "../types";
+import type { SessionState, WorkspaceAsset } from "../types";
 
 const workspaceApiMocks = vi.hoisted(() => ({
   createCharacterAssetVersion: vi.fn(),
@@ -17,6 +17,7 @@ const workspaceApiMocks = vi.hoisted(() => ({
   importLibraryAsset: vi.fn(),
   restoreCharacterAsset: vi.fn(),
   updatePresetAsset: vi.fn(),
+  updateSessionAssetBindings: vi.fn(),
   updateWorldbookAsset: vi.fn()
 }));
 
@@ -66,9 +67,27 @@ function createWorkspaceAsset(asset: Pick<WorkspaceAsset, "id" | "kind" | "name"
   };
 }
 
-function createActions(asset: WorkspaceAsset) {
+function createSession(): SessionState {
+  return {
+    account: "account-1",
+    archived: false,
+    characterName: "Seraphina",
+    id: "session-1",
+    title: {
+      en: "Session 1",
+      zh: "会话 1"
+    },
+    userName: "Rowan",
+    presetId: null,
+    regexProfileId: null,
+    worldbookCount: 0,
+    worldbookProfileId: null
+  };
+}
+
+function createActions(asset: WorkspaceAsset, session: SessionState | null = null) {
   return createAssetsActions({
-    activeSession: computed(() => null),
+    activeSession: computed(() => session),
     currentAccount: computed(() => "account-1"),
     findLibraryAsset: (assetId) => (assetId === asset.id ? asset : null),
     hydrateLibraryAssets: async () => ({
@@ -83,6 +102,39 @@ function createActions(asset: WorkspaceAsset) {
 }
 
 describe("createAssetsActions", () => {
+  it("persists preset binding changes on the active session", async () => {
+    const session = createSession();
+    const asset = createWorkspaceAsset({ id: "preset-1", kind: "preset", name: "Preset 1" });
+    workspaceApiMocks.updateSessionAssetBindings.mockResolvedValueOnce({
+      account: "account-1",
+      archived: false,
+      characterName: "Seraphina",
+      id: "session-1",
+      presetId: "preset-1",
+      regexProfileId: null,
+      title: "Session 1",
+      userName: "Rowan",
+      worldbookCount: 0,
+      worldbookProfileId: null
+    });
+
+    const actions = createActions(asset, session);
+
+    const result = await actions.applyAssetFromLibrary("preset-1");
+
+    expect(workspaceApiMocks.updateSessionAssetBindings).toHaveBeenCalledWith(
+      "session-1",
+      { presetId: "preset-1" },
+      "account-1"
+    );
+    expect(result).toEqual(expect.objectContaining({
+      apiSyncFailed: false,
+      bindingChanged: true,
+      ok: true
+    }));
+    expect(session.presetId).toBe("preset-1");
+  });
+
   it("maps preset_conflict for preset saves and forwards expectedVersion", async () => {
     workspaceApiMocks.updatePresetAsset.mockRejectedValueOnce(new TavernApiError({
       code: "preset_conflict",

@@ -10,6 +10,8 @@ import {
   type ThBackupDomain,
   type ThBackupMemoryEdge,
   type ThBackupMemoryItem,
+  type ThBackupPreset,
+  type ThBackupRegexProfile,
   type ThBackupSession,
   type ThBackupVariable,
   type ThBackupWorldbook,
@@ -19,8 +21,13 @@ import type { AppDb } from "../db/client.js";
 import {
   characterVersions,
   characters,
+  presetVersions,
+  presets,
+  regexProfileVersions,
+  regexProfiles,
   sessions,
   sessionBranches,
+  worldbookVersions,
   worldbookEntries,
   worldbooks,
 } from "../db/schema.js";
@@ -34,7 +41,9 @@ export interface CoreAssetBackupExportSelection {
   domains?: ThBackupDomain[];
   sessionIds?: string[];
   characterIds?: string[];
+  presetIds?: string[];
   worldbookIds?: string[];
+  regexProfileIds?: string[];
   includeLinkedAssets?: boolean;
   includeSecrets?: boolean;
 }
@@ -48,14 +57,16 @@ export interface CoreAssetBackupSnapshot {
   includedDomains: ThBackupDomain[];
   resources: {
     characters: ThBackupCharacter[];
+    presets: ThBackupPreset[];
     worldbooks: ThBackupWorldbook[];
+    regexProfiles: ThBackupRegexProfile[];
   };
   sessions: ThBackupSession[];
   counts: BackupCountSummary;
   isFullExport: boolean;
 }
 
-const BACKUP_DOMAIN_ORDER: readonly ThBackupDomain[] = ["characters", "worldbooks", "sessions"];
+const BACKUP_DOMAIN_ORDER: readonly ThBackupDomain[] = ["characters", "presets", "worldbooks", "regex_profiles", "sessions"];
 
 export function captureCoreAssetBackupSnapshot(
   db: AppDb,
@@ -68,8 +79,14 @@ export function captureCoreAssetBackupSnapshot(
   const accountId = input.accountId;
   const sessionIds = normalizeIdList(input.sessionIds);
   const characterIds = normalizeIdList(input.characterIds);
+  const presetIds = normalizeIdList(input.presetIds);
   const worldbookIds = normalizeIdList(input.worldbookIds);
-  const hasAnySelection = sessionIds.length > 0 || characterIds.length > 0 || worldbookIds.length > 0;
+  const regexProfileIds = normalizeIdList(input.regexProfileIds);
+  const hasAnySelection = sessionIds.length > 0
+    || characterIds.length > 0
+    || presetIds.length > 0
+    || worldbookIds.length > 0
+    || regexProfileIds.length > 0;
   const requestedDomains = normalizeDomains(input.domains, hasAnySelection);
   const requestedDomainSet = new Set<ThBackupDomain>(requestedDomains);
 
@@ -79,8 +96,14 @@ export function captureCoreAssetBackupSnapshot(
   if (characterIds.length > 0) {
     requestedDomainSet.add("characters");
   }
+  if (presetIds.length > 0) {
+    requestedDomainSet.add("presets");
+  }
   if (worldbookIds.length > 0) {
     requestedDomainSet.add("worldbooks");
+  }
+  if (regexProfileIds.length > 0) {
+    requestedDomainSet.add("regex_profiles");
   }
 
   const isFullExport = !hasAnySelection && requestedDomainSet.size === BACKUP_DOMAIN_ORDER.length;
@@ -119,6 +142,23 @@ export function captureCoreAssetBackupSnapshot(
       : [];
   assertSelectionExists(characterIds, selectedCharacters.map((row) => row.id), "character_ids");
 
+  const selectedPresets = presetIds.length > 0
+    ? db
+        .select()
+        .from(presets)
+        .where(and(eq(presets.accountId, accountId), inArray(presets.id, presetIds)))
+        .orderBy(asc(presets.createdAt), asc(presets.updatedAt))
+        .all()
+    : !hasAnySelection && requestedDomainSet.has("presets")
+      ? db
+          .select()
+          .from(presets)
+          .where(eq(presets.accountId, accountId))
+          .orderBy(asc(presets.createdAt), asc(presets.updatedAt))
+          .all()
+      : [];
+  assertSelectionExists(presetIds, selectedPresets.map((row) => row.id), "preset_ids");
+
   const selectedWorldbooks = worldbookIds.length > 0
     ? db
         .select()
@@ -136,8 +176,27 @@ export function captureCoreAssetBackupSnapshot(
       : [];
   assertSelectionExists(worldbookIds, selectedWorldbooks.map((row) => row.id), "worldbook_ids");
 
+  const selectedRegexProfiles = regexProfileIds.length > 0
+    ? db
+        .select()
+        .from(regexProfiles)
+        .where(and(eq(regexProfiles.accountId, accountId), inArray(regexProfiles.id, regexProfileIds)))
+        .orderBy(asc(regexProfiles.createdAt), asc(regexProfiles.updatedAt))
+        .all()
+    : !hasAnySelection && requestedDomainSet.has("regex_profiles")
+      ? db
+          .select()
+          .from(regexProfiles)
+          .where(eq(regexProfiles.accountId, accountId))
+          .orderBy(asc(regexProfiles.createdAt), asc(regexProfiles.updatedAt))
+          .all()
+      : [];
+  assertSelectionExists(regexProfileIds, selectedRegexProfiles.map((row) => row.id), "regex_profile_ids");
+
   const selectedCharacterIds = new Set(selectedCharacters.map((row) => row.id));
+  const selectedPresetIds = new Set(selectedPresets.map((row) => row.id));
   const selectedWorldbookIds = new Set(selectedWorldbooks.map((row) => row.id));
+  const selectedRegexProfileIds = new Set(selectedRegexProfiles.map((row) => row.id));
   const includeLinkedAssets = input.includeLinkedAssets ?? true;
 
   if (selectedSessions.length > 0) {
@@ -150,11 +209,25 @@ export function captureCoreAssetBackupSnapshot(
             `Selected sessions require character ${session.characterId} to be included`,
           );
         }
+        if (session.presetId && !selectedPresetIds.has(session.presetId)) {
+          throw new CoreAssetBackupError(
+            400,
+            "backup_incomplete_selection",
+            `Selected sessions require preset ${session.presetId} to be included`,
+          );
+        }
         if (session.worldbookProfileId && !selectedWorldbookIds.has(session.worldbookProfileId)) {
           throw new CoreAssetBackupError(
             400,
             "backup_incomplete_selection",
             `Selected sessions require worldbook ${session.worldbookProfileId} to be included`,
+          );
+        }
+        if (session.regexProfileId && !selectedRegexProfileIds.has(session.regexProfileId)) {
+          throw new CoreAssetBackupError(
+            400,
+            "backup_incomplete_selection",
+            `Selected sessions require regex profile ${session.regexProfileId} to be included`,
           );
         }
         continue;
@@ -178,6 +251,24 @@ export function captureCoreAssetBackupSnapshot(
         selectedCharacterIds.add(linkedCharacter.id);
       }
 
+      if (session.presetId && !selectedPresetIds.has(session.presetId)) {
+        const linkedPreset = db
+          .select()
+          .from(presets)
+          .where(and(eq(presets.accountId, accountId), eq(presets.id, session.presetId)))
+          .limit(1)
+          .all()[0];
+        if (!linkedPreset) {
+          throw new CoreAssetBackupError(
+            400,
+            "backup_incomplete_selection",
+            `Session ${session.id} references missing preset ${session.presetId}`,
+          );
+        }
+        selectedPresets.push(linkedPreset);
+        selectedPresetIds.add(linkedPreset.id);
+      }
+
       if (session.worldbookProfileId && !selectedWorldbookIds.has(session.worldbookProfileId)) {
         const linkedWorldbook = db
           .select()
@@ -195,6 +286,24 @@ export function captureCoreAssetBackupSnapshot(
         selectedWorldbooks.push(linkedWorldbook);
         selectedWorldbookIds.add(linkedWorldbook.id);
       }
+
+      if (session.regexProfileId && !selectedRegexProfileIds.has(session.regexProfileId)) {
+        const linkedRegexProfile = db
+          .select()
+          .from(regexProfiles)
+          .where(and(eq(regexProfiles.accountId, accountId), eq(regexProfiles.id, session.regexProfileId)))
+          .limit(1)
+          .all()[0];
+        if (!linkedRegexProfile) {
+          throw new CoreAssetBackupError(
+            400,
+            "backup_incomplete_selection",
+            `Session ${session.id} references missing regex profile ${session.regexProfileId}`,
+          );
+        }
+        selectedRegexProfiles.push(linkedRegexProfile);
+        selectedRegexProfileIds.add(linkedRegexProfile.id);
+      }
     }
   }
 
@@ -210,13 +319,21 @@ export function captureCoreAssetBackupSnapshot(
     if (selectedCharacters.length > 0 || characterIds.length > 0) {
       includedDomainSet.add("characters");
     }
+    if (selectedPresets.length > 0 || presetIds.length > 0) {
+      includedDomainSet.add("presets");
+    }
     if (selectedWorldbooks.length > 0 || worldbookIds.length > 0) {
       includedDomainSet.add("worldbooks");
+    }
+    if (selectedRegexProfiles.length > 0 || regexProfileIds.length > 0) {
+      includedDomainSet.add("regex_profiles");
     }
   }
 
   const selectedCharacterIdList = selectedCharacters.map((row) => row.id);
+  const selectedPresetIdList = selectedPresets.map((row) => row.id);
   const selectedWorldbookIdList = selectedWorldbooks.map((row) => row.id);
+  const selectedRegexProfileIdList = selectedRegexProfiles.map((row) => row.id);
 
   const versionRows = selectedCharacterIdList.length > 0
     ? db
@@ -235,6 +352,66 @@ export function captureCoreAssetBackupSnapshot(
       list.push(row);
     } else {
       versionsByCharacter.set(row.characterId, [row]);
+    }
+  }
+
+  const presetVersionRows = selectedPresetIdList.length > 0
+    ? db
+        .select()
+        .from(presetVersions)
+        .where(inArray(presetVersions.presetId, selectedPresetIdList))
+        .orderBy(asc(presetVersions.presetId), asc(presetVersions.versionNo), asc(presetVersions.createdAt))
+        .all()
+    : [];
+  const presetVersionsByPreset = new Map<string, typeof presetVersionRows>();
+  const presetVersionIdSet = new Set<string>();
+  for (const row of presetVersionRows) {
+    presetVersionIdSet.add(row.id);
+    const list = presetVersionsByPreset.get(row.presetId);
+    if (list) {
+      list.push(row);
+    } else {
+      presetVersionsByPreset.set(row.presetId, [row]);
+    }
+  }
+
+  const worldbookVersionRows = selectedWorldbookIdList.length > 0
+    ? db
+        .select()
+        .from(worldbookVersions)
+        .where(inArray(worldbookVersions.worldbookId, selectedWorldbookIdList))
+        .orderBy(asc(worldbookVersions.worldbookId), asc(worldbookVersions.versionNo), asc(worldbookVersions.createdAt))
+        .all()
+    : [];
+  const worldbookVersionsByWorldbook = new Map<string, typeof worldbookVersionRows>();
+  const worldbookVersionIdSet = new Set<string>();
+  for (const row of worldbookVersionRows) {
+    worldbookVersionIdSet.add(row.id);
+    const list = worldbookVersionsByWorldbook.get(row.worldbookId);
+    if (list) {
+      list.push(row);
+    } else {
+      worldbookVersionsByWorldbook.set(row.worldbookId, [row]);
+    }
+  }
+
+  const regexProfileVersionRows = selectedRegexProfileIdList.length > 0
+    ? db
+        .select()
+        .from(regexProfileVersions)
+        .where(inArray(regexProfileVersions.regexProfileId, selectedRegexProfileIdList))
+        .orderBy(asc(regexProfileVersions.regexProfileId), asc(regexProfileVersions.versionNo), asc(regexProfileVersions.createdAt))
+        .all()
+    : [];
+  const regexProfileVersionsByProfile = new Map<string, typeof regexProfileVersionRows>();
+  const regexProfileVersionIdSet = new Set<string>();
+  for (const row of regexProfileVersionRows) {
+    regexProfileVersionIdSet.add(row.id);
+    const list = regexProfileVersionsByProfile.get(row.regexProfileId);
+    if (list) {
+      list.push(row);
+    } else {
+      regexProfileVersionsByProfile.set(row.regexProfileId, [row]);
     }
   }
 
@@ -278,6 +455,25 @@ export function captureCoreAssetBackupSnapshot(
     })),
   }));
 
+  const presetResources = selectedPresets.map<ThBackupPreset>((row) => ({
+    id: row.id,
+    name: row.name,
+    source: row.source,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+    version: row.version,
+    data: parseJsonField(row.dataJson),
+    versions: (presetVersionsByPreset.get(row.id) ?? []).map((version) => ({
+      id: version.id,
+      parent_version_id_ref: version.parentVersionId ?? null,
+      version_no: version.versionNo,
+      data: parseJsonField(version.dataJson),
+      content_hash: version.contentHash,
+      created_by_operation_id: version.createdByOperationId ?? null,
+      created_at: version.createdAt,
+    })),
+  }));
+
   const worldbookResources = selectedWorldbooks.map<ThBackupWorldbook>((row) => ({
     id: row.id,
     name: row.name,
@@ -312,10 +508,40 @@ export function captureCoreAssetBackupSnapshot(
       created_at: entry.createdAt,
       updated_at: entry.updatedAt,
     })),
+    versions: (worldbookVersionsByWorldbook.get(row.id) ?? []).map((version) => ({
+      id: version.id,
+      parent_version_id_ref: version.parentVersionId ?? null,
+      version_no: version.versionNo,
+      data: parseJsonField(version.dataJson),
+      content_hash: version.contentHash,
+      created_by_operation_id: version.createdByOperationId ?? null,
+      created_at: version.createdAt,
+    })),
+  }));
+
+  const regexProfileResources = selectedRegexProfiles.map<ThBackupRegexProfile>((row) => ({
+    id: row.id,
+    name: row.name,
+    source: row.source,
+    created_at: row.createdAt,
+    updated_at: row.updatedAt,
+    version: row.version,
+    data: parseJsonField(row.dataJson),
+    versions: (regexProfileVersionsByProfile.get(row.id) ?? []).map((version) => ({
+      id: version.id,
+      parent_version_id_ref: version.parentVersionId ?? null,
+      version_no: version.versionNo,
+      data: parseJsonField(version.dataJson),
+      content_hash: version.contentHash,
+      created_by_operation_id: version.createdByOperationId ?? null,
+      created_at: version.createdAt,
+    })),
   }));
 
   const worldbookIdSet = new Set(worldbookResources.map((row) => row.id));
   const characterIdSet = new Set(characterResources.map((row) => row.id));
+  const presetIdSet = new Set(presetResources.map((row) => row.id));
+  const regexProfileIdSet = new Set(regexProfileResources.map((row) => row.id));
 
   const sessionResources = selectedSessions.map<ThBackupSession>((sessionRow) => {
     if (sessionRow.characterId && !characterIdSet.has(sessionRow.characterId)) {
@@ -332,11 +558,46 @@ export function captureCoreAssetBackupSnapshot(
         `Session ${sessionRow.id} references character version ${sessionRow.characterVersionId} that is not present in the backup`,
       );
     }
+    if (sessionRow.presetId && !presetIdSet.has(sessionRow.presetId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session ${sessionRow.id} references preset ${sessionRow.presetId} that is not present in the backup`,
+      );
+    }
+    if (sessionRow.presetVersionId && !presetVersionIdSet.has(sessionRow.presetVersionId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session ${sessionRow.id} references preset version ${sessionRow.presetVersionId} that is not present in the backup`,
+      );
+    }
     if (sessionRow.worldbookProfileId && !worldbookIdSet.has(sessionRow.worldbookProfileId)) {
       throw new CoreAssetBackupError(
         400,
         "backup_incomplete_selection",
         `Session ${sessionRow.id} references worldbook ${sessionRow.worldbookProfileId} that is not present in the backup`,
+      );
+    }
+    if (sessionRow.worldbookVersionId && !worldbookVersionIdSet.has(sessionRow.worldbookVersionId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session ${sessionRow.id} references worldbook version ${sessionRow.worldbookVersionId} that is not present in the backup`,
+      );
+    }
+    if (sessionRow.regexProfileId && !regexProfileIdSet.has(sessionRow.regexProfileId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session ${sessionRow.id} references regex profile ${sessionRow.regexProfileId} that is not present in the backup`,
+      );
+    }
+    if (sessionRow.regexProfileVersionId && !regexProfileVersionIdSet.has(sessionRow.regexProfileVersionId)) {
+      throw new CoreAssetBackupError(
+        400,
+        "backup_incomplete_selection",
+        `Session ${sessionRow.id} references regex profile version ${sessionRow.regexProfileVersionId} that is not present in the backup`,
       );
     }
 
@@ -374,9 +635,13 @@ export function captureCoreAssetBackupSnapshot(
         snapshot: snapshot.userSnapshot,
       },
       profile_binding: {
+        deep_binding: sessionRow.deepBinding ?? false,
+        preset_id_ref: sessionRow.presetId ?? null,
+        preset_version_id_ref: sessionRow.presetVersionId ?? null,
         worldbook_id_ref: sessionRow.worldbookProfileId ?? null,
-        preset_id: sessionRow.presetId ?? null,
-        regex_profile_id: sessionRow.regexProfileId ?? null,
+        worldbook_version_id_ref: sessionRow.worldbookVersionId ?? null,
+        regex_profile_id_ref: sessionRow.regexProfileId ?? null,
+        regex_profile_version_id_ref: sessionRow.regexProfileVersionId ?? null,
       },
       branches: branchRows.map((branch) => ({
         branch_id: branch.branchId,
@@ -474,8 +739,13 @@ export function captureCoreAssetBackupSnapshot(
   const counts = emptyBackupCountSummary();
   counts.characters = characterResources.length;
   counts.character_versions = versionRows.length;
+  counts.presets = presetResources.length;
+  counts.preset_versions = presetVersionRows.length;
   counts.worldbooks = worldbookResources.length;
+  counts.worldbook_versions = worldbookVersionRows.length;
   counts.worldbook_entries = worldbookEntryRows.length;
+  counts.regex_profiles = regexProfileResources.length;
+  counts.regex_profile_versions = regexProfileVersionRows.length;
   counts.sessions = sessionResources.length;
   for (const session of sessionResources) {
     counts.session_branches += session.branches.length;
@@ -500,7 +770,9 @@ export function captureCoreAssetBackupSnapshot(
     includedDomains: BACKUP_DOMAIN_ORDER.filter((domain) => includedDomainSet.has(domain)),
     resources: {
       characters: characterResources,
+      presets: presetResources,
       worldbooks: worldbookResources,
+      regexProfiles: regexProfileResources,
     },
     sessions: sessionResources,
     counts,

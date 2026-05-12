@@ -23,7 +23,7 @@ outline: [2, 3]
 curl "http://localhost:3000/floors?session_id=sess_001&sort_by=created_at&sort_order=desc&limit=10"
 ```
 
-如果要创建新分支，可以先调用 `POST /floors/:id/branch`，拿到一个分支描述对象，下次发起聊天时带上这个 `branch_id`。
+如果要从某个历史楼层继续，可以先调用 `POST /floors/:id/branch`。接口会创建一条新的分支记录，下次发起聊天时带上这个 `branch_id` 即可从该楼层之后继续。
 
 ## 先理解几个词
 
@@ -199,9 +199,13 @@ DELETE /floors/:id
 POST /floors/:id/branch
 ```
 
-为指定楼层准备一个可用的分支描述对象。
+从指定楼层创建一个新的分支记录。这个操作是非破坏性的：它不会删除原分支，也不会把原分支后续楼层标记为 superseded。
 
-当前实现会校验 source floor 是否存在、未被 superseded 且处于 `committed` 状态，并检查目标 `branch_id` 是否冲突；如果校验通过，返回一个 branch 描述对象。这个过程**不会立即写入新的 floor 或持久化 branch 记录**。
+服务端会校验 source floor 是否存在、未被 superseded 且处于 `committed` 状态，并检查目标 `branch_id` 是否冲突。
+
+如果 source floor 的 prompt snapshot 中有资产版本 ID，新分支会保存这些版本引用。之后使用这个分支继续生成时，会优先使用这组分支资产绑定。旧数据没有版本 ID 时，新分支会继承当前 session 的浅绑定。
+
+接口会记录一条 `checkout_branch` 操作日志，`target_type` 为 `session_branch`。
 
 ### 请求体
 

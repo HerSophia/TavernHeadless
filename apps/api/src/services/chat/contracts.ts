@@ -33,7 +33,11 @@ import type {
   ResolvedPromptRuntimePolicy,
 } from "../prompt-runtime-control-service.js";
 import type { PromptRuntimePreviewTrace } from "../prompt-runtime-execution.js";
-import type { TurnCommitMemoryReceipt, TurnCommitService } from "../turn-commit-service.js";
+import type {
+  TurnCommitMemoryReceipt,
+  TurnCommitOperationLogContext,
+  TurnCommitService,
+} from "../turn-commit-service.js";
 import type { FloorRunService } from "../floor-run-service.js";
 import type {
   CoordinatorRuntime,
@@ -46,6 +50,7 @@ import type { AccountContextOptions } from "../../accounts/account-context.js";
 import type { FirstPartyGameStateService } from "../../session-state/first-party-game-state-service.js";
 import type { SessionStateNamespace } from "../../session-state/session-state-types.js";
 import type { SessionStateService } from "../../session-state/session-state-service.js";
+import type { SessionStateOperationLogContext } from "../../session-state/session-state-operation-log.js";
 
 export interface PromptLiveDebugOptions {
   includePromptSnapshot?: boolean;
@@ -60,8 +65,13 @@ export interface TurnSessionStateWriteRequest {
   delete?: boolean;
 }
 
-interface TurnSessionStateWritesRequest {
+interface TurnOperationLogRequest {
+  turnOperationLog?: TurnCommitOperationLogContext;
+}
+
+interface TurnSessionStateWritesRequest extends TurnOperationLogRequest {
   sessionStateWrites?: TurnSessionStateWriteRequest[];
+  sessionStateOperationLog?: SessionStateOperationLogContext;
 }
 
 export interface RespondRequest extends TurnSessionStateWritesRequest {

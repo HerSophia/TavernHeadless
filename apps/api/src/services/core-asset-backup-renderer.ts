@@ -30,7 +30,9 @@ export function renderCoreAssetBackup(
     },
     resources: {
       characters: snapshot.resources.characters,
+      presets: snapshot.resources.presets,
       worldbooks: snapshot.resources.worldbooks,
+      regex_profiles: snapshot.resources.regexProfiles,
     },
     sessions: snapshot.sessions,
     extensions: {

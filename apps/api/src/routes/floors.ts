@@ -1,11 +1,11 @@
 import { and, count, eq, inArray, isNull } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
-import type { DatabaseConnection } from "../db/client";
+import type { DatabaseConnection, DbExecutor } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
-import { floors } from "../db/schema";
+import { floors, promptSnapshots, sessions } from "../db/schema";
 import { ensureOptionalObjectBody, parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
@@ -14,7 +14,13 @@ import { FloorRunService } from "../services/floor-run-service";
 import type { FloorRunServiceOptions } from "../services/floor-run-service.js";
 import { getOwnedFloorById, getOwnedSessionIds } from "../services/resource-ownership";
 import { deleteVariablesForBranch, deleteVariablesForFloor } from "../services/variables/cleanup/variable-owned-resource-cleanup.js";
-import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
+import {
+  SessionBranchRegistryService,
+  type SessionBranchAssetBindingState,
+  type SessionBranchRegistryRecord,
+} from "../services/variables/host/session-branch-registry-service.js";
+import { OperationLogService, operationActorFromRequest, operationRequestIdFromRequest } from "../services/operation-log-service.js";
+import { VcDiffService } from "../services/vc-diff-service.js";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
 
@@ -372,6 +378,132 @@ function toFloorResultResponse(result: Awaited<ReturnType<FloorResultService["fi
       : null,
     committed_at: result.committedAt,
   };
+}
+
+type CheckoutBranchBindingSource =
+  | "prompt_snapshot_versions"
+  | "current_session_shallow_no_prompt_snapshot"
+  | "current_session_shallow_no_snapshot_versions";
+
+type CheckoutBranchAssetBindingPlan = {
+  assetBinding: SessionBranchAssetBindingState;
+  bindingSource: CheckoutBranchBindingSource;
+  promptSnapshotPresent: boolean;
+};
+
+function resolveCheckoutBranchAssetBindingPlan(
+  sessionRow: typeof sessions.$inferSelect,
+  snapshotRow: typeof promptSnapshots.$inferSelect | null | undefined,
+): CheckoutBranchAssetBindingPlan {
+  const promptSnapshotPresent = Boolean(snapshotRow);
+  const hasSnapshotVersionBinding = Boolean(
+    snapshotRow?.presetVersionId
+      || snapshotRow?.worldbookVersionId
+      || snapshotRow?.regexProfileVersionId,
+  );
+
+  if (snapshotRow && hasSnapshotVersionBinding) {
+    return {
+      promptSnapshotPresent,
+      bindingSource: "prompt_snapshot_versions",
+      assetBinding: {
+        deepBinding: true,
+        presetId: snapshotRow.presetId,
+        presetVersionId: snapshotRow.presetVersionId,
+        regexProfileId: snapshotRow.regexProfileId,
+        regexProfileVersionId: snapshotRow.regexProfileVersionId,
+        worldbookProfileId: snapshotRow.worldbookId,
+        worldbookVersionId: snapshotRow.worldbookVersionId,
+      },
+    };
+  }
+
+  return {
+    promptSnapshotPresent,
+    bindingSource: promptSnapshotPresent
+      ? "current_session_shallow_no_snapshot_versions"
+      : "current_session_shallow_no_prompt_snapshot",
+    assetBinding: {
+      deepBinding: false,
+      presetId: sessionRow.presetId,
+      presetVersionId: null,
+      regexProfileId: sessionRow.regexProfileId,
+      regexProfileVersionId: null,
+      worldbookProfileId: sessionRow.worldbookProfileId,
+      worldbookVersionId: null,
+    },
+  };
+}
+
+function toCheckoutBranchOperationRef(input: {
+  branch: SessionBranchRegistryRecord;
+  sourceFloor: typeof floors.$inferSelect;
+  bindingSource: CheckoutBranchBindingSource;
+  promptSnapshotPresent: boolean;
+}) {
+  return {
+    session_id: input.branch.sessionId,
+    branch_id: input.branch.branchId,
+    source_floor_id: input.branch.sourceFloorId,
+    source_branch_id: input.branch.sourceBranchId,
+    source_floor_no: input.sourceFloor.floorNo,
+    source_floor_state: input.sourceFloor.state,
+    asset_binding: input.branch.assetBinding
+      ? toCheckoutBranchAssetBindingOperationRef(input.branch.assetBinding)
+      : null,
+    binding_source: input.bindingSource,
+    prompt_snapshot_present: input.promptSnapshotPresent,
+    created_at: input.branch.createdAt,
+    updated_at: input.branch.updatedAt,
+  };
+}
+
+function toCheckoutBranchAssetBindingOperationRef(assetBinding: SessionBranchAssetBindingState) {
+  return {
+    deep_binding: assetBinding.deepBinding,
+    preset_id: assetBinding.presetId,
+    preset_version_id: assetBinding.presetVersionId,
+    regex_profile_id: assetBinding.regexProfileId,
+    regex_profile_version_id: assetBinding.regexProfileVersionId,
+    worldbook_profile_id: assetBinding.worldbookProfileId,
+    worldbook_version_id: assetBinding.worldbookVersionId,
+  };
+}
+
+function appendCheckoutBranchOperationLog(
+  tx: DbExecutor,
+  request: FastifyRequest,
+  input: {
+    accountId: string;
+    branch: SessionBranchRegistryRecord;
+    sourceFloor: typeof floors.$inferSelect;
+    bindingSource: CheckoutBranchBindingSource;
+    promptSnapshotPresent: boolean;
+  },
+): void {
+  const afterRef = toCheckoutBranchOperationRef(input);
+
+  new OperationLogService(tx).append({
+    ...operationActorFromRequest(request),
+    accountId: input.accountId,
+    requestId: operationRequestIdFromRequest(request),
+    sourceType: "http",
+    action: "checkout_branch",
+    status: "succeeded",
+    sessionId: input.branch.sessionId,
+    branchId: input.branch.branchId,
+    floorId: input.sourceFloor.id,
+    targetType: "session_branch",
+    targetId: `${input.branch.sessionId}:${input.branch.branchId}`,
+    beforeRef: null,
+    afterRef,
+    diff: new VcDiffService().diff(null, afterRef),
+    metadata: {
+      route: "POST /floors/:id/branch",
+      binding_source: input.bindingSource,
+      prompt_snapshot_present: input.promptSnapshotPresent,
+    },
+  });
 }
 
 export async function registerFloorRoutes(
@@ -963,17 +1095,47 @@ export async function registerFloorRoutes(
       return sendError(reply, 409, "branch_exists", `Branch '${branchId}' already exists in this session`);
     }
 
-    branchRegistry.ensure({
-      accountId: auth.accountId,
-      sessionId: sourceFloor.sessionId,
-      branchId,
-      sourceFloorId: sourceFloor.id,
-      sourceBranchId: sourceFloor.branchId,
+    const [sourceSession] = await db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.id, sourceFloor.sessionId), eq(sessions.accountId, auth.accountId)))
+      .limit(1);
+
+    if (!sourceSession) {
+      return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    const [sourcePromptSnapshot] = await db
+      .select()
+      .from(promptSnapshots)
+      .where(eq(promptSnapshots.floorId, sourceFloor.id))
+      .limit(1);
+    const bindingPlan = resolveCheckoutBranchAssetBindingPlan(sourceSession, sourcePromptSnapshot ?? null);
+
+    const createdBranch = db.transaction((tx) => {
+      const branch = new SessionBranchRegistryService(tx).ensure({
+        accountId: auth.accountId,
+        sessionId: sourceFloor.sessionId,
+        branchId,
+        sourceFloorId: sourceFloor.id,
+        sourceBranchId: sourceFloor.branchId,
+        assetBinding: bindingPlan.assetBinding,
+      });
+
+      appendCheckoutBranchOperationLog(tx, request, {
+        accountId: auth.accountId,
+        branch,
+        sourceFloor,
+        bindingSource: bindingPlan.bindingSource,
+        promptSnapshotPresent: bindingPlan.promptSnapshotPresent,
+      });
+
+      return branch;
     });
 
     return reply.code(201).send({
       data: {
-        branch_id: branchId,
+        branch_id: createdBranch.branchId,
         source_floor_id: sourceFloor.id,
         source_floor_no: sourceFloor.floorNo,
         session_id: sourceFloor.sessionId,

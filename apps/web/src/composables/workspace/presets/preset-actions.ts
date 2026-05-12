@@ -1,4 +1,4 @@
-import type { ComputedRef, Ref } from "vue";
+import type { ComputedRef } from "vue";
 
 import { fetchPresetAssetDetail } from "../../../lib/workspace-api";
 import type { WorkspaceAsset } from "../../../stores/workspace";
@@ -9,9 +9,8 @@ import { buildAssetExportFileName, exportAssetJsonFile } from "../assets/asset-e
 type AddEvent = (key: string, tone?: EventTone, vars?: Record<string, number | string>) => void;
 
 type UseWorkspacePresetActionsOptions = {
-  activePresetAssetId: Ref<string>;
   addEvent: AddEvent;
-  applyLibraryAsset: (assetId: string) => void;
+  applyLibraryAsset: (assetId: string) => void | Promise<void>;
   currentAccount: ComputedRef<string>;
   currentPresetAsset: ComputedRef<WorkspaceAsset | null>;
   openPresetManagerDialog: (mode: PresetManagerMode, assetId: string) => Promise<void>;
@@ -38,7 +37,7 @@ export function useWorkspacePresetActions(options: UseWorkspacePresetActionsOpti
     await options.openPresetManagerDialog("edit", preset.id);
   }
 
-  function switchCurrentPreset(): void {
+  async function switchCurrentPreset(): Promise<void> {
     const preset = getCurrentPresetAsset();
     if (!preset) {
       return;
@@ -56,8 +55,7 @@ export function useWorkspacePresetActions(options: UseWorkspacePresetActionsOpti
       return;
     }
 
-    options.activePresetAssetId.value = next.id;
-    options.applyLibraryAsset(next.id);
+    await options.applyLibraryAsset(next.id);
   }
 
   async function exportCurrentPreset(): Promise<void> {
