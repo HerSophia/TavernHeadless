@@ -6,7 +6,7 @@ outline: [2, 3]
 
 核心资产备份接口负责把一个账号下的 `characters`、`presets`、`worldbooks`、`regex_profiles`、`sessions` 导出为 `.thbackup` 文件，并支持在同一实例中做恢复预览与异步恢复。
 
-备份 v1 只支持 `create_copy`。恢复时会为所有资源分配新 ID，不会原地覆盖已有资源。
+当前导出的备份文件使用 `spec_version: "1.1.0"`，仍然可以恢复 `1.0.0` 文件。备份 v1 只支持 `create_copy`。恢复时会为所有资源分配新 ID，不会原地覆盖已有资源。
 
 ## 什么时候需要看这页
 
@@ -30,11 +30,15 @@ outline: [2, 3]
 | restore preview | 只做校验和恢复规划，不写数据库 |
 | `create_copy` | 恢复时总是创建新资源，不覆盖旧资源 |
 | `include_linked_assets` | 选中 session 时，是否自动补入它引用的 character、preset、worldbook 和 regex profile |
+| `include_vc_tags` | 是否导出指向已导出 floor 或资产版本的 VC Tag，默认 `true` |
+| `include_operation_logs` | 是否把相关 Operation Log 写入 `vc.operation_logs`，默认 `none` |
 
 ## 备份范围与限制
 
 - 备份范围固定是 `characters`、`presets`、`worldbooks`、`regex_profiles`、`sessions`。
 - session 子树会保留 `session_branch`、`floors`、`pages`、`messages`、branch 相关变量、branch local snapshot、chat / branch / floor 记忆和记忆边。
+- `session_branch.asset_binding_*` 会写入 `sessions[].branches[].asset_binding`，恢复时会映射到新资产和新版本 ID。
+- 默认会导出 VC Tag。Operation Log 是可选审计数据，不会用来重放业务状态。
 - 不备份 `secrets`、`runtime_job`、`runtime_scope_state`、`global` variables、`global` memories 等非 v1 范围数据。
 - preview 和 restore 都只接受 JSON 请求体，不支持 multipart。
 - `POST /backup/restore/preview` 与 `POST /backup/jobs/restore` 的请求体大小由 `BACKUP_IMPORT_MAX_BYTES` 控制，默认 `50000000`。
@@ -67,6 +71,8 @@ POST /backup/jobs/export
 | `worldbook_ids` | string[] | 否 | - | 指定要导出的 worldbook |
 | `regex_profile_ids` | string[] | 否 | - | 指定要导出的 regex profile |
 | `include_linked_assets` | boolean | 否 | `true` | 选中 session 时，是否自动补入它引用的角色、预设、世界书与正则配置 |
+| `include_vc_tags` | boolean | 否 | `true` | 是否导出指向已导出 floor 或资产版本的 VC Tag |
+| `include_operation_logs` | string | 否 | `none` | `none` 不导出日志；`referenced` 只导出资产版本和 VC Tag 引用的日志；`selected_scope` 导出与已导出 session、floor、资产、资产版本、VC Tag 相关的日志 |
 | `include_secrets` | boolean | 否 | `false` | v1 固定只能为 `false` |
 
 ### 请求示例
@@ -74,7 +80,9 @@ POST /backup/jobs/export
 ```json
 {
   "session_ids": ["sess_001"],
-  "include_linked_assets": true
+  "include_linked_assets": true,
+  "include_vc_tags": true,
+  "include_operation_logs": "referenced"
 }
 ```
 
@@ -131,7 +139,7 @@ POST /backup/restore/preview
 {
   "data": {
     "spec": "tavern_headless_backup",
-    "spec_version": "1.0.0",
+    "spec_version": "1.1.0",
     "backup_kind": "account_core_assets",
     "created_at": 1735689600000,
     "source": {
@@ -148,6 +156,10 @@ POST /backup/restore/preview
       "regex_profiles": []
     },
     "sessions": [],
+    "vc": {
+      "tags": [],
+      "operation_logs": []
+    },
     "extensions": {
       "secrets": {
         "mode": "excluded"
@@ -184,7 +196,9 @@ POST /backup/restore/preview
       "variables": 6,
       "branch_local_variable_snapshots": 1,
       "memory_items": 3,
-      "memory_edges": 2
+      "memory_edges": 2,
+      "vc_tags": 1,
+      "operation_logs": 1
     },
     "will_create": {
       "characters": 1,
@@ -223,6 +237,7 @@ POST /backup/restore/preview
 - 恢复后会新建多少顶层资源。
 - 哪些资源会因为重名而自动改名。
 - 哪些 session 绑定会在恢复时被清空。
+- 哪些 Operation Log 或 `created_by_operation_id` 引用会因为备份中没有对应日志而在恢复时清空。
 
 ### 错误
 
@@ -275,6 +290,10 @@ POST /backup/jobs/restore
 - 旧格式备份中只有 `preset_id` 或 `regex_profile_id`、但没有对应资源引用时，这些绑定仍会在 restore 时清空。
 - branch 变量 scope 和 branch 记忆 scope 会按恢复后的新 session / branch 重建。
 - 记忆相关 `runtime_scope_state` 不进入备份文件，但会在 restore 时重建。
+- VC Tag 会恢复为新标签名和新 ID，目标 floor 或资产版本会映射到恢复后的新 ID。
+- 如果备份中包含 `vc.operation_logs`，Operation Log 会生成新 ID，`operation_group_id` 会按组映射，`request_id` 会清空。
+- 恢复后的 Operation Log 会在 `metadata.restore.source` 中保存原始 `operation_log_id`、`operation_group_id`、`request_id` 和 `run_id`。
+- `1.1.0` 文件中的 `created_by_operation_id` 只有在对应 Operation Log 也被导入时才会恢复；否则恢复为 `null`。`1.0.0` 文件保留旧行为。
 
 ### 错误
 

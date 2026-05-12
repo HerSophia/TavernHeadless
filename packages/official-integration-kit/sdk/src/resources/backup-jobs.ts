@@ -31,6 +31,7 @@ export type {
   BackupRestorePreview,
   BackupTopLevelCreateSummary,
   BackupWarning,
+  BackupOperationLogIncludeMode,
   BackupExportJobRequest,
   BackupExportJobResult,
 } from "./backup-shared.js";

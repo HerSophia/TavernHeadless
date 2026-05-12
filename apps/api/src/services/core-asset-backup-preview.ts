@@ -7,7 +7,7 @@ import {
 } from "@tavern/shared/types/backup-file";
 
 import type { AppDb } from "../db/client.js";
-import { characters, presets, regexProfiles, sessions, worldbooks } from "../db/schema.js";
+import { characters, presets, regexProfiles, sessions, vcTags, worldbooks } from "../db/schema.js";
 import {
   backupDroppedBindingSummarySchema,
   backupRenamedResourceSchema,
@@ -32,6 +32,7 @@ export interface BackupRestoreNamePlan {
   worldbooks: Map<string, string>;
   regexProfiles: Map<string, string>;
   sessions: Map<string, string | null>;
+  vcTags: Map<string, string>;
   renamedResources: BackupRenamedResource[];
 }
 
@@ -145,12 +146,21 @@ export function planCoreAssetBackupCopyRestore(
       .map((row) => row.title)
       .filter((title): title is string => typeof title === "string" && title.trim().length > 0),
   );
+  const existingVcTagNames = new Set(
+    db
+      .select({ name: vcTags.name })
+      .from(vcTags)
+      .where(eq(vcTags.accountId, accountId))
+      .all()
+      .map((row) => row.name),
+  );
 
   const charactersPlan = new Map<string, string>();
   const presetsPlan = new Map<string, string>();
   const worldbooksPlan = new Map<string, string>();
   const regexProfilesPlan = new Map<string, string>();
   const sessionsPlan = new Map<string, string | null>();
+  const vcTagsPlan = new Map<string, string>();
   const renamedResources: BackupRenamedResource[] = [];
 
   for (const character of file.resources.characters) {
@@ -218,12 +228,25 @@ export function planCoreAssetBackupCopyRestore(
     }
   }
 
+  for (const tag of file.vc.tags) {
+    const resolved = resolveCreateCopyName(tag.name, existingVcTagNames);
+    vcTagsPlan.set(tag.id, resolved.name);
+    if (resolved.renamed) {
+      renamedResources.push({
+        type: "vc_tag",
+        old_name: tag.name,
+        new_name: resolved.name,
+      });
+    }
+  }
+
   return {
     characters: charactersPlan,
     presets: presetsPlan,
     worldbooks: worldbooksPlan,
     regexProfiles: regexProfilesPlan,
     sessions: sessionsPlan,
+    vcTags: vcTagsPlan,
     renamedResources: backupRenamedResourceSchema.array().parse(renamedResources),
   };
 }
@@ -255,6 +278,8 @@ export function countCoreAssetBackupFile(file: ThBackupFile): BackupCountSummary
     0,
   );
   counts.sessions = file.sessions.length;
+  counts.vc_tags = file.vc.tags.length;
+  counts.operation_logs = file.vc.operation_logs.length;
 
   for (const session of file.sessions) {
     counts.session_branches += session.branches.length;
@@ -347,6 +372,19 @@ function toDroppedBindingWarnings(dropped: BackupDroppedBindingSummary): BackupW
 function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
   const issues: Array<{ path: string; message: string }> = [];
   let missingMainBranchRegistryCount = 0;
+  let operationRefDroppedCount = 0;
+  let operationLogReferenceDroppedCount = 0;
+
+  const operationLogIds = new Set<string>();
+  for (const [logIndex, log] of file.vc.operation_logs.entries()) {
+    pushUniqueIssue(
+      operationLogIds,
+      log.id,
+      `vc.operation_logs.${logIndex}.id`,
+      "Duplicate operation log id",
+      issues,
+    );
+  }
 
   const characterIds = new Set<string>();
   const characterVersionToCharacterId = new Map<string, string>();
@@ -393,6 +431,9 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
         });
       }
       versionNos.add(version.version_no);
+      if (shouldWarnDroppedOperationRef(file, version.created_by_operation_id, operationLogIds)) {
+        operationRefDroppedCount += 1;
+      }
     }
   }
 
@@ -417,6 +458,9 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
         });
       }
       versionNos.add(version.version_no);
+      if (shouldWarnDroppedOperationRef(file, version.created_by_operation_id, operationLogIds)) {
+        operationRefDroppedCount += 1;
+      }
     }
     const entryIds = new Set<string>();
     for (const [entryIndex, entry] of worldbook.entries.entries()) {
@@ -451,10 +495,20 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
         });
       }
       versionNos.add(version.version_no);
+      if (shouldWarnDroppedOperationRef(file, version.created_by_operation_id, operationLogIds)) {
+        operationRefDroppedCount += 1;
+      }
     }
   }
 
+  const assetVersionKindById = new Map<string, "character" | "preset" | "worldbook" | "regex_profile">();
+  for (const id of characterVersionToCharacterId.keys()) assetVersionKindById.set(id, "character");
+  for (const id of presetVersionToPresetId.keys()) assetVersionKindById.set(id, "preset");
+  for (const id of worldbookVersionToWorldbookId.keys()) assetVersionKindById.set(id, "worldbook");
+  for (const id of regexProfileVersionToProfileId.keys()) assetVersionKindById.set(id, "regex_profile");
+
   const sessionIds = new Set<string>();
+  const allFloorIds = new Set<string>();
   for (const [sessionIndex, session] of file.sessions.entries()) {
     pushUniqueIssue(sessionIds, session.id, `sessions.${sessionIndex}.id`, "Duplicate session id", issues);
 
@@ -572,6 +626,18 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
         "Duplicate branch registry entry",
         issues,
       );
+      validateBranchAssetBindingRef(
+        sessionIndex,
+        branchIndex,
+        branch.asset_binding,
+        presetIds,
+        presetVersionToPresetId,
+        worldbookIds,
+        worldbookVersionToWorldbookId,
+        regexProfileIds,
+        regexProfileVersionToProfileId,
+        issues,
+      );
     }
 
     if (!branchRegistryIds.has("main")) {
@@ -580,6 +646,7 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
 
     for (const [floorIndex, floor] of session.floors.entries()) {
       pushUniqueIssue(floorIds, floor.id, `sessions.${sessionIndex}.floors.${floorIndex}.id`, "Duplicate floor id", issues);
+      allFloorIds.add(floor.id);
       if (!branchRegistryIds.has(floor.branch_id) && floor.branch_id !== "main") {
         issues.push({
           path: `sessions.${sessionIndex}.floors.${floorIndex}.branch_id`,
@@ -703,6 +770,99 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
     }
   }
 
+  const vcTagIds = new Set<string>();
+  for (const [tagIndex, tag] of file.vc.tags.entries()) {
+    pushUniqueIssue(vcTagIds, tag.id, `vc.tags.${tagIndex}.id`, "Duplicate vc tag id", issues);
+
+    if (tag.target_type === "floor") {
+      if (tag.target_asset_kind !== undefined && tag.target_asset_kind !== null) {
+        issues.push({
+          path: `vc.tags.${tagIndex}.target_asset_kind`,
+          message: "target_asset_kind must be null or absent for floor tags",
+        });
+      }
+      if (!allFloorIds.has(tag.target_id_ref)) {
+        issues.push({
+          path: `vc.tags.${tagIndex}.target_id_ref`,
+          message: `Missing referenced floor ${tag.target_id_ref}`,
+        });
+      }
+    }
+
+    if (tag.target_type === "asset_version") {
+      if (!tag.target_asset_kind) {
+        issues.push({
+          path: `vc.tags.${tagIndex}.target_asset_kind`,
+          message: "target_asset_kind is required for asset_version tags",
+        });
+      }
+      const actualKind = assetVersionKindById.get(tag.target_id_ref);
+      if (!actualKind) {
+        issues.push({
+          path: `vc.tags.${tagIndex}.target_id_ref`,
+          message: `Missing referenced asset version ${tag.target_id_ref}`,
+        });
+      } else if (tag.target_asset_kind && actualKind !== tag.target_asset_kind) {
+        issues.push({
+          path: `vc.tags.${tagIndex}.target_asset_kind`,
+          message: `target_asset_kind ${tag.target_asset_kind} does not match asset version kind ${actualKind}`,
+        });
+      }
+    }
+
+    if (tag.session_id_ref && !sessionIds.has(tag.session_id_ref)) {
+      issues.push({
+        path: `vc.tags.${tagIndex}.session_id_ref`,
+        message: `Missing referenced session ${tag.session_id_ref}`,
+      });
+    }
+
+    if (shouldWarnDroppedOperationRef(file, tag.created_by_operation_id_ref ?? null, operationLogIds)) {
+      operationRefDroppedCount += 1;
+    }
+  }
+
+  for (const [logIndex, log] of file.vc.operation_logs.entries()) {
+    if (log.session_id_ref && !sessionIds.has(log.session_id_ref)) {
+      issues.push({
+        path: `vc.operation_logs.${logIndex}.session_id_ref`,
+        message: `Missing referenced session ${log.session_id_ref}`,
+      });
+    }
+
+    if (log.floor_id_ref && !allFloorIds.has(log.floor_id_ref)) {
+      issues.push({
+        path: `vc.operation_logs.${logIndex}.floor_id_ref`,
+        message: `Missing referenced floor ${log.floor_id_ref}`,
+      });
+    }
+
+    if (log.target_id_ref) {
+      validateOperationLogTargetRef(
+        logIndex,
+        log.target_type,
+        log.target_id_ref,
+        {
+          sessionIds,
+          allFloorIds,
+          vcTagIds,
+          characterIds,
+          characterVersionToCharacterId,
+          presetIds,
+          presetVersionToPresetId,
+          worldbookIds,
+          worldbookVersionToWorldbookId,
+          regexProfileIds,
+          regexProfileVersionToProfileId,
+          assetVersionKindById,
+        },
+        issues,
+      );
+    } else if (isKnownOperationLogTargetType(log.target_type)) {
+      operationLogReferenceDroppedCount += 1;
+    }
+  }
+
   if (issues.length > 0) {
     throw new CoreAssetBackupError(
       400,
@@ -719,8 +879,207 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
       message: `${missingMainBranchRegistryCount} 个 session 缺少 main branch registry，restore 时将自动补齐`,
     });
   }
+  if (operationRefDroppedCount > 0) {
+    warnings.push({
+      code: "operation_ref_dropped",
+      message: `${operationRefDroppedCount} 个 created_by_operation_id 引用没有对应 operation log，restore 时将清空`,
+    });
+  }
+  if (operationLogReferenceDroppedCount > 0) {
+    warnings.push({
+      code: "operation_log_reference_dropped",
+      message: `${operationLogReferenceDroppedCount} 个 operation log 目标引用无法映射，restore 时将保留为空`,
+    });
+  }
 
   return backupWarningSchema.array().parse(warnings);
+}
+
+function shouldWarnDroppedOperationRef(
+  file: ThBackupFile,
+  operationId: string | null | undefined,
+  operationLogIds: Set<string>,
+): boolean {
+  return file.spec_version !== "1.0.0"
+    && typeof operationId === "string"
+    && operationId.trim().length > 0
+    && !operationLogIds.has(operationId);
+}
+
+type OperationLogTargetRefValidationContext = {
+  sessionIds: Set<string>;
+  allFloorIds: Set<string>;
+  vcTagIds: Set<string>;
+  characterIds: Set<string>;
+  characterVersionToCharacterId: Map<string, string>;
+  presetIds: Set<string>;
+  presetVersionToPresetId: Map<string, string>;
+  worldbookIds: Set<string>;
+  worldbookVersionToWorldbookId: Map<string, string>;
+  regexProfileIds: Set<string>;
+  regexProfileVersionToProfileId: Map<string, string>;
+  assetVersionKindById: Map<string, "character" | "preset" | "worldbook" | "regex_profile">;
+};
+
+function validateOperationLogTargetRef(
+  logIndex: number,
+  targetType: string,
+  targetIdRef: string,
+  context: OperationLogTargetRefValidationContext,
+  issues: Array<{ path: string; message: string }>,
+): void {
+  const path = `vc.operation_logs.${logIndex}.target_id_ref`;
+  switch (targetType) {
+    case "session":
+      pushMissingOperationLogTargetIssue(context.sessionIds.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "floor":
+      pushMissingOperationLogTargetIssue(context.allFloorIds.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "vc_tag":
+      pushMissingOperationLogTargetIssue(context.vcTagIds.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "asset_version":
+      pushMissingOperationLogTargetIssue(context.assetVersionKindById.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "character":
+      pushMissingOperationLogTargetIssue(context.characterIds.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "character_version":
+      pushMissingOperationLogTargetIssue(context.characterVersionToCharacterId.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "preset":
+      pushMissingOperationLogTargetIssue(context.presetIds.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "preset_version":
+      pushMissingOperationLogTargetIssue(context.presetVersionToPresetId.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "worldbook":
+      pushMissingOperationLogTargetIssue(context.worldbookIds.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "worldbook_version":
+      pushMissingOperationLogTargetIssue(context.worldbookVersionToWorldbookId.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "regex_profile":
+      pushMissingOperationLogTargetIssue(context.regexProfileIds.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    case "regex_profile_version":
+      pushMissingOperationLogTargetIssue(context.regexProfileVersionToProfileId.has(targetIdRef), path, targetType, targetIdRef, issues);
+      return;
+    default:
+      return;
+  }
+}
+
+function pushMissingOperationLogTargetIssue(
+  isPresent: boolean,
+  path: string,
+  targetType: string,
+  targetIdRef: string,
+  issues: Array<{ path: string; message: string }>,
+): void {
+  if (!isPresent) {
+    issues.push({
+      path,
+      message: `Missing referenced operation log ${targetType} target ${targetIdRef}`,
+    });
+  }
+}
+
+function isKnownOperationLogTargetType(targetType: string): boolean {
+  return targetType === "session"
+    || targetType === "floor"
+    || targetType === "vc_tag"
+    || targetType === "asset_version"
+    || targetType === "character"
+    || targetType === "character_version"
+    || targetType === "preset"
+    || targetType === "preset_version"
+    || targetType === "worldbook"
+    || targetType === "worldbook_version"
+    || targetType === "regex_profile"
+    || targetType === "regex_profile_version";
+}
+
+function validateBranchAssetBindingRef(
+  sessionIndex: number,
+  branchIndex: number,
+  assetBinding: ThBackupFile["sessions"][number]["branches"][number]["asset_binding"],
+  presetIds: Set<string>,
+  presetVersionToPresetId: Map<string, string>,
+  worldbookIds: Set<string>,
+  worldbookVersionToWorldbookId: Map<string, string>,
+  regexProfileIds: Set<string>,
+  regexProfileVersionToProfileId: Map<string, string>,
+  issues: Array<{ path: string; message: string }>,
+): void {
+  if (!assetBinding) {
+    return;
+  }
+
+  const basePath = `sessions.${sessionIndex}.branches.${branchIndex}.asset_binding`;
+  if (assetBinding.preset_id_ref && !presetIds.has(assetBinding.preset_id_ref)) {
+    issues.push({
+      path: `${basePath}.preset_id_ref`,
+      message: `Missing referenced preset ${assetBinding.preset_id_ref}`,
+    });
+  }
+  if (assetBinding.preset_version_id_ref) {
+    const owningPresetId = presetVersionToPresetId.get(assetBinding.preset_version_id_ref);
+    if (!owningPresetId) {
+      issues.push({
+        path: `${basePath}.preset_version_id_ref`,
+        message: `Missing referenced preset version ${assetBinding.preset_version_id_ref}`,
+      });
+    } else if (assetBinding.preset_id_ref && owningPresetId !== assetBinding.preset_id_ref) {
+      issues.push({
+        path: `${basePath}.preset_version_id_ref`,
+        message: "preset_version_id_ref does not belong to preset_id_ref",
+      });
+    }
+  }
+
+  if (assetBinding.worldbook_id_ref && !worldbookIds.has(assetBinding.worldbook_id_ref)) {
+    issues.push({
+      path: `${basePath}.worldbook_id_ref`,
+      message: `Missing referenced worldbook ${assetBinding.worldbook_id_ref}`,
+    });
+  }
+  if (assetBinding.worldbook_version_id_ref) {
+    const owningWorldbookId = worldbookVersionToWorldbookId.get(assetBinding.worldbook_version_id_ref);
+    if (!owningWorldbookId) {
+      issues.push({
+        path: `${basePath}.worldbook_version_id_ref`,
+        message: `Missing referenced worldbook version ${assetBinding.worldbook_version_id_ref}`,
+      });
+    } else if (assetBinding.worldbook_id_ref && owningWorldbookId !== assetBinding.worldbook_id_ref) {
+      issues.push({
+        path: `${basePath}.worldbook_version_id_ref`,
+        message: "worldbook_version_id_ref does not belong to worldbook_id_ref",
+      });
+    }
+  }
+
+  if (assetBinding.regex_profile_id_ref && !regexProfileIds.has(assetBinding.regex_profile_id_ref)) {
+    issues.push({
+      path: `${basePath}.regex_profile_id_ref`,
+      message: `Missing referenced regex profile ${assetBinding.regex_profile_id_ref}`,
+    });
+  }
+  if (assetBinding.regex_profile_version_id_ref) {
+    const owningRegexProfileId = regexProfileVersionToProfileId.get(assetBinding.regex_profile_version_id_ref);
+    if (!owningRegexProfileId) {
+      issues.push({
+        path: `${basePath}.regex_profile_version_id_ref`,
+        message: `Missing referenced regex profile version ${assetBinding.regex_profile_version_id_ref}`,
+      });
+    } else if (assetBinding.regex_profile_id_ref && owningRegexProfileId !== assetBinding.regex_profile_id_ref) {
+      issues.push({
+        path: `${basePath}.regex_profile_version_id_ref`,
+        message: "regex_profile_version_id_ref does not belong to regex_profile_id_ref",
+      });
+    }
+  }
 }
 
 function pushUniqueIssue(

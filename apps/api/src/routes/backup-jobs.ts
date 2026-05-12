@@ -14,6 +14,7 @@ import {
   BACKUP_JOB_KINDS,
   BACKUP_RUNTIME_SCOPE_TYPE,
   BACKUP_RUNTIME_JOB_TYPES,
+  BACKUP_OPERATION_LOG_INCLUDE_MODES,
   createBackupRuntimeJobCatalog,
   exportCoreAssetsJobRequestSchema,
   exportCoreAssetsJobResultSchema,
@@ -65,6 +66,8 @@ function createBackupCountSummaryExample(): BackupCountSummary {
     branch_local_variable_snapshots: 1,
     memory_items: 3,
     memory_edges: 2,
+    vc_tags: 1,
+    operation_logs: 1,
   };
 }
 
@@ -89,6 +92,8 @@ const backupCountSummaryJsonSchema = {
     "branch_local_variable_snapshots",
     "memory_items",
     "memory_edges",
+    "vc_tags",
+    "operation_logs",
   ],
   properties: {
     characters: { type: "integer", minimum: 0 },
@@ -109,6 +114,8 @@ const backupCountSummaryJsonSchema = {
     branch_local_variable_snapshots: { type: "integer", minimum: 0 },
     memory_items: { type: "integer", minimum: 0 },
     memory_edges: { type: "integer", minimum: 0 },
+    vc_tags: { type: "integer", minimum: 0 },
+    operation_logs: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 } as const;
@@ -134,6 +141,8 @@ const backupRestoreCreatedSummaryJsonSchema = {
     "branch_local_variable_snapshots",
     "memory_items",
     "memory_edges",
+    "vc_tags",
+    "operation_logs",
     "runtime_scope_states",
   ],
   properties: {
@@ -158,7 +167,7 @@ const backupRenamedResourceJsonSchema = {
   type: "object",
   required: ["type", "old_name", "new_name"],
   properties: {
-    type: { type: "string", enum: ["character", "preset", "worldbook", "regex_profile", "session"] },
+    type: { type: "string", enum: ["character", "preset", "worldbook", "regex_profile", "session", "vc_tag"] },
     old_name: { type: "string" },
     new_name: { type: "string" },
   },
@@ -178,7 +187,7 @@ const backupDroppedBindingSummaryJsonSchema = {
 
 const backupExportJobRequestSummaryJsonSchema = {
   type: "object",
-  required: ["domains", "session_ids", "character_ids", "preset_ids", "worldbook_ids", "regex_profile_ids", "include_linked_assets", "include_secrets"],
+  required: ["domains", "session_ids", "character_ids", "preset_ids", "worldbook_ids", "regex_profile_ids", "include_linked_assets", "include_vc_tags", "include_operation_logs", "include_secrets"],
   properties: {
     domains: {
       anyOf: [
@@ -192,6 +201,8 @@ const backupExportJobRequestSummaryJsonSchema = {
     worldbook_ids: { type: "array", items: { type: "string" } },
     regex_profile_ids: { type: "array", items: { type: "string" } },
     include_linked_assets: { type: "boolean" },
+    include_vc_tags: { type: "boolean" },
+    include_operation_logs: { type: "string", enum: [...BACKUP_OPERATION_LOG_INCLUDE_MODES] },
     include_secrets: { type: "boolean", enum: [false] },
   },
   additionalProperties: false,
@@ -254,6 +265,8 @@ const backupJobExample = {
     worldbook_ids: [],
     regex_profile_ids: [],
     include_linked_assets: true,
+    include_vc_tags: true,
+    include_operation_logs: "referenced",
     include_secrets: false,
   },
   result: {
@@ -414,6 +427,8 @@ function summarizeBackupJobRequest(job: RuntimeJobView) {
       worldbook_ids: parsed.data.worldbookIds ?? [],
       regex_profile_ids: parsed.data.regexProfileIds ?? [],
       include_linked_assets: parsed.data.includeLinkedAssets,
+      include_vc_tags: parsed.data.includeVcTags,
+      include_operation_logs: parsed.data.includeOperationLogs,
       include_secrets: parsed.data.includeSecrets,
     };
   }

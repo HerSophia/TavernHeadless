@@ -56,6 +56,8 @@ export function createBackupRuntimeJobProcessorRegistry(
           worldbookIds: payload.worldbookIds,
           regexProfileIds: payload.regexProfileIds,
           includeLinkedAssets: payload.includeLinkedAssets,
+          includeVcTags: payload.includeVcTags,
+          includeOperationLogs: payload.includeOperationLogs,
           includeSecrets: payload.includeSecrets,
         });
         const normalizedArtifactPath = artifactStore.buildJobArtifactPath(job.id, "snapshot.json");

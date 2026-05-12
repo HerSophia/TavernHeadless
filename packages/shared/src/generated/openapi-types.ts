@@ -19770,7 +19770,9 @@ export interface operations {
                      *             "character_ids": [],
                      *             "domains": null,
                      *             "include_linked_assets": true,
+                     *             "include_operation_logs": "referenced",
                      *             "include_secrets": false,
+                     *             "include_vc_tags": true,
                      *             "preset_ids": [],
                      *             "regex_profile_ids": [],
                      *             "session_ids": [
@@ -19789,6 +19791,7 @@ export interface operations {
                      *               "memory_edges": 2,
                      *               "memory_items": 3,
                      *               "messages": 8,
+                     *               "operation_logs": 1,
                      *               "pages": 4,
                      *               "preset_versions": 1,
                      *               "presets": 1,
@@ -19797,6 +19800,7 @@ export interface operations {
                      *               "session_branches": 2,
                      *               "sessions": 1,
                      *               "variables": 6,
+                     *               "vc_tags": 1,
                      *               "worldbook_entries": 3,
                      *               "worldbook_versions": 1,
                      *               "worldbooks": 1
@@ -19848,8 +19852,11 @@ export interface operations {
                                 character_ids: string[];
                                 domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[] | null;
                                 include_linked_assets: boolean;
+                                /** @enum {string} */
+                                include_operation_logs: "none" | "referenced" | "selected_scope";
                                 /** @enum {boolean} */
                                 include_secrets: false;
+                                include_vc_tags: boolean;
                                 preset_ids: string[];
                                 regex_profile_ids: string[];
                                 session_ids: string[];
@@ -19875,6 +19882,7 @@ export interface operations {
                                     memory_edges: number;
                                     memory_items: number;
                                     messages: number;
+                                    operation_logs: number;
                                     pages: number;
                                     preset_versions: number;
                                     presets: number;
@@ -19883,6 +19891,7 @@ export interface operations {
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
+                                    vc_tags: number;
                                     worldbook_entries: number;
                                     worldbook_versions: number;
                                     worldbooks: number;
@@ -19898,6 +19907,7 @@ export interface operations {
                                     memory_edges: number;
                                     memory_items: number;
                                     messages: number;
+                                    operation_logs: number;
                                     pages: number;
                                     preset_versions: number;
                                     presets: number;
@@ -19907,6 +19917,7 @@ export interface operations {
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
+                                    vc_tags: number;
                                     worldbook_entries: number;
                                     worldbook_versions: number;
                                     worldbooks: number;
@@ -19922,7 +19933,7 @@ export interface operations {
                                     new_name: string;
                                     old_name: string;
                                     /** @enum {string} */
-                                    type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
+                                    type: "character" | "preset" | "worldbook" | "regex_profile" | "session" | "vc_tag";
                                 }[];
                                 warnings: {
                                     code: string;
@@ -20005,7 +20016,9 @@ export interface operations {
                      *           "character_ids": [],
                      *           "domains": null,
                      *           "include_linked_assets": true,
+                     *           "include_operation_logs": "referenced",
                      *           "include_secrets": false,
+                     *           "include_vc_tags": true,
                      *           "preset_ids": [],
                      *           "regex_profile_ids": [],
                      *           "session_ids": [
@@ -20024,6 +20037,7 @@ export interface operations {
                      *             "memory_edges": 2,
                      *             "memory_items": 3,
                      *             "messages": 8,
+                     *             "operation_logs": 1,
                      *             "pages": 4,
                      *             "preset_versions": 1,
                      *             "presets": 1,
@@ -20032,6 +20046,7 @@ export interface operations {
                      *             "session_branches": 2,
                      *             "sessions": 1,
                      *             "variables": 6,
+                     *             "vc_tags": 1,
                      *             "worldbook_entries": 3,
                      *             "worldbook_versions": 1,
                      *             "worldbooks": 1
@@ -20074,8 +20089,11 @@ export interface operations {
                                 character_ids: string[];
                                 domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[] | null;
                                 include_linked_assets: boolean;
+                                /** @enum {string} */
+                                include_operation_logs: "none" | "referenced" | "selected_scope";
                                 /** @enum {boolean} */
                                 include_secrets: false;
+                                include_vc_tags: boolean;
                                 preset_ids: string[];
                                 regex_profile_ids: string[];
                                 session_ids: string[];
@@ -20101,6 +20119,7 @@ export interface operations {
                                     memory_edges: number;
                                     memory_items: number;
                                     messages: number;
+                                    operation_logs: number;
                                     pages: number;
                                     preset_versions: number;
                                     presets: number;
@@ -20109,6 +20128,7 @@ export interface operations {
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
+                                    vc_tags: number;
                                     worldbook_entries: number;
                                     worldbook_versions: number;
                                     worldbooks: number;
@@ -20124,6 +20144,7 @@ export interface operations {
                                     memory_edges: number;
                                     memory_items: number;
                                     messages: number;
+                                    operation_logs: number;
                                     pages: number;
                                     preset_versions: number;
                                     presets: number;
@@ -20133,6 +20154,7 @@ export interface operations {
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
+                                    vc_tags: number;
                                     worldbook_entries: number;
                                     worldbook_versions: number;
                                     worldbooks: number;
@@ -20148,7 +20170,7 @@ export interface operations {
                                     new_name: string;
                                     old_name: string;
                                     /** @enum {string} */
-                                    type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
+                                    type: "character" | "preset" | "worldbook" | "regex_profile" | "session" | "vc_tag";
                                 }[];
                                 warnings: {
                                     code: string;
@@ -20407,6 +20429,8 @@ export interface operations {
                 /**
                  * @example {
                  *       "include_linked_assets": true,
+                 *       "include_operation_logs": "referenced",
+                 *       "include_vc_tags": true,
                  *       "session_ids": [
                  *         "sess_001"
                  *       ]
@@ -20418,10 +20442,17 @@ export interface operations {
                     /** @default true */
                     include_linked_assets?: boolean;
                     /**
+                     * @default none
+                     * @enum {string}
+                     */
+                    include_operation_logs?: "none" | "referenced" | "selected_scope";
+                    /**
                      * @default false
                      * @enum {boolean}
                      */
                     include_secrets?: false;
+                    /** @default true */
+                    include_vc_tags?: boolean;
                     preset_ids?: string[];
                     regex_profile_ids?: string[];
                     session_ids?: string[];
@@ -20536,7 +20567,11 @@ export interface operations {
                  *           "app_version": "0.2.0-beta.3"
                  *         },
                  *         "spec": "tavern_headless_backup",
-                 *         "spec_version": "1.0.0"
+                 *         "spec_version": "1.1.0",
+                 *         "vc": {
+                 *           "operation_logs": [],
+                 *           "tags": []
+                 *         }
                  *       },
                  *       "mode": "create_copy"
                  *     }
@@ -20678,7 +20713,11 @@ export interface operations {
                  *           "app_version": "0.2.0-beta.3"
                  *         },
                  *         "spec": "tavern_headless_backup",
-                 *         "spec_version": "1.0.0"
+                 *         "spec_version": "1.1.0",
+                 *         "vc": {
+                 *           "operation_logs": [],
+                 *           "tags": []
+                 *         }
                  *       },
                  *       "mode": "create_copy"
                  *     }
@@ -20715,6 +20754,7 @@ export interface operations {
                      *           "memory_edges": 2,
                      *           "memory_items": 3,
                      *           "messages": 8,
+                     *           "operation_logs": 0,
                      *           "pages": 4,
                      *           "preset_versions": 1,
                      *           "presets": 1,
@@ -20723,6 +20763,7 @@ export interface operations {
                      *           "session_branches": 2,
                      *           "sessions": 1,
                      *           "variables": 6,
+                     *           "vc_tags": 1,
                      *           "worldbook_entries": 3,
                      *           "worldbook_versions": 1,
                      *           "worldbooks": 1
@@ -20775,6 +20816,7 @@ export interface operations {
                                 memory_edges: number;
                                 memory_items: number;
                                 messages: number;
+                                operation_logs: number;
                                 pages: number;
                                 preset_versions: number;
                                 presets: number;
@@ -20783,6 +20825,7 @@ export interface operations {
                                 session_branches: number;
                                 sessions: number;
                                 variables: number;
+                                vc_tags: number;
                                 worldbook_entries: number;
                                 worldbook_versions: number;
                                 worldbooks: number;
@@ -20797,7 +20840,7 @@ export interface operations {
                                 new_name: string;
                                 old_name: string;
                                 /** @enum {string} */
-                                type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
+                                type: "character" | "preset" | "worldbook" | "regex_profile" | "session" | "vc_tag";
                             }[];
                             /** @enum {string} */
                             restore_mode: "create_copy";

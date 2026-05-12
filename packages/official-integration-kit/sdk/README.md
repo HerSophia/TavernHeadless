@@ -134,6 +134,28 @@ console.log(sessionLogs.meta.total);
 console.log(floorLogs.logs[0]?.diff);
 ```
 
+### Backup 核心资产备份
+
+Backup 资源可以创建导出作业、恢复预览和恢复作业。`includeOperationLogs` 对应 API 字段 `include_operation_logs`，默认是 `"none"`。
+
+```ts
+const job = await client.backup.createExportJob({
+  accountId: "account-1",
+  sessionIds: ["session-1"],
+  includeLinkedAssets: true,
+  includeVcTags: true,
+  includeOperationLogs: "referenced",
+});
+
+const detail = await client.backupJobs.getDetail({
+  accountId: "account-1",
+  jobId: job.jobId,
+});
+
+console.log(detail.result?.counts.operationLogs);
+```
+
+
 ### Variables 的三个观察面
 
 变量资源现在同时提供三组方法：

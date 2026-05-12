@@ -10,6 +10,7 @@ export {
   type BackupJobHandle,
   type BackupJobRequest,
   type BackupJobResult,
+  type BackupOperationLogIncludeMode,
   type BackupRenamedResource,
   type BackupRestoreCreatedSummary,
   type BackupRestoreJobRequest,
