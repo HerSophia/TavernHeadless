@@ -41,6 +41,8 @@ export type BackupResource = {
     domains?: BackupDomain[];
     includeLinkedAssets?: boolean;
     includeSecrets?: false;
+    presetIds?: string[];
+    regexProfileIds?: string[];
     sessionIds?: string[];
     signal?: AbortSignal;
     worldbookIds?: string[];
@@ -68,6 +70,8 @@ export function createBackupResource(client: TransportClient): BackupResource {
           domains: options.domains,
           include_linked_assets: options.includeLinkedAssets,
           include_secrets: options.includeSecrets,
+          preset_ids: options.presetIds,
+          regex_profile_ids: options.regexProfileIds,
           session_ids: options.sessionIds,
           worldbook_ids: options.worldbookIds,
         }),

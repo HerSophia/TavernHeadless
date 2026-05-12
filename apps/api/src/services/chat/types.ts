@@ -16,6 +16,7 @@ import type { PromptRuntimeExecutionResult, PromptRuntimeResolvedContext } from 
 import type { PromptRuntimeInspectionResult } from "../prompt-runtime-control-service.js";
 import type { FirstPartySceneContext, FirstPartyWorldContext } from "../../session-state/session-state-types.js";
 import type { ResolvedTurnModels } from "./contracts.js";
+import type { SessionBranchAssetBindingState } from "../variables/host/session-branch-registry-service.js";
 import type { PromptRuntimeHistoryNormalizationSummary } from "./conversation-history-normalizer.js";
 import type { FloorConversationInputSnapshot } from "./shared/metadata.js";
 
@@ -44,6 +45,7 @@ export interface ResolvedRespondBranchContext {
   nextFloorNo: number;
   parentFloorId: string | null;
   inheritanceSource?: { floorId: string; branchId: string };
+  assetBinding?: SessionBranchAssetBindingState | null;
 }
 
 export interface RegenerationTargetFloor {

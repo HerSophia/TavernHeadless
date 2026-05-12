@@ -15,6 +15,7 @@ import WorkspaceInspectorEventsPanel from "./inspector/WorkspaceInspectorEventsP
 import WorkspaceInspectorImpactPanel from "./inspector/WorkspaceInspectorImpactPanel.vue";
 import WorkspaceInspectorMemoryPanel from "./inspector/WorkspaceInspectorMemoryPanel.vue";
 import WorkspaceInspectorToolsPanel from "./inspector/WorkspaceInspectorToolsPanel.vue";
+import WorkspaceInspectorVcPanel from "./inspector/WorkspaceInspectorVcPanel.vue";
 import WorkspaceInspectorTabStrip from "./inspector/WorkspaceInspectorTabStrip.vue";
 import type { WorkspaceEvent } from "../../stores/workspace-ui";
 import type { TimelineMessage } from "../../stores/workspace";
@@ -121,6 +122,12 @@ const emit = defineEmits<{
       <WorkspaceInspectorToolsPanel v-else-if="props.activeTab === 'tools'" :state="props.respondStreamState" :t="props.t" />
       <WorkspaceInspectorMemoryPanel
         v-else-if="props.activeTab === 'memory'"
+        :active-session-id="props.activeSessionId"
+        :current-account="props.currentAccount"
+        :t="props.t"
+      />
+      <WorkspaceInspectorVcPanel
+        v-else-if="props.activeTab === 'vc'"
         :active-session-id="props.activeSessionId"
         :current-account="props.currentAccount"
         :t="props.t"

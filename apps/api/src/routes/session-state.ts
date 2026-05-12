@@ -22,6 +22,10 @@ import {
 } from "../session-state/session-state-public-service.js";
 import { SessionStateServiceError } from "../session-state/session-state-service.js";
 import {
+  operationActorFromRequest,
+  operationRequestIdFromRequest,
+} from "../services/operation-log-service.js";
+import {
   diffSessionStateQueryJsonSchema,
   diffSessionStateValuesResponseJsonSchema,
   listSessionStateNamespacesResponseJsonSchema,
@@ -185,6 +189,12 @@ export async function registerSessionStateRoutes(
         namespace: body.data.namespace,
         logicalOwnerType: body.data.logical_owner_type,
         logicalOwnerId: body.data.logical_owner_id,
+        operationLog: {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "POST /sessions/:sessionId/state/namespaces",
+        },
       });
       return reply.code(201).send({
         data: toNamespaceResponse(registered),
@@ -255,6 +265,12 @@ export async function registerSessionStateRoutes(
         namespace: body.data.namespace,
         slot: body.data.slot,
         value: body.data.value,
+        operationLog: {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "POST /sessions/:sessionId/state/values/write",
+        },
       });
       return reply.code(200).send({ data: toResolvedValueResponse(value) });
     } catch (error) {
@@ -292,6 +308,12 @@ export async function registerSessionStateRoutes(
         branchId: body.data.branch_id,
         namespace: body.data.namespace,
         slot: body.data.slot,
+        operationLog: {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "DELETE /sessions/:sessionId/state/values",
+        },
       });
       return reply.code(200).send({ data: toResolvedValueResponse(value) });
     } catch (error) {

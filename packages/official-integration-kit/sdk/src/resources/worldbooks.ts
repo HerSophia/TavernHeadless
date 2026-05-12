@@ -1,5 +1,13 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
+import {
+  mapPromptAssetRollbackResult,
+  mapPromptAssetVersion,
+  mapPromptAssetVersionCompareResult,
+  type PromptAssetRollbackResult,
+  type PromptAssetVersionCompareResult,
+  type PromptAssetVersionRecord,
+} from "./asset-versions.js";
 
 export type WorldbookListItem = {
   createdAt: number;
@@ -15,9 +23,25 @@ export type WorldbookDetail = WorldbookListItem & {
 };
 
 export type WorldbooksResource = {
+  compareVersions(options: {
+    accountId?: AccountIdHint;
+    leftVersionId: string;
+    mode?: "summary" | "full";
+    rightVersionId: string;
+    worldbookId: string;
+  }): Promise<PromptAssetVersionCompareResult>;
+  getVersion(options: { accountId?: AccountIdHint; versionId: string; worldbookId: string }): Promise<PromptAssetVersionRecord>;
+  listVersions(options: { accountId?: AccountIdHint; worldbookId: string }): Promise<PromptAssetVersionRecord[]>;
   getDetail(options: { accountId?: AccountIdHint; worldbookId: string }): Promise<WorldbookDetail>;
   list(options?: { accountId?: AccountIdHint }): Promise<WorldbookListItem[]>;
   remove(options: { accountId?: AccountIdHint; expectedVersion?: number; worldbookId: string }): Promise<void>;
+  rollbackVersion(options: {
+    accountId?: AccountIdHint;
+    expectedUpdatedAt?: number;
+    expectedVersion?: number;
+    versionId: string;
+    worldbookId: string;
+  }): Promise<PromptAssetRollbackResult>;
   update(options: {
     accountId?: AccountIdHint;
     data: Record<string, unknown>;
@@ -30,6 +54,48 @@ export type WorldbooksResource = {
 
 export function createWorldbooksResource(client: TransportClient): WorldbooksResource {
   return {
+    async compareVersions(options): Promise<PromptAssetVersionCompareResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/worldbooks/${encodeURIComponent(options.worldbookId)}/versions/compare`,
+        {
+          body: compactObject({
+            left_version_id: options.leftVersionId,
+            mode: options.mode,
+            right_version_id: options.rightVersionId,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const result = mapPromptAssetVersionCompareResult(readRecord(response.body)?.data);
+      if (!result) {
+        throw new Error("Worldbook version compare payload is missing");
+      }
+      return result;
+    },
+
+    async getVersion(options): Promise<PromptAssetVersionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/worldbooks/${encodeURIComponent(options.worldbookId)}/versions/${encodeURIComponent(options.versionId)}`,
+        { headers: buildAccountHeaders(options.accountId), method: "GET" },
+      );
+      const version = mapPromptAssetVersion(readRecord(response.body)?.data);
+      if (!version) {
+        throw new Error("Worldbook version payload is missing");
+      }
+      return version;
+    },
+
+    async listVersions(options): Promise<PromptAssetVersionRecord[]> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/worldbooks/${encodeURIComponent(options.worldbookId)}/versions`,
+        { headers: buildAccountHeaders(options.accountId), method: "GET" },
+      );
+      return readArray(readRecord(response.body)?.data)
+        .map(mapPromptAssetVersion)
+        .filter((version): version is PromptAssetVersionRecord => version !== null);
+    },
+
     async getDetail(options): Promise<WorldbookDetail> {
       const response = await client.fetchJson<Record<string, unknown>>(`/worldbooks/${encodeURIComponent(options.worldbookId)}`, {
         headers: buildAccountHeaders(options.accountId),
@@ -70,6 +136,25 @@ export function createWorldbooksResource(client: TransportClient): WorldbooksRes
         headers: buildAccountHeaders(options.accountId),
         method: "DELETE",
       });
+    },
+    async rollbackVersion(options): Promise<PromptAssetRollbackResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/worldbooks/${encodeURIComponent(options.worldbookId)}/versions/${encodeURIComponent(options.versionId)}/rollback`,
+        {
+          body: compactObject({
+            expected_updated_at: options.expectedUpdatedAt,
+            expected_version: options.expectedVersion,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const result = mapPromptAssetRollbackResult(readRecord(response.body)?.data);
+      if (!result) {
+        throw new Error("Worldbook version rollback payload is missing");
+      }
+
+      return result;
     },
     async update(options): Promise<WorldbookListItem> {
       const response = await client.fetchJson<Record<string, unknown>>(`/worldbooks/${encodeURIComponent(options.worldbookId)}`, {

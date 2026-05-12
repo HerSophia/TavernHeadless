@@ -478,7 +478,12 @@ describe("prompt runtime routes", () => {
       structure: { mode: "strict_alternating", preserveSystemMessages: true },
       delivery: { requireLastUser: true },
       visibility: { mode: "allow_all_except_hidden", hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }] },
-    }, DEFAULT_ADMIN_ACCOUNT_ID);
+    }, DEFAULT_ADMIN_ACCOUNT_ID, expect.objectContaining({
+      actorType: "user",
+      actorId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sourceType: "http",
+      route: "PATCH /sessions/:id/prompt-runtime/policy",
+    }));
   });
 
   it("maps PATCH /sessions/:id/prompt-runtime/policy null clearing semantics", async () => {
@@ -536,7 +541,12 @@ describe("prompt runtime routes", () => {
     expect(controlService.updatePolicy).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID, {
       structure: null,
       delivery: null,
-    }, DEFAULT_ADMIN_ACCOUNT_ID);
+    }, DEFAULT_ADMIN_ACCOUNT_ID, expect.objectContaining({
+      actorType: "user",
+      actorId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sourceType: "http",
+      route: "PATCH /sessions/:id/prompt-runtime/policy",
+    }));
   });
 
   it("maps GET /sessions/:id/prompt-runtime/branches/:branchId/policy response to snake_case", async () => {
@@ -643,7 +653,12 @@ describe("prompt runtime routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(controlService.updateBranchPolicy).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, { structure: { mode: "strict_alternating" }, visibility: { mode: "deny_all_except_visible", visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }] } }, DEFAULT_ADMIN_ACCOUNT_ID);
+    expect(controlService.updateBranchPolicy).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, { structure: { mode: "strict_alternating" }, visibility: { mode: "deny_all_except_visible", visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }] } }, DEFAULT_ADMIN_ACCOUNT_ID, expect.objectContaining({
+      actorType: "user",
+      actorId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sourceType: "http",
+      route: "PATCH /sessions/:id/prompt-runtime/branches/:branchId/policy",
+    }));
   });
 
   it("rejects macro-related write attempts outside the mutable policy surface", async () => {
@@ -1303,12 +1318,18 @@ describe("prompt runtime routes", () => {
           preset_id: "preset-1",
           preset_updated_at: 1710000000000,
           preset_version: 3,
+          preset_version_id: null,
+          preset_content_hash: null,
           worldbook_id: "wb-1",
           worldbook_updated_at: 1710000001000,
           worldbook_version: 5,
+          worldbook_version_id: null,
+          worldbook_content_hash: null,
           regex_profile_id: "regex-1",
           regex_profile_updated_at: 1710000002000,
           regex_profile_version: 2,
+          regex_profile_version_id: null,
+          regex_profile_content_hash: null,
           character_id: null,
           character_version_id: null,
           character_imported_format: null,

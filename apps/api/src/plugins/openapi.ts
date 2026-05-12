@@ -71,6 +71,9 @@ export async function registerOpenApi(app: FastifyInstance, options: RegisterOpe
         { name: "llm-profiles", description: "LLM profile vault and activation" },
         { name: "accounts", description: "Account management" },
         { name: "users", description: "Account user-card management" },
+        { name: "asset-versions", description: "Prompt asset version read, compare, and rollback APIs" },
+        { name: "operation-logs", description: "Operation Journal query APIs" },
+        { name: "vc-tags", description: "Version-control tags for floors and asset versions" },
       ],
     },
   });

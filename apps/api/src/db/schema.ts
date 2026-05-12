@@ -62,6 +62,7 @@ export const characterVersions = sqliteTable(
     sourceArtifactJson: text("source_artifact_json"),
     sourceArtifactFormat: text("source_artifact_format"),
     sourceArtifactDigest: text("source_artifact_digest"),
+    createdByOperationId: text("created_by_operation_id"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => ({
@@ -84,6 +85,10 @@ export const sessions = sqliteTable("session", {
   presetId: text("preset_id"),
   regexProfileId: text("regex_profile_id"),
   worldbookProfileId: text("worldbook_profile_id"),
+  deepBinding: integer("deep_binding", { mode: "boolean" }).notNull().default(false),
+  presetVersionId: text("preset_version_id"),
+  worldbookVersionId: text("worldbook_version_id"),
+  regexProfileVersionId: text("regex_profile_version_id"),
   modelProvider: text("model_provider"),
   modelName: text("model_name"),
   modelParamsJson: text("model_params_json"),
@@ -102,6 +107,13 @@ export const sessionBranches = sqliteTable(
     branchId: text("branch_id").notNull(),
     sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
     sourceBranchId: text("source_branch_id"),
+    assetBindingDeepBinding: integer("asset_binding_deep_binding", { mode: "boolean" }),
+    assetBindingPresetId: text("asset_binding_preset_id").references(() => presets.id, { onDelete: "set null" }),
+    assetBindingPresetVersionId: text("asset_binding_preset_version_id").references(() => presetVersions.id, { onDelete: "set null" }),
+    assetBindingWorldbookProfileId: text("asset_binding_worldbook_profile_id").references(() => worldbooks.id, { onDelete: "set null" }),
+    assetBindingWorldbookVersionId: text("asset_binding_worldbook_version_id").references(() => worldbookVersions.id, { onDelete: "set null" }),
+    assetBindingRegexProfileId: text("asset_binding_regex_profile_id").references(() => regexProfiles.id, { onDelete: "set null" }),
+    assetBindingRegexProfileVersionId: text("asset_binding_regex_profile_version_id").references(() => regexProfileVersions.id, { onDelete: "set null" }),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -469,6 +481,79 @@ export const clientDataAuditLogs = sqliteTable(
     domainCreatedIdx: index("client_data_audit_log_domain_created_idx").on(table.domainId, table.createdAt),
   })
 );
+
+export const operationLogs = sqliteTable(
+  "operation_log",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id"),
+    operationGroupId: text("operation_group_id"),
+    requestId: text("request_id"),
+    sourceType: text("source_type").notNull(),
+    action: text("action").notNull(),
+    status: text("status", { enum: ["succeeded", "failed", "denied", "cancelled"] }).notNull(),
+    sessionId: text("session_id"),
+    branchId: text("branch_id"),
+    floorId: text("floor_id"),
+    runId: text("run_id"),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id"),
+    beforeRefJson: text("before_ref_json"),
+    afterRefJson: text("after_ref_json"),
+    diffJson: text("diff_json"),
+    metadataJson: text("metadata_json"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    accountCreatedIdx: index("operation_log_account_created_idx").on(table.accountId, table.createdAt),
+    sessionCreatedIdx: index("operation_log_session_created_idx").on(table.sessionId, table.createdAt),
+    accountTargetCreatedIdx: index("operation_log_account_target_created_idx").on(
+      table.accountId,
+      table.targetType,
+      table.targetId,
+      table.createdAt,
+    ),
+    groupIdx: index("operation_log_group_idx").on(table.operationGroupId),
+    requestIdx: index("operation_log_request_idx").on(table.requestId),
+    floorCreatedIdx: index("operation_log_floor_created_idx").on(table.floorId, table.createdAt),
+    runCreatedIdx: index("operation_log_run_created_idx").on(table.runId, table.createdAt),
+  })
+);
+
+export const vcTags = sqliteTable(
+  "vc_tag",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    targetType: text("target_type", { enum: ["floor", "asset_version"] }).notNull(),
+    targetId: text("target_id").notNull(),
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    metadataJson: text("metadata_json"),
+    createdByOperationId: text("created_by_operation_id").references(() => operationLogs.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    accountNameUnique: uniqueIndex("vc_tag_account_name_uq").on(
+      table.accountId,
+      table.name,
+    ),
+    accountTargetIdx: index("vc_tag_account_target_idx").on(
+      table.accountId,
+      table.targetType,
+      table.targetId,
+    ),
+    accountSessionCreatedIdx: index("vc_tag_account_session_created_idx").on(
+      table.accountId,
+      table.sessionId,
+      table.createdAt,
+    ),
+    operationIdx: index("vc_tag_operation_idx").on(table.createdByOperationId),
+  })
+);
+
 
 export const clientDataManagedDomains = sqliteTable(
   "client_data_managed_domain",
@@ -894,6 +979,60 @@ export const regexProfiles = sqliteTable(
   })
 );
 
+export const presetVersions = sqliteTable(
+  "preset_version",
+  {
+    id: text("id").primaryKey(),
+    presetId: text("preset_id").notNull().references(() => presets.id, { onDelete: "cascade" }),
+    parentVersionId: text("parent_version_id"),
+    versionNo: integer("version_no").notNull(),
+    dataJson: text("data_json").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdByOperationId: text("created_by_operation_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    presetVersionUnique: uniqueIndex("preset_version_preset_no_uq").on(table.presetId, table.versionNo),
+    presetCreatedAtIdx: index("preset_version_preset_created_idx").on(table.presetId, table.createdAt),
+  })
+);
+
+export const worldbookVersions = sqliteTable(
+  "worldbook_version",
+  {
+    id: text("id").primaryKey(),
+    worldbookId: text("worldbook_id").notNull().references(() => worldbooks.id, { onDelete: "cascade" }),
+    parentVersionId: text("parent_version_id"),
+    versionNo: integer("version_no").notNull(),
+    dataJson: text("data_json").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdByOperationId: text("created_by_operation_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    worldbookVersionUnique: uniqueIndex("worldbook_version_worldbook_no_uq").on(table.worldbookId, table.versionNo),
+    worldbookCreatedAtIdx: index("worldbook_version_worldbook_created_idx").on(table.worldbookId, table.createdAt),
+  })
+);
+
+export const regexProfileVersions = sqliteTable(
+  "regex_profile_version",
+  {
+    id: text("id").primaryKey(),
+    regexProfileId: text("regex_profile_id").notNull().references(() => regexProfiles.id, { onDelete: "cascade" }),
+    parentVersionId: text("parent_version_id"),
+    versionNo: integer("version_no").notNull(),
+    dataJson: text("data_json").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdByOperationId: text("created_by_operation_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    regexProfileVersionUnique: uniqueIndex("regex_profile_version_profile_no_uq").on(table.regexProfileId, table.versionNo),
+    regexProfileCreatedAtIdx: index("regex_profile_version_profile_created_idx").on(table.regexProfileId, table.createdAt),
+  })
+);
+
 /**
  * Assembly-phase prompt snapshot.
  *
@@ -913,12 +1052,18 @@ export const promptSnapshots = sqliteTable(
     presetId: text("preset_id").references(() => presets.id, { onDelete: "set null" }),
     presetUpdatedAt: integer("preset_updated_at"),
     presetVersion: integer("preset_version"),
+    presetVersionId: text("preset_version_id").references(() => presetVersions.id, { onDelete: "set null" }),
+    presetContentHash: text("preset_content_hash"),
     worldbookId: text("worldbook_id").references(() => worldbooks.id, { onDelete: "set null" }),
     worldbookUpdatedAt: integer("worldbook_updated_at"),
     worldbookVersion: integer("worldbook_version"),
+    worldbookVersionId: text("worldbook_version_id").references(() => worldbookVersions.id, { onDelete: "set null" }),
+    worldbookContentHash: text("worldbook_content_hash"),
     regexProfileId: text("regex_profile_id").references(() => regexProfiles.id, { onDelete: "set null" }),
     regexProfileUpdatedAt: integer("regex_profile_updated_at"),
     regexProfileVersion: integer("regex_profile_version"),
+    regexProfileVersionId: text("regex_profile_version_id").references(() => regexProfileVersions.id, { onDelete: "set null" }),
+    regexProfileContentHash: text("regex_profile_content_hash"),
     characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
     characterVersionId: text("character_version_id").references(() => characterVersions.id, { onDelete: "set null" }),
     characterImportedFormat: text("character_imported_format"),

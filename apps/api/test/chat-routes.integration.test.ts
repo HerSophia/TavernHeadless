@@ -24,6 +24,13 @@ function createChatService(overrides: Partial<ChatServiceStub> = {}): ChatServic
   };
 }
 
+function expectTurnOperationLog(route: string) {
+  return {
+    requestId: expect.any(String),
+    route,
+  };
+}
+
 describe("chat routes", () => {
   let app: FastifyInstance;
 
@@ -188,12 +195,18 @@ describe("chat routes", () => {
           preset_id: "preset-1",
           preset_updated_at: 1710000000000,
           preset_version: 3,
+          preset_version_id: null,
+          preset_content_hash: null,
           worldbook_id: "worldbook-1",
           worldbook_updated_at: 1710000001000,
           worldbook_version: 5,
+          worldbook_version_id: null,
+          worldbook_content_hash: null,
           regex_profile_id: "regex-1",
           regex_profile_updated_at: 1710000002000,
           regex_profile_version: 2,
+          regex_profile_version_id: null,
+          regex_profile_content_hash: null,
           character_id: null,
           character_version_id: null,
           character_imported_format: null,
@@ -273,6 +286,7 @@ describe("chat routes", () => {
         },
         branchId: "alt",
         sourceFloorId: "floor-source",
+        promptIntent: undefined,
         delivery: {
           allowAssistantPrefill: false,
           requireLastUser: true,
@@ -289,6 +303,9 @@ describe("chat routes", () => {
           includeRuntimeTrace: true,
           includeWorldbookMatches: true,
         },
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /sessions/:id/respond"),
       },
       {},
       "default-admin"
@@ -605,7 +622,22 @@ describe("chat routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(chatService.regenerate).toHaveBeenCalledWith("s1", {}, "default-admin");
+    expect(chatService.regenerate).toHaveBeenCalledWith(
+      "s1",
+      {
+        config: undefined,
+        generationParams: undefined,
+        structure: undefined,
+        delivery: undefined,
+        debugOptions: undefined,
+        confirmedExecutionIds: undefined,
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        confirmedSessionStateMutationIds: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /sessions/:id/regenerate"),
+      },
+      "default-admin",
+    );
   });
 
   it("maps generation params and errors on /sessions/:id/regenerate", async () => {
@@ -684,6 +716,11 @@ describe("chat routes", () => {
           includeRuntimeTrace: true,
           includeWorldbookMatches: false,
         },
+        confirmedExecutionIds: undefined,
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        confirmedSessionStateMutationIds: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /sessions/:id/regenerate"),
       },
       "default-admin"
     );
@@ -733,7 +770,22 @@ describe("chat routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(chatService.retryFloor).toHaveBeenCalledWith("f1", {}, "default-admin");
+    expect(chatService.retryFloor).toHaveBeenCalledWith(
+      "f1",
+      {
+        config: undefined,
+        generationParams: undefined,
+        structure: undefined,
+        delivery: undefined,
+        debugOptions: undefined,
+        confirmedExecutionIds: undefined,
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        confirmedSessionStateMutationIds: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /floors/:id/retry"),
+      },
+      "default-admin",
+    );
   });
 
   it("maps generation params and invalid_state on /floors/:id/retry", async () => {
@@ -780,6 +832,14 @@ describe("chat routes", () => {
           stream: false,
           reasoningEffort: "medium",
         },
+        structure: undefined,
+        delivery: undefined,
+        debugOptions: undefined,
+        confirmedExecutionIds: undefined,
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        confirmedSessionStateMutationIds: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /floors/:id/retry"),
       },
       "default-admin"
     );
@@ -846,6 +906,10 @@ describe("chat routes", () => {
           includeWorldbookMatches: false,
         },
         confirmedExecutionIds: undefined,
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        confirmedSessionStateMutationIds: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /floors/:id/retry"),
       },
       "default-admin"
     );
@@ -904,6 +968,13 @@ describe("chat routes", () => {
         config: undefined,
         generationParams: undefined,
         confirmedExecutionIds: ["exec-1", "exec-2"],
+        structure: undefined,
+        delivery: undefined,
+        debugOptions: undefined,
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        confirmedSessionStateMutationIds: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /floors/:id/retry"),
       },
       "default-admin",
     );
@@ -1007,12 +1078,18 @@ describe("chat routes", () => {
           preset_id: null,
           preset_updated_at: null,
           preset_version: null,
+          preset_version_id: null,
+          preset_content_hash: null,
           worldbook_id: null,
           worldbook_updated_at: null,
           worldbook_version: null,
+          worldbook_version_id: null,
+          worldbook_content_hash: null,
           regex_profile_id: null,
           regex_profile_updated_at: null,
           regex_profile_version: null,
+          regex_profile_version_id: null,
+          regex_profile_content_hash: null,
           character_id: null,
           character_version_id: null,
           character_imported_format: null,
@@ -1062,6 +1139,11 @@ describe("chat routes", () => {
           includeRuntimeTrace: true,
           includeWorldbookMatches: false,
         },
+        confirmedExecutionIds: undefined,
+        sessionStateWrites: undefined,
+        sessionStateOperationLog: undefined,
+        confirmedSessionStateMutationIds: undefined,
+        turnOperationLog: expectTurnOperationLog("POST /messages/:id/edit-and-regenerate"),
       },
       "default-admin"
     );

@@ -46,7 +46,7 @@ export class PromptRuntimePreviewService {
     }
 
     const branchId = normalizeBranchId(request.branchId);
-    const branchContext = await this.targetResolver.resolveRespondBranchContext(sessionId, branchId, request.sourceFloorId);
+    const branchContext = await this.targetResolver.resolveRespondBranchContext(sessionId, branchId, request.sourceFloorId, accountId);
     const executionContext = resolvePromptRuntimeExecutionContext({
       sessionId,
       metadataJson: session.metadataJson,
@@ -54,7 +54,7 @@ export class PromptRuntimePreviewService {
       branchExists: branchContext.branchExists,
       historySourceBranchId: branchContext.historySourceBranchId,
       historySourceMode: branchContext.historySourceMode,
-      sourceFloorId: request.sourceFloorId ?? null,
+      sourceFloorId: branchContext.inheritanceSource?.floorId ?? request.sourceFloorId ?? null,
       request,
     });
     const conversationState = await this.promptPreparationService.loadPromptRuntimeConversationWindow({
@@ -90,7 +90,12 @@ export class PromptRuntimePreviewService {
       maxContextTokensOverride: narratorParams?.maxContextTokens,
       maxOutputTokensOverride: narratorParams?.maxOutputTokens,
     });
-    const sessionInfo = this.modelService.buildSessionPromptInfo(session, resolvedTurnModels);
+    const sessionInfo = this.modelService.buildSessionPromptInfo(
+      session,
+      resolvedTurnModels,
+      undefined,
+      branchContext.assetBinding,
+    );
 
     let variableState: Awaited<ReturnType<PromptRuntimePreviewService["resolvePromptRuntimePreviewVariables"]>>;
     try {

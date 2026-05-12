@@ -46,6 +46,9 @@ describe("TurnSessionStateService", () => {
       slot: "hero",
       value: { hp: 10 },
       present: true,
+      operationLog: undefined,
+      operationIndex: 1,
+      operationCount: 2,
     });
     expect(stageClientCommitBoundValue).toHaveBeenNthCalledWith(2, {
       accountId: "acc",
@@ -56,6 +59,9 @@ describe("TurnSessionStateService", () => {
       slot: "hero",
       value: null,
       present: false,
+      operationLog: undefined,
+      operationIndex: 2,
+      operationCount: 2,
     });
   });
 

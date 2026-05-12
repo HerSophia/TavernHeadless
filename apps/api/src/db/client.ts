@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import * as schema from "./schema";
+import { AssetVersionService } from "../services/asset-version-service.js";
 
 const DEFAULT_DATABASE_PATH = "data/tavern-headless.db";
 const DEFAULT_MIGRATIONS_PATH = fileURLToPath(new URL("../../drizzle", import.meta.url));
@@ -315,6 +316,7 @@ export function createDatabase(
   }
 
   repairKnownAdditiveSchemaDrift(sqlite);
+  new AssetVersionService(db).ensureInitialVersionsForAllAccounts();
 
   return {
     db,

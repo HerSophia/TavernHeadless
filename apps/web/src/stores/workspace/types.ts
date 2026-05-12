@@ -22,7 +22,13 @@ export type SessionState = {
   id: string;
   title: LocalizedTitle;
   userName: string;
+  deepBinding?: boolean;
+  presetId: string | null;
+  presetVersionId?: string | null;
+  regexProfileId: string | null;
+  regexProfileVersionId?: string | null;
   worldbookProfileId: string | null;
+  worldbookVersionId?: string | null;
   worldbookCount: number;
 };
 
@@ -59,6 +65,7 @@ export type WorkspaceAsset = {
 };
 
 export type AssetApplyResult = {
+  apiSyncFailed: boolean;
   asset: WorkspaceAsset | null;
   bindingChanged: boolean;
   ok: boolean;

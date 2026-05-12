@@ -294,15 +294,15 @@ describe("resource utils", () => {
     ).toBe("list=one&list=two&page=1&q=search");
   });
 
-  it("compacts objects by removing undefined values", () => {
+  it("compacts objects by removing undefined values and preserving null", () => {
     expect(
       compactObject({
-        a: 1,
+        a: null,
         b: undefined,
         c: false,
       }),
     ).toEqual({
-      a: 1,
+      a: null,
       c: false,
     });
   });

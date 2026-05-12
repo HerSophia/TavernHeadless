@@ -44,6 +44,12 @@ import {
   SESSION_STATE_MANAGER_KIND,
   SESSION_STATE_SNAPSHOT_COLLECTION,
 } from "./session-state-types.js";
+import {
+  appendSessionStateOperationLog,
+  buildSessionStateValueTargetId,
+  toSessionStateValueOperationRef,
+  type SessionStateOperationLogContext,
+} from "./session-state-operation-log.js";
 
 export interface SessionStateServiceOptions {
   clientData: ClientDataConfig;
@@ -141,6 +147,9 @@ export class SessionStateService {
     present?: boolean;
     requestId?: string | null;
     runId?: string | null;
+    operationLog?: SessionStateOperationLogContext;
+    operationIndex?: number;
+    operationCount?: number;
   }): SessionStateMutationView {
     return this.executeTransaction((tx) => {
       const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
@@ -169,7 +178,7 @@ export class SessionStateService {
         writeMode: "commit_bound",
         replaySafety,
         status: "staged",
-        requestId: input.requestId ?? null,
+        requestId: input.requestId ?? input.operationLog?.requestId ?? null,
         runId: input.runId ?? null,
         payloadJson: JSON.stringify(payload),
         sourceSnapshotFloorId: input.sourceFloorId,
@@ -177,7 +186,38 @@ export class SessionStateService {
         createdAt: this.now(),
         updatedAt: this.now(),
       });
-      return this.inflateMutation(mutation);
+      const inflatedMutation = this.inflateMutation(mutation);
+      if (input.operationLog) {
+        appendSessionStateOperationLog(tx, {
+          ...input.operationLog,
+          accountId: host.accountId,
+          action: "stage_session_state_turn_write",
+          sessionId: host.id,
+          branchId: input.branchId,
+          floorId: input.sourceFloorId,
+          runId: input.runId ?? null,
+          targetType: "session_state_value",
+          targetId: buildSessionStateValueTargetId(host.id, input.branchId, input.namespace, input.slot),
+          beforeRef: null,
+          afterRef: toSessionStateValueOperationRef({
+            sessionId: host.id,
+            branchId: input.branchId,
+            namespace: input.namespace,
+            slot: input.slot,
+            visibilityMode: definition.visibilityMode,
+            schemaVersion: definition.schemaVersion,
+            mutation: inflatedMutation,
+            payload,
+          }),
+          metadata: {
+            write_mode: "commit_bound",
+            operation: payload.present ? "set" : "delete",
+            request_write_index: input.operationIndex ?? null,
+            request_write_count: input.operationCount ?? null,
+          },
+        });
+      }
+      return inflatedMutation;
     });
   }
 
@@ -193,6 +233,7 @@ export class SessionStateService {
     requestId?: string | null;
     runId?: string | null;
     sourceFloorId?: string | null;
+    operationLog?: SessionStateOperationLogContext;
   }): SessionStateMutationView {
     return this.executeTransaction((tx) => {
       const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
@@ -207,6 +248,18 @@ export class SessionStateService {
         present: input.present ?? true,
         value: input.value,
       });
+      const beforeLiveHead = input.operationLog
+        ? this.getLiveHeadEnvelope(
+            tx,
+            host.accountId,
+            binding.domainId,
+            input.namespace,
+            input.slot,
+            definition.visibilityMode,
+            host.id,
+            input.branchId,
+          )
+        : null;
       this.assertPayloadWithinBudget(definition, payload);
       const mutation = this.sessionStateRepository(tx).createMutation({
         id: nanoid(),
@@ -221,7 +274,7 @@ export class SessionStateService {
         writeMode: "direct",
         replaySafety,
         status: replaySafety === "uncertain" ? "uncertain" : "staged",
-        requestId: input.requestId ?? null,
+        requestId: input.requestId ?? input.operationLog?.requestId ?? null,
         runId: input.runId ?? null,
         payloadJson: JSON.stringify(payload),
         sourceSnapshotFloorId: input.sourceFloorId ?? null,
@@ -232,6 +285,41 @@ export class SessionStateService {
       });
 
       if (replaySafety === "uncertain") {
+        const inflatedMutation = this.inflateMutation(mutation);
+        if (input.operationLog) {
+          appendSessionStateOperationLog(tx, {
+            ...input.operationLog,
+            accountId: host.accountId,
+            action: payload.present ? "write_session_state_value" : "delete_session_state_value",
+            sessionId: host.id,
+            branchId: input.branchId,
+            floorId: input.sourceFloorId ?? null,
+            runId: input.runId ?? null,
+            targetType: "session_state_value",
+            targetId: buildSessionStateValueTargetId(host.id, input.branchId, input.namespace, input.slot),
+            beforeRef: toSessionStateValueOperationRef({
+              sessionId: host.id,
+              branchId: input.branchId,
+              namespace: input.namespace,
+              slot: input.slot,
+              visibilityMode: definition.visibilityMode,
+              schemaVersion: definition.schemaVersion,
+              liveHead: beforeLiveHead,
+            }),
+            afterRef: toSessionStateValueOperationRef({
+              sessionId: host.id,
+              branchId: input.branchId,
+              namespace: input.namespace,
+              slot: input.slot,
+              visibilityMode: definition.visibilityMode,
+              schemaVersion: definition.schemaVersion,
+              liveHead: beforeLiveHead,
+              mutation: inflatedMutation,
+              payload,
+            }),
+            metadata: buildDirectSessionStateOperationMetadata(payload.present, "uncertain"),
+          });
+        }
         this.appendGovernanceAudit(tx, host.accountId, binding, {
           action: "session_state.mutation.uncertain",
           targetType: "mutation",
@@ -243,10 +331,54 @@ export class SessionStateService {
             write_mode: "direct",
           },
         });
-        return this.inflateMutation(mutation);
+        return inflatedMutation;
       }
 
       const appliedMutation = this.applyDirectMutation(tx, binding, definition, mutation, payload, this.now());
+      if (input.operationLog) {
+        const afterLiveHead = this.getLiveHeadEnvelope(
+          tx,
+          host.accountId,
+          binding.domainId,
+          input.namespace,
+          input.slot,
+          definition.visibilityMode,
+          host.id,
+          input.branchId,
+        );
+        appendSessionStateOperationLog(tx, {
+          ...input.operationLog,
+          accountId: host.accountId,
+          action: payload.present ? "write_session_state_value" : "delete_session_state_value",
+          sessionId: host.id,
+          branchId: input.branchId,
+          floorId: input.sourceFloorId ?? null,
+          runId: input.runId ?? null,
+          targetType: "session_state_value",
+          targetId: buildSessionStateValueTargetId(host.id, input.branchId, input.namespace, input.slot),
+          beforeRef: toSessionStateValueOperationRef({
+            sessionId: host.id,
+            branchId: input.branchId,
+            namespace: input.namespace,
+            slot: input.slot,
+            visibilityMode: definition.visibilityMode,
+            schemaVersion: definition.schemaVersion,
+            liveHead: beforeLiveHead,
+          }),
+          afterRef: toSessionStateValueOperationRef({
+            sessionId: host.id,
+            branchId: input.branchId,
+            namespace: input.namespace,
+            slot: input.slot,
+            visibilityMode: definition.visibilityMode,
+            schemaVersion: definition.schemaVersion,
+            liveHead: afterLiveHead,
+            mutation: appliedMutation,
+            payload,
+          }),
+          metadata: buildDirectSessionStateOperationMetadata(payload.present, "applied"),
+        });
+      }
       this.appendGovernanceAudit(tx, host.accountId, binding, {
         action: "session_state.mutation.direct_apply",
         targetType: "mutation",
@@ -1595,6 +1727,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function stableStringify(value: unknown): string {
   return JSON.stringify(normalizeForStableStringify(value));
+}
+
+function buildDirectSessionStateOperationMetadata(
+  present: boolean,
+  mutation_status: "applied" | "uncertain",
+): Record<string, unknown> {
+  return {
+    write_mode: "direct",
+    operation: present ? "set" : "delete",
+    mutation_status,
+  };
 }
 
 function normalizeForStableStringify(value: unknown): unknown {

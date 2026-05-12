@@ -17,6 +17,7 @@ import type {
   SessionStateResolvedValue,
   SessionStateSlotDefinition,
 } from "./session-state-types.js";
+import type { SessionStateOperationLogContext } from "./session-state-operation-log.js";
 
 export interface SessionStatePublicResolveInput {
   accountId: string;
@@ -53,6 +54,7 @@ export interface SessionStatePublicWriteInput {
   namespace: SessionStateNamespace;
   slot: string;
   value: unknown | null;
+  operationLog?: SessionStateOperationLogContext;
 }
 
 export interface SessionStatePublicDeleteInput {
@@ -61,6 +63,7 @@ export interface SessionStatePublicDeleteInput {
   branchId: string;
   namespace: SessionStateNamespace;
   slot: string;
+  operationLog?: SessionStateOperationLogContext;
 }
 
 export class SessionStatePublicService {
@@ -195,6 +198,7 @@ export class SessionStatePublicService {
       namespace: input.namespace,
       slot: input.slot,
       value: input.value,
+      operationLog: input.operationLog,
     });
     return this.resolveCurrentEffectiveValueForSlot(input.accountId, input.sessionId, input.branchId, input.namespace, input.slot);
   }
@@ -210,6 +214,7 @@ export class SessionStatePublicService {
       slot: input.slot,
       value: null,
       present: false,
+      operationLog: input.operationLog,
     });
     return this.resolveCurrentEffectiveValueForSlot(input.accountId, input.sessionId, input.branchId, input.namespace, input.slot);
   }

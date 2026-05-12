@@ -185,6 +185,9 @@ describe("createTavernClient", () => {
     expect(client.mcp).toBeDefined();
     expect(typeof client.mcp.listServers).toBe("function");
     expect(typeof client.mcp.testServer).toBe("function");
+
+    expect(client.vcTags).toBeDefined();
+    expect(typeof client.vcTags.create).toBe("function");
   });
 
   it("throws TavernApiError for non-ok JSON response", async () => {

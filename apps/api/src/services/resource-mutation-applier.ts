@@ -18,6 +18,16 @@ import { MutationApplierRegistry } from "./mutation-applier-registry.js"
 import { ResourceWriteRouteError, assertRevisionWriteApplied } from "./resource-write.js"
 import { RuntimeMutationError } from "./runtime-mutation-errors.js"
 import type { RuntimeMutationApplier, RuntimeMutationApplyRequest } from "./runtime-mutation-types.js"
+import { AssetVersionService } from "./asset-version-service.js"
+import {
+  appendPromptAssetOperationLogForActor,
+  toPromptAssetOperationRef,
+  type PromptAssetOperationKind,
+} from "./prompt-asset-operation-log.js"
+import {
+  appendCharacterOperationLogForActor,
+  toCharacterOperationRef,
+} from "./character-operation-log.js"
 
 export const RESOURCE_MUTATION_KINDS = {
   characterCreate: "resource.character.create",
@@ -269,12 +279,21 @@ function savePresetRawForMutation(
   presetId: string,
   raw: JsonRecord,
   now: number,
-): void {
+  expectedVersion: number,
+  createdByOperationId?: string,
+) {
+  const nextVersion = expectedVersion + 1
   request.context.tx
     .update(presets)
-    .set({ dataJson: JSON.stringify(raw), updatedAt: now })
-    .where(and(eq(presets.id, presetId), eq(presets.accountId, request.envelope.accountId)))
+    .set({ dataJson: JSON.stringify(raw), updatedAt: now, version: nextVersion })
+    .where(and(eq(presets.id, presetId), eq(presets.accountId, request.envelope.accountId), eq(presets.version, expectedVersion)))
     .run()
+  return new AssetVersionService(request.context.tx).createPresetVersion(presetId, {
+    versionNo: nextVersion,
+    data: raw,
+    createdByOperationId,
+    createdAt: now,
+  })
 }
 
 function validatePresetRawForMutation(raw: JsonRecord): string | null {
@@ -284,6 +303,88 @@ function validatePresetRawForMutation(raw: JsonRecord): string | null {
   } catch (error) {
     return error instanceof Error ? error.message : String(error)
   }
+}
+
+function appendResourceMutationAssetOperationLog(
+  request: RuntimeMutationApplyRequest<unknown>,
+  input: {
+    operationId: string
+    assetKind: PromptAssetOperationKind
+    assetId: string
+    beforeRef?: unknown
+    afterRef?: unknown
+    metadata?: Record<string, unknown>
+    createdAt?: number
+  },
+): void {
+  appendPromptAssetOperationLogForActor(request.context.tx, {
+    operationId: input.operationId,
+    accountId: request.envelope.accountId,
+    actorType: request.context.actor?.type ?? request.envelope.source,
+    actorId: request.context.actor?.id ?? null,
+    requestId: request.context.requestId ?? null,
+    sourceType: "runtime_mutation",
+    action: request.envelope.kind,
+    assetKind: input.assetKind,
+    assetId: input.assetId,
+    sessionId: request.envelope.sessionId ?? null,
+    floorId: request.envelope.floorId ?? null,
+    beforeRef: input.beforeRef,
+    afterRef: input.afterRef,
+    metadata: {
+      mutation_id: request.envelope.id,
+      mutation_kind: request.envelope.kind,
+      mutation_source: request.envelope.source,
+      apply_phase: request.envelope.applyPhase,
+      durability: request.envelope.durability,
+      replay_safety: request.envelope.replaySafety,
+      conflict_policy: request.envelope.conflictPolicy ?? null,
+      scope_type: request.envelope.scopeType,
+      scope_key: request.envelope.scopeKey,
+      ...(input.metadata ?? {}),
+    },
+    createdAt: input.createdAt,
+  })
+}
+
+function appendResourceMutationCharacterOperationLog(
+  request: RuntimeMutationApplyRequest<unknown>,
+  input: {
+    operationId: string
+    characterId: string
+    beforeRef?: unknown
+    afterRef?: unknown
+    metadata?: Record<string, unknown>
+    createdAt?: number
+  },
+): void {
+  appendCharacterOperationLogForActor(request.context.tx, {
+    operationId: input.operationId,
+    accountId: request.envelope.accountId,
+    actorType: request.context.actor?.type ?? request.envelope.source,
+    actorId: request.context.actor?.id ?? null,
+    requestId: request.context.requestId ?? null,
+    sourceType: "runtime_mutation",
+    action: request.envelope.kind,
+    characterId: input.characterId,
+    sessionId: request.envelope.sessionId ?? null,
+    floorId: request.envelope.floorId ?? null,
+    beforeRef: input.beforeRef,
+    afterRef: input.afterRef,
+    metadata: {
+      mutation_id: request.envelope.id,
+      mutation_kind: request.envelope.kind,
+      mutation_source: request.envelope.source,
+      apply_phase: request.envelope.applyPhase,
+      durability: request.envelope.durability,
+      replay_safety: request.envelope.replaySafety,
+      conflict_policy: request.envelope.conflictPolicy ?? null,
+      scope_type: request.envelope.scopeType,
+      scope_key: request.envelope.scopeKey,
+      ...(input.metadata ?? {}),
+    },
+    createdAt: input.createdAt,
+  })
 }
 
 export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, unknown> {
@@ -337,6 +438,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
     const snapshotJson = JSON.stringify(request.envelope.payload.snapshot)
     const contentHash = computeContentHash(snapshotJson)
     const now = request.context.now()
+    const operationId = nanoid()
 
     request.context.tx.insert(characters)
       .values({
@@ -362,14 +464,32 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
         sourceArtifactJson: null,
         sourceArtifactFormat: null,
         sourceArtifactDigest: null,
+        createdByOperationId: operationId,
         createdAt: now,
       })
       .run()
+
+    appendResourceMutationCharacterOperationLog(request, {
+      operationId,
+      characterId,
+      afterRef: toCharacterOperationRef(characterId, {
+        id: versionId,
+        versionNo: 1,
+        contentHash,
+        createdByOperationId: operationId,
+      }),
+      metadata: {
+        operation: "create_character",
+        snapshot_field_names: Object.keys(request.envelope.payload.snapshot).sort(),
+      },
+      createdAt: now,
+    })
 
     return {
       result: {
         characterId,
         versionId,
+        versionNo: 1,
         name: request.envelope.payload.snapshot.name,
       } satisfies CharacterMutationResult,
     }
@@ -414,6 +534,8 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
     const snapshotJson = JSON.stringify(newSnapshot)
     const contentHash = computeContentHash(snapshotJson)
     const now = request.context.now()
+    const operationId = nanoid()
+    const beforeRef = toCharacterOperationRef(row.id, latestVersion)
 
     const updates: Partial<typeof characters.$inferInsert> = {
       latestVersionNo: newVersionNo,
@@ -446,9 +568,27 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
         sourceArtifactJson: latestVersion.sourceArtifactJson,
         sourceArtifactFormat: latestVersion.sourceArtifactFormat,
         sourceArtifactDigest: latestVersion.sourceArtifactDigest,
+        createdByOperationId: operationId,
         createdAt: now,
       })
       .run()
+
+    appendResourceMutationCharacterOperationLog(request, {
+      operationId,
+      characterId: row.id,
+      beforeRef,
+      afterRef: toCharacterOperationRef(row.id, {
+        id: newVersionId,
+        versionNo: newVersionNo,
+        contentHash,
+        createdByOperationId: operationId,
+      }),
+      metadata: {
+        operation: "update_character",
+        field_names: Object.keys(request.envelope.payload.patch).sort(),
+      },
+      createdAt: now,
+    })
 
     return {
       result: {
@@ -462,6 +602,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
   private applyCreateWorldbook(request: RuntimeMutationApplyRequest<CreateWorldbookMutationPayload>) {
     const id = nanoid()
     const now = request.context.now()
+    const operationId = nanoid()
 
     request.context.tx.insert(worldbooks).values({
       id,
@@ -472,6 +613,27 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       createdAt: now,
       updatedAt: now,
     }).run()
+    const row = {
+      id,
+      name: request.envelope.payload.name,
+      source: "tool",
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    }
+    const version = new AssetVersionService(request.context.tx).createWorldbookVersion(id, {
+      versionNo: 1,
+      createdByOperationId: operationId,
+      createdAt: now,
+    })
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "worldbook",
+      assetId: id,
+      afterRef: toPromptAssetOperationRef("worldbook", row, version),
+      metadata: { operation: "create_worldbook" },
+      createdAt: now,
+    })
 
     return {
       result: {
@@ -509,6 +671,10 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       .all()[0]
 
     const entryId = nanoid()
+    const operationId = nanoid()
+    const assetVersionService = new AssetVersionService(request.context.tx)
+    const beforeVersion = assetVersionService.getLatestWorldbookVersion(request.envelope.accountId, worldbook.id)
+    const beforeRef = toPromptAssetOperationRef("worldbook", worldbook, beforeVersion)
     const uid = (maxRow?.maxUid ?? -1) + 1
     const now = request.context.now()
 
@@ -531,11 +697,32 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       createdAt: now,
       updatedAt: now,
     }).run()
+    const nextVersion = worldbook.version + 1
 
     request.context.tx.update(worldbooks)
-      .set({ updatedAt: now })
-      .where(eq(worldbooks.id, request.envelope.payload.worldbookId))
+      .set({ updatedAt: now, version: nextVersion })
+      .where(and(eq(worldbooks.id, request.envelope.payload.worldbookId), eq(worldbooks.version, worldbook.version)))
       .run()
+    const afterRow = { ...worldbook, updatedAt: now, version: nextVersion }
+    const afterVersion = assetVersionService.createWorldbookVersion(worldbook.id, {
+      versionNo: nextVersion,
+      createdByOperationId: operationId,
+      createdAt: now,
+    })
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "worldbook",
+      assetId: worldbook.id,
+      beforeRef,
+      afterRef: toPromptAssetOperationRef("worldbook", afterRow, afterVersion),
+      metadata: {
+        operation: "create_worldbook_entry",
+        entry_id: entryId,
+        uid,
+        key_count: request.envelope.payload.keys.length,
+      },
+      createdAt: now,
+    })
 
     return {
       result: {
@@ -588,6 +775,10 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
     }
 
     const now = request.context.now()
+    const operationId = nanoid()
+    const assetVersionService = new AssetVersionService(request.context.tx)
+    const beforeVersion = assetVersionService.getLatestWorldbookVersion(request.envelope.accountId, worldbook.id)
+    const beforeRef = toPromptAssetOperationRef("worldbook", worldbook, beforeVersion)
     const updates: Record<string, unknown> = { updatedAt: now }
 
     if (request.envelope.payload.updates.keys !== undefined) updates.keysJson = JSON.stringify(request.envelope.payload.updates.keys)
@@ -605,11 +796,31 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       .set(updates)
       .where(eq(worldbookEntries.id, request.envelope.payload.entryId))
       .run()
+    const nextVersion = worldbook.version + 1
 
     request.context.tx.update(worldbooks)
-      .set({ updatedAt: now })
-      .where(eq(worldbooks.id, request.envelope.payload.worldbookId))
+      .set({ updatedAt: now, version: nextVersion })
+      .where(and(eq(worldbooks.id, request.envelope.payload.worldbookId), eq(worldbooks.version, worldbook.version)))
       .run()
+    const afterRow = { ...worldbook, updatedAt: now, version: nextVersion }
+    const afterVersion = assetVersionService.createWorldbookVersion(worldbook.id, {
+      versionNo: nextVersion,
+      createdByOperationId: operationId,
+      createdAt: now,
+    })
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "worldbook",
+      assetId: worldbook.id,
+      beforeRef,
+      afterRef: toPromptAssetOperationRef("worldbook", afterRow, afterVersion),
+      metadata: {
+        operation: "update_worldbook_entry",
+        entry_id: request.envelope.payload.entryId,
+        field_names: Object.keys(request.envelope.payload.updates).sort(),
+      },
+      createdAt: now,
+    })
 
     const [updated] = request.context.tx
       .select()
@@ -637,6 +848,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
   private applyCreateRegexProfile(request: RuntimeMutationApplyRequest<CreateRegexProfileMutationPayload>) {
     const id = nanoid()
     const now = request.context.now()
+    const operationId = nanoid()
 
     request.context.tx.insert(regexProfiles).values({
       id,
@@ -647,6 +859,31 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       createdAt: now,
       updatedAt: now,
     }).run()
+    const row = {
+      id,
+      name: request.envelope.payload.name,
+      source: "tool",
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+    }
+    const version = new AssetVersionService(request.context.tx).createRegexProfileVersion(id, {
+      versionNo: 1,
+      data: [],
+      createdByOperationId: operationId,
+      createdAt: now,
+    })
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "regex_profile",
+      assetId: id,
+      afterRef: toPromptAssetOperationRef("regex_profile", row, version),
+      metadata: {
+        operation: "create_regex_profile",
+        script_count: 0,
+      },
+      createdAt: now,
+    })
 
     return {
       result: {
@@ -684,6 +921,10 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       scripts = []
     }
 
+    const operationId = nanoid()
+    const assetVersionService = new AssetVersionService(request.context.tx)
+    const beforeVersion = assetVersionService.getLatestRegexProfileVersion(request.envelope.accountId, profile.id)
+    const beforeRef = toPromptAssetOperationRef("regex_profile", profile, beforeVersion)
     const newRule: RegexScript = {
       id: nanoid(),
       scriptName: request.envelope.payload.scriptName ?? "",
@@ -713,6 +954,27 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       })
       .where(eq(regexProfiles.id, request.envelope.payload.profileId))
       .run()
+    const afterRow = { ...profile, updatedAt: now, version: nextVersion }
+    const afterVersion = assetVersionService.createRegexProfileVersion(profile.id, {
+      versionNo: nextVersion,
+      data: scripts,
+      createdByOperationId: operationId,
+      createdAt: now,
+    })
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "regex_profile",
+      assetId: profile.id,
+      beforeRef,
+      afterRef: toPromptAssetOperationRef("regex_profile", afterRow, afterVersion),
+      metadata: {
+        operation: "create_regex_rule",
+        rule_index: ruleIndex,
+        rule_id: newRule.id,
+        script_count: scripts.length,
+      },
+      createdAt: now,
+    })
 
     return {
       result: {
@@ -763,6 +1025,10 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       )
     }
 
+    const operationId = nanoid()
+    const assetVersionService = new AssetVersionService(request.context.tx)
+    const beforeVersion = assetVersionService.getLatestRegexProfileVersion(request.envelope.accountId, profile.id)
+    const beforeRef = toPromptAssetOperationRef("regex_profile", profile, beforeVersion)
     if (request.envelope.payload.updates.scriptName !== undefined) rule.scriptName = request.envelope.payload.updates.scriptName
     if (request.envelope.payload.updates.findRegex !== undefined) rule.findRegex = request.envelope.payload.updates.findRegex
     if (request.envelope.payload.updates.replaceString !== undefined) rule.replaceString = request.envelope.payload.updates.replaceString
@@ -780,6 +1046,27 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       })
       .where(eq(regexProfiles.id, request.envelope.payload.profileId))
       .run()
+    const afterRow = { ...profile, updatedAt: now, version: nextVersion }
+    const afterVersion = assetVersionService.createRegexProfileVersion(profile.id, {
+      versionNo: nextVersion,
+      data: scripts,
+      createdByOperationId: operationId,
+      createdAt: now,
+    })
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "regex_profile",
+      assetId: profile.id,
+      beforeRef,
+      afterRef: toPromptAssetOperationRef("regex_profile", afterRow, afterVersion),
+      metadata: {
+        operation: "update_regex_rule",
+        rule_index: request.envelope.payload.ruleIndex,
+        field_names: Object.keys(request.envelope.payload.updates).sort(),
+        script_count: scripts.length,
+      },
+      createdAt: now,
+    })
 
     return {
       result: {
@@ -815,7 +1102,25 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       throw new Error(`Preset validation failed: ${validationError}`)
     }
 
-    savePresetRawForMutation(request, request.envelope.payload.presetId, raw, request.context.now())
+    const now = request.context.now()
+    const operationId = nanoid()
+    const assetVersionService = new AssetVersionService(request.context.tx)
+    const beforeVersion = assetVersionService.getLatestPresetVersion(request.envelope.accountId, loaded.row.id)
+    const beforeRef = toPromptAssetOperationRef("preset", loaded.row, beforeVersion)
+    const afterVersion = savePresetRawForMutation(request, request.envelope.payload.presetId, raw, now, loaded.row.version, operationId)
+    const afterRow = { ...loaded.row, updatedAt: now, version: loaded.row.version + 1 }
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "preset",
+      assetId: loaded.row.id,
+      beforeRef,
+      afterRef: toPromptAssetOperationRef("preset", afterRow, afterVersion),
+      metadata: {
+        operation: "create_preset_entry",
+        identifier: request.envelope.payload.identifier,
+      },
+      createdAt: now,
+    })
 
     const entry = getEditorEntryFromRaw(raw, request.envelope.payload.identifier)
     return {
@@ -860,7 +1165,26 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       throw new Error(`Preset validation failed: ${validationError}`)
     }
 
-    savePresetRawForMutation(request, request.envelope.payload.presetId, raw, request.context.now())
+    const now = request.context.now()
+    const operationId = nanoid()
+    const assetVersionService = new AssetVersionService(request.context.tx)
+    const beforeVersion = assetVersionService.getLatestPresetVersion(request.envelope.accountId, loaded.row.id)
+    const beforeRef = toPromptAssetOperationRef("preset", loaded.row, beforeVersion)
+    const afterVersion = savePresetRawForMutation(request, request.envelope.payload.presetId, raw, now, loaded.row.version, operationId)
+    const afterRow = { ...loaded.row, updatedAt: now, version: loaded.row.version + 1 }
+    appendResourceMutationAssetOperationLog(request, {
+      operationId,
+      assetKind: "preset",
+      assetId: loaded.row.id,
+      beforeRef,
+      afterRef: toPromptAssetOperationRef("preset", afterRow, afterVersion),
+      metadata: {
+        operation: "update_preset_entry",
+        identifier: request.envelope.payload.identifier,
+        field_names: Object.keys(request.envelope.payload.fields).sort(),
+      },
+      createdAt: now,
+    })
 
     const entry = getEditorEntryFromRaw(raw, request.envelope.payload.identifier)
     return {

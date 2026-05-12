@@ -7,7 +7,7 @@ import {
 } from "@tavern/shared/types/backup-file";
 
 import type { AppDb } from "../db/client.js";
-import { characters, sessions, worldbooks } from "../db/schema.js";
+import { characters, presets, regexProfiles, sessions, worldbooks } from "../db/schema.js";
 import {
   backupDroppedBindingSummarySchema,
   backupRenamedResourceSchema,
@@ -28,7 +28,9 @@ import {
 
 export interface BackupRestoreNamePlan {
   characters: Map<string, string>;
+  presets: Map<string, string>;
   worldbooks: Map<string, string>;
+  regexProfiles: Map<string, string>;
   sessions: Map<string, string | null>;
   renamedResources: BackupRenamedResource[];
 }
@@ -85,7 +87,9 @@ export function analyzeCoreAssetBackup(
       counts,
       will_create: {
         characters: file.resources.characters.length,
+        presets: file.resources.presets.length,
         worldbooks: file.resources.worldbooks.length,
+        regex_profiles: file.resources.regex_profiles.length,
         sessions: file.sessions.length,
       },
       renamed_resources: namePlan.renamedResources,
@@ -108,11 +112,27 @@ export function planCoreAssetBackupCopyRestore(
       .all()
       .map((row) => row.name),
   );
+  const existingPresetNames = new Set(
+    db
+      .select({ name: presets.name })
+      .from(presets)
+      .where(eq(presets.accountId, accountId))
+      .all()
+      .map((row) => row.name),
+  );
   const existingWorldbookNames = new Set(
     db
       .select({ name: worldbooks.name })
       .from(worldbooks)
       .where(eq(worldbooks.accountId, accountId))
+      .all()
+      .map((row) => row.name),
+  );
+  const existingRegexProfileNames = new Set(
+    db
+      .select({ name: regexProfiles.name })
+      .from(regexProfiles)
+      .where(eq(regexProfiles.accountId, accountId))
       .all()
       .map((row) => row.name),
   );
@@ -127,7 +147,9 @@ export function planCoreAssetBackupCopyRestore(
   );
 
   const charactersPlan = new Map<string, string>();
+  const presetsPlan = new Map<string, string>();
   const worldbooksPlan = new Map<string, string>();
+  const regexProfilesPlan = new Map<string, string>();
   const sessionsPlan = new Map<string, string | null>();
   const renamedResources: BackupRenamedResource[] = [];
 
@@ -143,6 +165,18 @@ export function planCoreAssetBackupCopyRestore(
     }
   }
 
+  for (const preset of file.resources.presets) {
+    const resolved = resolveCreateCopyName(preset.name, existingPresetNames);
+    presetsPlan.set(preset.id, resolved.name);
+    if (resolved.renamed) {
+      renamedResources.push({
+        type: "preset",
+        old_name: preset.name,
+        new_name: resolved.name,
+      });
+    }
+  }
+
   for (const worldbook of file.resources.worldbooks) {
     const resolved = resolveCreateCopyName(worldbook.name, existingWorldbookNames);
     worldbooksPlan.set(worldbook.id, resolved.name);
@@ -150,6 +184,18 @@ export function planCoreAssetBackupCopyRestore(
       renamedResources.push({
         type: "worldbook",
         old_name: worldbook.name,
+        new_name: resolved.name,
+      });
+    }
+  }
+
+  for (const profile of file.resources.regex_profiles) {
+    const resolved = resolveCreateCopyName(profile.name, existingRegexProfileNames);
+    regexProfilesPlan.set(profile.id, resolved.name);
+    if (resolved.renamed) {
+      renamedResources.push({
+        type: "regex_profile",
+        old_name: profile.name,
         new_name: resolved.name,
       });
     }
@@ -174,7 +220,9 @@ export function planCoreAssetBackupCopyRestore(
 
   return {
     characters: charactersPlan,
+    presets: presetsPlan,
     worldbooks: worldbooksPlan,
+    regexProfiles: regexProfilesPlan,
     sessions: sessionsPlan,
     renamedResources: backupRenamedResourceSchema.array().parse(renamedResources),
   };
@@ -187,9 +235,23 @@ export function countCoreAssetBackupFile(file: ThBackupFile): BackupCountSummary
     (sum, character) => sum + character.versions.length,
     0,
   );
+  counts.presets = file.resources.presets.length;
+  counts.preset_versions = file.resources.presets.reduce(
+    (sum, preset) => sum + preset.versions.length,
+    0,
+  );
   counts.worldbooks = file.resources.worldbooks.length;
+  counts.worldbook_versions = file.resources.worldbooks.reduce(
+    (sum, worldbook) => sum + worldbook.versions.length,
+    0,
+  );
   counts.worldbook_entries = file.resources.worldbooks.reduce(
     (sum, worldbook) => sum + worldbook.entries.length,
+    0,
+  );
+  counts.regex_profiles = file.resources.regex_profiles.length;
+  counts.regex_profile_versions = file.resources.regex_profiles.reduce(
+    (sum, profile) => sum + profile.versions.length,
     0,
   );
   counts.sessions = file.sessions.length;
@@ -248,10 +310,10 @@ function collectDroppedBindings(file: ThBackupFile): BackupDroppedBindingSummary
     if (session.user_binding.user_id) {
       dropped.users += 1;
     }
-    if (session.profile_binding.preset_id) {
+    if (session.profile_binding.preset_id && !session.profile_binding.preset_id_ref) {
       dropped.presets += 1;
     }
-    if (session.profile_binding.regex_profile_id) {
+    if (session.profile_binding.regex_profile_id && !session.profile_binding.regex_profile_id_ref) {
       dropped.regex_profiles += 1;
     }
   }
@@ -310,9 +372,52 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
     }
   }
 
+  const presetIds = new Set<string>();
+  const presetVersionToPresetId = new Map<string, string>();
+  for (const [presetIndex, preset] of file.resources.presets.entries()) {
+    pushUniqueIssue(presetIds, preset.id, `resources.presets.${presetIndex}.id`, "Duplicate preset id", issues);
+    const versionNos = new Set<number>();
+    for (const [versionIndex, version] of preset.versions.entries()) {
+      pushUniqueMapIssue(
+        presetVersionToPresetId,
+        version.id,
+        preset.id,
+        `resources.presets.${presetIndex}.versions.${versionIndex}.id`,
+        "Duplicate preset version id",
+        issues,
+      );
+      if (versionNos.has(version.version_no)) {
+        issues.push({
+          path: `resources.presets.${presetIndex}.versions.${versionIndex}.version_no`,
+          message: `Duplicate preset version number ${version.version_no}`,
+        });
+      }
+      versionNos.add(version.version_no);
+    }
+  }
+
   const worldbookIds = new Set<string>();
+  const worldbookVersionToWorldbookId = new Map<string, string>();
   for (const [worldbookIndex, worldbook] of file.resources.worldbooks.entries()) {
     pushUniqueIssue(worldbookIds, worldbook.id, `resources.worldbooks.${worldbookIndex}.id`, "Duplicate worldbook id", issues);
+    const versionNos = new Set<number>();
+    for (const [versionIndex, version] of worldbook.versions.entries()) {
+      pushUniqueMapIssue(
+        worldbookVersionToWorldbookId,
+        version.id,
+        worldbook.id,
+        `resources.worldbooks.${worldbookIndex}.versions.${versionIndex}.id`,
+        "Duplicate worldbook version id",
+        issues,
+      );
+      if (versionNos.has(version.version_no)) {
+        issues.push({
+          path: `resources.worldbooks.${worldbookIndex}.versions.${versionIndex}.version_no`,
+          message: `Duplicate worldbook version number ${version.version_no}`,
+        });
+      }
+      versionNos.add(version.version_no);
+    }
     const entryIds = new Set<string>();
     for (const [entryIndex, entry] of worldbook.entries.entries()) {
       pushUniqueIssue(
@@ -322,6 +427,30 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
         "Duplicate worldbook entry id",
         issues,
       );
+    }
+  }
+
+  const regexProfileIds = new Set<string>();
+  const regexProfileVersionToProfileId = new Map<string, string>();
+  for (const [profileIndex, profile] of file.resources.regex_profiles.entries()) {
+    pushUniqueIssue(regexProfileIds, profile.id, `resources.regex_profiles.${profileIndex}.id`, "Duplicate regex profile id", issues);
+    const versionNos = new Set<number>();
+    for (const [versionIndex, version] of profile.versions.entries()) {
+      pushUniqueMapIssue(
+        regexProfileVersionToProfileId,
+        version.id,
+        profile.id,
+        `resources.regex_profiles.${profileIndex}.versions.${versionIndex}.id`,
+        "Duplicate regex profile version id",
+        issues,
+      );
+      if (versionNos.has(version.version_no)) {
+        issues.push({
+          path: `resources.regex_profiles.${profileIndex}.versions.${versionIndex}.version_no`,
+          message: `Duplicate regex profile version number ${version.version_no}`,
+        });
+      }
+      versionNos.add(version.version_no);
     }
   }
 
@@ -354,11 +483,79 @@ function validateCoreAssetBackupFile(file: ThBackupFile): BackupWarning[] {
       }
     }
 
+    if (session.profile_binding.preset_id_ref && !presetIds.has(session.profile_binding.preset_id_ref)) {
+      issues.push({
+        path: `sessions.${sessionIndex}.profile_binding.preset_id_ref`,
+        message: `Missing referenced preset ${session.profile_binding.preset_id_ref}`,
+      });
+    }
+
+    if (session.profile_binding.preset_version_id_ref) {
+      const owningPresetId = presetVersionToPresetId.get(session.profile_binding.preset_version_id_ref);
+      if (!owningPresetId) {
+        issues.push({
+          path: `sessions.${sessionIndex}.profile_binding.preset_version_id_ref`,
+          message: `Missing referenced preset version ${session.profile_binding.preset_version_id_ref}`,
+        });
+      } else if (
+        session.profile_binding.preset_id_ref
+        && owningPresetId !== session.profile_binding.preset_id_ref
+      ) {
+        issues.push({
+          path: `sessions.${sessionIndex}.profile_binding.preset_version_id_ref`,
+          message: "preset_version_id_ref does not belong to preset_id_ref",
+        });
+      }
+    }
+
     if (session.profile_binding.worldbook_id_ref && !worldbookIds.has(session.profile_binding.worldbook_id_ref)) {
       issues.push({
         path: `sessions.${sessionIndex}.profile_binding.worldbook_id_ref`,
         message: `Missing referenced worldbook ${session.profile_binding.worldbook_id_ref}`,
       });
+    }
+
+    if (session.profile_binding.worldbook_version_id_ref) {
+      const owningWorldbookId = worldbookVersionToWorldbookId.get(session.profile_binding.worldbook_version_id_ref);
+      if (!owningWorldbookId) {
+        issues.push({
+          path: `sessions.${sessionIndex}.profile_binding.worldbook_version_id_ref`,
+          message: `Missing referenced worldbook version ${session.profile_binding.worldbook_version_id_ref}`,
+        });
+      } else if (
+        session.profile_binding.worldbook_id_ref
+        && owningWorldbookId !== session.profile_binding.worldbook_id_ref
+      ) {
+        issues.push({
+          path: `sessions.${sessionIndex}.profile_binding.worldbook_version_id_ref`,
+          message: "worldbook_version_id_ref does not belong to worldbook_id_ref",
+        });
+      }
+    }
+
+    if (session.profile_binding.regex_profile_id_ref && !regexProfileIds.has(session.profile_binding.regex_profile_id_ref)) {
+      issues.push({
+        path: `sessions.${sessionIndex}.profile_binding.regex_profile_id_ref`,
+        message: `Missing referenced regex profile ${session.profile_binding.regex_profile_id_ref}`,
+      });
+    }
+
+    if (session.profile_binding.regex_profile_version_id_ref) {
+      const owningRegexProfileId = regexProfileVersionToProfileId.get(session.profile_binding.regex_profile_version_id_ref);
+      if (!owningRegexProfileId) {
+        issues.push({
+          path: `sessions.${sessionIndex}.profile_binding.regex_profile_version_id_ref`,
+          message: `Missing referenced regex profile version ${session.profile_binding.regex_profile_version_id_ref}`,
+        });
+      } else if (
+        session.profile_binding.regex_profile_id_ref
+        && owningRegexProfileId !== session.profile_binding.regex_profile_id_ref
+      ) {
+        issues.push({
+          path: `sessions.${sessionIndex}.profile_binding.regex_profile_version_id_ref`,
+          message: "regex_profile_version_id_ref does not belong to regex_profile_id_ref",
+        });
+      }
     }
 
     const branchRegistryIds = new Set<string>();

@@ -1,4 +1,4 @@
-export const workspaceInspectorTabs = ["bindings", "tools", "memory", "impact"] as const;
+export const workspaceInspectorTabs = ["bindings", "tools", "memory", "vc", "impact"] as const;
 
 export type WorkspaceInspectorTab = (typeof workspaceInspectorTabs)[number];
 
@@ -6,7 +6,8 @@ export const workspaceInspectorTabLabelKeyMap: Record<WorkspaceInspectorTab, str
   bindings: "inspector.tabs.bindings",
   impact: "inspector.tabs.impact",
   memory: "inspector.tabs.memory",
-  tools: "inspector.tabs.tools"
+  tools: "inspector.tabs.tools",
+  vc: "inspector.tabs.vc"
 };
 
 export function formatWorkspaceEventTime(timestamp: number): string {

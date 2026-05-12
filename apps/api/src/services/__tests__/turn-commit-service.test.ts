@@ -40,6 +40,7 @@ import {
 } from "../prompt-runtime-control-service.js";
 import { parsePromptRuntimeExplainSourceMapEnvelope } from "../prompt-runtime/explain-snapshot.js";
 import { TurnCommitService } from "../turn-commit-service.js";
+import { OperationLogService } from "../operation-log-service.js";
 import { buildBranchVariableScopeId, type VariableScope } from "@tavern/shared";
 import {
   MEMORY_RUNTIME_SCOPE_TYPE,
@@ -563,6 +564,140 @@ describe("TurnCommitService", () => {
       deprecated: 2,
     }));
   });
+  it("records floor commit operation logs without storing prompt, tool, or output content", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_689_750_000;
+    const committedAt = now + 1_000;
+    const runId = "llm-run-operation-log";
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "SECRET_LLM_OUTPUT",
+      rawText: "SECRET_LLM_OUTPUT",
+      summaries: ["SECRET_LLM_SUMMARY"],
+      totalUsage: {
+        promptTokens: 21,
+        completionTokens: 34,
+        totalTokens: 55,
+      },
+    };
+
+    const promptSnapshot: PromptSnapshotRecord = {
+      floorId,
+      sessionId,
+      presetId: null,
+      presetUpdatedAt: null,
+      presetVersion: null,
+      worldbookId: null,
+      worldbookUpdatedAt: null,
+      worldbookVersion: null,
+      regexProfileId: null,
+      regexProfileUpdatedAt: null,
+      regexProfileVersion: null,
+      characterId: null,
+      characterVersionId: null,
+      characterImportedFormat: null,
+      characterContentHash: null,
+      worldbookActivatedEntryUids: [],
+      worldbookActivatedEntries: [],
+      regexPreRuleNames: [],
+      regexPostRuleNames: [],
+      promptMode: "native",
+      assetManifestDigest: null,
+      promptDigest: "sha256:operation-log-prompt-digest",
+      tokenEstimate: 128,
+      createdAt: committedAt,
+    };
+
+    const toolExecutionRecords: ExecutedToolCallRecord[] = [
+      {
+        id: nanoid(),
+        runId,
+        floorId,
+        callerSlot: "narrator",
+        providerId: "builtin",
+        toolName: "lookup_secret",
+        argsJson: JSON.stringify({ secret: "SECRET_TOOL_ARGS" }),
+        resultJson: JSON.stringify({ secret: "SECRET_TOOL_RESULT" }),
+        status: "success",
+        durationMs: 9,
+        createdAt: committedAt,
+      },
+    ];
+
+    await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      promptSnapshot,
+      toolExecutionRecords,
+      runId,
+      operationLog: {
+        requestId: "request-floor-commit",
+        route: "POST /sessions/:id/respond",
+      },
+    });
+
+    const logs = new OperationLogService(database.db).list({
+      accountId: DEFAULT_ACCOUNT_ID,
+      sessionId,
+      floorId,
+      action: "commit_floor",
+      sortOrder: "asc",
+    }).rows;
+
+    expect(logs).toHaveLength(1);
+    const log = logs[0]!;
+    expect(log).toMatchObject({
+      actorType: "llm",
+      actorId: runId,
+      sourceType: "llm_run",
+      action: "commit_floor",
+      status: "succeeded",
+      sessionId,
+      branchId: "main",
+      floorId,
+      runId,
+      targetType: "floor",
+      targetId: floorId,
+      requestId: "request-floor-commit",
+    });
+
+    expect(log.beforeRef).toBeNull();
+    expect(log.afterRef).toEqual(expect.objectContaining({
+      floor_id: floorId,
+      run_id: runId,
+      prompt_snapshot_present: true,
+      explain_snapshot_present: false,
+      floor_result_snapshot_present: true,
+      tool_execution_count: 1,
+      session_state_mutation_count: 0,
+    }));
+    expect(log.metadata).toEqual(expect.objectContaining({
+      route: "POST /sessions/:id/respond",
+      prompt_snapshot_present: true,
+      explain_snapshot_present: false,
+      floor_result_snapshot_present: true,
+      tool_execution_count: 1,
+      session_state_mutation_count: 0,
+    }));
+    expect((log.diff as { total_changes?: number } | null)?.total_changes).toBeGreaterThan(0);
+
+    const serializedLogs = JSON.stringify(logs);
+    expect(serializedLogs).not.toContain("SECRET_LLM_OUTPUT");
+    expect(serializedLogs).not.toContain("SECRET_LLM_SUMMARY");
+    expect(serializedLogs).not.toContain("SECRET_TOOL_ARGS");
+    expect(serializedLogs).not.toContain("SECRET_TOOL_RESULT");
+  });
+
+
 
   it("scopes memory writes by accountId and resolves global/chat/floor scopeId correctly", async () => {
     const accountId = "account-a";

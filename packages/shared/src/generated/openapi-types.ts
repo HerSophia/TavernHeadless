@@ -4071,6 +4071,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/floors/{id}/operation-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List operation logs for a floor */
+        get: operations["listFloorOperationLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/floors/{id}/prompt-runtime/explain": {
         parameters: {
             query?: never;
@@ -4379,18 +4396,22 @@ export interface paths {
                          *           "character_id": "char-hero",
                          *           "character_imported_format": "tavern_card_v2",
                          *           "character_version_id": "char-hero-v3",
+                         *           "preset_content_hash": "sha256:preset-v3",
                          *           "preset_id": "preset-1",
                          *           "preset_updated_at": 1710000000000,
                          *           "preset_version": 3,
+                         *           "preset_version_id": "preset-ver-3",
                          *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                          *           "prompt_mode": "compat_strict",
                          *           "regex_post_rule_names": [],
                          *           "regex_pre_rule_names": [
                          *             "trim_whitespace"
                          *           ],
+                         *           "regex_profile_content_hash": "sha256:regex-v2",
                          *           "regex_profile_id": "regex-1",
                          *           "regex_profile_updated_at": 1710000002000,
                          *           "regex_profile_version": 2,
+                         *           "regex_profile_version_id": "regex-ver-2",
                          *           "token_estimate": 512,
                          *           "worldbook_activated_entries": [
                          *             {
@@ -4424,9 +4445,11 @@ export interface paths {
                          *             7,
                          *             7
                          *           ],
+                         *           "worldbook_content_hash": "sha256:worldbook-v5",
                          *           "worldbook_id": "worldbook-1",
                          *           "worldbook_updated_at": 1710000001000,
-                         *           "worldbook_version": 5
+                         *           "worldbook_version": 5,
+                         *           "worldbook_version_id": "worldbook-ver-5"
                          *         },
                          *         "runtime_trace": {
                          *           "budgets": {
@@ -4687,18 +4710,22 @@ export interface paths {
                              *         "character_id": "char-hero",
                              *         "character_imported_format": "tavern_card_v2",
                              *         "character_version_id": "char-hero-v3",
+                             *         "preset_content_hash": "sha256:preset-v3",
                              *         "preset_id": "preset-1",
                              *         "preset_updated_at": 1710000000000,
                              *         "preset_version": 3,
+                             *         "preset_version_id": "preset-ver-3",
                              *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                              *         "prompt_mode": "compat_strict",
                              *         "regex_post_rule_names": [],
                              *         "regex_pre_rule_names": [
                              *           "trim_whitespace"
                              *         ],
+                             *         "regex_profile_content_hash": "sha256:regex-v2",
                              *         "regex_profile_id": "regex-1",
                              *         "regex_profile_updated_at": 1710000002000,
                              *         "regex_profile_version": 2,
+                             *         "regex_profile_version_id": "regex-ver-2",
                              *         "token_estimate": 512,
                              *         "worldbook_activated_entries": [
                              *           {
@@ -4732,9 +4759,11 @@ export interface paths {
                              *           7,
                              *           7
                              *         ],
+                             *         "worldbook_content_hash": "sha256:worldbook-v5",
                              *         "worldbook_id": "worldbook-1",
                              *         "worldbook_updated_at": 1710000001000,
-                             *         "worldbook_version": 5
+                             *         "worldbook_version": 5,
+                             *         "worldbook_version_id": "worldbook-ver-5"
                              *       },
                              *       "runtime_trace": {
                              *         "budgets": {
@@ -5002,18 +5031,22 @@ export interface paths {
                                  *       "character_id": "char-hero",
                                  *       "character_imported_format": "tavern_card_v2",
                                  *       "character_version_id": "char-hero-v3",
+                                 *       "preset_content_hash": "sha256:preset-v3",
                                  *       "preset_id": "preset-1",
                                  *       "preset_updated_at": 1710000000000,
                                  *       "preset_version": 3,
+                                 *       "preset_version_id": "preset-ver-3",
                                  *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                                  *       "prompt_mode": "compat_strict",
                                  *       "regex_post_rule_names": [],
                                  *       "regex_pre_rule_names": [
                                  *         "trim_whitespace"
                                  *       ],
+                                 *       "regex_profile_content_hash": "sha256:regex-v2",
                                  *       "regex_profile_id": "regex-1",
                                  *       "regex_profile_updated_at": 1710000002000,
                                  *       "regex_profile_version": 2,
+                                 *       "regex_profile_version_id": "regex-ver-2",
                                  *       "token_estimate": 512,
                                  *       "worldbook_activated_entries": [
                                  *         {
@@ -5047,9 +5080,11 @@ export interface paths {
                                  *         7,
                                  *         7
                                  *       ],
+                                 *       "worldbook_content_hash": "sha256:worldbook-v5",
                                  *       "worldbook_id": "worldbook-1",
                                  *       "worldbook_updated_at": 1710000001000,
-                                 *       "worldbook_version": 5
+                                 *       "worldbook_version": 5,
+                                 *       "worldbook_version_id": "worldbook-ver-5"
                                  *     }
                                  */
                                 prompt_snapshot?: {
@@ -5058,17 +5093,21 @@ export interface paths {
                                     character_id: string | null;
                                     character_imported_format: string | null;
                                     character_version_id: string | null;
+                                    preset_content_hash: string | null;
                                     preset_id: string | null;
                                     preset_updated_at: number | null;
                                     preset_version: number | null;
+                                    preset_version_id: string | null;
                                     prompt_digest: string;
                                     /** @enum {string} */
                                     prompt_mode: "compat_strict" | "compat_plus" | "native";
                                     regex_post_rule_names: string[];
                                     regex_pre_rule_names: string[];
+                                    regex_profile_content_hash: string | null;
                                     regex_profile_id: string | null;
                                     regex_profile_updated_at: number | null;
                                     regex_profile_version: number | null;
+                                    regex_profile_version_id: string | null;
                                     token_estimate: number;
                                     worldbook_activated_entries: {
                                         activation_key: string;
@@ -5090,9 +5129,11 @@ export interface paths {
                                         uid: number;
                                     }[];
                                     worldbook_activated_entry_uids: number[];
+                                    worldbook_content_hash: string | null;
                                     worldbook_id: string | null;
                                     worldbook_updated_at: number | null;
                                     worldbook_version: number | null;
+                                    worldbook_version_id: string | null;
                                 };
                                 /**
                                  * @example {
@@ -8824,18 +8865,22 @@ export interface paths {
                          *           "character_id": "char-hero",
                          *           "character_imported_format": "tavern_card_v2",
                          *           "character_version_id": "char-hero-v3",
+                         *           "preset_content_hash": "sha256:preset-v3",
                          *           "preset_id": "preset-1",
                          *           "preset_updated_at": 1710000000000,
                          *           "preset_version": 3,
+                         *           "preset_version_id": "preset-ver-3",
                          *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                          *           "prompt_mode": "compat_strict",
                          *           "regex_post_rule_names": [],
                          *           "regex_pre_rule_names": [
                          *             "trim_whitespace"
                          *           ],
+                         *           "regex_profile_content_hash": "sha256:regex-v2",
                          *           "regex_profile_id": "regex-1",
                          *           "regex_profile_updated_at": 1710000002000,
                          *           "regex_profile_version": 2,
+                         *           "regex_profile_version_id": "regex-ver-2",
                          *           "token_estimate": 512,
                          *           "worldbook_activated_entries": [
                          *             {
@@ -8869,9 +8914,11 @@ export interface paths {
                          *             7,
                          *             7
                          *           ],
+                         *           "worldbook_content_hash": "sha256:worldbook-v5",
                          *           "worldbook_id": "worldbook-1",
                          *           "worldbook_updated_at": 1710000001000,
-                         *           "worldbook_version": 5
+                         *           "worldbook_version": 5,
+                         *           "worldbook_version_id": "worldbook-ver-5"
                          *         },
                          *         "runtime_trace": {
                          *           "budgets": {
@@ -9134,18 +9181,22 @@ export interface paths {
                              *         "character_id": "char-hero",
                              *         "character_imported_format": "tavern_card_v2",
                              *         "character_version_id": "char-hero-v3",
+                             *         "preset_content_hash": "sha256:preset-v3",
                              *         "preset_id": "preset-1",
                              *         "preset_updated_at": 1710000000000,
                              *         "preset_version": 3,
+                             *         "preset_version_id": "preset-ver-3",
                              *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                              *         "prompt_mode": "compat_strict",
                              *         "regex_post_rule_names": [],
                              *         "regex_pre_rule_names": [
                              *           "trim_whitespace"
                              *         ],
+                             *         "regex_profile_content_hash": "sha256:regex-v2",
                              *         "regex_profile_id": "regex-1",
                              *         "regex_profile_updated_at": 1710000002000,
                              *         "regex_profile_version": 2,
+                             *         "regex_profile_version_id": "regex-ver-2",
                              *         "token_estimate": 512,
                              *         "worldbook_activated_entries": [
                              *           {
@@ -9179,9 +9230,11 @@ export interface paths {
                              *           7,
                              *           7
                              *         ],
+                             *         "worldbook_content_hash": "sha256:worldbook-v5",
                              *         "worldbook_id": "worldbook-1",
                              *         "worldbook_updated_at": 1710000001000,
-                             *         "worldbook_version": 5
+                             *         "worldbook_version": 5,
+                             *         "worldbook_version_id": "worldbook-ver-5"
                              *       },
                              *       "runtime_trace": {
                              *         "budgets": {
@@ -9451,18 +9504,22 @@ export interface paths {
                                  *       "character_id": "char-hero",
                                  *       "character_imported_format": "tavern_card_v2",
                                  *       "character_version_id": "char-hero-v3",
+                                 *       "preset_content_hash": "sha256:preset-v3",
                                  *       "preset_id": "preset-1",
                                  *       "preset_updated_at": 1710000000000,
                                  *       "preset_version": 3,
+                                 *       "preset_version_id": "preset-ver-3",
                                  *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                                  *       "prompt_mode": "compat_strict",
                                  *       "regex_post_rule_names": [],
                                  *       "regex_pre_rule_names": [
                                  *         "trim_whitespace"
                                  *       ],
+                                 *       "regex_profile_content_hash": "sha256:regex-v2",
                                  *       "regex_profile_id": "regex-1",
                                  *       "regex_profile_updated_at": 1710000002000,
                                  *       "regex_profile_version": 2,
+                                 *       "regex_profile_version_id": "regex-ver-2",
                                  *       "token_estimate": 512,
                                  *       "worldbook_activated_entries": [
                                  *         {
@@ -9496,9 +9553,11 @@ export interface paths {
                                  *         7,
                                  *         7
                                  *       ],
+                                 *       "worldbook_content_hash": "sha256:worldbook-v5",
                                  *       "worldbook_id": "worldbook-1",
                                  *       "worldbook_updated_at": 1710000001000,
-                                 *       "worldbook_version": 5
+                                 *       "worldbook_version": 5,
+                                 *       "worldbook_version_id": "worldbook-ver-5"
                                  *     }
                                  */
                                 prompt_snapshot?: {
@@ -9507,17 +9566,21 @@ export interface paths {
                                     character_id: string | null;
                                     character_imported_format: string | null;
                                     character_version_id: string | null;
+                                    preset_content_hash: string | null;
                                     preset_id: string | null;
                                     preset_updated_at: number | null;
                                     preset_version: number | null;
+                                    preset_version_id: string | null;
                                     prompt_digest: string;
                                     /** @enum {string} */
                                     prompt_mode: "compat_strict" | "compat_plus" | "native";
                                     regex_post_rule_names: string[];
                                     regex_pre_rule_names: string[];
+                                    regex_profile_content_hash: string | null;
                                     regex_profile_id: string | null;
                                     regex_profile_updated_at: number | null;
                                     regex_profile_version: number | null;
+                                    regex_profile_version_id: string | null;
                                     token_estimate: number;
                                     worldbook_activated_entries: {
                                         activation_key: string;
@@ -9539,9 +9602,11 @@ export interface paths {
                                         uid: number;
                                     }[];
                                     worldbook_activated_entry_uids: number[];
+                                    worldbook_content_hash: string | null;
                                     worldbook_id: string | null;
                                     worldbook_updated_at: number | null;
                                     worldbook_version: number | null;
+                                    worldbook_version_id: string | null;
                                 };
                                 /**
                                  * @example {
@@ -10306,6 +10371,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/operation-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List operation logs */
+        get: operations["listOperationLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages": {
         parameters: {
             query?: never;
@@ -10464,6 +10546,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/presets/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List preset versions */
+        get: operations["listPresetVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/presets/{id}/versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get preset version */
+        get: operations["getPresetVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/presets/{id}/versions/{version_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rollback preset to a version */
+        post: operations["rollbackPresetVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/presets/{id}/versions/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compare preset versions */
+        post: operations["comparePresetVersions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/presets/{preset_id}/entries": {
         parameters: {
             query?: never;
@@ -10605,6 +10755,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/regex-profiles/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List regex profile versions */
+        get: operations["listRegexProfileVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/regex-profiles/{id}/versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get regex profile version */
+        get: operations["getRegexProfileVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/regex-profiles/{id}/versions/{version_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rollback regex profile to a version */
+        post: operations["rollbackRegexProfileVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/regex-profiles/{id}/versions/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compare regex profile versions */
+        post: operations["compareRegexProfileVersions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions": {
         parameters: {
             query?: never;
@@ -10649,6 +10867,7 @@ export interface paths {
                          *             "sync_policy": "pin"
                          *           },
                          *           "created_at": 1735689600000,
+                         *           "deep_binding": false,
                          *           "id": "sess_demo",
                          *           "metadata": {
                          *             "source": "demo",
@@ -10664,8 +10883,10 @@ export interface paths {
                          *           },
                          *           "model_provider": "openai",
                          *           "preset_id": "preset_story",
+                         *           "preset_version_id": null,
                          *           "prompt_mode": "native",
                          *           "regex_profile_id": "regex_safe",
+                         *           "regex_profile_version_id": null,
                          *           "status": "active",
                          *           "title": "Campfire Planning",
                          *           "updated_at": 1735689660000,
@@ -10675,7 +10896,8 @@ export interface paths {
                          *             },
                          *             "user_id": "usr_demo"
                          *           },
-                         *           "worldbook_profile_id": "wb_world"
+                         *           "worldbook_profile_id": "wb_world",
+                         *           "worldbook_version_id": null
                          *         }
                          *       ],
                          *       "meta": {
@@ -10701,14 +10923,17 @@ export interface paths {
                                     sync_policy: "pin" | "manual" | "force";
                                 } | null;
                                 created_at: number;
+                                deep_binding: boolean;
                                 id: string;
                                 metadata: unknown;
                                 model_name: string | null;
                                 model_params: unknown;
                                 model_provider: string | null;
                                 preset_id: string | null;
+                                preset_version_id: string | null;
                                 prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
                                 regex_profile_id: string | null;
+                                regex_profile_version_id: string | null;
                                 /** @enum {string} */
                                 status: "active" | "archived";
                                 title: string | null;
@@ -10720,6 +10945,7 @@ export interface paths {
                                     user_id: string | null;
                                 } | null;
                                 worldbook_profile_id: string | null;
+                                worldbook_version_id: string | null;
                             }[];
                             meta: {
                                 has_more: boolean;
@@ -10767,6 +10993,7 @@ export interface paths {
                      * @example {
                      *       "character_id": "char_hero",
                      *       "character_sync_policy": "pin",
+                     *       "deep_binding": false,
                      *       "metadata": {
                      *         "source": "demo",
                      *         "tags": [
@@ -10781,12 +11008,15 @@ export interface paths {
                      *       },
                      *       "model_provider": "openai",
                      *       "preset_id": "preset_story",
+                     *       "preset_version_id": null,
                      *       "prompt_mode": "native",
                      *       "regex_profile_id": "regex_safe",
+                     *       "regex_profile_version_id": null,
                      *       "status": "active",
                      *       "title": "Campfire Planning",
                      *       "user_id": "usr_demo",
-                     *       "worldbook_profile_id": "wb_world"
+                     *       "worldbook_profile_id": "wb_world",
+                     *       "worldbook_version_id": null
                      *     }
                      */
                     "application/json": {
@@ -10795,14 +11025,17 @@ export interface paths {
                         /** @enum {string} */
                         character_sync_policy?: "pin" | "manual" | "force";
                         character_version_id?: string;
+                        deep_binding?: boolean;
                         metadata?: unknown;
                         model_name?: string;
                         model_params?: unknown;
                         model_provider?: string;
-                        preset_id?: string;
+                        preset_id?: string | null;
+                        preset_version_id?: string | null;
                         /** @enum {string} */
                         prompt_mode?: "compat_strict" | "compat_plus" | "native";
-                        regex_profile_id?: string;
+                        regex_profile_id?: string | null;
+                        regex_profile_version_id?: string | null;
                         /** @enum {string} */
                         status?: "active" | "archived";
                         title?: string;
@@ -10810,7 +11043,8 @@ export interface paths {
                         user_snapshot?: {
                             [key: string]: unknown;
                         };
-                        worldbook_profile_id?: string;
+                        worldbook_profile_id?: string | null;
+                        worldbook_version_id?: string | null;
                     };
                 };
             };
@@ -10834,6 +11068,7 @@ export interface paths {
                          *           "sync_policy": "pin"
                          *         },
                          *         "created_at": 1735689600000,
+                         *         "deep_binding": false,
                          *         "id": "sess_demo",
                          *         "metadata": {
                          *           "source": "demo",
@@ -10849,8 +11084,10 @@ export interface paths {
                          *         },
                          *         "model_provider": "openai",
                          *         "preset_id": "preset_story",
+                         *         "preset_version_id": null,
                          *         "prompt_mode": "native",
                          *         "regex_profile_id": "regex_safe",
+                         *         "regex_profile_version_id": null,
                          *         "status": "active",
                          *         "title": "Campfire Planning",
                          *         "updated_at": 1735689660000,
@@ -10860,7 +11097,8 @@ export interface paths {
                          *           },
                          *           "user_id": "usr_demo"
                          *         },
-                         *         "worldbook_profile_id": "wb_world"
+                         *         "worldbook_profile_id": "wb_world",
+                         *         "worldbook_version_id": null
                          *       }
                          *     }
                          */
@@ -10877,6 +11115,7 @@ export interface paths {
                              *         "sync_policy": "pin"
                              *       },
                              *       "created_at": 1735689600000,
+                             *       "deep_binding": false,
                              *       "id": "sess_demo",
                              *       "metadata": {
                              *         "source": "demo",
@@ -10892,8 +11131,10 @@ export interface paths {
                              *       },
                              *       "model_provider": "openai",
                              *       "preset_id": "preset_story",
+                             *       "preset_version_id": null,
                              *       "prompt_mode": "native",
                              *       "regex_profile_id": "regex_safe",
+                             *       "regex_profile_version_id": null,
                              *       "status": "active",
                              *       "title": "Campfire Planning",
                              *       "updated_at": 1735689660000,
@@ -10903,7 +11144,8 @@ export interface paths {
                              *         },
                              *         "user_id": "usr_demo"
                              *       },
-                             *       "worldbook_profile_id": "wb_world"
+                             *       "worldbook_profile_id": "wb_world",
+                             *       "worldbook_version_id": null
                              *     }
                              */
                             data: {
@@ -10918,14 +11160,17 @@ export interface paths {
                                     sync_policy: "pin" | "manual" | "force";
                                 } | null;
                                 created_at: number;
+                                deep_binding: boolean;
                                 id: string;
                                 metadata: unknown;
                                 model_name: string | null;
                                 model_params: unknown;
                                 model_provider: string | null;
                                 preset_id: string | null;
+                                preset_version_id: string | null;
                                 prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
                                 regex_profile_id: string | null;
+                                regex_profile_version_id: string | null;
                                 /** @enum {string} */
                                 status: "active" | "archived";
                                 title: string | null;
@@ -10937,6 +11182,7 @@ export interface paths {
                                     user_id: string | null;
                                 } | null;
                                 worldbook_profile_id: string | null;
+                                worldbook_version_id: string | null;
                             };
                         };
                     };
@@ -11038,6 +11284,7 @@ export interface paths {
                          *           "sync_policy": "pin"
                          *         },
                          *         "created_at": 1735689600000,
+                         *         "deep_binding": false,
                          *         "id": "sess_demo",
                          *         "metadata": {
                          *           "source": "demo",
@@ -11053,8 +11300,10 @@ export interface paths {
                          *         },
                          *         "model_provider": "openai",
                          *         "preset_id": "preset_story",
+                         *         "preset_version_id": null,
                          *         "prompt_mode": "native",
                          *         "regex_profile_id": "regex_safe",
+                         *         "regex_profile_version_id": null,
                          *         "status": "active",
                          *         "title": "Campfire Planning",
                          *         "updated_at": 1735689660000,
@@ -11064,7 +11313,8 @@ export interface paths {
                          *           },
                          *           "user_id": "usr_demo"
                          *         },
-                         *         "worldbook_profile_id": "wb_world"
+                         *         "worldbook_profile_id": "wb_world",
+                         *         "worldbook_version_id": null
                          *       }
                          *     }
                          */
@@ -11081,6 +11331,7 @@ export interface paths {
                              *         "sync_policy": "pin"
                              *       },
                              *       "created_at": 1735689600000,
+                             *       "deep_binding": false,
                              *       "id": "sess_demo",
                              *       "metadata": {
                              *         "source": "demo",
@@ -11096,8 +11347,10 @@ export interface paths {
                              *       },
                              *       "model_provider": "openai",
                              *       "preset_id": "preset_story",
+                             *       "preset_version_id": null,
                              *       "prompt_mode": "native",
                              *       "regex_profile_id": "regex_safe",
+                             *       "regex_profile_version_id": null,
                              *       "status": "active",
                              *       "title": "Campfire Planning",
                              *       "updated_at": 1735689660000,
@@ -11107,7 +11360,8 @@ export interface paths {
                              *         },
                              *         "user_id": "usr_demo"
                              *       },
-                             *       "worldbook_profile_id": "wb_world"
+                             *       "worldbook_profile_id": "wb_world",
+                             *       "worldbook_version_id": null
                              *     }
                              */
                             data: {
@@ -11122,14 +11376,17 @@ export interface paths {
                                     sync_policy: "pin" | "manual" | "force";
                                 } | null;
                                 created_at: number;
+                                deep_binding: boolean;
                                 id: string;
                                 metadata: unknown;
                                 model_name: string | null;
                                 model_params: unknown;
                                 model_provider: string | null;
                                 preset_id: string | null;
+                                preset_version_id: string | null;
                                 prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
                                 regex_profile_id: string | null;
+                                regex_profile_version_id: string | null;
                                 /** @enum {string} */
                                 status: "active" | "archived";
                                 title: string | null;
@@ -11141,6 +11398,7 @@ export interface paths {
                                     user_id: string | null;
                                 } | null;
                                 worldbook_profile_id: string | null;
+                                worldbook_version_id: string | null;
                             };
                         };
                     };
@@ -11254,6 +11512,7 @@ export interface paths {
                      * @example {
                      *       "character_id": "char_hero",
                      *       "character_sync_policy": "pin",
+                     *       "deep_binding": false,
                      *       "metadata": {
                      *         "source": "demo",
                      *         "tags": [
@@ -11268,12 +11527,15 @@ export interface paths {
                      *       },
                      *       "model_provider": "openai",
                      *       "preset_id": "preset_story",
+                     *       "preset_version_id": null,
                      *       "prompt_mode": "native",
                      *       "regex_profile_id": "regex_safe",
+                     *       "regex_profile_version_id": null,
                      *       "status": "active",
                      *       "title": "Campfire Planning",
                      *       "user_id": "usr_demo",
-                     *       "worldbook_profile_id": "wb_world"
+                     *       "worldbook_profile_id": "wb_world",
+                     *       "worldbook_version_id": null
                      *     }
                      */
                     "application/json": {
@@ -11282,14 +11544,17 @@ export interface paths {
                         /** @enum {string} */
                         character_sync_policy?: "pin" | "manual" | "force";
                         character_version_id?: string;
+                        deep_binding?: boolean;
                         metadata?: unknown;
                         model_name?: string;
                         model_params?: unknown;
                         model_provider?: string;
-                        preset_id?: string;
+                        preset_id?: string | null;
+                        preset_version_id?: string | null;
                         /** @enum {string} */
                         prompt_mode?: "compat_strict" | "compat_plus" | "native";
-                        regex_profile_id?: string;
+                        regex_profile_id?: string | null;
+                        regex_profile_version_id?: string | null;
                         /** @enum {string} */
                         status?: "active" | "archived";
                         title?: string;
@@ -11297,7 +11562,8 @@ export interface paths {
                         user_snapshot?: {
                             [key: string]: unknown;
                         };
-                        worldbook_profile_id?: string;
+                        worldbook_profile_id?: string | null;
+                        worldbook_version_id?: string | null;
                     };
                 };
             };
@@ -11321,6 +11587,7 @@ export interface paths {
                          *           "sync_policy": "pin"
                          *         },
                          *         "created_at": 1735689600000,
+                         *         "deep_binding": false,
                          *         "id": "sess_demo",
                          *         "metadata": {
                          *           "source": "demo",
@@ -11336,8 +11603,10 @@ export interface paths {
                          *         },
                          *         "model_provider": "openai",
                          *         "preset_id": "preset_story",
+                         *         "preset_version_id": null,
                          *         "prompt_mode": "native",
                          *         "regex_profile_id": "regex_safe",
+                         *         "regex_profile_version_id": null,
                          *         "status": "active",
                          *         "title": "Campfire Planning",
                          *         "updated_at": 1735689660000,
@@ -11347,7 +11616,8 @@ export interface paths {
                          *           },
                          *           "user_id": "usr_demo"
                          *         },
-                         *         "worldbook_profile_id": "wb_world"
+                         *         "worldbook_profile_id": "wb_world",
+                         *         "worldbook_version_id": null
                          *       }
                          *     }
                          */
@@ -11364,6 +11634,7 @@ export interface paths {
                              *         "sync_policy": "pin"
                              *       },
                              *       "created_at": 1735689600000,
+                             *       "deep_binding": false,
                              *       "id": "sess_demo",
                              *       "metadata": {
                              *         "source": "demo",
@@ -11379,8 +11650,10 @@ export interface paths {
                              *       },
                              *       "model_provider": "openai",
                              *       "preset_id": "preset_story",
+                             *       "preset_version_id": null,
                              *       "prompt_mode": "native",
                              *       "regex_profile_id": "regex_safe",
+                             *       "regex_profile_version_id": null,
                              *       "status": "active",
                              *       "title": "Campfire Planning",
                              *       "updated_at": 1735689660000,
@@ -11390,7 +11663,8 @@ export interface paths {
                              *         },
                              *         "user_id": "usr_demo"
                              *       },
-                             *       "worldbook_profile_id": "wb_world"
+                             *       "worldbook_profile_id": "wb_world",
+                             *       "worldbook_version_id": null
                              *     }
                              */
                             data: {
@@ -11405,14 +11679,17 @@ export interface paths {
                                     sync_policy: "pin" | "manual" | "force";
                                 } | null;
                                 created_at: number;
+                                deep_binding: boolean;
                                 id: string;
                                 metadata: unknown;
                                 model_name: string | null;
                                 model_params: unknown;
                                 model_provider: string | null;
                                 preset_id: string | null;
+                                preset_version_id: string | null;
                                 prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
                                 regex_profile_id: string | null;
+                                regex_profile_version_id: string | null;
                                 /** @enum {string} */
                                 status: "active" | "archived";
                                 title: string | null;
@@ -11424,6 +11701,7 @@ export interface paths {
                                     user_id: string | null;
                                 } | null;
                                 worldbook_profile_id: string | null;
+                                worldbook_version_id: string | null;
                             };
                         };
                     };
@@ -11651,6 +11929,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{id}/branches/{branch_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge a non-conflicting session branch into another branch */
+        post: operations["mergeSessionBranch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/branches/{branch_id}/merge/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview a non-conflicting session branch merge */
+        post: operations["previewSessionBranchMerge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/branches/{branch_id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset a materialized session branch to an earlier committed floor */
+        post: operations["resetSessionBranch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{id}/branches/diff": {
         parameters: {
             query?: never;
@@ -11804,6 +12133,7 @@ export interface paths {
                          *           "sync_policy": "pin"
                          *         },
                          *         "created_at": 1735689600000,
+                         *         "deep_binding": false,
                          *         "id": "sess_demo",
                          *         "metadata": {
                          *           "source": "demo",
@@ -11819,8 +12149,10 @@ export interface paths {
                          *         },
                          *         "model_provider": "openai",
                          *         "preset_id": "preset_story",
+                         *         "preset_version_id": null,
                          *         "prompt_mode": "native",
                          *         "regex_profile_id": "regex_safe",
+                         *         "regex_profile_version_id": null,
                          *         "status": "active",
                          *         "title": "Campfire Planning",
                          *         "updated_at": 1735689660000,
@@ -11830,7 +12162,8 @@ export interface paths {
                          *           },
                          *           "user_id": "usr_demo"
                          *         },
-                         *         "worldbook_profile_id": "wb_world"
+                         *         "worldbook_profile_id": "wb_world",
+                         *         "worldbook_version_id": null
                          *       }
                          *     }
                          */
@@ -11847,6 +12180,7 @@ export interface paths {
                              *         "sync_policy": "pin"
                              *       },
                              *       "created_at": 1735689600000,
+                             *       "deep_binding": false,
                              *       "id": "sess_demo",
                              *       "metadata": {
                              *         "source": "demo",
@@ -11862,8 +12196,10 @@ export interface paths {
                              *       },
                              *       "model_provider": "openai",
                              *       "preset_id": "preset_story",
+                             *       "preset_version_id": null,
                              *       "prompt_mode": "native",
                              *       "regex_profile_id": "regex_safe",
+                             *       "regex_profile_version_id": null,
                              *       "status": "active",
                              *       "title": "Campfire Planning",
                              *       "updated_at": 1735689660000,
@@ -11873,7 +12209,8 @@ export interface paths {
                              *         },
                              *         "user_id": "usr_demo"
                              *       },
-                             *       "worldbook_profile_id": "wb_world"
+                             *       "worldbook_profile_id": "wb_world",
+                             *       "worldbook_version_id": null
                              *     }
                              */
                             data: {
@@ -11888,14 +12225,17 @@ export interface paths {
                                     sync_policy: "pin" | "manual" | "force";
                                 } | null;
                                 created_at: number;
+                                deep_binding: boolean;
                                 id: string;
                                 metadata: unknown;
                                 model_name: string | null;
                                 model_params: unknown;
                                 model_provider: string | null;
                                 preset_id: string | null;
+                                preset_version_id: string | null;
                                 prompt_mode: ("compat_strict" | "compat_plus" | "native") | null;
                                 regex_profile_id: string | null;
+                                regex_profile_version_id: string | null;
                                 /** @enum {string} */
                                 status: "active" | "archived";
                                 title: string | null;
@@ -11907,6 +12247,7 @@ export interface paths {
                                     user_id: string | null;
                                 } | null;
                                 worldbook_profile_id: string | null;
+                                worldbook_version_id: string | null;
                             };
                         };
                     };
@@ -11964,6 +12305,23 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/operation-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List operation logs for a session */
+        get: operations["listSessionOperationLogs"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -12307,18 +12665,22 @@ export interface paths {
                          *           "character_id": "char-hero",
                          *           "character_imported_format": "tavern_card_v2",
                          *           "character_version_id": "char-hero-v3",
+                         *           "preset_content_hash": "sha256:preset-v3",
                          *           "preset_id": "preset-1",
                          *           "preset_updated_at": 1710000000000,
                          *           "preset_version": 3,
+                         *           "preset_version_id": "preset-ver-3",
                          *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                          *           "prompt_mode": "compat_strict",
                          *           "regex_post_rule_names": [],
                          *           "regex_pre_rule_names": [
                          *             "trim_whitespace"
                          *           ],
+                         *           "regex_profile_content_hash": "sha256:regex-v2",
                          *           "regex_profile_id": "regex-1",
                          *           "regex_profile_updated_at": 1710000002000,
                          *           "regex_profile_version": 2,
+                         *           "regex_profile_version_id": "regex-ver-2",
                          *           "token_estimate": 512,
                          *           "worldbook_activated_entries": [
                          *             {
@@ -12352,9 +12714,11 @@ export interface paths {
                          *             7,
                          *             7
                          *           ],
+                         *           "worldbook_content_hash": "sha256:worldbook-v5",
                          *           "worldbook_id": "worldbook-1",
                          *           "worldbook_updated_at": 1710000001000,
-                         *           "worldbook_version": 5
+                         *           "worldbook_version": 5,
+                         *           "worldbook_version_id": "worldbook-ver-5"
                          *         },
                          *         "runtime_trace": {
                          *           "budgets": {
@@ -12615,18 +12979,22 @@ export interface paths {
                              *         "character_id": "char-hero",
                              *         "character_imported_format": "tavern_card_v2",
                              *         "character_version_id": "char-hero-v3",
+                             *         "preset_content_hash": "sha256:preset-v3",
                              *         "preset_id": "preset-1",
                              *         "preset_updated_at": 1710000000000,
                              *         "preset_version": 3,
+                             *         "preset_version_id": "preset-ver-3",
                              *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                              *         "prompt_mode": "compat_strict",
                              *         "regex_post_rule_names": [],
                              *         "regex_pre_rule_names": [
                              *           "trim_whitespace"
                              *         ],
+                             *         "regex_profile_content_hash": "sha256:regex-v2",
                              *         "regex_profile_id": "regex-1",
                              *         "regex_profile_updated_at": 1710000002000,
                              *         "regex_profile_version": 2,
+                             *         "regex_profile_version_id": "regex-ver-2",
                              *         "token_estimate": 512,
                              *         "worldbook_activated_entries": [
                              *           {
@@ -12660,9 +13028,11 @@ export interface paths {
                              *           7,
                              *           7
                              *         ],
+                             *         "worldbook_content_hash": "sha256:worldbook-v5",
                              *         "worldbook_id": "worldbook-1",
                              *         "worldbook_updated_at": 1710000001000,
-                             *         "worldbook_version": 5
+                             *         "worldbook_version": 5,
+                             *         "worldbook_version_id": "worldbook-ver-5"
                              *       },
                              *       "runtime_trace": {
                              *         "budgets": {
@@ -12930,18 +13300,22 @@ export interface paths {
                                  *       "character_id": "char-hero",
                                  *       "character_imported_format": "tavern_card_v2",
                                  *       "character_version_id": "char-hero-v3",
+                                 *       "preset_content_hash": "sha256:preset-v3",
                                  *       "preset_id": "preset-1",
                                  *       "preset_updated_at": 1710000000000,
                                  *       "preset_version": 3,
+                                 *       "preset_version_id": "preset-ver-3",
                                  *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                                  *       "prompt_mode": "compat_strict",
                                  *       "regex_post_rule_names": [],
                                  *       "regex_pre_rule_names": [
                                  *         "trim_whitespace"
                                  *       ],
+                                 *       "regex_profile_content_hash": "sha256:regex-v2",
                                  *       "regex_profile_id": "regex-1",
                                  *       "regex_profile_updated_at": 1710000002000,
                                  *       "regex_profile_version": 2,
+                                 *       "regex_profile_version_id": "regex-ver-2",
                                  *       "token_estimate": 512,
                                  *       "worldbook_activated_entries": [
                                  *         {
@@ -12975,9 +13349,11 @@ export interface paths {
                                  *         7,
                                  *         7
                                  *       ],
+                                 *       "worldbook_content_hash": "sha256:worldbook-v5",
                                  *       "worldbook_id": "worldbook-1",
                                  *       "worldbook_updated_at": 1710000001000,
-                                 *       "worldbook_version": 5
+                                 *       "worldbook_version": 5,
+                                 *       "worldbook_version_id": "worldbook-ver-5"
                                  *     }
                                  */
                                 prompt_snapshot?: {
@@ -12986,17 +13362,21 @@ export interface paths {
                                     character_id: string | null;
                                     character_imported_format: string | null;
                                     character_version_id: string | null;
+                                    preset_content_hash: string | null;
                                     preset_id: string | null;
                                     preset_updated_at: number | null;
                                     preset_version: number | null;
+                                    preset_version_id: string | null;
                                     prompt_digest: string;
                                     /** @enum {string} */
                                     prompt_mode: "compat_strict" | "compat_plus" | "native";
                                     regex_post_rule_names: string[];
                                     regex_pre_rule_names: string[];
+                                    regex_profile_content_hash: string | null;
                                     regex_profile_id: string | null;
                                     regex_profile_updated_at: number | null;
                                     regex_profile_version: number | null;
+                                    regex_profile_version_id: string | null;
                                     token_estimate: number;
                                     worldbook_activated_entries: {
                                         activation_key: string;
@@ -13018,9 +13398,11 @@ export interface paths {
                                         uid: number;
                                     }[];
                                     worldbook_activated_entry_uids: number[];
+                                    worldbook_content_hash: string | null;
                                     worldbook_id: string | null;
                                     worldbook_updated_at: number | null;
                                     worldbook_version: number | null;
+                                    worldbook_version_id: string | null;
                                 };
                                 /**
                                  * @example {
@@ -13920,18 +14302,22 @@ export interface paths {
                          *           "character_id": "char-hero",
                          *           "character_imported_format": "tavern_card_v2",
                          *           "character_version_id": "char-hero-v3",
+                         *           "preset_content_hash": "sha256:preset-v3",
                          *           "preset_id": "preset-1",
                          *           "preset_updated_at": 1710000000000,
                          *           "preset_version": 3,
+                         *           "preset_version_id": "preset-ver-3",
                          *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                          *           "prompt_mode": "compat_strict",
                          *           "regex_post_rule_names": [],
                          *           "regex_pre_rule_names": [
                          *             "trim_whitespace"
                          *           ],
+                         *           "regex_profile_content_hash": "sha256:regex-v2",
                          *           "regex_profile_id": "regex-1",
                          *           "regex_profile_updated_at": 1710000002000,
                          *           "regex_profile_version": 2,
+                         *           "regex_profile_version_id": "regex-ver-2",
                          *           "token_estimate": 512,
                          *           "worldbook_activated_entries": [
                          *             {
@@ -13965,9 +14351,11 @@ export interface paths {
                          *             7,
                          *             7
                          *           ],
+                         *           "worldbook_content_hash": "sha256:worldbook-v5",
                          *           "worldbook_id": "worldbook-1",
                          *           "worldbook_updated_at": 1710000001000,
-                         *           "worldbook_version": 5
+                         *           "worldbook_version": 5,
+                         *           "worldbook_version_id": "worldbook-ver-5"
                          *         },
                          *         "runtime_trace": {
                          *           "budgets": {
@@ -14228,18 +14616,22 @@ export interface paths {
                              *         "character_id": "char-hero",
                              *         "character_imported_format": "tavern_card_v2",
                              *         "character_version_id": "char-hero-v3",
+                             *         "preset_content_hash": "sha256:preset-v3",
                              *         "preset_id": "preset-1",
                              *         "preset_updated_at": 1710000000000,
                              *         "preset_version": 3,
+                             *         "preset_version_id": "preset-ver-3",
                              *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                              *         "prompt_mode": "compat_strict",
                              *         "regex_post_rule_names": [],
                              *         "regex_pre_rule_names": [
                              *           "trim_whitespace"
                              *         ],
+                             *         "regex_profile_content_hash": "sha256:regex-v2",
                              *         "regex_profile_id": "regex-1",
                              *         "regex_profile_updated_at": 1710000002000,
                              *         "regex_profile_version": 2,
+                             *         "regex_profile_version_id": "regex-ver-2",
                              *         "token_estimate": 512,
                              *         "worldbook_activated_entries": [
                              *           {
@@ -14273,9 +14665,11 @@ export interface paths {
                              *           7,
                              *           7
                              *         ],
+                             *         "worldbook_content_hash": "sha256:worldbook-v5",
                              *         "worldbook_id": "worldbook-1",
                              *         "worldbook_updated_at": 1710000001000,
-                             *         "worldbook_version": 5
+                             *         "worldbook_version": 5,
+                             *         "worldbook_version_id": "worldbook-ver-5"
                              *       },
                              *       "runtime_trace": {
                              *         "budgets": {
@@ -14543,18 +14937,22 @@ export interface paths {
                                  *       "character_id": "char-hero",
                                  *       "character_imported_format": "tavern_card_v2",
                                  *       "character_version_id": "char-hero-v3",
+                                 *       "preset_content_hash": "sha256:preset-v3",
                                  *       "preset_id": "preset-1",
                                  *       "preset_updated_at": 1710000000000,
                                  *       "preset_version": 3,
+                                 *       "preset_version_id": "preset-ver-3",
                                  *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                                  *       "prompt_mode": "compat_strict",
                                  *       "regex_post_rule_names": [],
                                  *       "regex_pre_rule_names": [
                                  *         "trim_whitespace"
                                  *       ],
+                                 *       "regex_profile_content_hash": "sha256:regex-v2",
                                  *       "regex_profile_id": "regex-1",
                                  *       "regex_profile_updated_at": 1710000002000,
                                  *       "regex_profile_version": 2,
+                                 *       "regex_profile_version_id": "regex-ver-2",
                                  *       "token_estimate": 512,
                                  *       "worldbook_activated_entries": [
                                  *         {
@@ -14588,9 +14986,11 @@ export interface paths {
                                  *         7,
                                  *         7
                                  *       ],
+                                 *       "worldbook_content_hash": "sha256:worldbook-v5",
                                  *       "worldbook_id": "worldbook-1",
                                  *       "worldbook_updated_at": 1710000001000,
-                                 *       "worldbook_version": 5
+                                 *       "worldbook_version": 5,
+                                 *       "worldbook_version_id": "worldbook-ver-5"
                                  *     }
                                  */
                                 prompt_snapshot?: {
@@ -14599,17 +14999,21 @@ export interface paths {
                                     character_id: string | null;
                                     character_imported_format: string | null;
                                     character_version_id: string | null;
+                                    preset_content_hash: string | null;
                                     preset_id: string | null;
                                     preset_updated_at: number | null;
                                     preset_version: number | null;
+                                    preset_version_id: string | null;
                                     prompt_digest: string;
                                     /** @enum {string} */
                                     prompt_mode: "compat_strict" | "compat_plus" | "native";
                                     regex_post_rule_names: string[];
                                     regex_pre_rule_names: string[];
+                                    regex_profile_content_hash: string | null;
                                     regex_profile_id: string | null;
                                     regex_profile_updated_at: number | null;
                                     regex_profile_version: number | null;
+                                    regex_profile_version_id: string | null;
                                     token_estimate: number;
                                     worldbook_activated_entries: {
                                         activation_key: string;
@@ -14631,9 +15035,11 @@ export interface paths {
                                         uid: number;
                                     }[];
                                     worldbook_activated_entry_uids: number[];
+                                    worldbook_content_hash: string | null;
                                     worldbook_id: string | null;
                                     worldbook_updated_at: number | null;
                                     worldbook_version: number | null;
+                                    worldbook_version_id: string | null;
                                 };
                                 /**
                                  * @example {
@@ -15552,18 +15958,22 @@ export interface paths {
                          *           "character_id": "char-hero",
                          *           "character_imported_format": "tavern_card_v2",
                          *           "character_version_id": "char-hero-v3",
+                         *           "preset_content_hash": "sha256:preset-v3",
                          *           "preset_id": "preset-1",
                          *           "preset_updated_at": 1710000000000,
                          *           "preset_version": 3,
+                         *           "preset_version_id": "preset-ver-3",
                          *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                          *           "prompt_mode": "compat_strict",
                          *           "regex_post_rule_names": [],
                          *           "regex_pre_rule_names": [
                          *             "trim_whitespace"
                          *           ],
+                         *           "regex_profile_content_hash": "sha256:regex-v2",
                          *           "regex_profile_id": "regex-1",
                          *           "regex_profile_updated_at": 1710000002000,
                          *           "regex_profile_version": 2,
+                         *           "regex_profile_version_id": "regex-ver-2",
                          *           "token_estimate": 512,
                          *           "worldbook_activated_entries": [
                          *             {
@@ -15597,9 +16007,11 @@ export interface paths {
                          *             7,
                          *             7
                          *           ],
+                         *           "worldbook_content_hash": "sha256:worldbook-v5",
                          *           "worldbook_id": "worldbook-1",
                          *           "worldbook_updated_at": 1710000001000,
-                         *           "worldbook_version": 5
+                         *           "worldbook_version": 5,
+                         *           "worldbook_version_id": "worldbook-ver-5"
                          *         },
                          *         "runtime_trace": {
                          *           "budgets": {
@@ -15946,18 +16358,22 @@ export interface paths {
                              *         "character_id": "char-hero",
                              *         "character_imported_format": "tavern_card_v2",
                              *         "character_version_id": "char-hero-v3",
+                             *         "preset_content_hash": "sha256:preset-v3",
                              *         "preset_id": "preset-1",
                              *         "preset_updated_at": 1710000000000,
                              *         "preset_version": 3,
+                             *         "preset_version_id": "preset-ver-3",
                              *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                              *         "prompt_mode": "compat_strict",
                              *         "regex_post_rule_names": [],
                              *         "regex_pre_rule_names": [
                              *           "trim_whitespace"
                              *         ],
+                             *         "regex_profile_content_hash": "sha256:regex-v2",
                              *         "regex_profile_id": "regex-1",
                              *         "regex_profile_updated_at": 1710000002000,
                              *         "regex_profile_version": 2,
+                             *         "regex_profile_version_id": "regex-ver-2",
                              *         "token_estimate": 512,
                              *         "worldbook_activated_entries": [
                              *           {
@@ -15991,9 +16407,11 @@ export interface paths {
                              *           7,
                              *           7
                              *         ],
+                             *         "worldbook_content_hash": "sha256:worldbook-v5",
                              *         "worldbook_id": "worldbook-1",
                              *         "worldbook_updated_at": 1710000001000,
-                             *         "worldbook_version": 5
+                             *         "worldbook_version": 5,
+                             *         "worldbook_version_id": "worldbook-ver-5"
                              *       },
                              *       "runtime_trace": {
                              *         "budgets": {
@@ -16336,18 +16754,22 @@ export interface paths {
                                  *       "character_id": "char-hero",
                                  *       "character_imported_format": "tavern_card_v2",
                                  *       "character_version_id": "char-hero-v3",
+                                 *       "preset_content_hash": "sha256:preset-v3",
                                  *       "preset_id": "preset-1",
                                  *       "preset_updated_at": 1710000000000,
                                  *       "preset_version": 3,
+                                 *       "preset_version_id": "preset-ver-3",
                                  *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                                  *       "prompt_mode": "compat_strict",
                                  *       "regex_post_rule_names": [],
                                  *       "regex_pre_rule_names": [
                                  *         "trim_whitespace"
                                  *       ],
+                                 *       "regex_profile_content_hash": "sha256:regex-v2",
                                  *       "regex_profile_id": "regex-1",
                                  *       "regex_profile_updated_at": 1710000002000,
                                  *       "regex_profile_version": 2,
+                                 *       "regex_profile_version_id": "regex-ver-2",
                                  *       "token_estimate": 512,
                                  *       "worldbook_activated_entries": [
                                  *         {
@@ -16381,9 +16803,11 @@ export interface paths {
                                  *         7,
                                  *         7
                                  *       ],
+                                 *       "worldbook_content_hash": "sha256:worldbook-v5",
                                  *       "worldbook_id": "worldbook-1",
                                  *       "worldbook_updated_at": 1710000001000,
-                                 *       "worldbook_version": 5
+                                 *       "worldbook_version": 5,
+                                 *       "worldbook_version_id": "worldbook-ver-5"
                                  *     }
                                  */
                                 prompt_snapshot: {
@@ -16392,17 +16816,21 @@ export interface paths {
                                     character_id: string | null;
                                     character_imported_format: string | null;
                                     character_version_id: string | null;
+                                    preset_content_hash: string | null;
                                     preset_id: string | null;
                                     preset_updated_at: number | null;
                                     preset_version: number | null;
+                                    preset_version_id: string | null;
                                     prompt_digest: string;
                                     /** @enum {string} */
                                     prompt_mode: "compat_strict" | "compat_plus" | "native";
                                     regex_post_rule_names: string[];
                                     regex_pre_rule_names: string[];
+                                    regex_profile_content_hash: string | null;
                                     regex_profile_id: string | null;
                                     regex_profile_updated_at: number | null;
                                     regex_profile_version: number | null;
+                                    regex_profile_version_id: string | null;
                                     token_estimate: number;
                                     worldbook_activated_entries: {
                                         activation_key: string;
@@ -16424,9 +16852,11 @@ export interface paths {
                                         uid: number;
                                     }[];
                                     worldbook_activated_entry_uids: number[];
+                                    worldbook_content_hash: string | null;
                                     worldbook_id: string | null;
                                     worldbook_updated_at: number | null;
                                     worldbook_version: number | null;
+                                    worldbook_version_id: string | null;
                                 };
                                 runtime_trace?: {
                                     budgets?: {
@@ -17031,7 +17461,7 @@ export interface paths {
                          *     data: {"chunk":"The firelight wavers..."}
                          *
                          *     event: done
-                         *     data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed","prompt_snapshot":{"preset_id":"preset-1","preset_updated_at":1710000000000,"preset_version":3,"worldbook_id":"worldbook-1","worldbook_updated_at":1710000001000,"worldbook_version":5,"regex_profile_id":"regex-1","regex_profile_updated_at":1710000002000,"regex_profile_version":2,"character_id":"char-hero","character_version_id":"char-hero-v3","character_imported_format":"tavern_card_v2","character_content_hash":"9fe9ab675c6f2df7f9c9a96ef0c0f7797cf20cf8d88bbbd2361f6750e4b7dd1b","worldbook_activated_entry_uids":[7,7],"worldbook_activated_entries":[{"uid":7,"activation_key":"worldbook:worldbook-1:5:entry:7","source":{"kind":"session_worldbook","worldbook_id":"worldbook-1","worldbook_name":"Campfire Worldbook","asset_scope_id":"worldbook:worldbook-1:5"},"insertion":{"position":"before"}},{"uid":7,"activation_key":"worldbook:character:char-hero:char-hero-v3:book:entry:7","source":{"kind":"character_book","worldbook_id":null,"worldbook_name":"Hero Character Book","asset_scope_id":"worldbook:character:char-hero:char-hero-v3:book"},"insertion":{"position":"after"}}],"regex_pre_rule_names":["trim_whitespace"],"regex_post_rule_names":[],"prompt_mode":"compat_strict","asset_manifest_digest":"2c015f48f52d19ce879f19eeebc67ad3e7470d3d1f95e2eb1f5f3c1d8d8fdc47","prompt_digest":"0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c","token_estimate":512},"runtime_trace":{"worldbook":{"hit_count":1},"macro":{"warnings":[{"code":"macro_preview_side_effect_suppressed","message":"Macro setvar side effect was previewed but not committed.","macro_name":"setvar"}],"used_names":["if","lastGenerationType","setvar"],"mutation_preview":[{"kind":"set","scope":"branch","key":"mood","value":"steady"}],"staged_mutations":[{"kind":"set","scope":"branch","key":"mood","value":"steady","source_macro":"setvar"}],"traces":[{"macro_name":"lastGenerationType","raw_text":"{{lastGenerationType}}","resolved_text":"respond","phase":"assemble","source_kind":"macro"},{"macro_name":"if","raw_text":"{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}","resolved_text":"YES","phase":"assemble","source_kind":"if","selected_branch":"then"}]},"delivery":{"assistant_prefill_requested":true,"assistant_prefill_applied":false,"assistant_prefill_strategy":"assistant_message_fallback","allow_assistant_prefill":true,"require_last_user":true,"no_assistant":false,"last_message_role":"user","ends_with_user":true,"degraded":true,"degrade_reasons":["require_last_user"]}}}
+                         *     data: {"floor_id":"floor_12","floor_no":12,"branch_id":"main","generated_text":"The firelight wavers as the next part of the story begins.","summaries":["The group resumes the campfire planning scene."],"total_usage":{"prompt_tokens":320,"completion_tokens":128,"total_tokens":448},"memory":{"mode":"sync","status":"applied","job_id":null},"final_state":"committed","prompt_snapshot":{"preset_id":"preset-1","preset_updated_at":1710000000000,"preset_version":3,"preset_version_id":"preset-ver-3","preset_content_hash":"sha256:preset-v3","worldbook_id":"worldbook-1","worldbook_updated_at":1710000001000,"worldbook_version":5,"worldbook_version_id":"worldbook-ver-5","worldbook_content_hash":"sha256:worldbook-v5","regex_profile_id":"regex-1","regex_profile_updated_at":1710000002000,"regex_profile_version":2,"regex_profile_version_id":"regex-ver-2","regex_profile_content_hash":"sha256:regex-v2","character_id":"char-hero","character_version_id":"char-hero-v3","character_imported_format":"tavern_card_v2","character_content_hash":"9fe9ab675c6f2df7f9c9a96ef0c0f7797cf20cf8d88bbbd2361f6750e4b7dd1b","worldbook_activated_entry_uids":[7,7],"worldbook_activated_entries":[{"uid":7,"activation_key":"worldbook:worldbook-1:5:entry:7","source":{"kind":"session_worldbook","worldbook_id":"worldbook-1","worldbook_name":"Campfire Worldbook","asset_scope_id":"worldbook:worldbook-1:5"},"insertion":{"position":"before"}},{"uid":7,"activation_key":"worldbook:character:char-hero:char-hero-v3:book:entry:7","source":{"kind":"character_book","worldbook_id":null,"worldbook_name":"Hero Character Book","asset_scope_id":"worldbook:character:char-hero:char-hero-v3:book"},"insertion":{"position":"after"}}],"regex_pre_rule_names":["trim_whitespace"],"regex_post_rule_names":[],"prompt_mode":"compat_strict","asset_manifest_digest":"2c015f48f52d19ce879f19eeebc67ad3e7470d3d1f95e2eb1f5f3c1d8d8fdc47","prompt_digest":"0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c","token_estimate":512},"runtime_trace":{"worldbook":{"hit_count":1},"macro":{"warnings":[{"code":"macro_preview_side_effect_suppressed","message":"Macro setvar side effect was previewed but not committed.","macro_name":"setvar"}],"used_names":["if","lastGenerationType","setvar"],"mutation_preview":[{"kind":"set","scope":"branch","key":"mood","value":"steady"}],"staged_mutations":[{"kind":"set","scope":"branch","key":"mood","value":"steady","source_macro":"setvar"}],"traces":[{"macro_name":"lastGenerationType","raw_text":"{{lastGenerationType}}","resolved_text":"respond","phase":"assemble","source_kind":"macro"},{"macro_name":"if","raw_text":"{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}","resolved_text":"YES","phase":"assemble","source_kind":"if","selected_branch":"then"}]},"delivery":{"assistant_prefill_requested":true,"assistant_prefill_applied":false,"assistant_prefill_strategy":"assistant_message_fallback","allow_assistant_prefill":true,"require_last_user":true,"no_assistant":false,"last_message_role":"user","ends_with_user":true,"degraded":true,"degrade_reasons":["require_last_user"]}}}
                          */
                         "application/json": string;
                     };
@@ -18508,6 +18938,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vc-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List version-control tags */
+        get: operations["listVcTags"];
+        put?: never;
+        /** Create a version-control tag */
+        post: operations["createVcTag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vc-tags/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a version-control tag */
+        get: operations["getVcTag"];
+        put?: never;
+        post?: never;
+        /** Delete a version-control tag */
+        delete: operations["deleteVcTag"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/version": {
         parameters: {
             query?: never;
@@ -18579,6 +19045,74 @@ export interface paths {
         post?: never;
         /** Delete imported worldbook */
         delete: operations["deleteImportedWorldbook"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List worldbook versions */
+        get: operations["listWorldbookVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{id}/versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get worldbook version */
+        get: operations["getWorldbookVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{id}/versions/{version_id}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rollback worldbook to a version */
+        post: operations["rollbackWorldbookVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/worldbooks/{id}/versions/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Compare worldbook versions */
+        post: operations["compareWorldbookVersions"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -19237,6 +19771,8 @@ export interface operations {
                      *             "domains": null,
                      *             "include_linked_assets": true,
                      *             "include_secrets": false,
+                     *             "preset_ids": [],
+                     *             "regex_profile_ids": [],
                      *             "session_ids": [
                      *               "sess_demo"
                      *             ],
@@ -19254,16 +19790,23 @@ export interface operations {
                      *               "memory_items": 3,
                      *               "messages": 8,
                      *               "pages": 4,
+                     *               "preset_versions": 1,
+                     *               "presets": 1,
+                     *               "regex_profile_versions": 1,
+                     *               "regex_profiles": 1,
                      *               "session_branches": 2,
                      *               "sessions": 1,
                      *               "variables": 6,
                      *               "worldbook_entries": 3,
+                     *               "worldbook_versions": 1,
                      *               "worldbooks": 1
                      *             },
                      *             "file_name": "core-assets-20250101-120000.thbackup",
                      *             "included_domains": [
                      *               "characters",
+                     *               "presets",
                      *               "worldbooks",
+                     *               "regex_profiles",
                      *               "sessions"
                      *             ]
                      *           },
@@ -19303,16 +19846,18 @@ export interface operations {
                             progress_total?: number | null;
                             request?: {
                                 character_ids: string[];
-                                domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[] | null;
                                 include_linked_assets: boolean;
                                 /** @enum {boolean} */
                                 include_secrets: false;
+                                preset_ids: string[];
+                                regex_profile_ids: string[];
                                 session_ids: string[];
                                 worldbook_ids: string[];
                             } | {
                                 backup_kind: string | null;
                                 created_at: number | null;
-                                included_domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                included_domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[] | null;
                                 /** @enum {string} */
                                 mode: "create_copy";
                                 source: {
@@ -19331,14 +19876,19 @@ export interface operations {
                                     memory_items: number;
                                     messages: number;
                                     pages: number;
+                                    preset_versions: number;
+                                    presets: number;
+                                    regex_profile_versions: number;
+                                    regex_profiles: number;
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
                                     worldbook_entries: number;
+                                    worldbook_versions: number;
                                     worldbooks: number;
                                 };
                                 file_name: string;
-                                included_domains: ("characters" | "worldbooks" | "sessions")[];
+                                included_domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[];
                             } | {
                                 created: {
                                     branch_local_variable_snapshots: number;
@@ -19349,11 +19899,16 @@ export interface operations {
                                     memory_items: number;
                                     messages: number;
                                     pages: number;
+                                    preset_versions: number;
+                                    presets: number;
+                                    regex_profile_versions: number;
+                                    regex_profiles: number;
                                     runtime_scope_states: number;
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
                                     worldbook_entries: number;
+                                    worldbook_versions: number;
                                     worldbooks: number;
                                 };
                                 dropped_bindings: {
@@ -19367,7 +19922,7 @@ export interface operations {
                                     new_name: string;
                                     old_name: string;
                                     /** @enum {string} */
-                                    type: "character" | "worldbook" | "session";
+                                    type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
                                 }[];
                                 warnings: {
                                     code: string;
@@ -19451,6 +20006,8 @@ export interface operations {
                      *           "domains": null,
                      *           "include_linked_assets": true,
                      *           "include_secrets": false,
+                     *           "preset_ids": [],
+                     *           "regex_profile_ids": [],
                      *           "session_ids": [
                      *             "sess_demo"
                      *           ],
@@ -19468,16 +20025,23 @@ export interface operations {
                      *             "memory_items": 3,
                      *             "messages": 8,
                      *             "pages": 4,
+                     *             "preset_versions": 1,
+                     *             "presets": 1,
+                     *             "regex_profile_versions": 1,
+                     *             "regex_profiles": 1,
                      *             "session_branches": 2,
                      *             "sessions": 1,
                      *             "variables": 6,
                      *             "worldbook_entries": 3,
+                     *             "worldbook_versions": 1,
                      *             "worldbooks": 1
                      *           },
                      *           "file_name": "core-assets-20250101-120000.thbackup",
                      *           "included_domains": [
                      *             "characters",
+                     *             "presets",
                      *             "worldbooks",
+                     *             "regex_profiles",
                      *             "sessions"
                      *           ]
                      *         },
@@ -19508,16 +20072,18 @@ export interface operations {
                             progress_total?: number | null;
                             request?: {
                                 character_ids: string[];
-                                domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[] | null;
                                 include_linked_assets: boolean;
                                 /** @enum {boolean} */
                                 include_secrets: false;
+                                preset_ids: string[];
+                                regex_profile_ids: string[];
                                 session_ids: string[];
                                 worldbook_ids: string[];
                             } | {
                                 backup_kind: string | null;
                                 created_at: number | null;
-                                included_domains: ("characters" | "worldbooks" | "sessions")[] | null;
+                                included_domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[] | null;
                                 /** @enum {string} */
                                 mode: "create_copy";
                                 source: {
@@ -19536,14 +20102,19 @@ export interface operations {
                                     memory_items: number;
                                     messages: number;
                                     pages: number;
+                                    preset_versions: number;
+                                    presets: number;
+                                    regex_profile_versions: number;
+                                    regex_profiles: number;
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
                                     worldbook_entries: number;
+                                    worldbook_versions: number;
                                     worldbooks: number;
                                 };
                                 file_name: string;
-                                included_domains: ("characters" | "worldbooks" | "sessions")[];
+                                included_domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[];
                             } | {
                                 created: {
                                     branch_local_variable_snapshots: number;
@@ -19554,11 +20125,16 @@ export interface operations {
                                     memory_items: number;
                                     messages: number;
                                     pages: number;
+                                    preset_versions: number;
+                                    presets: number;
+                                    regex_profile_versions: number;
+                                    regex_profiles: number;
                                     runtime_scope_states: number;
                                     session_branches: number;
                                     sessions: number;
                                     variables: number;
                                     worldbook_entries: number;
+                                    worldbook_versions: number;
                                     worldbooks: number;
                                 };
                                 dropped_bindings: {
@@ -19572,7 +20148,7 @@ export interface operations {
                                     new_name: string;
                                     old_name: string;
                                     /** @enum {string} */
-                                    type: "character" | "worldbook" | "session";
+                                    type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
                                 }[];
                                 warnings: {
                                     code: string;
@@ -19838,7 +20414,7 @@ export interface operations {
                  */
                 "application/json": {
                     character_ids?: string[];
-                    domains?: ("characters" | "worldbooks" | "sessions")[];
+                    domains?: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[];
                     /** @default true */
                     include_linked_assets?: boolean;
                     /**
@@ -19846,6 +20422,8 @@ export interface operations {
                      * @enum {boolean}
                      */
                     include_secrets?: false;
+                    preset_ids?: string[];
+                    regex_profile_ids?: string[];
                     session_ids?: string[];
                     worldbook_ids?: string[];
                 };
@@ -19938,7 +20516,9 @@ export interface operations {
                  *         },
                  *         "included_domains": [
                  *           "characters",
+                 *           "presets",
                  *           "worldbooks",
+                 *           "regex_profiles",
                  *           "sessions"
                  *         ],
                  *         "options": {
@@ -19946,6 +20526,8 @@ export interface operations {
                  *         },
                  *         "resources": {
                  *           "characters": [],
+                 *           "presets": [],
+                 *           "regex_profiles": [],
                  *           "worldbooks": []
                  *         },
                  *         "sessions": [],
@@ -20076,7 +20658,9 @@ export interface operations {
                  *         },
                  *         "included_domains": [
                  *           "characters",
+                 *           "presets",
                  *           "worldbooks",
+                 *           "regex_profiles",
                  *           "sessions"
                  *         ],
                  *         "options": {
@@ -20084,6 +20668,8 @@ export interface operations {
                  *         },
                  *         "resources": {
                  *           "characters": [],
+                 *           "presets": [],
+                 *           "regex_profiles": [],
                  *           "worldbooks": []
                  *         },
                  *         "sessions": [],
@@ -20130,10 +20716,15 @@ export interface operations {
                      *           "memory_items": 3,
                      *           "messages": 8,
                      *           "pages": 4,
+                     *           "preset_versions": 1,
+                     *           "presets": 1,
+                     *           "regex_profile_versions": 1,
+                     *           "regex_profiles": 1,
                      *           "session_branches": 2,
                      *           "sessions": 1,
                      *           "variables": 6,
                      *           "worldbook_entries": 3,
+                     *           "worldbook_versions": 1,
                      *           "worldbooks": 1
                      *         },
                      *         "dropped_bindings": {
@@ -20143,7 +20734,9 @@ export interface operations {
                      *         },
                      *         "included_domains": [
                      *           "characters",
+                     *           "presets",
                      *           "worldbooks",
+                     *           "regex_profiles",
                      *           "sessions"
                      *         ],
                      *         "renamed_resources": [
@@ -20162,6 +20755,8 @@ export interface operations {
                      *         ],
                      *         "will_create": {
                      *           "characters": 1,
+                     *           "presets": 1,
+                     *           "regex_profiles": 1,
                      *           "sessions": 1,
                      *           "worldbooks": 1
                      *         }
@@ -20181,10 +20776,15 @@ export interface operations {
                                 memory_items: number;
                                 messages: number;
                                 pages: number;
+                                preset_versions: number;
+                                presets: number;
+                                regex_profile_versions: number;
+                                regex_profiles: number;
                                 session_branches: number;
                                 sessions: number;
                                 variables: number;
                                 worldbook_entries: number;
+                                worldbook_versions: number;
                                 worldbooks: number;
                             };
                             dropped_bindings: {
@@ -20192,12 +20792,12 @@ export interface operations {
                                 regex_profiles: number;
                                 users: number;
                             };
-                            included_domains: ("characters" | "worldbooks" | "sessions")[];
+                            included_domains: ("characters" | "presets" | "worldbooks" | "regex_profiles" | "sessions")[];
                             renamed_resources: {
                                 new_name: string;
                                 old_name: string;
                                 /** @enum {string} */
-                                type: "character" | "worldbook" | "session";
+                                type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
                             }[];
                             /** @enum {string} */
                             restore_mode: "create_copy";
@@ -20208,6 +20808,8 @@ export interface operations {
                             }[];
                             will_create: {
                                 characters: number;
+                                presets: number;
+                                regex_profiles: number;
                                 sessions: number;
                                 worldbooks: number;
                             };
@@ -21649,6 +22251,109 @@ export interface operations {
             };
         };
     };
+    listFloorOperationLogs: {
+        parameters: {
+            query?: {
+                session_id?: string;
+                floor_id?: string;
+                run_id?: string;
+                target_type?: string;
+                target_id?: string;
+                action?: string;
+                actor_type?: string;
+                status?: "succeeded" | "failed" | "denied" | "cancelled";
+                operation_group_id?: string;
+                request_id?: string;
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            account_id: string;
+                            action: string;
+                            actor_id: string | null;
+                            actor_type: string;
+                            after_ref: unknown;
+                            before_ref: unknown;
+                            branch_id: string | null;
+                            created_at: number;
+                            diff: unknown;
+                            floor_id: string | null;
+                            id: string;
+                            metadata: unknown;
+                            operation_group_id: string | null;
+                            request_id: string | null;
+                            run_id: string | null;
+                            session_id: string | null;
+                            source_type: string;
+                            /** @enum {string} */
+                            status: "succeeded" | "failed" | "denied" | "cancelled";
+                            target_id: string | null;
+                            target_type: string;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     getFloorPromptRuntimeExplain: {
         parameters: {
             query?: never;
@@ -21675,16 +22380,25 @@ export interface operations {
                      *             "name": "Hero"
                      *           },
                      *           "preset": {
+                     *             "content_hash": "sha256:preset-v3",
                      *             "id": "preset-1",
-                     *             "name": "Story Preset"
+                     *             "name": "Story Preset",
+                     *             "version_id": "preset-ver-3",
+                     *             "version_no": 3
                      *           },
                      *           "regex_profile": {
+                     *             "content_hash": "sha256:regex-v2",
                      *             "id": "regex-1",
-                     *             "name": "Safety Regex"
+                     *             "name": "Safety Regex",
+                     *             "version_id": "regex-ver-2",
+                     *             "version_no": 2
                      *           },
                      *           "worldbook": {
+                     *             "content_hash": "sha256:worldbook-v5",
                      *             "id": "worldbook-1",
-                     *             "name": "Campfire Worldbook"
+                     *             "name": "Campfire Worldbook",
+                     *             "version_id": "worldbook-ver-5",
+                     *             "version_no": 5
                      *           }
                      *         },
                      *         "diagnostics": [
@@ -21805,18 +22519,22 @@ export interface operations {
                      *           "character_id": "char-hero",
                      *           "character_imported_format": "tavern_card_v2",
                      *           "character_version_id": "char-hero-v3",
+                     *           "preset_content_hash": "sha256:preset-v3",
                      *           "preset_id": "preset-1",
                      *           "preset_updated_at": 1710000000000,
                      *           "preset_version": 3,
+                     *           "preset_version_id": "preset-ver-3",
                      *           "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                      *           "prompt_mode": "compat_strict",
                      *           "regex_post_rule_names": [],
                      *           "regex_pre_rule_names": [
                      *             "trim_whitespace"
                      *           ],
+                     *           "regex_profile_content_hash": "sha256:regex-v2",
                      *           "regex_profile_id": "regex-1",
                      *           "regex_profile_updated_at": 1710000002000,
                      *           "regex_profile_version": 2,
+                     *           "regex_profile_version_id": "regex-ver-2",
                      *           "token_estimate": 512,
                      *           "worldbook_activated_entries": [
                      *             {
@@ -21850,9 +22568,11 @@ export interface operations {
                      *             7,
                      *             7
                      *           ],
+                     *           "worldbook_content_hash": "sha256:worldbook-v5",
                      *           "worldbook_id": "worldbook-1",
                      *           "worldbook_updated_at": 1710000001000,
-                     *           "worldbook_version": 5
+                     *           "worldbook_version": 5,
+                     *           "worldbook_version_id": "worldbook-ver-5"
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -21989,20 +22709,32 @@ export interface operations {
                         data: {
                             assets: {
                                 character_card: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                                 preset: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                                 regex_profile: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                                 worldbook: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                             } | null;
                             diagnostics: {
@@ -22119,18 +22851,22 @@ export interface operations {
                              *       "character_id": "char-hero",
                              *       "character_imported_format": "tavern_card_v2",
                              *       "character_version_id": "char-hero-v3",
+                             *       "preset_content_hash": "sha256:preset-v3",
                              *       "preset_id": "preset-1",
                              *       "preset_updated_at": 1710000000000,
                              *       "preset_version": 3,
+                             *       "preset_version_id": "preset-ver-3",
                              *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                              *       "prompt_mode": "compat_strict",
                              *       "regex_post_rule_names": [],
                              *       "regex_pre_rule_names": [
                              *         "trim_whitespace"
                              *       ],
+                             *       "regex_profile_content_hash": "sha256:regex-v2",
                              *       "regex_profile_id": "regex-1",
                              *       "regex_profile_updated_at": 1710000002000,
                              *       "regex_profile_version": 2,
+                             *       "regex_profile_version_id": "regex-ver-2",
                              *       "token_estimate": 512,
                              *       "worldbook_activated_entries": [
                              *         {
@@ -22164,9 +22900,11 @@ export interface operations {
                              *         7,
                              *         7
                              *       ],
+                             *       "worldbook_content_hash": "sha256:worldbook-v5",
                              *       "worldbook_id": "worldbook-1",
                              *       "worldbook_updated_at": 1710000001000,
-                             *       "worldbook_version": 5
+                             *       "worldbook_version": 5,
+                             *       "worldbook_version_id": "worldbook-ver-5"
                              *     }
                              */
                             prompt_snapshot: {
@@ -22175,17 +22913,21 @@ export interface operations {
                                 character_id: string | null;
                                 character_imported_format: string | null;
                                 character_version_id: string | null;
+                                preset_content_hash: string | null;
                                 preset_id: string | null;
                                 preset_updated_at: number | null;
                                 preset_version: number | null;
+                                preset_version_id: string | null;
                                 prompt_digest: string;
                                 /** @enum {string} */
                                 prompt_mode: "compat_strict" | "compat_plus" | "native";
                                 regex_post_rule_names: string[];
                                 regex_pre_rule_names: string[];
+                                regex_profile_content_hash: string | null;
                                 regex_profile_id: string | null;
                                 regex_profile_updated_at: number | null;
                                 regex_profile_version: number | null;
+                                regex_profile_version_id: string | null;
                                 token_estimate: number;
                                 worldbook_activated_entries: {
                                     activation_key: string;
@@ -22207,9 +22949,11 @@ export interface operations {
                                     uid: number;
                                 }[];
                                 worldbook_activated_entry_uids: number[];
+                                worldbook_content_hash: string | null;
                                 worldbook_id: string | null;
                                 worldbook_updated_at: number | null;
                                 worldbook_version: number | null;
+                                worldbook_version_id: string | null;
                             };
                             resolved_policy: {
                                 budget: {
@@ -26399,6 +27143,90 @@ export interface operations {
             };
         };
     };
+    listOperationLogs: {
+        parameters: {
+            query?: {
+                session_id?: string;
+                floor_id?: string;
+                run_id?: string;
+                target_type?: string;
+                target_id?: string;
+                action?: string;
+                actor_type?: string;
+                status?: "succeeded" | "failed" | "denied" | "cancelled";
+                operation_group_id?: string;
+                request_id?: string;
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            account_id: string;
+                            action: string;
+                            actor_id: string | null;
+                            actor_type: string;
+                            after_ref: unknown;
+                            before_ref: unknown;
+                            branch_id: string | null;
+                            created_at: number;
+                            diff: unknown;
+                            floor_id: string | null;
+                            id: string;
+                            metadata: unknown;
+                            operation_group_id: string | null;
+                            request_id: string | null;
+                            run_id: string | null;
+                            session_id: string | null;
+                            source_type: string;
+                            /** @enum {string} */
+                            status: "succeeded" | "failed" | "denied" | "cancelled";
+                            target_id: string | null;
+                            target_type: string;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listPages: {
         parameters: {
             query?: {
@@ -27552,6 +28380,298 @@ export interface operations {
             };
             /** @description Default Response */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listPresetVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            content_hash: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            parent_version_id: string | null;
+                            snapshot: unknown;
+                            version_no: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getPresetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            content_hash: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            parent_version_id: string | null;
+                            snapshot: unknown;
+                            version_no: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    rollbackPresetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_updated_at?: number;
+                    expected_version?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            content_hash: string;
+                            created_at: number;
+                            id: string;
+                            name: string;
+                            rolled_back_from_version_id: string;
+                            source: string;
+                            updated_at: number;
+                            version: number;
+                            version_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    comparePresetVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    left_version_id: string;
+                    /**
+                     * @default summary
+                     * @enum {string}
+                     */
+                    mode?: "summary" | "full";
+                    right_version_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            diff: unknown;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            left_version_id: string;
+                            right_version_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -29206,6 +30326,715 @@ export interface operations {
             };
         };
     };
+    listRegexProfileVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            content_hash: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            parent_version_id: string | null;
+                            snapshot: unknown;
+                            version_no: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getRegexProfileVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            content_hash: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            parent_version_id: string | null;
+                            snapshot: unknown;
+                            version_no: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    rollbackRegexProfileVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_updated_at?: number;
+                    expected_version?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            content_hash: string;
+                            created_at: number;
+                            id: string;
+                            name: string;
+                            rolled_back_from_version_id: string;
+                            source: string;
+                            updated_at: number;
+                            version: number;
+                            version_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    compareRegexProfileVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    left_version_id: string;
+                    /**
+                     * @default summary
+                     * @enum {string}
+                     */
+                    mode?: "summary" | "full";
+                    right_version_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            diff: unknown;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            left_version_id: string;
+                            right_version_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    mergeSessionBranch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_target_head_floor_id: string;
+                    target_branch_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            merged_count: number;
+                            merged_floor_ids: string[];
+                            operation_id: string;
+                            preview: {
+                                can_merge: boolean;
+                                conflicts: {
+                                    code: string;
+                                    message: string;
+                                    /** @enum {string} */
+                                    scope: "branch" | "floor" | "state" | "run";
+                                    source_floor_id?: string;
+                                    target_floor_id?: string;
+                                }[];
+                                fork_floor_id: string | null;
+                                session_id: string;
+                                shared_floor_ids: string[];
+                                source_branch_id: string;
+                                source_head_floor_id: string | null;
+                                source_only_floors: {
+                                    branch_id: string;
+                                    floor_no: number;
+                                    id: string;
+                                    parent_floor_id: string | null;
+                                    state: string;
+                                }[];
+                                /** @enum {string} */
+                                strategy: "fast_forward" | "no_op" | "blocked";
+                                target_branch_id: string;
+                                target_head_floor_id: string | null;
+                                target_only_floors: {
+                                    branch_id: string;
+                                    floor_no: number;
+                                    id: string;
+                                    parent_floor_id: string | null;
+                                    state: string;
+                                }[];
+                            };
+                            session_id: string;
+                            source_branch_id: string;
+                            /** @enum {string} */
+                            strategy: "fast_forward" | "no_op" | "blocked";
+                            target_branch_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    previewSessionBranchMerge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    target_branch_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            can_merge: boolean;
+                            conflicts: {
+                                code: string;
+                                message: string;
+                                /** @enum {string} */
+                                scope: "branch" | "floor" | "state" | "run";
+                                source_floor_id?: string;
+                                target_floor_id?: string;
+                            }[];
+                            fork_floor_id: string | null;
+                            session_id: string;
+                            shared_floor_ids: string[];
+                            source_branch_id: string;
+                            source_head_floor_id: string | null;
+                            source_only_floors: {
+                                branch_id: string;
+                                floor_no: number;
+                                id: string;
+                                parent_floor_id: string | null;
+                                state: string;
+                            }[];
+                            /** @enum {string} */
+                            strategy: "fast_forward" | "no_op" | "blocked";
+                            target_branch_id: string;
+                            target_head_floor_id: string | null;
+                            target_only_floors: {
+                                branch_id: string;
+                                floor_no: number;
+                                id: string;
+                                parent_floor_id: string | null;
+                                state: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    resetSessionBranch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_head_floor_id: string;
+                    target_floor_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            expected_head_floor_id: string;
+                            session_id: string;
+                            superseded_count: number;
+                            superseded_floor_ids: string[];
+                            target_floor_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listSessionOperationLogs: {
+        parameters: {
+            query?: {
+                session_id?: string;
+                floor_id?: string;
+                run_id?: string;
+                target_type?: string;
+                target_id?: string;
+                action?: string;
+                actor_type?: string;
+                status?: "succeeded" | "failed" | "denied" | "cancelled";
+                operation_group_id?: string;
+                request_id?: string;
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            account_id: string;
+                            action: string;
+                            actor_id: string | null;
+                            actor_type: string;
+                            after_ref: unknown;
+                            before_ref: unknown;
+                            branch_id: string | null;
+                            created_at: number;
+                            diff: unknown;
+                            floor_id: string | null;
+                            id: string;
+                            metadata: unknown;
+                            operation_group_id: string | null;
+                            request_id: string | null;
+                            run_id: string | null;
+                            session_id: string | null;
+                            source_type: string;
+                            /** @enum {string} */
+                            status: "succeeded" | "failed" | "denied" | "cancelled";
+                            target_id: string | null;
+                            target_type: string;
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     getSessionPromptRuntime: {
         parameters: {
             query?: {
@@ -29234,16 +31063,25 @@ export interface operations {
                      *             "name": "Hero"
                      *           },
                      *           "preset": {
+                     *             "content_hash": "sha256:preset-v3",
                      *             "id": "preset-1",
-                     *             "name": "Story Preset"
+                     *             "name": "Story Preset",
+                     *             "version_id": "preset-ver-3",
+                     *             "version_no": 3
                      *           },
                      *           "regex_profile": {
+                     *             "content_hash": "sha256:regex-v2",
                      *             "id": "regex-1",
-                     *             "name": "Safety Regex"
+                     *             "name": "Safety Regex",
+                     *             "version_id": "regex-ver-2",
+                     *             "version_no": 2
                      *           },
                      *           "worldbook": {
+                     *             "content_hash": "sha256:worldbook-v5",
                      *             "id": "worldbook-1",
-                     *             "name": "Campfire Worldbook"
+                     *             "name": "Campfire Worldbook",
+                     *             "version_id": "worldbook-ver-5",
+                     *             "version_no": 5
                      *           }
                      *         },
                      *         "branch_persistent_policy": {
@@ -29444,20 +31282,32 @@ export interface operations {
                         data: {
                             assets: {
                                 character_card: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                                 preset: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                                 regex_profile: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                                 worldbook: {
+                                    content_hash?: string | null;
                                     id: string;
                                     name: string | null;
+                                    version_id?: string | null;
+                                    version_no?: number | null;
                                 } | null;
                             };
                             branch_persistent_policy: {
@@ -29937,16 +31787,25 @@ export interface operations {
                      *           "name": "Hero"
                      *         },
                      *         "preset": {
+                     *           "content_hash": "sha256:preset-v3",
                      *           "id": "preset-1",
-                     *           "name": "Story Preset"
+                     *           "name": "Story Preset",
+                     *           "version_id": "preset-ver-3",
+                     *           "version_no": 3
                      *         },
                      *         "regex_profile": {
+                     *           "content_hash": "sha256:regex-v2",
                      *           "id": "regex-1",
-                     *           "name": "Safety Regex"
+                     *           "name": "Safety Regex",
+                     *           "version_id": "regex-ver-2",
+                     *           "version_no": 2
                      *         },
                      *         "worldbook": {
+                     *           "content_hash": "sha256:worldbook-v5",
                      *           "id": "worldbook-1",
-                     *           "name": "Campfire Worldbook"
+                     *           "name": "Campfire Worldbook",
+                     *           "version_id": "worldbook-ver-5",
+                     *           "version_no": 5
                      *         }
                      *       }
                      *     }
@@ -29954,20 +31813,32 @@ export interface operations {
                     "application/json": {
                         data: {
                             character_card: {
+                                content_hash?: string | null;
                                 id: string;
                                 name: string | null;
+                                version_id?: string | null;
+                                version_no?: number | null;
                             } | null;
                             preset: {
+                                content_hash?: string | null;
                                 id: string;
                                 name: string | null;
+                                version_id?: string | null;
+                                version_no?: number | null;
                             } | null;
                             regex_profile: {
+                                content_hash?: string | null;
                                 id: string;
                                 name: string | null;
+                                version_id?: string | null;
+                                version_no?: number | null;
                             } | null;
                             worldbook: {
+                                content_hash?: string | null;
                                 id: string;
                                 name: string | null;
+                                version_id?: string | null;
+                                version_no?: number | null;
                             } | null;
                         };
                     };
@@ -31377,18 +33248,22 @@ export interface operations {
                      *             "character_id": "char-hero",
                      *             "character_imported_format": "tavern_card_v2",
                      *             "character_version_id": "char-hero-v3",
+                     *             "preset_content_hash": "sha256:preset-v3",
                      *             "preset_id": "preset-1",
                      *             "preset_updated_at": 1710000000000,
                      *             "preset_version": 3,
+                     *             "preset_version_id": "preset-ver-3",
                      *             "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
                      *             "prompt_mode": "compat_strict",
                      *             "regex_post_rule_names": [],
                      *             "regex_pre_rule_names": [
                      *               "trim_whitespace"
                      *             ],
+                     *             "regex_profile_content_hash": "sha256:regex-v2",
                      *             "regex_profile_id": "regex-1",
                      *             "regex_profile_updated_at": 1710000002000,
                      *             "regex_profile_version": 2,
+                     *             "regex_profile_version_id": "regex-ver-2",
                      *             "token_estimate": 512,
                      *             "worldbook_activated_entries": [
                      *               {
@@ -31422,9 +33297,11 @@ export interface operations {
                      *               7,
                      *               7
                      *             ],
+                     *             "worldbook_content_hash": "sha256:worldbook-v5",
                      *             "worldbook_id": "worldbook-1",
                      *             "worldbook_updated_at": 1710000001000,
-                     *             "worldbook_version": 5
+                     *             "worldbook_version": 5,
+                     *             "worldbook_version_id": "worldbook-ver-5"
                      *           },
                      *           "requested_turn_config": {
                      *             "enableDirector": false,
@@ -31837,17 +33714,21 @@ export interface operations {
                                     character_id: string | null;
                                     character_imported_format: string | null;
                                     character_version_id: string | null;
+                                    preset_content_hash: string | null;
                                     preset_id: string | null;
                                     preset_updated_at: number | null;
                                     preset_version: number | null;
+                                    preset_version_id: string | null;
                                     prompt_digest: string;
                                     /** @enum {string} */
                                     prompt_mode: "compat_strict" | "compat_plus" | "native";
                                     regex_post_rule_names: string[];
                                     regex_pre_rule_names: string[];
+                                    regex_profile_content_hash: string | null;
                                     regex_profile_id: string | null;
                                     regex_profile_updated_at: number | null;
                                     regex_profile_version: number | null;
+                                    regex_profile_version_id: string | null;
                                     token_estimate: number;
                                     worldbook_activated_entries: {
                                         activation_key: string;
@@ -31869,9 +33750,11 @@ export interface operations {
                                         uid: number;
                                     }[];
                                     worldbook_activated_entry_uids: number[];
+                                    worldbook_content_hash: string | null;
                                     worldbook_id: string | null;
                                     worldbook_updated_at: number | null;
                                     worldbook_version: number | null;
+                                    worldbook_version_id: string | null;
                                 } | null;
                                 requested_turn_config: Record<string, never> | null;
                                 runtime_trace: {
@@ -37509,6 +39392,263 @@ export interface operations {
             };
         };
     };
+    listVcTags: {
+        parameters: {
+            query?: {
+                target_type?: "floor" | "asset_version";
+                target_id?: string;
+                session_id?: string;
+                limit?: number;
+                offset?: number;
+                sort_order?: "asc" | "desc";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            account_id: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            metadata: unknown;
+                            name: string;
+                            session_id: string | null;
+                            target_id: string;
+                            /** @enum {string} */
+                            target_type: "floor" | "asset_version";
+                        }[];
+                        meta: {
+                            has_more: boolean;
+                            limit: number;
+                            offset: number;
+                            sort_by: string;
+                            /** @enum {string} */
+                            sort_order: "asc" | "desc";
+                            total: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createVcTag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    metadata?: unknown;
+                    name: string;
+                    session_id?: string | null;
+                    target_id: string;
+                    /** @enum {string} */
+                    target_type: "floor" | "asset_version";
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            account_id: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            metadata: unknown;
+                            name: string;
+                            session_id: string | null;
+                            target_id: string;
+                            /** @enum {string} */
+                            target_type: "floor" | "asset_version";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getVcTag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            account_id: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            metadata: unknown;
+                            name: string;
+                            session_id: string | null;
+                            target_id: string;
+                            /** @enum {string} */
+                            target_type: "floor" | "asset_version";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteVcTag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            deleted: boolean;
+                            id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listImportedWorldbooks: {
         parameters: {
             query?: never;
@@ -37849,6 +39989,298 @@ export interface operations {
             };
             /** @description Default Response */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listWorldbookVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            content_hash: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            parent_version_id: string | null;
+                            snapshot: unknown;
+                            version_no: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getWorldbookVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            content_hash: string;
+                            created_at: number;
+                            created_by_operation_id: string | null;
+                            id: string;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            parent_version_id: string | null;
+                            snapshot: unknown;
+                            version_no: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    rollbackWorldbookVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    expected_updated_at?: number;
+                    expected_version?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            content_hash: string;
+                            created_at: number;
+                            id: string;
+                            name: string;
+                            rolled_back_from_version_id: string;
+                            source: string;
+                            updated_at: number;
+                            version: number;
+                            version_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    compareWorldbookVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    left_version_id: string;
+                    /**
+                     * @default summary
+                     * @enum {string}
+                     */
+                    mode?: "summary" | "full";
+                    right_version_id: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            asset_id: string;
+                            diff: unknown;
+                            /** @enum {string} */
+                            kind: "preset" | "worldbook" | "regex_profile";
+                            left_version_id: string;
+                            right_version_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

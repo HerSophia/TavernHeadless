@@ -51,6 +51,8 @@ describe("createMessageActions.sendMessage", () => {
         zh: "会话 1"
       },
       userName: "Rowan",
+      presetId: null,
+      regexProfileId: null,
       worldbookCount: 0,
       worldbookProfileId: null
     };
@@ -152,6 +154,8 @@ describe("createMessageActions.sendMessage", () => {
         zh: "会话 1"
       },
       userName: "Rowan",
+      presetId: null,
+      regexProfileId: null,
       worldbookCount: 0,
       worldbookProfileId: null
     };
@@ -273,6 +277,8 @@ describe("createMessageActions.sendMessage", () => {
         zh: "会话 1"
       },
       userName: "Rowan",
+      presetId: null,
+      regexProfileId: null,
       worldbookCount: 0,
       worldbookProfileId: null
     };
@@ -398,6 +404,8 @@ describe("createMessageActions.sendMessage", () => {
         id: "session-1",
         title: { en: "Session 1", zh: "会话 1" },
         userName: "Rowan",
+        presetId: null,
+        regexProfileId: null,
         worldbookCount: 0,
         worldbookProfileId: null
       })),
@@ -489,6 +497,8 @@ describe("createMessageActions.sendMessage", () => {
         id: "session-1",
         title: { en: "Session 1", zh: "会话 1" },
         userName: "Rowan",
+        presetId: null,
+        regexProfileId: null,
         worldbookCount: 0,
         worldbookProfileId: null
       })),

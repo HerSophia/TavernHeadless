@@ -51,12 +51,18 @@ export type PromptSnapshotPreview = {
   presetId: string | null;
   presetUpdatedAt: number | null;
   presetVersion: number | null;
+  presetVersionId?: string | null;
+  presetContentHash?: string | null;
   worldbookId: string | null;
   worldbookUpdatedAt: number | null;
   worldbookVersion: number | null;
+  worldbookVersionId?: string | null;
+  worldbookContentHash?: string | null;
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
   regexProfileVersion: number | null;
+  regexProfileVersionId?: string | null;
+  regexProfileContentHash?: string | null;
   characterId?: string | null;
   characterVersionId?: string | null;
   characterImportedFormat?: string | null;
@@ -444,12 +450,30 @@ export function mapPromptSnapshotPayload(value: unknown): PromptSnapshotPreview 
     presetId: readNullableString(record.preset_id),
     presetUpdatedAt: readNullableNumber(record.preset_updated_at),
     presetVersion: readNullableNumber(record.preset_version),
+    ...(record.preset_version_id !== undefined
+      ? { presetVersionId: readNullableString(record.preset_version_id) }
+      : {}),
+    ...(record.preset_content_hash !== undefined
+      ? { presetContentHash: readNullableString(record.preset_content_hash) }
+      : {}),
     worldbookId: readNullableString(record.worldbook_id),
     worldbookUpdatedAt: readNullableNumber(record.worldbook_updated_at),
     worldbookVersion: readNullableNumber(record.worldbook_version),
+    ...(record.worldbook_version_id !== undefined
+      ? { worldbookVersionId: readNullableString(record.worldbook_version_id) }
+      : {}),
+    ...(record.worldbook_content_hash !== undefined
+      ? { worldbookContentHash: readNullableString(record.worldbook_content_hash) }
+      : {}),
     regexProfileId: readNullableString(record.regex_profile_id),
     regexProfileUpdatedAt: readNullableNumber(record.regex_profile_updated_at),
     regexProfileVersion: readNullableNumber(record.regex_profile_version),
+    ...(record.regex_profile_version_id !== undefined
+      ? { regexProfileVersionId: readNullableString(record.regex_profile_version_id) }
+      : {}),
+    ...(record.regex_profile_content_hash !== undefined
+      ? { regexProfileContentHash: readNullableString(record.regex_profile_content_hash) }
+      : {}),
     ...(record.character_id !== undefined
       ? { characterId: readNullableString(record.character_id) }
       : {}),

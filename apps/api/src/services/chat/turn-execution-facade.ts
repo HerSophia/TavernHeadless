@@ -3,9 +3,10 @@ import type { TurnExecutionResult, TurnInput, FloorRunType } from "@tavern/core"
 import type { PromptRuntimeInspectionResult } from "../prompt-runtime-control-service.js";
 import type { PromptRuntimeExecutionResult } from "../prompt-runtime-execution.js";
 import type { StMacroStagedMutation } from "../st-macros/index.js";
-import type { TurnCommitService } from "../turn-commit-service.js";
+import type { TurnCommitOperationLogContext, TurnCommitService } from "../turn-commit-service.js";
 import type { FloorConversationInputSnapshot } from "./shared/metadata.js";
 import type { ResolvedTurnModels, TurnSessionStateWriteRequest } from "./contracts.js";
+import type { SessionStateOperationLogContext } from "../../session-state/session-state-operation-log.js";
 
 export interface ExecuteTurnAndCommitArgs {
   floorId: string;
@@ -17,7 +18,9 @@ export interface ExecuteTurnAndCommitArgs {
   promptRuntimeInspection?: PromptRuntimeInspectionResult;
   macroStagedMutations?: StMacroStagedMutation[];
   sessionStateWrites?: TurnSessionStateWriteRequest[];
+  sessionStateOperationLog?: SessionStateOperationLogContext;
   resolvedTurnModels: ResolvedTurnModels;
+  turnOperationLog?: TurnCommitOperationLogContext;
   orchestrationFailureCode: string;
   orchestrationFailureMessage: string;
   persistMemory: boolean;

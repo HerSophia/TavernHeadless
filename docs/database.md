@@ -85,6 +85,10 @@
 | `version_no` | `INTEGER` | `NOT NULL` | 版本号（递增） |
 | `data_json` | `TEXT` | `NOT NULL` | 角色快照 JSON |
 | `content_hash` | `TEXT` | `NOT NULL` | 内容哈希 |
+| `source_artifact_json` | `TEXT` | `NULL` | 导入来源原始工件 JSON |
+| `source_artifact_format` | `TEXT` | `NULL` | 导入来源格式 |
+| `source_artifact_digest` | `TEXT` | `NULL` | 导入来源工件哈希 |
+| `created_by_operation_id` | `TEXT` | `NULL` | 创建该版本的操作日志 ID |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 
 索引：
@@ -163,6 +167,73 @@
 
 - `superseded_at IS NULL` 表示 live floor
 - `superseded_at IS NOT NULL` 表示该楼层已经被后续 regenerate 替代，但记录仍保留用于审计与追溯
+
+## `session_branch`
+
+会话分支登记表。它记录分支来源，也保存 checkout 分支的可选资产绑定引用。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 分支登记行 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `session_id` | `TEXT` | `NOT NULL`, FK -> `session.id` | 所属会话 |
+| `branch_id` | `TEXT` | `NOT NULL` | 分支标识 |
+| `source_floor_id` | `TEXT` | `NULL`, FK -> `floor.id` | 分支来源楼层 |
+| `source_branch_id` | `TEXT` | `NULL` | 分支来源分支 |
+| `asset_binding_deep_binding` | `INTEGER` | `NULL` | 分支级资产绑定是否启用深度绑定；`NULL` 表示没有分支级覆盖 |
+| `asset_binding_preset_id` | `TEXT` | `NULL`, FK -> `preset.id` | 分支级 Preset 绑定 |
+| `asset_binding_preset_version_id` | `TEXT` | `NULL`, FK -> `preset_version.id` | 分支级 Preset 版本绑定 |
+| `asset_binding_worldbook_profile_id` | `TEXT` | `NULL`, FK -> `worldbook.id` | 分支级 Worldbook 绑定 |
+| `asset_binding_worldbook_version_id` | `TEXT` | `NULL`, FK -> `worldbook_version.id` | 分支级 Worldbook 版本绑定 |
+| `asset_binding_regex_profile_id` | `TEXT` | `NULL`, FK -> `regex_profile.id` | 分支级 Regex Profile 绑定 |
+| `asset_binding_regex_profile_version_id` | `TEXT` | `NULL`, FK -> `regex_profile_version.id` | 分支级 Regex Profile 版本绑定 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：
+
+- 唯一索引 `session_branch_account_session_branch_uq(account_id, session_id, branch_id)`
+- 普通索引 `session_branch_account_session_created_idx(account_id, session_id, created_at)`
+- 普通索引 `session_branch_account_session_branch_created_idx(account_id, session_id, branch_id, created_at)`
+
+说明：
+
+- `source_floor_id` / `source_branch_id` 表达非破坏性 checkout 或分支创建的来源。
+- `asset_binding_*` 字段只在分支需要固定自己的资产绑定时使用。字段全为 `NULL` 时，运行时继续使用 session 级资产绑定。
+
+
+## `vc_tag`
+
+统一 VC 标签表。它给重要 Floor 或资产版本保存一个账号内唯一的名字。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 标签 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `name` | `TEXT` | `NOT NULL` | 标签名。账号内唯一 |
+| `target_type` | `TEXT` | `NOT NULL` | 目标类型：`floor` / `asset_version` |
+| `target_id` | `TEXT` | `NOT NULL` | 目标 ID。`asset_version` 可指向角色版本或 prompt 资产版本 |
+| `session_id` | `TEXT` | `NULL`, FK -> `session.id` | 可选会话范围。指向 floor 时由服务端派生 |
+| `metadata_json` | `TEXT` | `NULL` | 标签元信息 JSON |
+| `created_by_operation_id` | `TEXT` | `NULL`, FK -> `operation_log.id` | 创建标签的操作日志 ID |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+
+枚举约束：
+
+- `target_type`: `floor | asset_version`
+
+索引：
+
+- 唯一索引 `vc_tag_account_name_uq(account_id, name)`
+- 普通索引 `vc_tag_account_target_idx(account_id, target_type, target_id)`
+- 普通索引 `vc_tag_account_session_created_idx(account_id, session_id, created_at)`
+- 普通索引 `vc_tag_operation_idx(created_by_operation_id)`
+
+说明：
+
+- `vc_tag` 是引用表，不复制 Floor 或资产版本内容。
+- 创建和删除标签会写入 `operation_log`。
+
 
 ## `message_page`
 

@@ -47,7 +47,10 @@ export class RegexInputService {
     persistedMessageId?: string;
   }): Promise<PersistedUserInputRegexResult> {
     const resourceLoader = new PromptResourceLoader(this.db);
-    const regexProfile = await resourceLoader.loadRegexScripts(args.accountId, args.sessionInfo.regexProfileId);
+    const regexProfile = await resourceLoader.loadRegexScripts(args.accountId, args.sessionInfo.regexProfileId, {
+      deepBinding: args.sessionInfo.deepBinding,
+      regexProfileVersionId: args.sessionInfo.regexProfileVersionId,
+    });
 
     if (!regexProfile || regexProfile.scripts.length === 0) {
       return {

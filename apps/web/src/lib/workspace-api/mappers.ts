@@ -13,8 +13,14 @@ export function toWorkspaceSession(session: SessionRecord, accountId?: string): 
     id: session.id,
     title: session.title ?? "Untitled Session",
     userName: session.userBinding?.snapshotSummary?.name ?? "Unbound User",
+    deepBinding: session.deepBinding ?? false,
+    presetId: session.presetId ?? null,
+    presetVersionId: session.presetVersionId ?? null,
+    regexProfileId: session.regexProfileId ?? null,
+    regexProfileVersionId: session.regexProfileVersionId ?? null,
     worldbookCount: session.worldbookProfileId ? 1 : 0,
-    worldbookProfileId: session.worldbookProfileId ?? null
+    worldbookProfileId: session.worldbookProfileId ?? null,
+    worldbookVersionId: session.worldbookVersionId ?? null
   };
 }
 

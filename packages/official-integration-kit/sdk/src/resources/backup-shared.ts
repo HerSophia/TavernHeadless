@@ -45,15 +45,22 @@ export type BackupCountSummary = {
   memoryItems: number;
   messages: number;
   pages: number;
+  presetVersions: number;
+  presets: number;
+  regexProfileVersions: number;
+  regexProfiles: number;
   sessionBranches: number;
   sessions: number;
   variables: number;
   worldbookEntries: number;
+  worldbookVersions: number;
   worldbooks: number;
 };
 
 export type BackupTopLevelCreateSummary = {
   characters: number;
+  presets: number;
+  regexProfiles: number;
   sessions: number;
   worldbooks: number;
 };
@@ -71,7 +78,7 @@ export type BackupWarning = {
 export type BackupRenamedResource = {
   newName: string;
   oldName: string;
-  type: "character" | "worldbook" | "session";
+  type: "character" | "preset" | "worldbook" | "regex_profile" | "session";
 };
 
 export type BackupDroppedBindingSummary = {
@@ -101,6 +108,8 @@ export type BackupExportJobRequest = {
   domains: BackupDomain[] | null;
   includeLinkedAssets: boolean;
   includeSecrets: boolean;
+  presetIds: string[];
+  regexProfileIds: string[];
   sessionIds: string[];
   worldbookIds: string[];
 };
@@ -177,7 +186,11 @@ function hasField(record: Record<string, unknown>, field: string): boolean {
 }
 
 function isBackupDomain(value: unknown): value is BackupDomain {
-  return value === "characters" || value === "worldbooks" || value === "sessions";
+  return value === "characters"
+    || value === "presets"
+    || value === "worldbooks"
+    || value === "regex_profiles"
+    || value === "sessions";
 }
 
 function readBackupDomains(value: unknown): BackupDomain[] {
@@ -209,10 +222,15 @@ export function mapBackupCountSummary(value: unknown): BackupCountSummary {
     memoryItems: readNumber(record?.memory_items),
     messages: readNumber(record?.messages),
     pages: readNumber(record?.pages),
+    presetVersions: readNumber(record?.preset_versions ?? record?.presetVersions),
+    presets: readNumber(record?.presets),
+    regexProfileVersions: readNumber(record?.regex_profile_versions ?? record?.regexProfileVersions),
+    regexProfiles: readNumber(record?.regex_profiles ?? record?.regexProfiles),
     sessionBranches: readNumber(record?.session_branches),
     sessions: readNumber(record?.sessions),
     variables: readNumber(record?.variables),
     worldbookEntries: readNumber(record?.worldbook_entries),
+    worldbookVersions: readNumber(record?.worldbook_versions ?? record?.worldbookVersions),
     worldbooks: readNumber(record?.worldbooks),
   };
 }
@@ -222,6 +240,8 @@ export function mapBackupTopLevelCreateSummary(value: unknown): BackupTopLevelCr
 
   return {
     characters: readNumber(record?.characters),
+    presets: readNumber(record?.presets),
+    regexProfiles: readNumber(record?.regex_profiles ?? record?.regexProfiles),
     sessions: readNumber(record?.sessions),
     worldbooks: readNumber(record?.worldbooks),
   };
@@ -270,7 +290,13 @@ export function mapBackupRenamedResource(value: unknown): BackupRenamedResource 
   if (!oldName || !newName) {
     return null;
   }
-  if (type !== "character" && type !== "worldbook" && type !== "session") {
+  if (
+    type !== "character"
+    && type !== "preset"
+    && type !== "worldbook"
+    && type !== "regex_profile"
+    && type !== "session"
+  ) {
     return null;
   }
 
@@ -392,7 +418,9 @@ export function mapBackupJobRequest(value: unknown): BackupJobRequest | null {
   const hasExportShape = hasField(record, "domains")
     || hasField(record, "session_ids")
     || hasField(record, "character_ids")
+    || hasField(record, "preset_ids")
     || hasField(record, "worldbook_ids")
+    || hasField(record, "regex_profile_ids")
     || hasField(record, "include_linked_assets")
     || hasField(record, "include_secrets");
 
@@ -420,6 +448,8 @@ export function mapBackupJobRequest(value: unknown): BackupJobRequest | null {
     domains: readNullableBackupDomains(record.domains),
     includeLinkedAssets: readBoolean(record.include_linked_assets, true),
     includeSecrets: readBoolean(record.include_secrets, false),
+    presetIds: readStringArray(record.preset_ids),
+    regexProfileIds: readStringArray(record.regex_profile_ids),
     sessionIds: readStringArray(record.session_ids),
     worldbookIds: readStringArray(record.worldbook_ids),
   };
