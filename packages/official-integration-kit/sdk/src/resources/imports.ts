@@ -264,14 +264,26 @@ function mapImportedCharacterSession(value: unknown): SessionRecord | undefined 
     modelName: readNullableString(record.model_name),
     modelParams: record.model_params ?? null,
     modelProvider: readNullableString(record.model_provider),
+    ...(record.deep_binding !== undefined
+      ? { deepBinding: readBoolean(record.deep_binding, false) }
+      : {}),
     presetId: readNullableString(record.preset_id),
+    ...(record.preset_version_id !== undefined
+      ? { presetVersionId: readNullableString(record.preset_version_id) }
+      : {}),
     promptMode: readNullableString(record.prompt_mode),
     regexProfileId: readNullableString(record.regex_profile_id),
+    ...(record.regex_profile_version_id !== undefined
+      ? { regexProfileVersionId: readNullableString(record.regex_profile_version_id) }
+      : {}),
     status: readString(record.status),
     title: readNullableString(record.title),
     updatedAt: readNumber(record.updated_at),
     userBinding: mapSessionUserBinding(record.user_binding),
     worldbookProfileId: readNullableString(record.worldbook_profile_id),
+    ...(record.worldbook_version_id !== undefined
+      ? { worldbookVersionId: readNullableString(record.worldbook_version_id) }
+      : {}),
   };
 }
 

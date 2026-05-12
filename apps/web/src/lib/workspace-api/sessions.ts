@@ -1,6 +1,6 @@
 import { apiClient } from "../api";
 import { toWorkspaceSession } from "./mappers";
-import type { WorkspaceSession } from "./types";
+import type { WorkspaceSession, WorkspaceSessionAssetBindingPatch } from "./types";
 
 export async function fetchHealthStatus(): Promise<string> {
   const response = await apiClient.health.get();
@@ -48,6 +48,26 @@ export async function archiveSession(sessionId: string, accountId?: string): Pro
   });
 
   return true;
+}
+
+export async function updateSessionAssetBindings(
+  sessionId: string,
+  bindings: WorkspaceSessionAssetBindingPatch,
+  accountId?: string
+): Promise<WorkspaceSession> {
+  const session = await apiClient.sessions.update({
+    accountId,
+    deepBinding: bindings.deepBinding,
+    presetId: bindings.presetId,
+    presetVersionId: bindings.presetVersionId,
+    regexProfileId: bindings.regexProfileId,
+    regexProfileVersionId: bindings.regexProfileVersionId,
+    sessionId,
+    worldbookProfileId: bindings.worldbookProfileId,
+    worldbookVersionId: bindings.worldbookVersionId
+  });
+
+  return toWorkspaceSession(session, accountId);
 }
 
 export async function removeSession(sessionId: string, accountId?: string): Promise<boolean> {

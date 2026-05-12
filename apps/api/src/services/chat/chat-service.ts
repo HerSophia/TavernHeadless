@@ -44,6 +44,10 @@ import {
   BranchLocalVariableSnapshotService,
   isBranchLocalSnapshotMissingError,
 } from "../branch-local-variable-snapshot-service.js";
+import {
+  SessionBranchRegistryService,
+  type SessionBranchAssetBindingState,
+} from "../variables/host/session-branch-registry-service.js";
 
 import type {
   ChatServiceOptions,
@@ -282,6 +286,7 @@ export class ChatService {
           sessionId,
           branchId,
           request.sourceFloorId,
+          resolvedAccountId,
         );
         const firstPartyStateContext = this.firstPartyStateContextService.loadFirstPartyStateContext({
           accountId: resolvedAccountId,
@@ -298,14 +303,19 @@ export class ChatService {
           branchExists: branchContext.branchExists,
           historySourceBranchId: branchContext.historySourceBranchId,
           historySourceMode: branchContext.historySourceMode,
-          sourceFloorId: request.sourceFloorId ?? null,
+          sourceFloorId: branchContext.inheritanceSource?.floorId ?? request.sourceFloorId ?? null,
           request: buildLivePromptRuntimeRequestPolicy(request),
         });
 
         const nextFloorNo = branchContext.nextFloorNo;
         const now = Date.now();
         const floorId = nanoid();
-        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+        const sessionInfo = this.buildSessionPromptInfo(
+          session,
+          resolvedTurnModels,
+          firstPartyStateContext,
+          branchContext.assetBinding,
+        );
 
         let userMessageRef: import("../chat-message-persistence.js").PersistedMessageRef;
         try {
@@ -516,7 +526,12 @@ export class ChatService {
       });
       const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, resolvedAccountId);
       this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
-      const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+      const sessionInfo = this.buildSessionPromptInfo(
+        session,
+        resolvedTurnModels,
+        firstPartyStateContext,
+        this.getSessionBranchAssetBinding(resolvedAccountId, sessionId, targetFloor.branchId),
+      );
 
       const newFloorId = nanoid();
       const now = Date.now();
@@ -672,7 +687,12 @@ export class ChatService {
         });
         const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(targetFloor.sessionId, resolvedAccountId);
         this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
-        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+        const sessionInfo = this.buildSessionPromptInfo(
+          session,
+          resolvedTurnModels,
+          firstPartyStateContext,
+          this.getSessionBranchAssetBinding(resolvedAccountId, targetFloor.sessionId, targetFloor.branchId),
+        );
 
         const now = Date.now();
         this.db.transaction((tx) => {
@@ -939,6 +959,7 @@ export class ChatService {
           args.sessionId,
           branchId,
           args.request.sourceFloorId,
+          args.accountId,
         );
         const firstPartyStateContext = this.firstPartyStateContextService.loadFirstPartyStateContext({
           accountId: args.accountId,
@@ -955,7 +976,7 @@ export class ChatService {
           branchExists: branchContext.branchExists,
           historySourceBranchId: branchContext.historySourceBranchId,
           historySourceMode: branchContext.historySourceMode,
-          sourceFloorId: args.request.sourceFloorId ?? null,
+          sourceFloorId: branchContext.inheritanceSource?.floorId ?? args.request.sourceFloorId ?? null,
           request: buildLivePromptRuntimeRequestPolicy(args.request),
         });
         const conversationWindow = await this.loadLiveConversationWindow({
@@ -969,7 +990,12 @@ export class ChatService {
         const nextFloorNo = branchContext.nextFloorNo;
         const now = Date.now();
         const floorId = nanoid();
-        const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+        const sessionInfo = this.buildSessionPromptInfo(
+          session,
+          resolvedTurnModels,
+          firstPartyStateContext,
+          branchContext.assetBinding,
+        );
 
         try {
           this.draftFloorService.createDraftResponseFloor({
@@ -1137,6 +1163,8 @@ export class ChatService {
       promptIntent?: import("@tavern/core").PromptRunIntent;
       debugOptions?: import("./contracts.js").PromptLiveDebugOptions;
       sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
+      sessionStateOperationLog?: import("../../session-state/session-state-operation-log.js").SessionStateOperationLogContext;
+      turnOperationLog?: import("../turn-commit-service.js").TurnCommitOperationLogContext;
     };
     executionContext: import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
     conversationWindow?: PromptRuntimeConversationWindow;
@@ -1190,6 +1218,8 @@ export class ChatService {
       promptRuntimeInspection: prepared.promptDebug.inspection,
       macroStagedMutations: prepared.assembled.runtimeTraceSeed.macroStagedMutations,
       sessionStateWrites: args.request.sessionStateWrites,
+      sessionStateOperationLog: args.request.sessionStateOperationLog,
+      turnOperationLog: args.request.turnOperationLog,
       resolvedTurnModels: prepared.resolvedTurnModels,
       runType: args.runType,
       orchestrationFailureCode: args.orchestrationFailureCode,
@@ -1256,6 +1286,8 @@ export class ChatService {
     promptRuntimeInspection?: import("../prompt-runtime-control-service.js").PromptRuntimeInspectionResult;
     macroStagedMutations?: import("../st-macros/index.js").StMacroStagedMutation[];
     sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
+    sessionStateOperationLog?: import("../../session-state/session-state-operation-log.js").SessionStateOperationLogContext;
+    turnOperationLog?: import("../turn-commit-service.js").TurnCommitOperationLogContext;
     resolvedTurnModels: ResolvedTurnModels;
     orchestrationFailureCode: string;
     orchestrationFailureMessage: string;
@@ -1339,6 +1371,7 @@ export class ChatService {
         branchId: args.branchId ?? "main",
         floorId: args.floorId,
         writes: args.sessionStateWrites,
+        operationLog: args.sessionStateOperationLog,
       });
     } catch (error) {
       this.turnSessionStateService.discardStagedSessionStateBestEffort(
@@ -1372,6 +1405,8 @@ export class ChatService {
       sessionId: args.sessionId,
       branchId: args.branchId,
       execution,
+      runId: toolExecutionRunId,
+      operationLog: args.turnOperationLog,
       variableCommit: {
         pageId: turnInput.pageId,
         ...(pageDecision ? { pageDecision } : {}),
@@ -1518,12 +1553,22 @@ export class ChatService {
     session: Parameters<TurnModelService["buildSessionPromptInfo"]>[0],
     resolvedTurnModels: ResolvedTurnModels,
     firstPartyStateContext?: FirstPartyStateContext,
+    branchAssetBinding?: SessionBranchAssetBindingState | null,
   ) {
     return this.modelService.buildSessionPromptInfo(
       session,
       resolvedTurnModels,
       firstPartyStateContext,
+      branchAssetBinding,
     );
+  }
+
+  private getSessionBranchAssetBinding(
+    accountId: string,
+    sessionId: string,
+    branchId: string,
+  ): SessionBranchAssetBindingState | null {
+    return new SessionBranchRegistryService(this.db).get(accountId, sessionId, branchId)?.assetBinding ?? null;
   }
 
   private async assertRetryReplayConfirmed(input: {

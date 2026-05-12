@@ -28,7 +28,7 @@
  * DELETE /regex-profiles/:id   — 删除正则配置
  */
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { CoreEventBus } from "@tavern/core";
@@ -105,6 +105,15 @@ import {
 } from "../services/resource-write.js";
 import { getLatestOwnedActiveCharacterVersion } from "../services/resource-ownership.js";
 import { buildRegexCompatReport } from "../services/prompt-runtime/regex/index.js";
+import { AssetVersionService } from "../services/asset-version-service.js";
+import {
+  appendCharacterOperationLog,
+  toCharacterOperationRef,
+} from "../services/character-operation-log.js";
+import {
+  appendPromptAssetOperationLog,
+  toPromptAssetOperationRef,
+} from "../services/prompt-asset-operation-log.js";
 
 // ── Zod Schemas ───────────────────────────────────────
 
@@ -986,16 +995,47 @@ export async function registerImportRoutes(
     const id = nanoid();
     const name = parsed.data.name || "Unnamed Preset";
     const now = Date.now();
+    const operationId = nanoid();
 
     const mutation = await executeResourceWrite(async () => {
-      await db.insert(presets).values({
-        id,
-        name,
-        source: "sillytavern",
-        accountId: auth.accountId,
-        dataJson: JSON.stringify(parsed.data.data),
-        createdAt: now,
-        updatedAt: now,
+      db.transaction((tx) => {
+        const createdRow = {
+          id,
+          name,
+          source: "sillytavern",
+          createdAt: now,
+          updatedAt: now,
+          version: 1,
+        };
+        tx.insert(presets).values({
+          id,
+          name,
+          source: "sillytavern",
+          accountId: auth.accountId,
+          dataJson: JSON.stringify(parsed.data.data),
+          createdAt: now,
+          updatedAt: now,
+        }).run();
+        const version = new AssetVersionService(tx).createPresetVersion(id, {
+          versionNo: 1,
+          data: parsed.data.data,
+          createdByOperationId: operationId,
+          createdAt: now,
+        });
+        appendPromptAssetOperationLog(tx, request, {
+          operationId,
+          accountId: auth.accountId,
+          action: "import_preset",
+          assetKind: "preset",
+          assetId: id,
+          afterRef: toPromptAssetOperationRef("preset", createdRow, version),
+          metadata: {
+            route: "POST /import/preset",
+            request_fields: Object.keys(parsed.data).sort(),
+            source: "sillytavern",
+          },
+          createdAt: now,
+        });
       });
 
       return {
@@ -1050,11 +1090,20 @@ export async function registerImportRoutes(
     const id = nanoid();
     const name = parsed.data.name || stWorldBook.name || "Unnamed Worldbook";
     const now = Date.now();
+    const operationId = nanoid();
 
     const { entries } = stWorldBook;
 
     const mutation = await executeResourceWrite(async () => {
       db.transaction((tx) => {
+        const createdRow = {
+          id,
+          name,
+          source: "sillytavern",
+          createdAt: now,
+          updatedAt: now,
+          version: 1,
+        };
         tx.insert(worldbooks).values({
           id,
           name,
@@ -1076,6 +1125,27 @@ export async function registerImportRoutes(
             }))
           ).run();
         }
+
+        const version = new AssetVersionService(tx).createWorldbookVersion(id, {
+          versionNo: 1,
+          createdByOperationId: operationId,
+          createdAt: now,
+        });
+        appendPromptAssetOperationLog(tx, request, {
+          operationId,
+          accountId: auth.accountId,
+          action: "import_worldbook",
+          assetKind: "worldbook",
+          assetId: id,
+          afterRef: toPromptAssetOperationRef("worldbook", createdRow, version),
+          metadata: {
+            route: "POST /import/worldbook",
+            request_fields: Object.keys(parsed.data).sort(),
+            source: "sillytavern",
+            entry_count: entries.length,
+          },
+          createdAt: now,
+        });
       });
 
       return {
@@ -1129,20 +1199,53 @@ export async function registerImportRoutes(
     const auth = getRequestAuthContext(request);
     const id = nanoid();
     const name = parsed.data.name;
+    const operationId = nanoid();
     const compatReport = buildRegexCompatReport(stScripts);
 
     try {
       const created = await executeResourceWriteOrThrow(() => {
         const now = Date.now();
-        db.insert(regexProfiles).values({
-          id,
-          name,
-          source: "sillytavern",
-          accountId: auth.accountId,
-          dataJson: JSON.stringify(stScripts),
-          createdAt: now,
-          updatedAt: now,
-        }).run();
+        db.transaction((tx) => {
+          const createdRow = {
+            id,
+            name,
+            source: "sillytavern",
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+          };
+          tx.insert(regexProfiles).values({
+            id,
+            name,
+            source: "sillytavern",
+            accountId: auth.accountId,
+            dataJson: JSON.stringify(stScripts),
+            createdAt: now,
+            updatedAt: now,
+          }).run();
+          const version = new AssetVersionService(tx).createRegexProfileVersion(id, {
+            versionNo: 1,
+            data: stScripts,
+            createdByOperationId: operationId,
+            createdAt: now,
+          });
+          appendPromptAssetOperationLog(tx, request, {
+            operationId,
+            accountId: auth.accountId,
+            action: "import_regex_profile",
+            assetKind: "regex_profile",
+            assetId: id,
+            afterRef: toPromptAssetOperationRef("regex_profile", createdRow, version),
+            metadata: {
+              route: "POST /import/regex",
+              request_fields: Object.keys(parsed.data).sort(),
+              source: "sillytavern",
+              script_count: stScripts.length,
+              compat_report: compatReport,
+            },
+            createdAt: now,
+          });
+        });
 
         return { id, name, source: "sillytavern", script_count: stScripts.length, compat_report: compatReport };
       });
@@ -1211,13 +1314,22 @@ export async function registerImportRoutes(
 
     if (!parsed.data.create_session) {
       try {
-        const characterBinding = await executeResourceWriteOrThrow(() => createCharacterFromImport(db, {
+        const operationId = nanoid();
+        const characterBinding = await executeResourceWriteOrThrow(() => createCharacterFromImport(db, request, {
           name: characterProfile.core.name,
           accountId: auth.accountId,
           snapshot,
           sourceArtifact,
           source: "sillytavern",
           now: Date.now(),
+          operationId,
+          operationMetadata: {
+            route: "POST /import/character",
+            request_fields: Object.keys(parsed.data).sort(),
+            source: "sillytavern",
+            create_session: false,
+            payload_bytes: payloadSize,
+          },
         }));
 
         return reply.code(201).send({
@@ -1238,7 +1350,8 @@ export async function registerImportRoutes(
     }
 
     try {
-      const imported = await executeResourceWriteOrThrow(() => createCharacterWithSessionFromImport(db, {
+      const operationId = nanoid();
+      const imported = await executeResourceWriteOrThrow(() => createCharacterWithSessionFromImport(db, request, {
         name: characterProfile.core.name,
         accountId: auth.accountId,
         snapshot,
@@ -1246,6 +1359,14 @@ export async function registerImportRoutes(
         source: "sillytavern",
         title: parsed.data.title ?? characterProfile.core.name,
         now: Date.now(),
+        operationId,
+        operationMetadata: {
+          route: "POST /import/character",
+          request_fields: Object.keys(parsed.data).sort(),
+          source: "sillytavern",
+          create_session: true,
+          payload_bytes: payloadSize,
+        },
       }));
 
       return reply.code(201).send({
@@ -1637,25 +1758,56 @@ export async function registerImportRoutes(
 
       const now = Date.now();
       const nextVersion = row.version + 1;
-      const updateResult = db.update(presets).set({
-        name: bodyParsed.data.name,
-        dataJson: JSON.stringify(nextPreset),
-        updatedAt: now,
-        version: nextVersion,
-      }).where(and(
-        eq(presets.id, row.id),
-        eq(presets.accountId, auth.accountId),
-        eq(presets.version, expectedVersionResult.expectedVersion)
-      )).run();
+      const operationId = nanoid();
 
-      if (updateResult.changes === 0) {
-        return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
-      }
+      return db.transaction((tx) => {
+        const assetVersionService = new AssetVersionService(tx);
+        const beforeVersion = assetVersionService.getLatestPresetVersion(auth.accountId, row.id);
+        const beforeRef = toPromptAssetOperationRef("preset", row, beforeVersion);
+        const updateResult = tx.update(presets).set({
+          name: bodyParsed.data.name,
+          dataJson: JSON.stringify(nextPreset),
+          updatedAt: now,
+          version: nextVersion,
+        }).where(and(
+          eq(presets.id, row.id),
+          eq(presets.accountId, auth.accountId),
+          eq(presets.version, expectedVersionResult.expectedVersion)
+        )).run();
 
-      return {
-        kind: "ok",
-        data: toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion })
-      };
+        if (updateResult.changes === 0) {
+          return { kind: "error", statusCode: 409, code: "preset_conflict", message: "Preset has been modified by another operation" };
+        }
+
+        const afterRow = { ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion };
+        const afterVersion = assetVersionService.createPresetVersion(row.id, {
+          versionNo: nextVersion,
+          data: nextPreset,
+          createdByOperationId: operationId,
+          createdAt: now,
+        });
+        appendPromptAssetOperationLog(tx, request, {
+          operationId,
+          accountId: auth.accountId,
+          action: "update_preset",
+          assetKind: "preset",
+          assetId: row.id,
+          beforeRef,
+          afterRef: toPromptAssetOperationRef("preset", afterRow, afterVersion),
+          metadata: {
+            route: "PUT /presets/:id",
+            request_fields: Object.keys(bodyParsed.data).sort(),
+            expected_version_present: bodyParsed.data.expected_version !== undefined,
+            expected_updated_at_present: bodyParsed.data.expected_updated_at !== undefined,
+          },
+          createdAt: now,
+        });
+
+        return {
+          kind: "ok",
+          data: toResourceListItem(afterRow)
+        };
+      });
     });
 
     if (mutation.kind === "error") {
@@ -1874,8 +2026,12 @@ export async function registerImportRoutes(
       const nextVersion = row.version + 1;
       const { entries } = nextWorldbook;
       let updateApplied = false;
+      const operationId = nanoid();
 
       db.transaction((tx) => {
+        const assetVersionService = new AssetVersionService(tx);
+        const beforeVersion = assetVersionService.getLatestWorldbookVersion(auth.accountId, row.id);
+        const beforeRef = toPromptAssetOperationRef("worldbook", row, beforeVersion);
         const updateResult = tx
           .update(worldbooks)
           .set({
@@ -1908,6 +2064,30 @@ export async function registerImportRoutes(
             }))
           ).run();
         }
+
+        const afterRow = { ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion };
+        const afterVersion = assetVersionService.createWorldbookVersion(row.id, {
+          versionNo: nextVersion,
+          createdByOperationId: operationId,
+          createdAt: now,
+        });
+        appendPromptAssetOperationLog(tx, request, {
+          operationId,
+          accountId: auth.accountId,
+          action: "update_worldbook",
+          assetKind: "worldbook",
+          assetId: row.id,
+          beforeRef,
+          afterRef: toPromptAssetOperationRef("worldbook", afterRow, afterVersion),
+          metadata: {
+            route: "PUT /worldbooks/:id",
+            request_fields: Object.keys(bodyParsed.data).sort(),
+            expected_version_present: bodyParsed.data.expected_version !== undefined,
+            expected_updated_at_present: bodyParsed.data.expected_updated_at !== undefined,
+            entry_count: entries.length,
+          },
+          createdAt: now,
+        });
       });
 
       if (!updateApplied) {
@@ -2105,6 +2285,7 @@ export async function registerImportRoutes(
     }
 
     try {
+      const operationId = nanoid();
       const updated = await withResourceWriteCas({
         db,
         expectedRevision: bodyParsed.data.expected_version,
@@ -2127,6 +2308,9 @@ export async function registerImportRoutes(
         mutate: ({ tx, row }) => {
           const now = Date.now();
           const nextVersion = row.version + 1;
+          const assetVersionService = new AssetVersionService(tx);
+          const beforeVersion = assetVersionService.getLatestRegexProfileVersion(auth.accountId, row.id);
+          const beforeRef = toPromptAssetOperationRef("regex_profile", row, beforeVersion);
           const updateResult = tx.update(regexProfiles).set({
             name: bodyParsed.data.name,
             dataJson: JSON.stringify(stScripts),
@@ -2139,7 +2323,31 @@ export async function registerImportRoutes(
           )).run();
 
           assertRevisionWriteApplied(updateResult.changes, createRegexProfileConflictError);
-          return toResourceListItem({ ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion });
+          const afterRow = { ...row, name: bodyParsed.data.name, updatedAt: now, version: nextVersion };
+          const afterVersion = assetVersionService.createRegexProfileVersion(row.id, {
+            versionNo: nextVersion,
+            data: stScripts,
+            createdByOperationId: operationId,
+            createdAt: now,
+          });
+          appendPromptAssetOperationLog(tx, request, {
+            operationId,
+            accountId: auth.accountId,
+            action: "update_regex_profile",
+            assetKind: "regex_profile",
+            assetId: row.id,
+            beforeRef,
+            afterRef: toPromptAssetOperationRef("regex_profile", afterRow, afterVersion),
+            metadata: {
+              route: "PUT /regex-profiles/:id",
+              request_fields: Object.keys(bodyParsed.data).sort(),
+              expected_version_present: bodyParsed.data.expected_version !== undefined,
+              expected_updated_at_present: bodyParsed.data.expected_updated_at !== undefined,
+              script_count: stScripts.length,
+            },
+            createdAt: now,
+          });
+          return toResourceListItem(afterRow);
         }
       });
 
@@ -2215,6 +2423,9 @@ interface CharacterBindingPayload {
   characterId: string;
   characterVersionId: string;
   characterSnapshotJson: string;
+  characterVersionNo?: number;
+  characterContentHash?: string;
+  createdByOperationId?: string | null;
   now: number;
 }
 
@@ -2291,6 +2502,7 @@ function toCharacterSourceArtifact(card: ImportedCharacterCard): CharacterSource
 
 function createCharacterFromImport(
   db: DatabaseConnection["db"],
+  request: FastifyRequest,
   input: {
     name: string;
     accountId: string;
@@ -2298,13 +2510,16 @@ function createCharacterFromImport(
     snapshot: SessionCharacterSnapshot;
     sourceArtifact: CharacterSourceArtifact;
     now: number;
+    operationId: string;
+    operationMetadata: Record<string, unknown>;
   }
 ): CharacterBindingPayload {
-  return db.transaction((tx) => createCharacterFromImportInternal(tx, input));
+  return db.transaction((tx) => createCharacterFromImportInternal(tx, request, input));
 }
 
 function createCharacterWithSessionFromImport(
   db: DatabaseConnection["db"],
+  request: FastifyRequest,
   input: {
     name: string;
     accountId: string;
@@ -2313,16 +2528,21 @@ function createCharacterWithSessionFromImport(
     sourceArtifact: CharacterSourceArtifact;
     title: string;
     now: number;
+    operationId: string;
+    operationMetadata: Record<string, unknown>;
   }
 ): { characterBinding: CharacterBindingPayload; session: ImportedSessionResponse } {
   return db.transaction((tx) => {
-    const characterBinding = createCharacterFromImportInternal(tx, {
+    const characterBinding = createCharacterFromImportInternal(tx, request, {
       name: input.name,
       accountId: input.accountId,
       source: input.source,
       snapshot: input.snapshot,
       sourceArtifact: input.sourceArtifact,
-      now: input.now
+      now: input.now,
+      operationId: input.operationId,
+      operationMetadata: input.operationMetadata,
+      appendOperationLog: false,
     });
 
     const session = createSessionFromCharacterImportInternal(tx, {
@@ -2332,12 +2552,29 @@ function createCharacterWithSessionFromImport(
       now: input.now
     });
 
+    appendCharacterOperationLog(tx, request, {
+      operationId: input.operationId,
+      accountId: input.accountId,
+      action: "import_character",
+      characterId: characterBinding.characterId,
+      sessionId: session.id,
+      afterRef: toCharacterOperationRef(characterBinding.characterId, {
+        id: characterBinding.characterVersionId,
+        versionNo: characterBinding.characterVersionNo ?? 1,
+        contentHash: characterBinding.characterContentHash ?? "",
+        createdByOperationId: input.operationId,
+      }),
+      metadata: input.operationMetadata,
+      createdAt: input.now,
+    });
+
     return { characterBinding, session };
   });
 }
 
 function createCharacterFromImportInternal(
   db: any,
+  request: FastifyRequest,
   input: {
     name: string;
     accountId: string;
@@ -2345,6 +2582,9 @@ function createCharacterFromImportInternal(
     snapshot: SessionCharacterSnapshot;
     sourceArtifact: CharacterSourceArtifact;
     now: number;
+    operationId: string;
+    operationMetadata: Record<string, unknown>;
+    appendOperationLog?: boolean;
   }
 ): CharacterBindingPayload {
   const characterId = nanoid();
@@ -2374,13 +2614,34 @@ function createCharacterFromImportInternal(
     sourceArtifactJson: input.sourceArtifact.json,
     sourceArtifactFormat: input.sourceArtifact.format,
     sourceArtifactDigest: input.sourceArtifact.digest,
+    createdByOperationId: input.operationId,
     createdAt: input.now
   }).run();
+
+  if (input.appendOperationLog !== false) {
+    appendCharacterOperationLog(db, request, {
+      operationId: input.operationId,
+      accountId: input.accountId,
+      action: "import_character",
+      characterId,
+      afterRef: toCharacterOperationRef(characterId, {
+        id: characterVersionId,
+        versionNo: 1,
+        contentHash,
+        createdByOperationId: input.operationId,
+      }),
+      metadata: input.operationMetadata,
+      createdAt: input.now,
+    });
+  }
 
   return {
     characterId,
     characterVersionId,
     characterSnapshotJson: snapshotJson,
+    characterVersionNo: 1,
+    characterContentHash: contentHash,
+    createdByOperationId: input.operationId,
     now: input.now
   };
 }

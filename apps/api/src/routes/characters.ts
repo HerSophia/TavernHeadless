@@ -10,6 +10,10 @@ import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, sendError, s
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import {
+  appendCharacterOperationLog,
+  toCharacterOperationRef,
+} from "../services/character-operation-log.js";
+import {
   CHARACTER_VERSION_CONSTRAINT_MAPPING,
   ResourceWriteRouteError,
   assertRevisionWriteApplied,
@@ -553,6 +557,7 @@ export async function registerCharacterRoutes(
         constraintMappings: [CHARACTER_VERSION_CONSTRAINT_MAPPING],
         mutate: ({ tx, row }) => {
           const now = Date.now();
+          const operationId = nanoid();
           const versionId = nanoid();
           const versionNo = row.latestVersionNo + 1;
           const snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? "{}";
@@ -560,6 +565,7 @@ export async function registerCharacterRoutes(
           const latestVersion = row.latestVersionNo > 0
             ? loadCharacterVersionByNo(tx, row.id, row.latestVersionNo)
             : undefined;
+          const beforeRef = toCharacterOperationRef(row.id, latestVersion);
 
           const updateResult = tx
             .update(characters)
@@ -574,7 +580,7 @@ export async function registerCharacterRoutes(
 
           assertRevisionWriteApplied(updateResult.changes, createCharacterRevisionConflictError);
 
-          tx.insert(characterVersions).values({
+          const versionRow = {
             id: versionId,
             characterId: row.id,
             versionNo,
@@ -583,8 +589,26 @@ export async function registerCharacterRoutes(
             sourceArtifactJson: latestVersion?.sourceArtifactJson ?? null,
             sourceArtifactFormat: latestVersion?.sourceArtifactFormat ?? null,
             sourceArtifactDigest: latestVersion?.sourceArtifactDigest ?? null,
+            createdByOperationId: operationId,
             createdAt: now
-          }).run();
+          };
+          tx.insert(characterVersions).values(versionRow).run();
+
+          appendCharacterOperationLog(tx, request, {
+            operationId,
+            accountId: auth.accountId,
+            action: "create_character_version",
+            characterId: row.id,
+            beforeRef,
+            afterRef: toCharacterOperationRef(row.id, versionRow),
+            metadata: {
+              route: "POST /characters/:id/versions",
+              request_fields: Object.keys(parsedBody.data).sort(),
+              expected_revision_present: parsedBody.data.expected_revision !== undefined,
+              snapshot_field_names: Object.keys(parsedBody.data.snapshot).sort(),
+            },
+            createdAt: now,
+          });
 
           return {
             id: versionId,
@@ -681,8 +705,13 @@ export async function registerCharacterRoutes(
             : row.name;
 
           const now = Date.now();
+          const operationId = nanoid();
           const versionNo = row.latestVersionNo + 1;
           const rolledBackVersionId = nanoid();
+          const latestVersion = row.latestVersionNo > 0
+            ? loadCharacterVersionByNo(tx, row.id, row.latestVersionNo)
+            : undefined;
+          const beforeRef = toCharacterOperationRef(row.id, latestVersion);
 
           const updateResult = tx
             .update(characters)
@@ -697,7 +726,7 @@ export async function registerCharacterRoutes(
 
           assertRevisionWriteApplied(updateResult.changes, createCharacterRevisionConflictError);
 
-          tx.insert(characterVersions).values({
+          const versionRow = {
             id: rolledBackVersionId,
             characterId: row.id,
             versionNo,
@@ -706,8 +735,28 @@ export async function registerCharacterRoutes(
             sourceArtifactJson: targetVersion.sourceArtifactJson,
             sourceArtifactFormat: targetVersion.sourceArtifactFormat,
             sourceArtifactDigest: targetVersion.sourceArtifactDigest,
+            createdByOperationId: operationId,
             createdAt: now
-          }).run();
+          };
+          tx.insert(characterVersions).values(versionRow).run();
+
+          appendCharacterOperationLog(tx, request, {
+            operationId,
+            accountId: auth.accountId,
+            action: "rollback_character_version",
+            characterId: row.id,
+            beforeRef,
+            afterRef: toCharacterOperationRef(row.id, versionRow, {
+              rolledBackFromVersionId: targetVersion.id,
+            }),
+            metadata: {
+              route: "POST /characters/:id/versions/:versionId/rollback",
+              request_fields: Object.keys(parsedBody.data).sort(),
+              expected_revision_present: parsedBody.data.expected_revision !== undefined,
+              rolled_back_from_version_id: targetVersion.id,
+            },
+            createdAt: now,
+          });
 
           return {
             id: rolledBackVersionId,

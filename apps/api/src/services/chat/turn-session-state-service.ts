@@ -1,4 +1,5 @@
 import { SessionStateServiceError, type SessionStateService } from "../../session-state/session-state-service.js";
+import type { SessionStateOperationLogContext } from "../../session-state/session-state-operation-log.js";
 
 import type { TurnSessionStateWriteRequest } from "./contracts.js";
 import type { ChatServiceErrorFactory } from "./types.js";
@@ -28,21 +29,23 @@ export class TurnSessionStateService {
     branchId: string;
     floorId: string;
     writes?: TurnSessionStateWriteRequest[];
+    operationLog?: SessionStateOperationLogContext;
   }): void {
     if (!input.writes || input.writes.length === 0) {
       return;
     }
 
-    if (!this.sessionStateService) {
+    const sessionStateService = this.sessionStateService;
+    if (!sessionStateService) {
       throw this.createError(
         "feature_unavailable",
         "Session state is unavailable because client-data is disabled",
       );
     }
 
-    for (const write of input.writes) {
+    input.writes.forEach((write, index) => {
       try {
-        this.sessionStateService.stageClientCommitBoundValue({
+        sessionStateService.stageClientCommitBoundValue({
           accountId: input.accountId,
           sessionId: input.sessionId,
           branchId: input.branchId,
@@ -51,6 +54,9 @@ export class TurnSessionStateService {
           slot: write.slot,
           value: write.delete === true ? null : write.value,
           present: write.delete === true ? false : true,
+          operationLog: input.operationLog,
+          operationIndex: index + 1,
+          operationCount: input.writes?.length ?? 0,
         });
       } catch (error) {
         if (error instanceof SessionStateServiceError) {
@@ -58,7 +64,7 @@ export class TurnSessionStateService {
         }
         throw error;
       }
-    }
+    });
   }
 
   discardStagedSessionStateBestEffort(

@@ -2,11 +2,15 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 import type { PromptSnapshotWorldbookActivation } from "@tavern/core";
 
-import type { AppDb } from "../../db/client.js";
+import type { AppDb, DbExecutor } from "../../db/client.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
 import { characters, floorResultSnapshots, floors, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, runtimeJobs, sessions, worldbooks } from "../../db/schema.js";
 import { parseJsonField, stringifyJsonField } from "../../lib/http.js";
 import { parsePromptRuntimeExplainSourceMapEnvelope } from "./explain-snapshot.js";
+import {
+  SessionBranchRegistryService,
+  type SessionBranchAssetBindingState,
+} from "../variables/host/session-branch-registry-service.js";
 import {
   buildCommittedExplainMemoryTrace,
   mergeHistoricalExplainMemoryTrace,
@@ -30,6 +34,11 @@ import type {
   PromptTrimReason,
 } from "../prompt-assembler.js";
 import { DEFAULT_PROMPT_MODE, resolvePromptModeDetails } from "../prompt-assembler.js";
+import {
+  appendPromptRuntimePolicyOperationLog,
+  toPromptRuntimePolicyOperationRef,
+  type PromptRuntimePolicyOperationLogContext,
+} from "../prompt-runtime-operation-log.js";
 
 export const PROMPT_RUNTIME_SUPPORTED_STRUCTURE_MODES = ["default", "strict_alternating", "no_assistant", "flattened"] as const satisfies readonly PromptStructureMode[];
 export const PROMPT_RUNTIME_SUPPORTED_ASSISTANT_REWRITE_STRATEGIES = ["to_system", "to_user_transcript"] as const satisfies readonly PromptStructureAssistantRewriteStrategy[];
@@ -150,6 +159,9 @@ const promptRuntimePersistedPolicyEnvelopeSchema = z.object({
 export interface PromptRuntimeAssetSummary {
   id: string;
   name: string | null;
+  versionId?: string | null;
+  versionNo?: number | null;
+  contentHash?: string | null;
 }
 
 export interface PromptRuntimeAssetsView {
@@ -740,7 +752,11 @@ export class PromptRuntimeControlService {
     const session = await this.getOwnedSession(sessionId, accountId);
     const targetBranchId = normalizePromptRuntimeBranchId(branchId);
     await this.requireMaterializedBranch(session.id, targetBranchId);
-    const assets = await this.buildAssetsView(session, accountId);
+    const branchAssetBinding = new SessionBranchRegistryService(this.db)
+      .get(accountId, session.id, targetBranchId)
+      ?.assetBinding
+      ?? null;
+    const assets = await this.buildAssetsView(session, accountId, branchAssetBinding);
     const {
       persistentPolicy,
       envelope: persistentPolicyEnvelope,
@@ -818,9 +834,13 @@ export class PromptRuntimeControlService {
     };
   }
 
-  async getAssets(sessionId: string, accountId: string): Promise<PromptRuntimeAssetsView> {
+  async getAssets(sessionId: string, accountId: string, branchId?: string | null): Promise<PromptRuntimeAssetsView> {
     const session = await this.getOwnedSession(sessionId, accountId);
-    return this.buildAssetsView(session, accountId);
+    const normalizedBranchId = branchId ? normalizePromptRuntimeBranchId(branchId) : null;
+    const branchAssetBinding = normalizedBranchId
+      ? new SessionBranchRegistryService(this.db).get(accountId, session.id, normalizedBranchId)?.assetBinding ?? null
+      : null;
+    return this.buildAssetsView(session, accountId, branchAssetBinding);
   }
 
   async getHistoricalExplain(floorId: string, accountId: string): Promise<PromptRuntimeHistoricalExplain> {
@@ -983,41 +1003,80 @@ export class PromptRuntimeControlService {
     accountId: string,
     patch: PromptRuntimePersistentPolicyPatch,
     updatedBy?: string | null,
+    operationLog?: PromptRuntimePolicyOperationLogContext,
   ): Promise<PromptRuntimePolicyView> {
-    const session = await this.getOwnedSession(sessionId, accountId);
-    const metadata = parseMetadataRecord(session.metadataJson);
-    const { persistentPolicy, envelope } = readPromptRuntimePersistentPolicy(session.metadataJson);
-    const nextPersistentPolicy = applyPromptRuntimePersistentPolicyPatch(persistentPolicy, patch);
-    const updatedAt = Date.now();
-    const nextMetadata = writePromptRuntimePersistentPolicyToMetadata(metadata, nextPersistentPolicy, {
-      currentEnvelope: envelope,
-      updatedAt,
-      updatedBy,
-    });
-
-    await this.db
-      .update(sessions)
-      .set({
-        metadataJson: stringifyJsonField(nextMetadata),
+    return this.db.transaction((tx) => {
+      const session = this.getOwnedSessionWithExecutor(tx, sessionId, accountId);
+      const metadata = parseMetadataRecord(session.metadataJson);
+      const { persistentPolicy, envelope } = readPromptRuntimePersistentPolicy(session.metadataJson);
+      const beforeRef = toPromptRuntimePolicyOperationRef({
+        scope: "session",
+        sessionId,
+        policy: persistentPolicy,
+        envelope,
+      });
+      const nextPersistentPolicy = applyPromptRuntimePersistentPolicyPatch(persistentPolicy, patch);
+      const updatedAt = Date.now();
+      const nextMetadata = writePromptRuntimePersistentPolicyToMetadata(metadata, nextPersistentPolicy, {
+        currentEnvelope: envelope,
         updatedAt,
-      })
-      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)));
+        updatedBy,
+      });
 
-    const nextEnvelope = nextPersistentPolicy
-      ? createPromptRuntimePersistedPolicyEnvelope({
-          currentEnvelope: envelope,
-          policy: nextPersistentPolicy,
+      tx
+        .update(sessions)
+        .set({
+          metadataJson: stringifyJsonField(nextMetadata),
           updatedAt,
-          updatedBy,
         })
-      : undefined;
+        .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
+        .run();
 
-    return {
-      ...(nextPersistentPolicy ? { persistentPolicy: nextPersistentPolicy } : {}),
-      ...(nextEnvelope !== undefined ? { persistentPolicyEnvelope: nextEnvelope } : {}),
-      resolvedPolicy: buildResolvedPromptRuntimePolicy(nextPersistentPolicy),
-      warnings: buildPromptRuntimeWarnings(nextPersistentPolicy),
-    };
+      const nextEnvelope = nextPersistentPolicy
+        ? createPromptRuntimePersistedPolicyEnvelope({
+            currentEnvelope: envelope,
+            policy: nextPersistentPolicy,
+            updatedAt,
+            updatedBy,
+          })
+        : undefined;
+      const afterRef = toPromptRuntimePolicyOperationRef({
+        scope: "session",
+        sessionId,
+        policy: nextPersistentPolicy,
+        envelope: nextEnvelope,
+      });
+      const result: PromptRuntimePolicyView = {
+        ...(nextPersistentPolicy ? { persistentPolicy: nextPersistentPolicy } : {}),
+        ...(nextEnvelope !== undefined ? { persistentPolicyEnvelope: nextEnvelope } : {}),
+        resolvedPolicy: buildResolvedPromptRuntimePolicy(nextPersistentPolicy),
+        warnings: buildPromptRuntimeWarnings(nextPersistentPolicy),
+      };
+
+      if (operationLog) {
+        appendPromptRuntimePolicyOperationLog(tx, {
+          ...operationLog,
+          accountId,
+          action: "update_prompt_runtime_policy",
+          sessionId,
+          scope: "session",
+          beforeRef,
+          afterRef,
+          metadata: buildPromptRuntimePolicyOperationMetadata({
+            route: operationLog.route,
+            scope: "session",
+            patch,
+            beforeEnvelope: envelope,
+            afterEnvelope: nextEnvelope,
+            beforePolicy: persistentPolicy,
+            afterPolicy: nextPersistentPolicy,
+          }),
+          createdAt: updatedAt,
+        });
+      }
+
+      return result;
+    });
   }
 
   async updateMode(
@@ -1046,45 +1105,89 @@ export class PromptRuntimeControlService {
     accountId: string,
     patch: PromptRuntimePersistentPolicyPatch,
     updatedBy?: string | null,
+    operationLog?: PromptRuntimePolicyOperationLogContext,
   ): Promise<PromptRuntimePolicyView> {
-    const session = await this.getOwnedSession(sessionId, accountId);
-    const targetBranchId = normalizePromptRuntimeBranchId(branchId);
-    await this.requireMaterializedBranch(session.id, targetBranchId);
-    const metadata = parseMetadataRecord(session.metadataJson);
-    const { persistentPolicy } = readPromptRuntimePersistentPolicy(session.metadataJson);
-    const { persistentPolicy: currentBranchPolicy, envelope } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
-    const nextBranchPersistentPolicy = applyPromptRuntimePersistentPolicyPatch(currentBranchPolicy, patch);
-    const updatedAt = Date.now();
-    const nextMetadata = writePromptRuntimeBranchPersistentPolicyToMetadata(metadata, targetBranchId, nextBranchPersistentPolicy, {
-      currentEnvelope: envelope,
-      updatedAt,
-      updatedBy,
-    });
-
-    await this.db
-      .update(sessions)
-      .set({
-        metadataJson: stringifyJsonField(nextMetadata),
+    return this.db.transaction((tx) => {
+      const session = this.getOwnedSessionWithExecutor(tx, sessionId, accountId);
+      const targetBranchId = normalizePromptRuntimeBranchId(branchId);
+      this.requireMaterializedBranchWithExecutor(tx, session.id, targetBranchId);
+      const metadata = parseMetadataRecord(session.metadataJson);
+      const { persistentPolicy } = readPromptRuntimePersistentPolicy(session.metadataJson);
+      const { persistentPolicy: currentBranchPolicy, envelope } = readPromptRuntimeBranchPersistentPolicy(session.metadataJson, targetBranchId);
+      const beforeRef = toPromptRuntimePolicyOperationRef({
+        scope: "branch",
+        sessionId,
+        branchId: targetBranchId,
+        policy: currentBranchPolicy,
+        envelope,
+      });
+      const nextBranchPersistentPolicy = applyPromptRuntimePersistentPolicyPatch(currentBranchPolicy, patch);
+      const updatedAt = Date.now();
+      const nextMetadata = writePromptRuntimeBranchPersistentPolicyToMetadata(metadata, targetBranchId, nextBranchPersistentPolicy, {
+        currentEnvelope: envelope,
         updatedAt,
-      })
-      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)));
+        updatedBy,
+      });
 
-    const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, nextBranchPersistentPolicy);
-    const nextEnvelope = nextBranchPersistentPolicy
-      ? createPromptRuntimePersistedPolicyEnvelope({
-          currentEnvelope: envelope,
-          policy: nextBranchPersistentPolicy,
+      tx
+        .update(sessions)
+        .set({
+          metadataJson: stringifyJsonField(nextMetadata),
           updatedAt,
-          updatedBy,
         })
-      : undefined;
+        .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
+        .run();
 
-    return {
-      ...(nextBranchPersistentPolicy ? { persistentPolicy: nextBranchPersistentPolicy } : {}),
-      ...(nextEnvelope !== undefined ? { persistentPolicyEnvelope: nextEnvelope } : {}),
-      resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy, nextBranchPersistentPolicy),
-      warnings: buildPromptRuntimeWarnings(effectivePersistentPolicy),
-    };
+      const effectivePersistentPolicy = mergePromptRuntimePersistentPolicies(persistentPolicy, nextBranchPersistentPolicy);
+      const nextEnvelope = nextBranchPersistentPolicy
+        ? createPromptRuntimePersistedPolicyEnvelope({
+            currentEnvelope: envelope,
+            policy: nextBranchPersistentPolicy,
+            updatedAt,
+            updatedBy,
+          })
+        : undefined;
+      const afterRef = toPromptRuntimePolicyOperationRef({
+        scope: "branch",
+        sessionId,
+        branchId: targetBranchId,
+        policy: nextBranchPersistentPolicy,
+        envelope: nextEnvelope,
+      });
+      const result: PromptRuntimePolicyView = {
+        ...(nextBranchPersistentPolicy ? { persistentPolicy: nextBranchPersistentPolicy } : {}),
+        ...(nextEnvelope !== undefined ? { persistentPolicyEnvelope: nextEnvelope } : {}),
+        resolvedPolicy: buildResolvedPromptRuntimePolicy(persistentPolicy, nextBranchPersistentPolicy),
+        warnings: buildPromptRuntimeWarnings(effectivePersistentPolicy),
+      };
+
+      if (operationLog) {
+        appendPromptRuntimePolicyOperationLog(tx, {
+          ...operationLog,
+          accountId,
+          action: "update_prompt_runtime_branch_policy",
+          sessionId,
+          branchId: targetBranchId,
+          scope: "branch",
+          beforeRef,
+          afterRef,
+          metadata: buildPromptRuntimePolicyOperationMetadata({
+            route: operationLog.route,
+            scope: "branch",
+            branchId: targetBranchId,
+            patch,
+            beforeEnvelope: envelope,
+            afterEnvelope: nextEnvelope,
+            beforePolicy: currentBranchPolicy,
+            afterPolicy: nextBranchPersistentPolicy,
+            branchMaterialized: true,
+          }),
+          createdAt: updatedAt,
+        });
+      }
+
+      return result;
+    });
   }
 
   getCapabilities(): PromptRuntimeCapabilities {
@@ -1210,7 +1313,11 @@ export class PromptRuntimeControlService {
   }
 
   private async getOwnedSession(sessionId: string, accountId: string) {
-    const [session] = await this.db
+    return this.getOwnedSessionWithExecutor(this.db, sessionId, accountId);
+  }
+
+  private getOwnedSessionWithExecutor(db: AppDb | DbExecutor, sessionId: string, accountId: string) {
+    const session = db
       .select({
         id: sessions.id,
         accountId: sessions.accountId,
@@ -1219,12 +1326,17 @@ export class PromptRuntimeControlService {
         presetId: sessions.presetId,
         worldbookProfileId: sessions.worldbookProfileId,
         regexProfileId: sessions.regexProfileId,
+        presetVersionId: sessions.presetVersionId,
+        worldbookVersionId: sessions.worldbookVersionId,
+        regexProfileVersionId: sessions.regexProfileVersionId,
+        deepBinding: sessions.deepBinding,
         promptMode: sessions.promptMode,
         metadataJson: sessions.metadataJson,
       })
       .from(sessions)
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
-      .limit(1);
+      .limit(1)
+      .get();
 
     if (!session) {
       throw new PromptRuntimeControlServiceError(404, "not_found", "Session not found");
@@ -1249,7 +1361,11 @@ export class PromptRuntimeControlService {
   }
 
   private async requireMaterializedBranch(sessionId: string, branchId: string): Promise<void> {
-    const [branch] = await this.db
+    this.requireMaterializedBranchWithExecutor(this.db, sessionId, branchId);
+  }
+
+  private requireMaterializedBranchWithExecutor(db: AppDb | DbExecutor, sessionId: string, branchId: string): void {
+    const branch = db
       .select({ id: floors.id })
       .from(floors)
       .where(and(
@@ -1257,7 +1373,8 @@ export class PromptRuntimeControlService {
         eq(floors.branchId, branchId),
         isNull(floors.supersededAt),
       ))
-      .limit(1);
+      .limit(1)
+      .get();
 
     if (!branch) {
       throw new PromptRuntimeControlServiceError(404, "branch_not_found", `Branch '${branchId}' not found in session`);
@@ -1267,25 +1384,43 @@ export class PromptRuntimeControlService {
   private async buildAssetsView(
     session: Awaited<ReturnType<PromptRuntimeControlService["getOwnedSession"]>>,
     accountId: string,
+    branchAssetBinding?: SessionBranchAssetBindingState | null,
   ): Promise<PromptRuntimeAssetsView> {
+    const binding = branchAssetBinding ?? null;
+    const presetId = binding ? binding.presetId : session.presetId;
+    const worldbookProfileId = binding ? binding.worldbookProfileId : session.worldbookProfileId;
+    const regexProfileId = binding ? binding.regexProfileId : session.regexProfileId;
+    const deepBinding = binding ? binding.deepBinding : session.deepBinding;
+    const presetVersionId = binding ? binding.presetVersionId : session.presetVersionId;
+    const worldbookVersionId = binding ? binding.worldbookVersionId : session.worldbookVersionId;
+    const regexProfileVersionId = binding ? binding.regexProfileVersionId : session.regexProfileVersionId;
     const characterSnapshotName = parseSnapshotName(session.characterSnapshotJson);
     const [characterName, presetName, worldbookName, regexProfileName] = await Promise.all([
       this.readCharacterName(accountId, session.characterId),
-      this.readPresetName(accountId, session.presetId),
-      this.readWorldbookName(accountId, session.worldbookProfileId),
-      this.readRegexProfileName(accountId, session.regexProfileId),
+      this.readPresetName(accountId, presetId),
+      this.readWorldbookName(accountId, worldbookProfileId),
+      this.readRegexProfileName(accountId, regexProfileId),
     ]);
 
     return {
-      preset: toAssetSummary(session.presetId, presetName),
+      preset: toAssetSummary(presetId, presetName, {
+        versionId: presetVersionId,
+        enabled: deepBinding,
+      }),
       characterCard: session.characterId
         ? {
             id: session.characterId,
             name: characterName ?? characterSnapshotName,
           }
         : null,
-      worldbook: toAssetSummary(session.worldbookProfileId, worldbookName),
-      regexProfile: toAssetSummary(session.regexProfileId, regexProfileName),
+      worldbook: toAssetSummary(worldbookProfileId, worldbookName, {
+        versionId: worldbookVersionId,
+        enabled: deepBinding,
+      }),
+      regexProfile: toAssetSummary(regexProfileId, regexProfileName, {
+        versionId: regexProfileVersionId,
+        enabled: deepBinding,
+      }),
     };
   }
 
@@ -1363,6 +1498,59 @@ export class PromptRuntimeControlService {
 
     return row?.name ?? null;
   }
+}
+
+function buildPromptRuntimePolicyOperationMetadata(input: {
+  route: string;
+  scope: "session" | "branch";
+  branchId?: string | null;
+  patch: PromptRuntimePersistentPolicyPatch;
+  beforeEnvelope?: PromptRuntimePersistedPolicyEnvelope;
+  afterEnvelope?: PromptRuntimePersistedPolicyEnvelope;
+  beforePolicy?: PromptRuntimePersistentPolicy;
+  afterPolicy?: PromptRuntimePersistentPolicy;
+  branchMaterialized?: boolean;
+}): Record<string, unknown> {
+  return {
+    route: input.route,
+    policy_scope: input.scope,
+    ...(input.scope === "branch" ? { branch_id: input.branchId ?? null } : {}),
+    request_fields: getPromptRuntimePolicyPatchFieldNames(input.patch),
+    cleared_fields: getPromptRuntimePolicyPatchClearedFieldNames(input.patch),
+    before_policy_version: input.beforeEnvelope?.version ?? null,
+    after_policy_version: input.afterEnvelope?.version ?? null,
+    before_policy_field_count: getPromptRuntimePolicyFieldNames(input.beforePolicy).length,
+    after_policy_field_count: getPromptRuntimePolicyFieldNames(input.afterPolicy).length,
+    policy_present_before: input.beforePolicy !== undefined,
+    policy_present_after: input.afterPolicy !== undefined,
+    ...(input.branchMaterialized !== undefined ? { branch_materialized: input.branchMaterialized } : {}),
+  };
+}
+
+function getPromptRuntimePolicyPatchFieldNames(
+  patch: PromptRuntimePersistentPolicyPatch,
+): string[] {
+  return PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS
+    .filter((field) => patch[field] !== undefined)
+    .sort();
+}
+
+function getPromptRuntimePolicyPatchClearedFieldNames(
+  patch: PromptRuntimePersistentPolicyPatch,
+): string[] {
+  return PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS
+    .filter((field) => patch[field] === null)
+    .sort();
+}
+
+function getPromptRuntimePolicyFieldNames(
+  policy: PromptRuntimePersistentPolicy | undefined,
+): string[] {
+  if (!policy) return [];
+
+  return PROMPT_RUNTIME_GOVERNED_POLICY_FIELDS
+    .filter((field) => policy[field] !== undefined)
+    .sort();
 }
 
 export function buildResolvedPromptRuntimePolicy(
@@ -2080,12 +2268,18 @@ function mapPromptSnapshotRowToPreview(row: typeof promptSnapshots.$inferSelect)
     presetId: row.presetId,
     presetUpdatedAt: row.presetUpdatedAt,
     presetVersion: row.presetVersion,
+    presetVersionId: row.presetVersionId,
+    presetContentHash: row.presetContentHash,
     worldbookId: row.worldbookId,
     worldbookUpdatedAt: row.worldbookUpdatedAt,
     worldbookVersion: row.worldbookVersion,
+    worldbookVersionId: row.worldbookVersionId,
+    worldbookContentHash: row.worldbookContentHash,
     regexProfileId: row.regexProfileId,
     regexProfileUpdatedAt: row.regexProfileUpdatedAt,
     regexProfileVersion: row.regexProfileVersion,
+    regexProfileVersionId: row.regexProfileVersionId,
+    regexProfileContentHash: row.regexProfileContentHash,
     characterId: row.characterId,
     characterVersionId: row.characterVersionId,
     characterImportedFormat: row.characterImportedFormat,
@@ -2687,12 +2881,16 @@ function parseSnapshotName(snapshotJson: string | null): string | null {
     : null;
 }
 
-function toAssetSummary(id: string | null, name: string | null): PromptRuntimeAssetSummary | null {
+function toAssetSummary(
+  id: string | null,
+  name: string | null,
+  version?: { enabled?: boolean; versionId?: string | null },
+): PromptRuntimeAssetSummary | null {
   if (!id) {
     return null;
   }
 
-  return { id, name };
+  return { id, name, ...(version?.enabled ? { versionId: version.versionId ?? null } : {}) };
 }
 
 function normalizePromptRuntimeBranchId(value: string): string {

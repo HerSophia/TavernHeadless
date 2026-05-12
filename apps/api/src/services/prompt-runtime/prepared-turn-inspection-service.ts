@@ -52,6 +52,7 @@ export class PreparedTurnInspectionService {
       sessionId,
       branchId,
       request.sourceFloorId,
+      accountId,
     );
     const executionContext = resolvePromptRuntimeExecutionContext({
       sessionId,
@@ -60,7 +61,7 @@ export class PreparedTurnInspectionService {
       branchExists: branchContext.branchExists,
       historySourceBranchId: branchContext.historySourceBranchId,
       historySourceMode: branchContext.historySourceMode,
-      sourceFloorId: request.sourceFloorId ?? null,
+      sourceFloorId: branchContext.inheritanceSource?.floorId ?? request.sourceFloorId ?? null,
       request: buildInspectionPromptRuntimeRequestPolicy(request),
     });
     const firstPartyStateContext = this.firstPartyStateContextService.loadFirstPartyStateContext({
@@ -71,6 +72,12 @@ export class PreparedTurnInspectionService {
       expectedSourceBranchId: branchContext.inheritanceSource?.branchId ?? null,
       resolutionMode: branchContext.inheritanceSource ? "source_floor" : "current_effective",
     });
+    const sessionInfo = this.modelService.buildSessionPromptInfo(
+      session,
+      resolvedTurnModels,
+      firstPartyStateContext,
+      branchContext.assetBinding,
+    );
 
     const prepared = await this.preparedPromptArtifactsBuilder.prepare({
       mode: "inspect",
@@ -89,6 +96,7 @@ export class PreparedTurnInspectionService {
       },
       resolvedTurnModels,
       firstPartyStateContext,
+      sessionInfo,
       extraDiagnostics: branchContext.branchExists
         ? []
         : [createUnmaterializedBranchInspectDiagnostic(branchId)],

@@ -95,10 +95,10 @@ const {
 });
 
 const {
-  activePresetAssetId,
   currentPresetAsset,
   presetAssets
 } = useWorkspacePresetSelection({
+  activeSession,
   libraryAssets
 });
 
@@ -360,7 +360,6 @@ const {
   sendMessage,
   toggleAssetFavorite
 } = useWorkspaceRuntimeActions({
-  activePresetAssetId,
   activeSession,
   addEvent,
   flashBindingCard,
@@ -375,7 +374,6 @@ const {
   exportCurrentPreset,
   switchCurrentPreset
 } = useWorkspacePresetActions({
-  activePresetAssetId,
   addEvent,
   applyLibraryAsset,
   currentAccount,

@@ -116,7 +116,13 @@ export function toLocalSession(session: WorkspaceSession): SessionState {
     id: session.id,
     title: toLocalizedTitle(session.title),
     userName: session.userName,
+    deepBinding: session.deepBinding,
+    presetId: session.presetId,
+    presetVersionId: session.presetVersionId,
+    regexProfileId: session.regexProfileId,
+    regexProfileVersionId: session.regexProfileVersionId,
     worldbookProfileId: session.worldbookProfileId,
+    worldbookVersionId: session.worldbookVersionId,
     worldbookCount: session.worldbookProfileId ? 1 : 0
   };
 }

@@ -135,6 +135,7 @@ describe("POST /sessions/:id/respond/stream", () => {
           },
           branchId: "main",
           sourceFloorId: "floor-source",
+          promptIntent: undefined,
           delivery: {
             allowAssistantPrefill: false,
             requireLastUser: true,
@@ -150,6 +151,12 @@ describe("POST /sessions/:id/respond/stream", () => {
             includePromptSnapshot: true,
             includeRuntimeTrace: true,
             includeWorldbookMatches: false,
+          },
+          sessionStateWrites: undefined,
+          sessionStateOperationLog: undefined,
+          turnOperationLog: {
+            requestId: expect.any(String),
+            route: "POST /sessions/:id/respond/stream",
           },
         });
         expect(accountId).toBe("default-admin");

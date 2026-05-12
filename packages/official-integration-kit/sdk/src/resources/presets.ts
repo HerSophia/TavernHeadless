@@ -1,5 +1,13 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import { buildQueryString, compactObject, readArray, readNumber, readRecord, readString } from "./utils.js";
+import {
+  mapPromptAssetRollbackResult,
+  mapPromptAssetVersion,
+  mapPromptAssetVersionCompareResult,
+  type PromptAssetRollbackResult,
+  type PromptAssetVersionCompareResult,
+  type PromptAssetVersionRecord,
+} from "./asset-versions.js";
 
 export type PresetListItem = {
   createdAt: number;
@@ -49,10 +57,26 @@ export type PresetEditorDetail = PresetListItem & {
 };
 
 export type PresetsResource = {
+  compareVersions(options: {
+    accountId?: AccountIdHint;
+    leftVersionId: string;
+    mode?: "summary" | "full";
+    presetId: string;
+    rightVersionId: string;
+  }): Promise<PromptAssetVersionCompareResult>;
+  getVersion(options: { accountId?: AccountIdHint; presetId: string; versionId: string }): Promise<PromptAssetVersionRecord>;
+  listVersions(options: { accountId?: AccountIdHint; presetId: string }): Promise<PromptAssetVersionRecord[]>;
   getDetail(options: { accountId?: AccountIdHint; presetId: string }): Promise<PresetDetail>;
   getEditor(options: { accountId?: AccountIdHint; presetId: string }): Promise<PresetEditorDetail>;
   list(options?: { accountId?: AccountIdHint }): Promise<PresetListItem[]>;
   remove(options: { accountId?: AccountIdHint; expectedVersion?: number; presetId: string }): Promise<void>;
+  rollbackVersion(options: {
+    accountId?: AccountIdHint;
+    expectedUpdatedAt?: number;
+    expectedVersion?: number;
+    presetId: string;
+    versionId: string;
+  }): Promise<PromptAssetRollbackResult>;
   update(options: {
     accountId?: AccountIdHint;
     editor: {
@@ -70,6 +94,48 @@ export type PresetsResource = {
 
 export function createPresetsResource(client: TransportClient): PresetsResource {
   return {
+    async compareVersions(options): Promise<PromptAssetVersionCompareResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/presets/${encodeURIComponent(options.presetId)}/versions/compare`,
+        {
+          body: compactObject({
+            left_version_id: options.leftVersionId,
+            mode: options.mode,
+            right_version_id: options.rightVersionId,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const result = mapPromptAssetVersionCompareResult(readRecord(response.body)?.data);
+      if (!result) {
+        throw new Error("Preset version compare payload is missing");
+      }
+      return result;
+    },
+
+    async getVersion(options): Promise<PromptAssetVersionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/presets/${encodeURIComponent(options.presetId)}/versions/${encodeURIComponent(options.versionId)}`,
+        { headers: buildAccountHeaders(options.accountId), method: "GET" },
+      );
+      const version = mapPromptAssetVersion(readRecord(response.body)?.data);
+      if (!version) {
+        throw new Error("Preset version payload is missing");
+      }
+      return version;
+    },
+
+    async listVersions(options): Promise<PromptAssetVersionRecord[]> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/presets/${encodeURIComponent(options.presetId)}/versions`,
+        { headers: buildAccountHeaders(options.accountId), method: "GET" },
+      );
+      return readArray(readRecord(response.body)?.data)
+        .map(mapPromptAssetVersion)
+        .filter((version): version is PromptAssetVersionRecord => version !== null);
+    },
+
     async getDetail(options): Promise<PresetDetail> {
       const response = await client.fetchJson<Record<string, unknown>>(`/presets/${encodeURIComponent(options.presetId)}`, {
         headers: buildAccountHeaders(options.accountId),
@@ -138,6 +204,25 @@ export function createPresetsResource(client: TransportClient): PresetsResource 
         headers: buildAccountHeaders(options.accountId),
         method: "DELETE",
       });
+    },
+    async rollbackVersion(options): Promise<PromptAssetRollbackResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/presets/${encodeURIComponent(options.presetId)}/versions/${encodeURIComponent(options.versionId)}/rollback`,
+        {
+          body: compactObject({
+            expected_updated_at: options.expectedUpdatedAt,
+            expected_version: options.expectedVersion,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const result = mapPromptAssetRollbackResult(readRecord(response.body)?.data);
+      if (!result) {
+        throw new Error("Preset version rollback payload is missing");
+      }
+
+      return result;
     },
     async update(options): Promise<PresetListItem> {
       const response = await client.fetchJson<Record<string, unknown>>(`/presets/${encodeURIComponent(options.presetId)}`, {

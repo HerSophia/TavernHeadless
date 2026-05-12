@@ -99,14 +99,18 @@ export type SessionRecord = {
   modelName: string | null;
   modelParams: unknown | null;
   modelProvider: string | null;
+  deepBinding?: boolean;
   presetId: string | null;
+  presetVersionId?: string | null;
   promptMode: string | null;
   regexProfileId: string | null;
+  regexProfileVersionId?: string | null;
   status: string;
   title: string | null;
   updatedAt: number;
   userBinding: SessionUserBinding | null;
   worldbookProfileId: string | null;
+  worldbookVersionId?: string | null;
 };
 
 export type SessionDetail = SessionRecord;
@@ -236,6 +240,59 @@ export type SessionBranchDiff = {
   sharedFloorNos: number[];
   targetBranchId: string;
   targetOnlyFloors: SessionBranchFloorSummary[];
+};
+
+export type SessionBranchResetResult = {
+  branchId: string;
+  expectedHeadFloorId: string;
+  sessionId: string;
+  supersededCount: number;
+  supersededFloorIds: string[];
+  targetFloorId: string;
+};
+
+export type SessionBranchMergeStrategy = "fast_forward" | "no_op" | "blocked";
+
+export type SessionBranchMergeConflict = {
+  code: string;
+  message: string;
+  scope: "branch" | "floor" | "state" | "run" | string;
+  sourceFloorId?: string;
+  targetFloorId?: string;
+};
+
+export type SessionBranchMergeFloorSummary = {
+  branchId: string;
+  floorNo: number;
+  id: string;
+  parentFloorId: string | null;
+  state: string;
+};
+
+export type SessionBranchMergePreview = {
+  canMerge: boolean;
+  conflicts: SessionBranchMergeConflict[];
+  forkFloorId: string | null;
+  sessionId: string;
+  sharedFloorIds: string[];
+  sourceBranchId: string;
+  sourceHeadFloorId: string | null;
+  sourceOnlyFloors: SessionBranchMergeFloorSummary[];
+  strategy: SessionBranchMergeStrategy;
+  targetBranchId: string;
+  targetHeadFloorId: string | null;
+  targetOnlyFloors: SessionBranchMergeFloorSummary[];
+};
+
+export type SessionBranchMergeResult = {
+  mergedCount: number;
+  mergedFloorIds: string[];
+  operationId: string;
+  preview: SessionBranchMergePreview;
+  sessionId: string;
+  sourceBranchId: string;
+  strategy: SessionBranchMergeStrategy;
+  targetBranchId: string;
 };
 
 /**
@@ -403,14 +460,18 @@ export type SessionsCreateOptions = {
   modelName?: string;
   modelParams?: unknown;
   modelProvider?: string;
-  presetId?: string;
+  deepBinding?: boolean;
+  presetId?: string | null;
+  presetVersionId?: string | null;
   promptMode?: SessionPromptMode;
-  regexProfileId?: string;
+  regexProfileId?: string | null;
+  regexProfileVersionId?: string | null;
   status?: "active" | "archived";
   title?: string;
   userId?: string;
   userSnapshot?: SessionUserSnapshotInput;
-  worldbookProfileId?: string;
+  worldbookProfileId?: string | null;
+  worldbookVersionId?: string | null;
 };
 
 export type SessionsGetDetailOptions = {
@@ -428,15 +489,19 @@ export type SessionsUpdateOptions = {
   modelName?: string;
   modelParams?: unknown;
   modelProvider?: string;
-  presetId?: string;
+  deepBinding?: boolean;
+  presetId?: string | null;
+  presetVersionId?: string | null;
   promptMode?: SessionPromptMode;
-  regexProfileId?: string;
+  regexProfileId?: string | null;
+  regexProfileVersionId?: string | null;
   sessionId: string;
   status?: "active" | "archived";
   title?: string;
   userId?: string;
   userSnapshot?: SessionUserSnapshotInput;
-  worldbookProfileId?: string;
+  worldbookProfileId?: string | null;
+  worldbookVersionId?: string | null;
 };
 
 export type SessionsRemoveOptions = {
@@ -516,6 +581,25 @@ export type SessionsDiffBranchesOptions = {
   baseBranchId?: string;
   sessionId: string;
   targetBranchId: string;
+};
+
+export type SessionsResetBranchOptions = {
+  accountId?: AccountIdHint;
+  branchId: string;
+  expectedHeadFloorId: string;
+  sessionId: string;
+  targetFloorId: string;
+};
+
+export type SessionsMergePreviewOptions = {
+  accountId?: AccountIdHint;
+  branchId: string;
+  sessionId: string;
+  targetBranchId: string;
+};
+
+export type SessionsMergeOptions = SessionsMergePreviewOptions & {
+  expectedTargetHeadFloorId: string;
 };
 
 export type SessionsBatchUpdateStatusOptions = {
@@ -598,6 +682,8 @@ export type SessionsResource = {
   getToolPermissions(options: SessionsToolPermissionsOptions): Promise<SessionToolPermissions>;
   list(options?: SessionsListOptions): Promise<SessionRecord[]>;
   listBranches(options: SessionsListBranchesOptions): Promise<SessionBranchSummary[]>;
+  merge(options: SessionsMergeOptions): Promise<SessionBranchMergeResult>;
+  mergePreview(options: SessionsMergePreviewOptions): Promise<SessionBranchMergePreview>;
   /**
    * 对 session 基础工具权限做增量更新。
    * 这不是未来 run/node/step overlay 的写入口。
@@ -610,6 +696,7 @@ export type SessionsResource = {
   putToolPermissions(options: SessionsPutToolPermissionsOptions): Promise<SessionToolPermissions>;
   regenerate(options: SessionsRegenerateOptions): Promise<SessionRegenerateResult>;
   remove(options: SessionsRemoveOptions): Promise<boolean>;
+  resetBranch(options: SessionsResetBranchOptions): Promise<SessionBranchResetResult>;
   respond(options: SessionsRespondOptions): Promise<RespondResult>;
   respondDryRun(options: SessionsRespondDryRunOptions): Promise<RespondDryRunResult>;
   respondStream(options: SessionsRespondStreamOptions): Promise<RespondResult>;
@@ -762,6 +849,43 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
         .map(mapBranchSummary)
         .filter((item): item is SessionBranchSummary => item !== null);
     },
+    async merge(options): Promise<SessionBranchMergeResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/branches/${encodeURIComponent(options.branchId)}/merge`,
+        {
+          body: compactObject({
+            expected_target_head_floor_id: options.expectedTargetHeadFloorId,
+            target_branch_id: options.targetBranchId,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const result = mapSessionBranchMergeResult(readRecord(response.body)?.data);
+      if (!result) {
+        throw new Error("Session branch merge returned an invalid payload");
+      }
+      return result;
+    },
+    async mergePreview(options): Promise<SessionBranchMergePreview> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/branches/${encodeURIComponent(options.branchId)}/merge/preview`,
+        {
+          body: compactObject({
+            target_branch_id: options.targetBranchId,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const preview = mapSessionBranchMergePreview(readRecord(response.body)?.data);
+      if (!preview) {
+        throw new Error("Session branch merge preview returned an invalid payload");
+      }
+      return preview;
+    },
     async patchToolPermissions(options): Promise<SessionToolPermissions> {
       const response = await client.fetchJson<Record<string, unknown>>(
         `/sessions/${encodeURIComponent(options.sessionId)}/tool-permissions`,
@@ -809,6 +933,25 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
       });
 
       return readBoolean(readRecord(readRecord(response.body)?.data)?.deleted, response.status === 200);
+    },
+    async resetBranch(options): Promise<SessionBranchResetResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/branches/${encodeURIComponent(options.branchId)}/reset`,
+        {
+          body: {
+            expected_head_floor_id: options.expectedHeadFloorId,
+            target_floor_id: options.targetFloorId,
+          },
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const result = mapBranchResetPayload(readRecord(response.body)?.data);
+      if (!result) {
+        throw new Error("Session branch reset returned an invalid payload");
+      }
+      return result;
     },
     async respond(options: SessionsRespondOptions): Promise<RespondResult> {
       const response = await client.fetchJson<Record<string, unknown>>(`/sessions/${encodeURIComponent(options.sessionId)}/respond`, {
@@ -977,14 +1120,18 @@ function mapSessionWriteBody(options: SessionsCreateOptions | SessionsUpdateOpti
     model_name: options.modelName,
     model_params: options.modelParams,
     model_provider: options.modelProvider,
+    deep_binding: options.deepBinding,
     preset_id: options.presetId,
+    preset_version_id: options.presetVersionId,
     prompt_mode: options.promptMode,
     regex_profile_id: options.regexProfileId,
+    regex_profile_version_id: options.regexProfileVersionId,
     status: options.status,
     title: options.title,
     user_id: options.userId,
     user_snapshot: options.userSnapshot,
     worldbook_profile_id: options.worldbookProfileId,
+    worldbook_version_id: options.worldbookVersionId,
   });
 }
 
@@ -1142,12 +1289,30 @@ function mapDryRunPromptSnapshot(value: Record<string, unknown> | null): Respond
     presetId: readNullableString(value?.preset_id),
     presetUpdatedAt: readNullableNumber(value?.preset_updated_at),
     presetVersion: readNullableNumber(value?.preset_version),
+    ...(value?.preset_version_id !== undefined
+      ? { presetVersionId: readNullableString(value.preset_version_id) }
+      : {}),
+    ...(value?.preset_content_hash !== undefined
+      ? { presetContentHash: readNullableString(value.preset_content_hash) }
+      : {}),
     worldbookId: readNullableString(value?.worldbook_id),
     worldbookUpdatedAt: readNullableNumber(value?.worldbook_updated_at),
     worldbookVersion: readNullableNumber(value?.worldbook_version),
+    ...(value?.worldbook_version_id !== undefined
+      ? { worldbookVersionId: readNullableString(value.worldbook_version_id) }
+      : {}),
+    ...(value?.worldbook_content_hash !== undefined
+      ? { worldbookContentHash: readNullableString(value.worldbook_content_hash) }
+      : {}),
     regexProfileId: readNullableString(value?.regex_profile_id),
     regexProfileUpdatedAt: readNullableNumber(value?.regex_profile_updated_at),
     regexProfileVersion: readNullableNumber(value?.regex_profile_version),
+    ...(value?.regex_profile_version_id !== undefined
+      ? { regexProfileVersionId: readNullableString(value.regex_profile_version_id) }
+      : {}),
+    ...(value?.regex_profile_content_hash !== undefined
+      ? { regexProfileContentHash: readNullableString(value.regex_profile_content_hash) }
+      : {}),
     worldbookActivatedEntryUids: mapNumberArray(value?.worldbook_activated_entry_uids),
     regexPreRuleNames: mapStringArray(value?.regex_pre_rule_names),
     regexPostRuleNames: mapStringArray(value?.regex_post_rule_names),
@@ -1385,14 +1550,26 @@ function mapSessionDetail(value: unknown): SessionDetail | null {
     modelName: readNullableString(record.model_name),
     modelParams: record.model_params ?? null,
     modelProvider: readNullableString(record.model_provider),
+    ...(record.deep_binding !== undefined
+      ? { deepBinding: readBoolean(record.deep_binding, false) }
+      : {}),
     presetId: readNullableString(record.preset_id),
+    ...(record.preset_version_id !== undefined
+      ? { presetVersionId: readNullableString(record.preset_version_id) }
+      : {}),
     promptMode: readNullableString(record.prompt_mode),
     regexProfileId: readNullableString(record.regex_profile_id),
+    ...(record.regex_profile_version_id !== undefined
+      ? { regexProfileVersionId: readNullableString(record.regex_profile_version_id) }
+      : {}),
     status: readString(record.status),
     title: readNullableString(record.title),
     updatedAt: readNumber(record.updated_at),
     userBinding: mapSessionUserBinding(record.user_binding),
     worldbookProfileId: readNullableString(record.worldbook_profile_id),
+    ...(record.worldbook_version_id !== undefined
+      ? { worldbookVersionId: readNullableString(record.worldbook_version_id) }
+      : {}),
   };
 }
 
@@ -1464,6 +1641,105 @@ function mapBranchFloorSummary(value: unknown): SessionBranchFloorSummary | null
     state: readString(record.state),
   };
 }
+
+function mapBranchResetPayload(value: unknown): SessionBranchResetResult | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    branchId: readString(record.branch_id),
+    expectedHeadFloorId: readString(record.expected_head_floor_id),
+    sessionId: readString(record.session_id),
+    supersededCount: readNumber(record.superseded_count),
+    supersededFloorIds: readArray(record.superseded_floor_ids)
+      .map((item) => readString(item))
+      .filter((item) => item.length > 0),
+    targetFloorId: readString(record.target_floor_id),
+  };
+}
+
+function mapSessionBranchMergePreview(value: unknown): SessionBranchMergePreview | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    canMerge: readBoolean(record.can_merge),
+    conflicts: readArray(record.conflicts)
+      .map(mapSessionBranchMergeConflict)
+      .filter((item): item is SessionBranchMergeConflict => item !== null),
+    forkFloorId: readNullableString(record.fork_floor_id),
+    sessionId: readString(record.session_id),
+    sharedFloorIds: readArray(record.shared_floor_ids)
+      .map((item) => readString(item))
+      .filter((item) => item.length > 0),
+    sourceBranchId: readString(record.source_branch_id),
+    sourceHeadFloorId: readNullableString(record.source_head_floor_id),
+    sourceOnlyFloors: readArray(record.source_only_floors)
+      .map(mapSessionBranchMergeFloorSummary)
+      .filter((item): item is SessionBranchMergeFloorSummary => item !== null),
+    strategy: readString(record.strategy, "blocked") as SessionBranchMergeStrategy,
+    targetBranchId: readString(record.target_branch_id),
+    targetHeadFloorId: readNullableString(record.target_head_floor_id),
+    targetOnlyFloors: readArray(record.target_only_floors)
+      .map(mapSessionBranchMergeFloorSummary)
+      .filter((item): item is SessionBranchMergeFloorSummary => item !== null),
+  };
+}
+
+function mapSessionBranchMergeConflict(value: unknown): SessionBranchMergeConflict | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    code: readString(record.code),
+    message: readString(record.message),
+    scope: readString(record.scope),
+    sourceFloorId: readOptionalString(record.source_floor_id),
+    targetFloorId: readOptionalString(record.target_floor_id),
+  };
+}
+
+function mapSessionBranchMergeFloorSummary(value: unknown): SessionBranchMergeFloorSummary | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    branchId: readString(record.branch_id),
+    floorNo: readNumber(record.floor_no),
+    id: readString(record.id),
+    parentFloorId: readNullableString(record.parent_floor_id),
+    state: readString(record.state),
+  };
+}
+
+function mapSessionBranchMergeResult(value: unknown): SessionBranchMergeResult | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    mergedCount: readNumber(record.merged_count),
+    mergedFloorIds: readArray(record.merged_floor_ids)
+      .map((item) => readString(item))
+      .filter((item) => item.length > 0),
+    operationId: readString(record.operation_id),
+    preview: mapSessionBranchMergePreview(record.preview) ?? mapSessionBranchMergePreview(record)!,
+    sessionId: readString(record.session_id),
+    sourceBranchId: readString(record.source_branch_id),
+    strategy: readString(record.strategy, "blocked") as SessionBranchMergeStrategy,
+    targetBranchId: readString(record.target_branch_id),
+  };
+}
+
 
 function mapBatchStatusPayload(
   payload: Record<string, unknown> | null,

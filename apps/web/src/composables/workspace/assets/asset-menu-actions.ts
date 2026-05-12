@@ -8,18 +8,20 @@ export type AssetMenuAction = "bindWorldbook" | "delete" | "duplicate" | "edit" 
 type AddEvent = (key: string, tone?: EventTone, vars?: Record<string, number | string>) => void;
 
 type WorkspaceAssetMenuStore = {
-  bindWorldbookToActiveSession: (assetId: string) => {
+  bindWorldbookToActiveSession: (assetId: string) => Promise<{
+    apiSyncFailed: boolean;
     bindingChanged: boolean;
     ok: boolean;
     reason?: "missing" | "no_session" | "unsupported";
     session: unknown;
-  };
+  }>;
   loadWorldbookAssetDetail: (assetId: string) => Promise<WorldbookAssetDetailResult>;
   previewLibraryAsset: (assetId: string) => WorkspaceAsset | null;
-  unbindWorldbookFromActiveSession: (assetId: string) => {
+  unbindWorldbookFromActiveSession: (assetId: string) => Promise<{
+    apiSyncFailed: boolean;
     guarded: boolean;
     session: unknown;
-  };
+  }>;
 };
 
 type UseWorkspaceAssetMenuActionsOptions = {
@@ -66,7 +68,7 @@ export function useWorkspaceAssetMenuActions(options: UseWorkspaceAssetMenuActio
 
     if (asset.kind === "worldbook") {
       if (action === "bindWorldbook") {
-        const result = options.workspace.bindWorldbookToActiveSession(asset.id);
+        const result = await options.workspace.bindWorldbookToActiveSession(asset.id);
         if (!result.ok || !result.session) {
           options.addEvent(result.reason === "no_session" ? "events.sessionNone" : "events.assetManageFailed", "warn");
           return;
@@ -77,11 +79,14 @@ export function useWorkspaceAssetMenuActions(options: UseWorkspaceAssetMenuActio
         }
 
         options.addEvent("events.worldbookBound", "success", { asset: asset.name });
+        if (result.apiSyncFailed) {
+          options.addEvent("events.apiSyncFailed", "warn");
+        }
         return;
       }
 
       if (action === "unbindWorldbook") {
-        const result = options.workspace.unbindWorldbookFromActiveSession(asset.id);
+        const result = await options.workspace.unbindWorldbookFromActiveSession(asset.id);
         if (!result.session || result.guarded) {
           options.addEvent("events.worldbookUnbindGuarded", "warn", { asset: asset.name });
           return;
@@ -89,6 +94,9 @@ export function useWorkspaceAssetMenuActions(options: UseWorkspaceAssetMenuActio
 
         options.flashBindingCard();
         options.addEvent("events.worldbookUnbound", "warn", { asset: asset.name });
+        if (result.apiSyncFailed) {
+          options.addEvent("events.apiSyncFailed", "warn");
+        }
         return;
       }
 

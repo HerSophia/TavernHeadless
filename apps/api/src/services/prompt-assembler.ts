@@ -99,6 +99,10 @@ export interface SessionPromptInfo {
   presetId: string | null;
   worldbookProfileId: string | null;
   regexProfileId: string | null;
+  deepBinding?: boolean;
+  presetVersionId?: string | null;
+  worldbookVersionId?: string | null;
+  regexProfileVersionId?: string | null;
   metadataJson: string | null;
   characterSnapshotJson: string | null;
   characterId?: string | null;
@@ -167,12 +171,18 @@ export interface PromptSnapshotPreview {
   presetId: string | null;
   presetUpdatedAt: number | null;
   presetVersion: number | null;
+  presetVersionId?: string | null;
+  presetContentHash?: string | null;
   worldbookId: string | null;
   worldbookUpdatedAt: number | null;
   worldbookVersion: number | null;
+  worldbookVersionId?: string | null;
+  worldbookContentHash?: string | null;
   regexProfileId: string | null;
   regexProfileUpdatedAt: number | null;
   regexProfileVersion: number | null;
+  regexProfileVersionId?: string | null;
+  regexProfileContentHash?: string | null;
   characterId?: string | null;
   characterVersionId?: string | null;
   characterImportedFormat?: string | null;
@@ -679,8 +689,12 @@ export async function assemblePrompt(
   const resourceLoader = new PromptResourceLoader(db);
   const { preset, worldbook, regexProfile } = await resourceLoader.loadPromptResourceBundle(accountId, {
     presetId: session.presetId,
+    presetVersionId: session.presetVersionId,
     worldbookProfileId: session.worldbookProfileId,
+    worldbookVersionId: session.worldbookVersionId,
     regexProfileId: session.regexProfileId,
+    regexProfileVersionId: session.regexProfileVersionId,
+    deepBinding: session.deepBinding,
   });
 
   const metadata = parseSessionMetadata(session.metadataJson);
@@ -807,12 +821,18 @@ export async function assemblePrompt(
     presetId: preset?.id ?? null,
     presetUpdatedAt: preset?.updatedAt ?? null,
     presetVersion: preset?.version ?? null,
+    presetVersionId: preset?.versionId ?? null,
+    presetContentHash: preset?.contentHash ?? null,
     worldbookId: worldbook?.id ?? null,
     worldbookUpdatedAt: worldbook?.updatedAt ?? null,
     worldbookVersion: worldbook?.version ?? null,
+    worldbookVersionId: worldbook?.versionId ?? null,
+    worldbookContentHash: worldbook?.contentHash ?? null,
     regexProfileId: regexProfile?.id ?? null,
     regexProfileUpdatedAt: regexProfile?.updatedAt ?? null,
     regexProfileVersion: regexProfile?.version ?? null,
+    regexProfileVersionId: regexProfile?.versionId ?? null,
+    regexProfileContentHash: regexProfile?.contentHash ?? null,
     worldbookActivatedEntryUids: [],
     regexPreRuleNames: [],
     regexPostRuleNames: [],
@@ -2248,12 +2268,18 @@ export function buildPromptSnapshotPreview(snapshot: PromptAssemblySnapshot): Pr
     presetId: snapshot.presetId,
     presetUpdatedAt: snapshot.presetUpdatedAt,
     presetVersion: snapshot.presetVersion,
+    presetVersionId: snapshot.presetVersionId,
+    presetContentHash: snapshot.presetContentHash,
     worldbookId: snapshot.worldbookId,
     worldbookUpdatedAt: snapshot.worldbookUpdatedAt,
     worldbookVersion: snapshot.worldbookVersion,
+    worldbookVersionId: snapshot.worldbookVersionId,
+    worldbookContentHash: snapshot.worldbookContentHash,
     regexProfileId: snapshot.regexProfileId,
     regexProfileUpdatedAt: snapshot.regexProfileUpdatedAt,
     regexProfileVersion: snapshot.regexProfileVersion,
+    regexProfileVersionId: snapshot.regexProfileVersionId,
+    regexProfileContentHash: snapshot.regexProfileContentHash,
     characterId: snapshot.characterId,
     characterVersionId: snapshot.characterVersionId,
     characterImportedFormat: snapshot.characterImportedFormat,
@@ -2280,12 +2306,18 @@ export function buildPromptSnapshotRecord(args: {
     presetId: args.snapshot.presetId,
     presetUpdatedAt: args.snapshot.presetUpdatedAt,
     presetVersion: args.snapshot.presetVersion,
+    presetVersionId: args.snapshot.presetVersionId,
+    presetContentHash: args.snapshot.presetContentHash,
     worldbookId: args.snapshot.worldbookId,
     worldbookUpdatedAt: args.snapshot.worldbookUpdatedAt,
     worldbookVersion: args.snapshot.worldbookVersion,
+    worldbookVersionId: args.snapshot.worldbookVersionId,
+    worldbookContentHash: args.snapshot.worldbookContentHash,
     regexProfileId: args.snapshot.regexProfileId,
     regexProfileUpdatedAt: args.snapshot.regexProfileUpdatedAt,
     regexProfileVersion: args.snapshot.regexProfileVersion,
+    regexProfileVersionId: args.snapshot.regexProfileVersionId,
+    regexProfileContentHash: args.snapshot.regexProfileContentHash,
     characterId: args.snapshot.characterId,
     characterVersionId: args.snapshot.characterVersionId,
     characterImportedFormat: args.snapshot.characterImportedFormat,

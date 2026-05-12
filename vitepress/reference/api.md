@@ -132,7 +132,7 @@ WebSocket 也遵循相同边界：
 
 | 资源           | 说明                                                         | 文档                                   |
 | -------------- | ------------------------------------------------------------ | -------------------------------------- |
-| Sessions       | 会话管理、时间线、分支                                       | [Sessions](./api/sessions)             |
+| Sessions       | 会话管理、时间线、分支、分支重置与无冲突合并                 | [Sessions](./api/sessions)             |
 | Chat           | 对话生成、SSE 流、Dry-run                                    | [Chat](./api/chat)                     |
 | Floors         | 楼层管理、分支操作                                           | [Floors](./api/floors)                 |
 | Pages          | 消息页管理、激活切换                                         | [Pages](./api/pages)                   |
@@ -159,6 +159,8 @@ WebSocket 也遵循相同边界：
 | Accounts | 账号管理 | [Accounts](./api/accounts) |
 | Client Data | 为应用或插件保存自己的结构化数据 | [Client Data](./api/client-data) |
 | Session State | 管理会话内受治理状态：注册、写入、读取和比较 | [Session State](./api/session-state) |
+| Operation Logs | 用户、LLM 和系统操作的审计日志 | [Operation Logs](./api/operation-logs) |
+| VC Tags | 给 Floor 和资产版本保存命名引用 | [VC Tags](./api/vc-tags) |
 
 ## 高级 API 资源
 
@@ -183,6 +185,8 @@ WebSocket 也遵循相同边界：
 - [Client Data](./api/client-data)
 - [Session State](./api/session-state)
 - [Session-State Observation（内部）](./api/session-state-observation)
+- [Operation Logs](./api/operation-logs)
+- [VC Tags](./api/vc-tags)
 
 其中 `Client Data` 是一个独立的高级系统功能。它用于：
 

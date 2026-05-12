@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
@@ -11,6 +12,7 @@ import {
   worldbooks,
 } from "../../db/schema.js";
 import { PromptResourceLoader } from "../prompt-resource-loader.js";
+import { AssetVersionService } from "../asset-version-service.js";
 
 const SAMPLE_PRESET_DATA = {
   prompts: [
@@ -185,6 +187,58 @@ describe("PromptResourceLoader", () => {
       worldbook: { scanDepth: 3 },
     });
     expect(bundle.regexProfile).toMatchObject({ id: regexProfileId, version: 1 });
+  });
+
+  it("uses bound asset version content when deep binding is enabled", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+    const initialPreset = SAMPLE_PRESET_DATA;
+    const updatedPreset = {
+      ...SAMPLE_PRESET_DATA,
+      prompts: SAMPLE_PRESET_DATA.prompts.map((prompt) => prompt.identifier === "main"
+        ? { ...prompt, content: "Use the updated style." }
+        : prompt),
+    };
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Versioned Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(initialPreset),
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const versionService = new AssetVersionService(database.db);
+    const version1 = versionService.createPresetVersion(presetId, {
+      versionNo: 1,
+      data: initialPreset,
+      createdAt: now,
+    });
+
+    await database.db.update(presets).set({
+      dataJson: JSON.stringify(updatedPreset),
+      version: 2,
+      updatedAt: now + 1,
+    }).where(eq(presets.id, presetId));
+    versionService.createPresetVersion(presetId, {
+      versionNo: 2,
+      data: updatedPreset,
+      createdAt: now + 1,
+    });
+
+    const shallow = await loader.loadPreset(DEFAULT_ADMIN_ACCOUNT_ID, presetId);
+    const deep = await loader.loadPreset(DEFAULT_ADMIN_ACCOUNT_ID, presetId, {
+      deepBinding: true,
+      presetVersionId: version1.id,
+    });
+
+    expect(shallow).toMatchObject({ version: 2 });
+    expect(JSON.stringify(shallow?.preset)).toContain("Use the updated style.");
+    expect(deep).toMatchObject({ version: 1, versionId: version1.id, contentHash: version1.contentHash });
+    expect(JSON.stringify(deep?.preset)).toContain("Stay in character.");
   });
 
   it("returns null when prompt resources belong to another account", async () => {

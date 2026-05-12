@@ -547,6 +547,161 @@ describe("sdk sessions expanded resource", () => {
     });
   });
 
+  it("previews branch merge and maps conflicts and lineage summaries", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          session_id: "session-1",
+          source_branch_id: "feature",
+          target_branch_id: "main",
+          strategy: "blocked",
+          can_merge: false,
+          source_head_floor_id: "floor-feature-2",
+          target_head_floor_id: "floor-main-2",
+          fork_floor_id: "floor-1",
+          source_only_floors: [
+            {
+              id: "floor-feature-2",
+              branch_id: "feature",
+              floor_no: 2,
+              state: "draft",
+              parent_floor_id: "floor-1",
+            },
+          ],
+          target_only_floors: [],
+          shared_floor_ids: ["floor-1", "floor-0"],
+          conflicts: [
+            {
+              code: "source_floor_not_committed",
+              message: "Source branch contains a non-committed floor",
+              scope: "floor",
+              source_floor_id: "floor-feature-2",
+            },
+          ],
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.sessions.mergePreview({
+      accountId: "acc-1",
+      branchId: "feature",
+      sessionId: "session-1",
+      targetBranchId: "main",
+    })).resolves.toEqual({
+      canMerge: false,
+      conflicts: [
+        {
+          code: "source_floor_not_committed",
+          message: "Source branch contains a non-committed floor",
+          scope: "floor",
+          sourceFloorId: "floor-feature-2",
+          targetFloorId: undefined,
+        },
+      ],
+      forkFloorId: "floor-1",
+      sessionId: "session-1",
+      sharedFloorIds: ["floor-1", "floor-0"],
+      sourceBranchId: "feature",
+      sourceHeadFloorId: "floor-feature-2",
+      sourceOnlyFloors: [
+        {
+          branchId: "feature",
+          floorNo: 2,
+          id: "floor-feature-2",
+          parentFloorId: "floor-1",
+          state: "draft",
+        },
+      ],
+      strategy: "blocked",
+      targetBranchId: "main",
+      targetHeadFloorId: "floor-main-2",
+      targetOnlyFloors: [],
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("http://localhost:3000/sessions/session-1/branches/feature/merge/preview");
+    expect(init?.method).toBe("POST");
+    expect((init?.headers as Headers).get("x-account-id")).toBe("acc-1");
+    expect(init?.body).toBe(JSON.stringify({ target_branch_id: "main" }));
+  });
+
+  it("executes branch merge with target head CAS and maps operation result", async () => {
+    const preview = {
+      session_id: "session-1",
+      source_branch_id: "feature",
+      target_branch_id: "main",
+      strategy: "fast_forward",
+      can_merge: true,
+      source_head_floor_id: "floor-feature-2",
+      target_head_floor_id: "floor-main-1",
+      fork_floor_id: "floor-main-1",
+      source_only_floors: [
+        {
+          id: "floor-feature-2",
+          branch_id: "feature",
+          floor_no: 2,
+          state: "committed",
+          parent_floor_id: "floor-main-1",
+        },
+      ],
+      target_only_floors: [],
+      shared_floor_ids: ["floor-main-1", "floor-main-0"],
+      conflicts: [],
+    };
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          session_id: "session-1",
+          source_branch_id: "feature",
+          target_branch_id: "main",
+          strategy: "fast_forward",
+          merged_floor_ids: ["floor-merged-2"],
+          merged_count: 1,
+          operation_id: "op-1",
+          preview,
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.sessions.merge({
+      accountId: "acc-1",
+      branchId: "feature",
+      expectedTargetHeadFloorId: "floor-main-1",
+      sessionId: "session-1",
+      targetBranchId: "main",
+    })).resolves.toMatchObject({
+      mergedCount: 1,
+      mergedFloorIds: ["floor-merged-2"],
+      operationId: "op-1",
+      sessionId: "session-1",
+      sourceBranchId: "feature",
+      strategy: "fast_forward",
+      targetBranchId: "main",
+      preview: {
+        canMerge: true,
+        sourceOnlyFloors: [
+          {
+            branchId: "feature",
+            floorNo: 2,
+            id: "floor-feature-2",
+            parentFloorId: "floor-main-1",
+            state: "committed",
+          },
+        ],
+      },
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("http://localhost:3000/sessions/session-1/branches/feature/merge");
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBe(JSON.stringify({
+      expected_target_head_floor_id: "floor-main-1",
+      target_branch_id: "main",
+    }));
+  });
+
   it("sends sessionStateWrites with respond requests", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({
@@ -817,6 +972,56 @@ describe("sdk sessions expanded resource", () => {
     const client = createTavernClient({ baseUrl, fetchImpl });
 
     await expect(client.sessions.regenerate({ sessionId: "session-1" })).rejects.toBeInstanceOf(TavernApiError);
+  });
+
+  it("keeps null session asset bindings in update request bodies", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          character_binding: null,
+          created_at: 1,
+          id: "session-1",
+          metadata: null,
+          model_name: null,
+          model_params: null,
+          model_provider: null,
+          preset_id: null,
+          prompt_mode: null,
+          regex_profile_id: null,
+          status: "active",
+          title: "Session A",
+          updated_at: 2,
+          user_binding: null,
+          worldbook_profile_id: null,
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(
+      client.sessions.update({
+        accountId: "acc-1",
+        presetId: null,
+        regexProfileId: null,
+        sessionId: "session-1",
+        worldbookProfileId: null,
+      }),
+    ).resolves.toEqual(expect.objectContaining({
+      id: "session-1",
+      presetId: null,
+      regexProfileId: null,
+      worldbookProfileId: null,
+    }));
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe("http://localhost:3000/sessions/session-1");
+    expect(init?.method).toBe("PATCH");
+    expect((init?.headers as Headers).get("x-account-id")).toBe("acc-1");
+    expect(init?.body).toBe(JSON.stringify({
+      preset_id: null,
+      regex_profile_id: null,
+      worldbook_profile_id: null,
+    }));
   });
 
   it("maps batch session updates and deletes", async () => {

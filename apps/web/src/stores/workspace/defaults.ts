@@ -14,7 +14,13 @@ export const DEFAULT_SESSIONS: SessionState[] = [
       zh: "水晶宫"
     },
     userName: "Detective Rowan",
+    deepBinding: false,
+    presetId: "preset-cinematic-sse",
+    presetVersionId: null,
+    regexProfileId: null,
+    regexProfileVersionId: null,
     worldbookProfileId: "wb-artifacts-core",
+    worldbookVersionId: null,
     worldbookCount: 1
   },
   {
@@ -27,7 +33,13 @@ export const DEFAULT_SESSIONS: SessionState[] = [
       zh: "黄铜花园"
     },
     userName: "Detective Rowan",
+    deepBinding: false,
+    presetId: "preset-tight-investigation",
+    presetVersionId: null,
+    regexProfileId: null,
+    regexProfileVersionId: null,
     worldbookProfileId: "wb-urban-grid",
+    worldbookVersionId: null,
     worldbookCount: 1
   },
   {
@@ -40,7 +52,13 @@ export const DEFAULT_SESSIONS: SessionState[] = [
       zh: "深港回廊"
     },
     userName: "Detective Rowan",
+    deepBinding: false,
+    presetId: null,
+    presetVersionId: null,
+    regexProfileId: null,
+    regexProfileVersionId: null,
     worldbookProfileId: null,
+    worldbookVersionId: null,
     worldbookCount: 0
   }
 ];

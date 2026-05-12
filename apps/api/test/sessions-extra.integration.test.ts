@@ -16,7 +16,7 @@ import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
-import { clientDataDomains, clientDataManagedDomains, floors } from "../src/db/schema";
+import { accounts, clientDataDomains, clientDataManagedDomains, floors, presets, regexProfiles, worldbooks } from "../src/db/schema";
 import type { DatabaseConnection } from "../src/db/client";
 import { SessionStateService } from "../src/session-state";
 
@@ -40,6 +40,9 @@ interface SessionData {
   status: string;
   character_binding: Record<string, unknown> | null;
   user_binding: Record<string, unknown> | null;
+  preset_id: string | null;
+  regex_profile_id: string | null;
+  worldbook_profile_id: string | null;
 }
 
 interface BatchResult {
@@ -65,6 +68,64 @@ async function createUser(app: FastifyInstance, name: string) {
   });
   expect(res.statusCode, res.body).toBe(201);
   return res.json<D<{ id: string; name: string; status: string }>>().data;
+}
+
+async function createPromptAssets(database: DatabaseConnection["db"], options: {
+  accountId?: string;
+  prefix?: string;
+} = {}) {
+  const accountId = options.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+  const prefix = options.prefix ?? "asset";
+  const now = Date.now();
+
+  if (accountId !== DEFAULT_ADMIN_ACCOUNT_ID) {
+    await database.insert(accounts).values({
+      id: accountId,
+      name: accountId,
+      role: "user",
+      status: "active",
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const presetId = `${prefix}-preset`;
+  const regexProfileId = `${prefix}-regex`;
+  const worldbookProfileId = `${prefix}-worldbook`;
+
+  await database.insert(presets).values({
+    id: presetId,
+    accountId,
+    name: `${prefix} preset`,
+    source: "test",
+    dataJson: "{}",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await database.insert(regexProfiles).values({
+    id: regexProfileId,
+    accountId,
+    name: `${prefix} regex`,
+    source: "test",
+    dataJson: "[]",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+  await database.insert(worldbooks).values({
+    id: worldbookProfileId,
+    accountId,
+    name: `${prefix} worldbook`,
+    source: "test",
+    dataJson: "{}",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return { presetId, regexProfileId, worldbookProfileId };
 }
 
 describe("Sessions route extra branch coverage", () => {
@@ -289,6 +350,93 @@ expect(res.json<E>().error.code).toBe("user_not_active");
       payload: { character_snapshot: { name: "InlineChar" } },
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it("POST and PATCH /sessions preserve and clear prompt asset bindings", async () => {
+    const assetIds = await createPromptAssets(database, { prefix: "owned" });
+    const session = await createSession(app, {
+      preset_id: assetIds.presetId,
+      regex_profile_id: assetIds.regexProfileId,
+      worldbook_profile_id: assetIds.worldbookProfileId,
+    });
+
+    expect(session.preset_id).toBe(assetIds.presetId);
+    expect(session.regex_profile_id).toBe(assetIds.regexProfileId);
+    expect(session.worldbook_profile_id).toBe(assetIds.worldbookProfileId);
+
+    const renameRes = await app.inject({
+      method: "PATCH",
+      url: `/sessions/${session.id}`,
+      payload: { title: "Renamed without binding patch" },
+    });
+    expect(renameRes.statusCode, renameRes.body).toBe(200);
+    const renamed = renameRes.json<D<SessionData>>().data;
+    expect(renamed.preset_id).toBe(assetIds.presetId);
+    expect(renamed.regex_profile_id).toBe(assetIds.regexProfileId);
+    expect(renamed.worldbook_profile_id).toBe(assetIds.worldbookProfileId);
+
+    const unbindRes = await app.inject({
+      method: "PATCH",
+      url: `/sessions/${session.id}`,
+      payload: {
+        preset_id: null,
+        regex_profile_id: null,
+        worldbook_profile_id: null,
+      },
+    });
+    expect(unbindRes.statusCode, unbindRes.body).toBe(200);
+    const unbound = unbindRes.json<D<SessionData>>().data;
+    expect(unbound.preset_id).toBeNull();
+    expect(unbound.regex_profile_id).toBeNull();
+    expect(unbound.worldbook_profile_id).toBeNull();
+  });
+
+  it("rejects prompt asset bindings from another account", async () => {
+    const ownedAssetIds = await createPromptAssets(database, { prefix: "owned-bind" });
+    const foreignAssetIds = await createPromptAssets(database, { accountId: "foreign-account", prefix: "foreign-bind" });
+
+    const createCases = [
+      { field: "preset_id", id: foreignAssetIds.presetId, code: "preset_not_found" },
+      { field: "regex_profile_id", id: foreignAssetIds.regexProfileId, code: "regex_profile_not_found" },
+      { field: "worldbook_profile_id", id: foreignAssetIds.worldbookProfileId, code: "worldbook_not_found" },
+    ] as const;
+
+    for (const testCase of createCases) {
+      const createRes = await app.inject({
+        method: "POST",
+        url: "/sessions",
+        payload: {
+          title: `foreign-${testCase.field}`,
+          [testCase.field]: testCase.id,
+        },
+      });
+      expect(createRes.statusCode, createRes.body).toBe(404);
+      expect(createRes.json<E>().error.code).toBe(testCase.code);
+    }
+
+    const session = await createSession(app, {
+      preset_id: ownedAssetIds.presetId,
+      regex_profile_id: ownedAssetIds.regexProfileId,
+      worldbook_profile_id: ownedAssetIds.worldbookProfileId,
+    });
+
+    const patchCases = [
+      { field: "preset_id", id: foreignAssetIds.presetId, code: "preset_not_found" },
+      { field: "regex_profile_id", id: foreignAssetIds.regexProfileId, code: "regex_profile_not_found" },
+      { field: "worldbook_profile_id", id: foreignAssetIds.worldbookProfileId, code: "worldbook_not_found" },
+    ] as const;
+
+    for (const testCase of patchCases) {
+      const patchRes = await app.inject({
+        method: "PATCH",
+        url: `/sessions/${session.id}`,
+        payload: {
+          [testCase.field]: testCase.id,
+        },
+      });
+      expect(patchRes.statusCode, patchRes.body).toBe(404);
+      expect(patchRes.json<E>().error.code).toBe(testCase.code);
+    }
   });
 
   // ── POST /sessions/:id/character/sync ─────────────

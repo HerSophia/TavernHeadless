@@ -312,6 +312,145 @@ describe("sdk remaining resources", () => {
     expect(removeInit?.method).toBe("DELETE");
   });
 
+
+  it("lists and gets preset versions", async () => {
+    const versionPayload = {
+      id: "preset-ver-1",
+      asset_id: "preset-1",
+      kind: "preset",
+      version_no: 1,
+      parent_version_id: null,
+      content_hash: "sha256:preset-v1",
+      snapshot: { prompts: [] },
+      created_by_operation_id: null,
+      created_at: 123,
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: [versionPayload] }))
+      .mockResolvedValueOnce(jsonResponse({ data: versionPayload }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.presets.listVersions({ presetId: "preset-1" })).resolves.toEqual([
+      {
+        assetId: "preset-1",
+        contentHash: "sha256:preset-v1",
+        createdAt: 123,
+        createdByOperationId: null,
+        id: "preset-ver-1",
+        kind: "preset",
+        parentVersionId: null,
+        snapshot: { prompts: [] },
+        versionNo: 1,
+      },
+    ]);
+
+    await expect(client.presets.getVersion({ presetId: "preset-1", versionId: "preset-ver-1" })).resolves.toMatchObject({
+      id: "preset-ver-1",
+      versionNo: 1,
+    });
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://localhost:3000/presets/preset-1/versions");
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe("http://localhost:3000/presets/preset-1/versions/preset-ver-1");
+  });
+
+  it("compares and rolls back preset versions", async () => {
+    const comparePayload = {
+      asset_id: "preset-1",
+      kind: "preset",
+      left_version_id: "preset-ver-1",
+      right_version_id: "preset-ver-2",
+      diff: {
+        mode: "summary",
+        total_changes: 1,
+        truncated: false,
+        changes: [{ path: "temperature", change_type: "changed", redacted: false }],
+      },
+    };
+    const rollbackPayload = {
+      id: "preset-1",
+      name: "Preset A",
+      source: "test",
+      created_at: 1,
+      updated_at: 2,
+      version: 3,
+      version_id: "preset-ver-3",
+      content_hash: "sha256:preset-v3",
+      rolled_back_from_version_id: "preset-ver-1",
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: comparePayload }))
+      .mockResolvedValueOnce(jsonResponse({ data: rollbackPayload }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.presets.compareVersions({
+      leftVersionId: "preset-ver-1",
+      mode: "summary",
+      presetId: "preset-1",
+      rightVersionId: "preset-ver-2",
+    })).resolves.toMatchObject({
+      assetId: "preset-1",
+      diff: { totalChanges: 1 },
+    });
+
+    await expect(client.presets.rollbackVersion({
+      expectedVersion: 2,
+      presetId: "preset-1",
+      versionId: "preset-ver-1",
+    })).resolves.toMatchObject({
+      rolledBackFromVersionId: "preset-ver-1",
+      version: 3,
+      versionId: "preset-ver-3",
+    });
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://localhost:3000/presets/preset-1/versions/compare");
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe("http://localhost:3000/presets/preset-1/versions/preset-ver-1/rollback");
+  });
+
+
+  it("creates and lists VC tags", async () => {
+    const tagPayload = {
+      id: "tag-1",
+      account_id: "acc-1",
+      name: "checkpoint",
+      target_type: "floor",
+      target_id: "floor-1",
+      session_id: "session-1",
+      metadata: { note: "keep" },
+      created_by_operation_id: "op-1",
+      created_at: 123,
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: tagPayload }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: [tagPayload],
+        meta: { total: 1, limit: 50, offset: 0, has_more: false, sort_by: "created_at", sort_order: "desc" },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ data: { id: "tag-1", deleted: true } }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.vcTags.create({
+      name: "checkpoint",
+      targetId: "floor-1",
+      targetType: "floor",
+      metadata: { note: "keep" },
+    })).resolves.toMatchObject({ id: "tag-1", sessionId: "session-1" });
+
+    await expect(client.vcTags.list({ targetType: "floor", targetId: "floor-1" })).resolves.toMatchObject({
+      data: [{ id: "tag-1", name: "checkpoint" }],
+      meta: { total: 1 },
+    });
+
+    await expect(client.vcTags.remove({ tagId: "tag-1" })).resolves.toBe(true);
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe("http://localhost:3000/vc-tags");
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe("http://localhost:3000/vc-tags?limit=50&offset=0&sort_order=desc&target_id=floor-1&target_type=floor");
+    expect(fetchImpl.mock.calls[2]?.[0]).toBe("http://localhost:3000/vc-tags/tag-1");
+  });
+
+
   it("updates presets with compacted bodies and throws on invalid responses", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()

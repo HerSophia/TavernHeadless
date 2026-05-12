@@ -68,7 +68,13 @@ export function createSessionActions(context: SessionActionsContext) {
         zh: `新会话 ${seed}`
       },
       userName: context.runtimeUserName.value,
+      deepBinding: false,
+      presetId: null,
+      presetVersionId: null,
+      regexProfileId: null,
+      regexProfileVersionId: null,
       worldbookProfileId: null,
+      worldbookVersionId: null,
       worldbookCount: 0
     };
   }

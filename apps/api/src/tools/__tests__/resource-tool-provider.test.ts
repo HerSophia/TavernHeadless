@@ -12,6 +12,7 @@ import {
   worldbookEntries,
   regexProfiles,
   accounts,
+  operationLogs,
 } from '../../db/schema.js';
 import { ResourceToolProvider } from '../resource-tool-provider.js';
 import type { ToolExecutionContext } from '@tavern/core';
@@ -252,6 +253,44 @@ describe('ResourceToolProvider', () => {
     });
   });
 
+  it('records operation logs for character mutations without full snapshot content', async () => {
+    const createResult = await provider.executeTool(
+      'create_character',
+      {
+        name: 'Log Character',
+        description: 'SECRET_TOOL_CHARACTER_CONTENT',
+        first_mes: 'SECRET_TOOL_CHARACTER_GREETING',
+      },
+      makeContext(),
+    );
+    expect(createResult.error).toBeUndefined();
+    const characterId = (createResult.data as Record<string, unknown>).character_id as string;
+
+    const updateResult = await provider.executeTool(
+      'update_character',
+      { character_id: characterId, description: 'SECRET_TOOL_CHARACTER_UPDATED' },
+      makeContext(),
+    );
+    expect(updateResult.error).toBeUndefined();
+
+    const rows = await db.select().from(operationLogs).where(eq(operationLogs.targetId, characterId));
+    const createLog = rows.find((row) => row.action === 'resource.character.create');
+    const updateLog = rows.find((row) => row.action === 'resource.character.update');
+    expect(createLog).toBeDefined();
+    expect(updateLog).toBeDefined();
+    expect(createLog!.sourceType).toBe('runtime_mutation');
+    expect(createLog!.actorType).toBe('tool');
+    expect(createLog!.afterRefJson).toContain(createLog!.id);
+    expect(updateLog!.beforeRefJson).toContain(characterId);
+    expect(JSON.stringify(rows)).not.toContain('SECRET_TOOL_CHARACTER_CONTENT');
+    expect(JSON.stringify(rows)).not.toContain('SECRET_TOOL_CHARACTER_GREETING');
+    expect(JSON.stringify(rows)).not.toContain('SECRET_TOOL_CHARACTER_UPDATED');
+
+    const versions = await db.select().from(characterVersions).where(eq(characterVersions.characterId, characterId));
+    expect(versions.find((row) => row.createdByOperationId === createLog!.id)?.versionNo).toBe(1);
+    expect(versions.find((row) => row.createdByOperationId === updateLog!.id)?.versionNo).toBe(2);
+  });
+
   describe('get_character', () => {
     it('returns character with latest snapshot', async () => {
       const createResult = await provider.executeTool(
@@ -418,6 +457,23 @@ describe('ResourceToolProvider', () => {
       );
       const data2 = result2.data as Record<string, unknown>;
       expect(data2.uid).toBe(1);
+    });
+
+    it('records operation logs for prompt asset mutations without full entry content', async () => {
+      const result = await provider.executeTool(
+        'create_worldbook_entry',
+        { worldbook_id: worldbookId, keys: ['secret'], content: 'SECRET_TOOL_WORLDBOOK_CONTENT' },
+        makeContext(),
+      );
+      expect(result.error).toBeUndefined();
+
+      const rows = await db.select().from(operationLogs).where(eq(operationLogs.targetId, worldbookId));
+      const entryLog = rows.find((row) => row.action === 'resource.worldbook_entry.create');
+      expect(entryLog).toBeDefined();
+      expect(entryLog!.sourceType).toBe('runtime_mutation');
+      expect(entryLog!.actorType).toBe('tool');
+      expect(entryLog!.afterRefJson).toContain(entryLog!.id);
+      expect(JSON.stringify(rows)).not.toContain('SECRET_TOOL_WORLDBOOK_CONTENT');
     });
 
     it('uses correct default values', async () => {

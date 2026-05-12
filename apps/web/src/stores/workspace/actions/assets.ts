@@ -14,6 +14,8 @@ import {
   restoreCharacterAsset as restoreCharacterAssetApi,
   updatePresetAsset as updatePresetAssetApi,
   updateWorldbookAsset as updateWorldbookAssetApi,
+  updateSessionAssetBindings as updateSessionAssetBindingsApi,
+  type WorkspaceSessionAssetBindingPatch,
   type WorkspaceAssetKind as ApiWorkspaceAssetKind,
   type WorkspaceCharacterAssetSnapshot,
   type WorkspacePresetEditorDocument
@@ -82,6 +84,26 @@ function resolveWorldbookAssetMutationFailureReason(error: unknown): WorldbookAs
 }
 
 export function createAssetsActions(context: AssetsActionsContext) {
+  async function persistSessionAssetBindings(
+    session: SessionState,
+    bindings: WorkspaceSessionAssetBindingPatch
+  ): Promise<boolean> {
+    try {
+      const updated = await updateSessionAssetBindingsApi(session.id, bindings, session.account || context.currentAccount.value);
+      session.deepBinding = updated.deepBinding;
+      session.presetId = updated.presetId;
+      session.presetVersionId = updated.presetVersionId;
+      session.regexProfileId = updated.regexProfileId;
+      session.regexProfileVersionId = updated.regexProfileVersionId;
+      session.worldbookProfileId = updated.worldbookProfileId;
+      session.worldbookVersionId = updated.worldbookVersionId;
+      context.syncSessionWorldbookCount(session);
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
   function toggleLibraryFavorite(assetId: string): AssetFavoriteResult {
     const asset = context.findLibraryAsset(assetId);
     if (!asset) {
@@ -99,10 +121,11 @@ export function createAssetsActions(context: AssetsActionsContext) {
     };
   }
 
-  function applyAssetFromLibrary(assetId: string): AssetApplyResult {
+  async function applyAssetFromLibrary(assetId: string): Promise<AssetApplyResult> {
     const session = context.activeSession.value;
     if (!session) {
       return {
+        apiSyncFailed: false,
         asset: null,
         bindingChanged: false,
         ok: false,
@@ -113,6 +136,7 @@ export function createAssetsActions(context: AssetsActionsContext) {
     const asset = context.findLibraryAsset(assetId);
     if (!asset) {
       return {
+        apiSyncFailed: false,
         asset: null,
         bindingChanged: false,
         ok: false,
@@ -121,6 +145,7 @@ export function createAssetsActions(context: AssetsActionsContext) {
     }
 
     let bindingChanged = false;
+    let apiSyncFailed = false;
 
     if (asset.kind === "character") {
       session.characterName = asset.name;
@@ -128,16 +153,27 @@ export function createAssetsActions(context: AssetsActionsContext) {
     } else if (asset.kind === "user") {
       session.userName = asset.name;
       bindingChanged = true;
+    } else if (asset.kind === "preset") {
+      const previous = session.presetId;
+      session.presetId = asset.id;
+      bindingChanged = previous !== asset.id;
+      if (bindingChanged) {
+        apiSyncFailed = await persistSessionAssetBindings(session, { presetId: asset.id });
+      }
     } else if (asset.kind === "worldbook") {
       const previous = session.worldbookProfileId;
       session.worldbookProfileId = asset.id;
       bindingChanged = previous !== asset.id;
+      if (bindingChanged) {
+        apiSyncFailed = await persistSessionAssetBindings(session, { worldbookProfileId: asset.id });
+      }
     }
 
     context.syncSessionWorldbookCount(session);
     context.touchLibraryAsset(asset);
 
     return {
+      apiSyncFailed,
       asset,
       bindingChanged,
       ok: true

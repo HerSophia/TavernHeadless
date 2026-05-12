@@ -52,7 +52,9 @@ export function createBackupRuntimeJobProcessorRegistry(
           domains: payload.domains,
           sessionIds: payload.sessionIds,
           characterIds: payload.characterIds,
+          presetIds: payload.presetIds,
           worldbookIds: payload.worldbookIds,
+          regexProfileIds: payload.regexProfileIds,
           includeLinkedAssets: payload.includeLinkedAssets,
           includeSecrets: payload.includeSecrets,
         });

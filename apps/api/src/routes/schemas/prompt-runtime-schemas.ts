@@ -131,6 +131,9 @@ const promptRuntimeAssetsExample = {
   preset: {
     id: "preset-1",
     name: "Story Preset",
+    version_id: "preset-ver-3",
+    version_no: 3,
+    content_hash: "sha256:preset-v3",
   },
   character_card: {
     id: "char-hero",
@@ -139,10 +142,16 @@ const promptRuntimeAssetsExample = {
   worldbook: {
     id: "worldbook-1",
     name: "Campfire Worldbook",
+    version_id: "worldbook-ver-5",
+    version_no: 5,
+    content_hash: "sha256:worldbook-v5",
   },
   regex_profile: {
     id: "regex-1",
     name: "Safety Regex",
+    version_id: "regex-ver-2",
+    version_no: 2,
+    content_hash: "sha256:regex-v2",
   },
 } as const;
 
@@ -1078,6 +1087,9 @@ const promptRuntimeAssetSummaryJsonSchema = {
       properties: {
         id: { type: "string" },
         name: { anyOf: [{ type: "string" }, { type: "null" }] },
+        version_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+        version_no: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+        content_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
       },
       additionalProperties: false,
     },

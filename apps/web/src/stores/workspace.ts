@@ -4,8 +4,10 @@ import { defineStore } from "pinia";
 import {
   fetchLibraryAssets as fetchLibraryAssetsApi,
   fetchSessionTimeline,
+  updateSessionAssetBindings as updateSessionAssetBindingsApi,
   type WorkspaceTimelineMessage,
-  type WorkspaceLibraryAsset
+  type WorkspaceLibraryAsset,
+  type WorkspaceSessionAssetBindingPatch
 } from "../lib/workspace-api";
 
 import { createAssetsActions } from "./workspace/actions/assets";
@@ -240,6 +242,30 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     session.worldbookCount = session.worldbookProfileId ? 1 : 0;
   }
 
+  async function updateActiveSessionAssetBindings(
+    bindings: WorkspaceSessionAssetBindingPatch
+  ): Promise<{ apiSyncFailed: boolean; session: SessionState | null }> {
+    const session = activeSession.value;
+    if (!session) {
+      return { apiSyncFailed: false, session: null };
+    }
+
+    try {
+      const updated = await updateSessionAssetBindingsApi(session.id, bindings, session.account || currentAccount.value);
+      session.deepBinding = updated.deepBinding;
+      session.presetId = updated.presetId;
+      session.presetVersionId = updated.presetVersionId;
+      session.regexProfileId = updated.regexProfileId;
+      session.regexProfileVersionId = updated.regexProfileVersionId;
+      session.worldbookProfileId = updated.worldbookProfileId;
+      session.worldbookVersionId = updated.worldbookVersionId;
+      syncSessionWorldbookCount(session);
+      return { apiSyncFailed: false, session };
+    } catch {
+      return { apiSyncFailed: true, session };
+    }
+  }
+
   const {
     applyAssetFromLibrary,
     deleteCharacterLibraryAsset,
@@ -273,6 +299,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     unbindWorldbookFromActiveSession
   } = createWorldbookActions({
     activeSession,
+    currentAccount,
     findLibraryAsset,
     libraryAssets,
     syncSessionWorldbookCount,
@@ -344,6 +371,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     sendMessage,
     sessions,
     switchAccount,
+    updateActiveSessionAssetBindings,
     unbindWorldbookFromActiveSession,
     users
   };

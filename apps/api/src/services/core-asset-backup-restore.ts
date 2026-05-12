@@ -13,8 +13,13 @@ import {
   memoryItems,
   messagePages,
   messages,
+  presetVersions,
+  presets,
+  regexProfileVersions,
+  regexProfiles,
   runtimeScopeStates,
   sessions,
+  worldbookVersions,
   worldbookEntries,
   worldbooks,
 } from "../db/schema.js";
@@ -43,8 +48,13 @@ export interface CoreAssetBackupRestorePrepared {
 export interface CoreAssetBackupRestoreIdMap {
   characters: Map<string, string>;
   characterVersions: Map<string, string>;
+  presets: Map<string, string>;
+  presetVersions: Map<string, string>;
   worldbooks: Map<string, string>;
+  worldbookVersions: Map<string, string>;
   worldbookEntries: Map<string, string>;
+  regexProfiles: Map<string, string>;
+  regexProfileVersions: Map<string, string>;
   sessions: Map<string, string>;
   floors: Map<string, string>;
   pages: Map<string, string>;
@@ -117,6 +127,47 @@ export function restoreCoreAssetBackupInTransaction(
     }
   }
 
+  for (const preset of file.resources.presets) {
+    const newPresetId = requireMappedId(idMap.presets, preset.id, `preset:${preset.id}`);
+    const restoredName = namePlan.presets.get(preset.id) ?? preset.name;
+    tx.insert(presets).values({
+      id: newPresetId,
+      name: restoredName,
+      source: preset.source,
+      accountId: file.source.account_id,
+      dataJson: JSON.stringify(preset.data ?? {}),
+      version: preset.version,
+      createdAt: preset.created_at,
+      updatedAt: preset.updated_at,
+    }).run();
+    created.presets += 1;
+
+    for (const version of preset.versions) {
+      const newVersionId = requireMappedId(
+        idMap.presetVersions,
+        version.id,
+        `preset_version:${version.id}`,
+      );
+      tx.insert(presetVersions).values({
+        id: newVersionId,
+        presetId: newPresetId,
+        parentVersionId: version.parent_version_id_ref
+          ? requireMappedId(
+              idMap.presetVersions,
+              version.parent_version_id_ref,
+              `preset_version:${version.parent_version_id_ref}`,
+            )
+          : null,
+        versionNo: version.version_no,
+        dataJson: JSON.stringify(version.data),
+        contentHash: version.content_hash,
+        createdByOperationId: version.created_by_operation_id ?? null,
+        createdAt: version.created_at,
+      }).run();
+      created.preset_versions += 1;
+    }
+  }
+
   for (const worldbook of file.resources.worldbooks) {
     const newWorldbookId = requireMappedId(idMap.worldbooks, worldbook.id, `worldbook:${worldbook.id}`);
     const restoredName = namePlan.worldbooks.get(worldbook.id) ?? worldbook.name;
@@ -131,6 +182,31 @@ export function restoreCoreAssetBackupInTransaction(
       updatedAt: worldbook.updated_at,
     }).run();
     created.worldbooks += 1;
+
+    for (const version of worldbook.versions) {
+      const newVersionId = requireMappedId(
+        idMap.worldbookVersions,
+        version.id,
+        `worldbook_version:${version.id}`,
+      );
+      tx.insert(worldbookVersions).values({
+        id: newVersionId,
+        worldbookId: newWorldbookId,
+        parentVersionId: version.parent_version_id_ref
+          ? requireMappedId(
+              idMap.worldbookVersions,
+              version.parent_version_id_ref,
+              `worldbook_version:${version.parent_version_id_ref}`,
+            )
+          : null,
+        versionNo: version.version_no,
+        dataJson: JSON.stringify(version.data),
+        contentHash: version.content_hash,
+        createdByOperationId: version.created_by_operation_id ?? null,
+        createdAt: version.created_at,
+      }).run();
+      created.worldbook_versions += 1;
+    }
 
     for (const entry of worldbook.entries) {
       const newEntryId = requireMappedId(idMap.worldbookEntries, entry.id, `worldbook_entry:${entry.id}`);
@@ -165,6 +241,47 @@ export function restoreCoreAssetBackupInTransaction(
     }
   }
 
+  for (const profile of file.resources.regex_profiles) {
+    const newProfileId = requireMappedId(idMap.regexProfiles, profile.id, `regex_profile:${profile.id}`);
+    const restoredName = namePlan.regexProfiles.get(profile.id) ?? profile.name;
+    tx.insert(regexProfiles).values({
+      id: newProfileId,
+      name: restoredName,
+      source: profile.source,
+      accountId: file.source.account_id,
+      dataJson: JSON.stringify(profile.data ?? {}),
+      version: profile.version,
+      createdAt: profile.created_at,
+      updatedAt: profile.updated_at,
+    }).run();
+    created.regex_profiles += 1;
+
+    for (const version of profile.versions) {
+      const newVersionId = requireMappedId(
+        idMap.regexProfileVersions,
+        version.id,
+        `regex_profile_version:${version.id}`,
+      );
+      tx.insert(regexProfileVersions).values({
+        id: newVersionId,
+        regexProfileId: newProfileId,
+        parentVersionId: version.parent_version_id_ref
+          ? requireMappedId(
+              idMap.regexProfileVersions,
+              version.parent_version_id_ref,
+              `regex_profile_version:${version.parent_version_id_ref}`,
+            )
+          : null,
+        versionNo: version.version_no,
+        dataJson: JSON.stringify(version.data),
+        contentHash: version.content_hash,
+        createdByOperationId: version.created_by_operation_id ?? null,
+        createdAt: version.created_at,
+      }).run();
+      created.regex_profile_versions += 1;
+    }
+  }
+
   for (const session of file.sessions) {
     const newSessionId = requireMappedId(idMap.sessions, session.id, `session:${session.id}`);
     const restoredTitle = namePlan.sessions.get(session.id) ?? session.title ?? null;
@@ -178,11 +295,46 @@ export function restoreCoreAssetBackupInTransaction(
           `character_version:${session.character_binding.character_version_id_ref}`,
         )
       : null;
+    const presetId = session.profile_binding.preset_id_ref
+      ? requireOptionalMappedId(
+          idMap.presets,
+          session.profile_binding.preset_id_ref,
+          `preset:${session.profile_binding.preset_id_ref}`,
+        )
+      : null;
+    const presetVersionId = session.profile_binding.preset_version_id_ref
+      ? requireOptionalMappedId(
+          idMap.presetVersions,
+          session.profile_binding.preset_version_id_ref,
+          `preset_version:${session.profile_binding.preset_version_id_ref}`,
+        )
+      : null;
     const worldbookProfileId = session.profile_binding.worldbook_id_ref
       ? requireOptionalMappedId(
           idMap.worldbooks,
           session.profile_binding.worldbook_id_ref,
           `worldbook:${session.profile_binding.worldbook_id_ref}`,
+        )
+      : null;
+    const worldbookVersionId = session.profile_binding.worldbook_version_id_ref
+      ? requireOptionalMappedId(
+          idMap.worldbookVersions,
+          session.profile_binding.worldbook_version_id_ref,
+          `worldbook_version:${session.profile_binding.worldbook_version_id_ref}`,
+        )
+      : null;
+    const regexProfileId = session.profile_binding.regex_profile_id_ref
+      ? requireOptionalMappedId(
+          idMap.regexProfiles,
+          session.profile_binding.regex_profile_id_ref,
+          `regex_profile:${session.profile_binding.regex_profile_id_ref}`,
+        )
+      : null;
+    const regexProfileVersionId = session.profile_binding.regex_profile_version_id_ref
+      ? requireOptionalMappedId(
+          idMap.regexProfileVersions,
+          session.profile_binding.regex_profile_version_id_ref,
+          `regex_profile_version:${session.profile_binding.regex_profile_version_id_ref}`,
         )
       : null;
 
@@ -201,9 +353,13 @@ export function restoreCoreAssetBackupInTransaction(
         ? null
         : stringifyJsonField(session.user_binding.snapshot),
       characterSyncPolicy: session.character_binding.character_sync_policy,
-      presetId: null,
-      regexProfileId: null,
+      presetId,
+      regexProfileId,
       worldbookProfileId,
+      deepBinding: session.profile_binding.deep_binding ?? false,
+      presetVersionId,
+      worldbookVersionId,
+      regexProfileVersionId,
       promptMode: session.prompt_mode ?? null,
       modelProvider: session.model_provider ?? null,
       modelName: session.model_name ?? null,
@@ -445,9 +601,20 @@ function createRestoreIdMap(file: CoreAssetBackupAnalysis["file"]): CoreAssetBac
     characterVersions: new Map(
       file.resources.characters.flatMap((character) => character.versions.map((version) => [version.id, nanoid()] as const)),
     ),
+    presets: new Map(file.resources.presets.map((preset) => [preset.id, nanoid()])),
+    presetVersions: new Map(
+      file.resources.presets.flatMap((preset) => preset.versions.map((version) => [version.id, nanoid()] as const)),
+    ),
     worldbooks: new Map(file.resources.worldbooks.map((worldbook) => [worldbook.id, nanoid()])),
+    worldbookVersions: new Map(
+      file.resources.worldbooks.flatMap((worldbook) => worldbook.versions.map((version) => [version.id, nanoid()] as const)),
+    ),
     worldbookEntries: new Map(
       file.resources.worldbooks.flatMap((worldbook) => worldbook.entries.map((entry) => [entry.id, nanoid()] as const)),
+    ),
+    regexProfiles: new Map(file.resources.regex_profiles.map((profile) => [profile.id, nanoid()])),
+    regexProfileVersions: new Map(
+      file.resources.regex_profiles.flatMap((profile) => profile.versions.map((version) => [version.id, nanoid()] as const)),
     ),
     sessions: new Map(file.sessions.map((session) => [session.id, nanoid()])),
     floors: new Map(file.sessions.flatMap((session) => session.floors.map((floor) => [floor.id, nanoid()] as const))),

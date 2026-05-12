@@ -344,6 +344,41 @@
                         "when":  1764800000000,
                         "tag":  "0048_prompt_runtime_memory_trace_snapshot",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  49,
+                        "version":  "6",
+                        "when":  1764900000000,
+                        "tag":  "0049_unified_vc_asset_versions",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  50,
+                        "version":  "6",
+                        "when":  1765000000000,
+                        "tag":  "0050_operation_log",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  51,
+                        "version":  "6",
+                        "when":  1765100000000,
+                        "tag":  "0051_character_version_operation_link",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  52,
+                        "version":  "6",
+                        "when":  1765200000000,
+                        "tag":  "0052_session_branch_asset_binding",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  53,
+                        "version":  "6",
+                        "when":  1765300000000,
+                        "tag":  "0053_unified_vc_tags",
+                        "breakpoints":  true
                     }
                 ]
 }

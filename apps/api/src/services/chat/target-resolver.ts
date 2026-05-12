@@ -4,6 +4,7 @@ import type { AppDb } from "../../db/client.js";
 import { floors } from "../../db/schema.js";
 import { OwnedFloorRepository, OwnedMessageRepository } from "../owned-resource-repositories.js";
 import { ChatHistoryLoader } from "../chat-history-loader.js";
+import { SessionBranchRegistryService } from "../variables/host/session-branch-registry-service.js";
 
 import type {
   ChatServiceErrorFactory,
@@ -24,6 +25,7 @@ export class ChatTargetResolver {
     sessionId: string,
     branchId: string,
     sourceFloorId?: string,
+    accountId?: string,
   ): Promise<ResolvedRespondBranchContext> {
     const generatingFloorInBranch = await this.historyLoader.getLatestGeneratingFloorInBranch(sessionId, branchId);
 
@@ -36,6 +38,10 @@ export class ChatTargetResolver {
 
     const lastFloorInBranch = await this.historyLoader.getLatestFloorInBranch(sessionId, branchId);
     const lastCommittedFloorInBranch = await this.historyLoader.getLatestCommittedFloorInBranch(sessionId, branchId);
+    const registeredBranch = accountId
+      ? new SessionBranchRegistryService(this.db).get(accountId, sessionId, branchId)
+      : null;
+    const registeredAssetBinding = registeredBranch?.assetBinding ?? null;
 
     if (lastFloorInBranch) {
       return {
@@ -44,18 +50,20 @@ export class ChatTargetResolver {
         historySourceMode: "existing_branch",
         nextFloorNo: lastFloorInBranch.floorNo + 1,
         parentFloorId: lastCommittedFloorInBranch?.id ?? lastFloorInBranch.parentFloorId ?? null,
+        assetBinding: registeredAssetBinding,
       };
     }
 
     let sourceFloor: { id: string; floorNo: number; branchId: string } | null = null;
+    const registeredSourceFloorId = sourceFloorId ?? registeredBranch?.sourceFloorId ?? undefined;
 
-    if (sourceFloorId) {
+    if (registeredSourceFloorId) {
       const [row] = await this.db
         .select({ id: floors.id, floorNo: floors.floorNo, branchId: floors.branchId })
         .from(floors)
         .where(
           and(
-            eq(floors.id, sourceFloorId),
+            eq(floors.id, registeredSourceFloorId),
             eq(floors.sessionId, sessionId),
             eq(floors.state, "committed"),
             isNull(floors.supersededAt),
@@ -66,7 +74,7 @@ export class ChatTargetResolver {
       if (!row) {
         throw this.createError(
           "source_floor_not_found",
-          `Source floor '${sourceFloorId}' was not found in session '${sessionId}'`,
+          `Source floor '${registeredSourceFloorId}' was not found in session '${sessionId}'`,
         );
       }
 
@@ -92,10 +100,11 @@ export class ChatTargetResolver {
     return {
       branchExists: false,
       historySourceBranchId: sourceFloor?.branchId ?? "main",
-      historySourceMode: sourceFloorId ? "source_floor_branch" : "main_fallback",
+      historySourceMode: registeredSourceFloorId ? "source_floor_branch" : "main_fallback",
       nextFloorNo: (sourceFloor?.floorNo ?? -1) + 1,
       parentFloorId: sourceFloor?.id ?? null,
       ...(sourceFloor ? { inheritanceSource: { floorId: sourceFloor.id, branchId: sourceFloor.branchId } } : {}),
+      assetBinding: registeredAssetBinding,
     };
   }
 

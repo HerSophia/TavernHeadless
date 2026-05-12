@@ -22,8 +22,13 @@ import {
   runtimeScopeStates,
   sessionBranches,
   sessions,
+  presetVersions,
+  presets,
+  regexProfileVersions,
+  regexProfiles,
   variables,
   worldbookEntries,
+  worldbookVersions,
   worldbooks,
 } from "../../db/schema.js";
 import { stringifyJsonField } from "../../lib/http.js";
@@ -69,8 +74,13 @@ describe("backup routes", () => {
     const userId = "user-1";
     const characterId = "char-1";
     const characterVersionId = "charver-1";
+    const presetId = "preset-1";
+    const presetVersionId = "presetver-1";
     const worldbookId = "wb-1";
+    const worldbookVersionId = "wbver-1";
     const worldbookEntryId = "wbe-1";
+    const regexProfileId = "regex-1";
+    const regexProfileVersionId = "regexver-1";
     const sessionId = "session-1";
     const mainFloorId = "floor-main-1";
     const altFloorId = "floor-alt-1";
@@ -117,6 +127,27 @@ describe("backup routes", () => {
       createdAt: NOW,
     });
 
+    await database.insert(presets).values({
+      id: presetId,
+      name: "Story Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: stringifyJsonField({ prompts: [{ identifier: "main", content: "Preset v1" }] }) ?? "{}",
+      version: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await database.insert(presetVersions).values({
+      id: presetVersionId,
+      presetId,
+      parentVersionId: null,
+      versionNo: 1,
+      dataJson: stringifyJsonField({ prompts: [{ identifier: "main", content: "Preset v1" }] }) ?? "{}",
+      contentHash: "sha256:preset-1",
+      createdByOperationId: null,
+      createdAt: NOW,
+    });
+
     await database.insert(worldbooks).values({
       id: worldbookId,
       name: "Lorebook",
@@ -154,6 +185,37 @@ describe("backup routes", () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
+    await database.insert(worldbookVersions).values({
+      id: worldbookVersionId,
+      worldbookId,
+      parentVersionId: null,
+      versionNo: 1,
+      dataJson: stringifyJsonField({ name: "Lorebook", entries: [{ uid: 0, content: "Kingdom lore" }] }) ?? "{}",
+      contentHash: "sha256:worldbook-1",
+      createdByOperationId: null,
+      createdAt: NOW,
+    });
+
+    await database.insert(regexProfiles).values({
+      id: regexProfileId,
+      name: "Story Regex",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: stringifyJsonField({ scripts: [{ scriptName: "trim", findRegex: "/foo/g", replaceString: "bar" }] }) ?? "{}",
+      version: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await database.insert(regexProfileVersions).values({
+      id: regexProfileVersionId,
+      regexProfileId,
+      parentVersionId: null,
+      versionNo: 1,
+      dataJson: stringifyJsonField({ scripts: [{ scriptName: "trim", findRegex: "/foo/g", replaceString: "bar" }] }) ?? "{}",
+      contentHash: "sha256:regex-1",
+      createdByOperationId: null,
+      createdAt: NOW,
+    });
 
     await database.insert(sessions).values({
       id: sessionId,
@@ -166,9 +228,13 @@ describe("backup routes", () => {
       userId,
       userSnapshotJson: stringifyJsonField({ name: "User One" }),
       characterSyncPolicy: "pin",
-      presetId: "preset-old-1",
-      regexProfileId: "regex-old-1",
+      presetId,
+      regexProfileId,
       worldbookProfileId: worldbookId,
+      deepBinding: true,
+      presetVersionId,
+      worldbookVersionId,
+      regexProfileVersionId,
       promptMode: "native",
       modelProvider: "openai-compatible",
       modelName: "model-x",
@@ -430,7 +496,9 @@ describe("backup routes", () => {
 
     return {
       characterId,
+      presetId,
       worldbookId,
+      regexProfileId,
       sessionId,
       altFloorId,
     };
@@ -478,6 +546,15 @@ describe("backup routes", () => {
     const backupFile = JSON.parse(downloadResponse.body) as ThBackupFile;
     expect(backupFile.spec).toBe("tavern_headless_backup");
     expect(backupFile.sessions).toHaveLength(1);
+    expect(backupFile.resources.presets).toHaveLength(1);
+    expect(backupFile.resources.presets[0]?.versions).toHaveLength(1);
+    expect(backupFile.resources.worldbooks[0]?.versions).toHaveLength(1);
+    expect(backupFile.resources.regex_profiles).toHaveLength(1);
+    expect(backupFile.resources.regex_profiles[0]?.versions).toHaveLength(1);
+    expect(backupFile.sessions[0]?.profile_binding.deep_binding).toBe(true);
+    expect(backupFile.sessions[0]?.profile_binding.preset_version_id_ref).toBe("presetver-1");
+    expect(backupFile.sessions[0]?.profile_binding.worldbook_version_id_ref).toBe("wbver-1");
+    expect(backupFile.sessions[0]?.profile_binding.regex_profile_version_id_ref).toBe("regexver-1");
 
     const previewResponse = await built.app.inject({
       method: "POST",
@@ -493,10 +570,13 @@ describe("backup routes", () => {
     expect(previewBody.data.warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "restore_drops_user_binding" }),
-        expect.objectContaining({ code: "restore_drops_preset_binding" }),
-        expect.objectContaining({ code: "restore_drops_regex_profile_binding" }),
       ]),
     );
+    expect(previewBody.data.counts.preset_versions).toBe(1);
+    expect(previewBody.data.counts.worldbook_versions).toBe(1);
+    expect(previewBody.data.counts.regex_profile_versions).toBe(1);
+    expect(previewBody.data.dropped_bindings.presets).toBe(0);
+    expect(previewBody.data.dropped_bindings.regex_profiles).toBe(0);
 
     const createRestoreResponse = await built.app.inject({
       method: "POST",
@@ -518,6 +598,9 @@ describe("backup routes", () => {
     expect(restoreDetailResponse.statusCode).toBe(200);
     const restoreDetailBody = JSON.parse(restoreDetailResponse.body);
     expect(restoreDetailBody.data.result.created.sessions).toBe(1);
+    expect(restoreDetailBody.data.result.created.preset_versions).toBe(1);
+    expect(restoreDetailBody.data.result.created.worldbook_versions).toBe(1);
+    expect(restoreDetailBody.data.result.created.regex_profile_versions).toBe(1);
     expect(restoreDetailBody.data.result.created.branch_local_variable_snapshots).toBe(1);
     expect(restoreDetailBody.data.result.created.runtime_scope_states).toBeGreaterThan(0);
 
@@ -529,9 +612,15 @@ describe("backup routes", () => {
     expect(restoredSession?.characterId).not.toBeNull();
     expect(restoredSession?.characterId).not.toBe(seeded.characterId);
     expect(restoredSession?.worldbookProfileId).not.toBe(seeded.worldbookId);
+    expect(restoredSession?.presetId).not.toBeNull();
+    expect(restoredSession?.presetId).not.toBe(seeded.presetId);
+    expect(restoredSession?.regexProfileId).not.toBeNull();
+    expect(restoredSession?.regexProfileId).not.toBe(seeded.regexProfileId);
+    expect(restoredSession?.deepBinding).toBe(true);
+    expect(restoredSession?.presetVersionId).not.toBeNull();
+    expect(restoredSession?.worldbookVersionId).not.toBeNull();
+    expect(restoredSession?.regexProfileVersionId).not.toBeNull();
     expect(restoredSession?.userId).toBeNull();
-    expect(restoredSession?.presetId).toBeNull();
-    expect(restoredSession?.regexProfileId).toBeNull();
 
     const restoredCharacter = await built.database.select().from(characters).where(and(
       eq(characters.accountId, DEFAULT_ADMIN_ACCOUNT_ID),

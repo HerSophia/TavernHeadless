@@ -19,8 +19,14 @@ export type WorkspaceSession = {
   id: string;
   title: string;
   userName: string;
+  deepBinding?: boolean;
+  presetId: string | null;
+  presetVersionId?: string | null;
+  regexProfileId: string | null;
+  regexProfileVersionId?: string | null;
   worldbookCount: number;
   worldbookProfileId: string | null;
+  worldbookVersionId?: string | null;
 };
 
 export type WorkspaceMessageRole = "assistant" | "narrator" | "system" | "user";
@@ -187,4 +193,15 @@ export type StreamRespondOptions = {
   onSummary?: (summaries: string[]) => void;
   onTool?: (payload: WorkspaceRespondToolPayload) => void;
   signal?: AbortSignal;
+};
+
+
+export type WorkspaceSessionAssetBindingPatch = {
+  deepBinding?: boolean;
+  presetId?: string | null;
+  presetVersionId?: string | null;
+  regexProfileId?: string | null;
+  regexProfileVersionId?: string | null;
+  worldbookProfileId?: string | null;
+  worldbookVersionId?: string | null;
 };

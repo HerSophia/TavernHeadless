@@ -10,6 +10,7 @@ import { FirstPartyGameStateService } from "../../session-state/first-party-game
 import { SessionStateCustomNamespaceService } from "../../session-state/session-state-custom-namespace-service.js";
 import { SessionStateService } from "../../session-state/session-state-service.js";
 import { SessionBranchRegistryService } from "../variables/host/session-branch-registry-service.js";
+import { OperationLogService } from "../operation-log-service.js";
 
 const promptAssemblerMocks = vi.hoisted(() => ({
   assemblePrompt: vi.fn(),
@@ -450,6 +451,105 @@ describe("ChatService session-state replay gate", () => {
     });
     expect(liveDeleted?.present).toBe(false);
     expect(liveDeleted?.value).toBeNull();
+  });
+
+  it("records operation logs for turn-bound session_state_writes without storing values", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_125_500;
+
+    await seedSession(database, sessionId, now);
+    customNamespaceService.registerNamespace({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      namespace: "quest_flags",
+      logicalOwnerType: "plugin",
+      logicalOwnerId: "quest-plugin",
+    });
+
+    turnCommitMock.mockImplementationOnce(async (input: {
+      accountId: string;
+      sessionId: string;
+      branchId?: string;
+      floorId: string;
+    }) => {
+      sessionStateService.applyStagedMutationsForFloor({
+        accountId: input.accountId,
+        sessionId: input.sessionId,
+        branchId: input.branchId ?? "main",
+        floorId: input.floorId,
+        committedAt: now + 100,
+      });
+      return {
+        usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+        finalState: "committed" as const,
+        memory: undefined,
+      };
+    });
+
+    const result = await chatService.respond(
+      sessionId,
+      {
+        message: "Continue the quest.",
+        sessionStateWrites: [
+          {
+            namespace: "quest_flags",
+            slot: "companion",
+            value: { secret: "SECRET_TURN_STATE_VALUE", mood: "ally" },
+          },
+          {
+            namespace: "quest_flags",
+            slot: "expired_hint",
+            delete: true,
+          },
+        ],
+        sessionStateOperationLog: {
+          actorType: "user",
+          actorId: ACCOUNT_ID,
+          sourceType: "http",
+          requestId: "request-session-state-writes",
+          route: "POST /sessions/:id/respond",
+        },
+        turnOperationLog: {
+          requestId: "request-floor-commit",
+          route: "POST /sessions/:id/respond",
+        },
+      },
+      {},
+      ACCOUNT_ID,
+    );
+
+    expect(result.finalState).toBe("committed");
+    const commitInput = turnCommitMock.mock.calls[0]?.[0];
+    expect(commitInput?.runId).toEqual(expect.any(String));
+    expect(commitInput?.operationLog).toEqual({
+      requestId: "request-floor-commit",
+      route: "POST /sessions/:id/respond",
+    });
+    const logs = new OperationLogService(database.db).list({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      targetType: "session_state_value",
+      action: "stage_session_state_turn_write",
+      sortOrder: "asc",
+    }).rows;
+
+    expect(logs).toHaveLength(2);
+    expect(logs.map((log) => log.targetId)).toEqual([
+      `${sessionId}:main:quest_flags:companion`,
+      `${sessionId}:main:quest_flags:expired_hint`,
+    ]);
+    expect(logs[0]!.floorId).toBe(result.floorId);
+    expect(logs[0]!.metadata).toEqual(expect.objectContaining({
+      route: "POST /sessions/:id/respond",
+      write_mode: "commit_bound",
+      operation: "set",
+      request_write_index: 1,
+      request_write_count: 2,
+    }));
+
+    const mutationRef = logs[0]!.afterRef as { mutation?: { payload_value_summary?: { value_hash?: string } } };
+    expect(mutationRef.mutation?.payload_value_summary?.value_hash).toEqual(expect.stringMatching(/^sha256:/));
+    expect(JSON.stringify(logs)).not.toContain("SECRET_TURN_STATE_VALUE");
   });
 
   it("rejects built-in session_state_writes from client turn requests", async () => {

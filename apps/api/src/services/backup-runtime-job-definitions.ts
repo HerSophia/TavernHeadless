@@ -38,8 +38,13 @@ export const backupDomainSchema = z.enum(TH_BACKUP_DOMAINS);
 export const backupCountSummarySchema = z.object({
   characters: z.number().int().nonnegative(),
   character_versions: z.number().int().nonnegative(),
+  presets: z.number().int().nonnegative(),
+  preset_versions: z.number().int().nonnegative(),
   worldbooks: z.number().int().nonnegative(),
+  worldbook_versions: z.number().int().nonnegative(),
   worldbook_entries: z.number().int().nonnegative(),
+  regex_profiles: z.number().int().nonnegative(),
+  regex_profile_versions: z.number().int().nonnegative(),
   sessions: z.number().int().nonnegative(),
   session_branches: z.number().int().nonnegative(),
   floors: z.number().int().nonnegative(),
@@ -53,7 +58,9 @@ export const backupCountSummarySchema = z.object({
 
 export const backupTopLevelCreateSummarySchema = z.object({
   characters: z.number().int().nonnegative(),
+  presets: z.number().int().nonnegative(),
   worldbooks: z.number().int().nonnegative(),
+  regex_profiles: z.number().int().nonnegative(),
   sessions: z.number().int().nonnegative(),
 });
 
@@ -68,7 +75,7 @@ export const backupWarningSchema = z.object({
 });
 
 export const backupRenamedResourceSchema = z.object({
-  type: z.enum(["character", "worldbook", "session"]),
+  type: z.enum(["character", "preset", "worldbook", "regex_profile", "session"]),
   old_name: z.string().min(1),
   new_name: z.string().min(1),
 });
@@ -83,7 +90,9 @@ export const exportCoreAssetsJobRequestSchema = z.object({
   domains: z.array(backupDomainSchema).min(1).optional(),
   sessionIds: z.array(z.string().min(1)).optional(),
   characterIds: z.array(z.string().min(1)).optional(),
+  presetIds: z.array(z.string().min(1)).optional(),
   worldbookIds: z.array(z.string().min(1)).optional(),
+  regexProfileIds: z.array(z.string().min(1)).optional(),
   includeLinkedAssets: z.boolean().default(true),
   includeSecrets: z.literal(false).default(false),
 });
@@ -132,8 +141,13 @@ export function emptyBackupCountSummary(): BackupCountSummary {
   return {
     characters: 0,
     character_versions: 0,
+    presets: 0,
+    preset_versions: 0,
     worldbooks: 0,
+    worldbook_versions: 0,
     worldbook_entries: 0,
+    regex_profiles: 0,
+    regex_profile_versions: 0,
     sessions: 0,
     session_branches: 0,
     floors: 0,
@@ -176,12 +190,16 @@ function normalizeSelectionDigestPayload(payload: ExportCoreAssetsJobRequest) {
   const domains = [...(payload.domains ?? [])].sort();
   const sessionIds = [...(payload.sessionIds ?? [])].sort();
   const characterIds = [...(payload.characterIds ?? [])].sort();
+  const presetIds = [...(payload.presetIds ?? [])].sort();
   const worldbookIds = [...(payload.worldbookIds ?? [])].sort();
+  const regexProfileIds = [...(payload.regexProfileIds ?? [])].sort();
   return {
     domains,
     sessionIds,
     characterIds,
+    presetIds,
     worldbookIds,
+    regexProfileIds,
     includeLinkedAssets: payload.includeLinkedAssets,
     includeSecrets: payload.includeSecrets,
   };
@@ -190,7 +208,9 @@ function normalizeSelectionDigestPayload(payload: ExportCoreAssetsJobRequest) {
 export function isFullBackupExportSelection(payload: ExportCoreAssetsJobRequest): boolean {
   const hasExplicitSelection = (payload.sessionIds?.length ?? 0) > 0
     || (payload.characterIds?.length ?? 0) > 0
-    || (payload.worldbookIds?.length ?? 0) > 0;
+    || (payload.presetIds?.length ?? 0) > 0
+    || (payload.worldbookIds?.length ?? 0) > 0
+    || (payload.regexProfileIds?.length ?? 0) > 0;
   const domains = payload.domains ?? [...TH_BACKUP_DOMAINS];
   return !hasExplicitSelection && domains.length === TH_BACKUP_DOMAINS.length;
 }

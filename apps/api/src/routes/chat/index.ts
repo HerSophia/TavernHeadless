@@ -9,7 +9,7 @@
  * POST /sessions/:id/regenerate      — 重新生成最后一轮 AI 回复
  */
 
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   type DryRunRequest,
@@ -24,6 +24,12 @@ import { ChatServiceError } from "../../services/chat/errors.js";
 import { ensureOptionalObjectBody, parseWithSchema, sendError } from "../../lib/http.js";
 import { getRequestAuthContext } from "../../plugins/auth.js";
 import { applyCorsHeaders } from "../../plugins/cors.js";
+import {
+  operationActorFromRequest,
+  operationRequestIdFromRequest,
+} from "../../services/operation-log-service.js";
+import type { SessionStateOperationLogContext } from "../../session-state/session-state-operation-log.js";
+import type { TurnCommitOperationLogContext } from "../../services/turn-commit-service.js";
 
 import {
   chatMutationErrorResponses,
@@ -108,6 +114,29 @@ export async function registerChatRoutes(
       }
     }
     return true;
+  }
+
+  function buildTurnOperationLogContext(
+    request: FastifyRequest,
+    route: string,
+  ): TurnCommitOperationLogContext {
+    return { requestId: operationRequestIdFromRequest(request), route };
+  }
+
+  function buildSessionStateOperationLogContext(
+    request: FastifyRequest,
+    route: string,
+    writes: unknown[] | undefined,
+  ): SessionStateOperationLogContext | undefined {
+    if (!writes || writes.length === 0) {
+      return undefined;
+    }
+    return {
+      ...operationActorFromRequest(request),
+      requestId: operationRequestIdFromRequest(request),
+      sourceType: "http",
+      route,
+    };
   }
 
   app.post("/sessions/:id/respond/dry-run", {
@@ -246,6 +275,12 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      sessionStateOperationLog: buildSessionStateOperationLogContext(
+        request,
+        "POST /sessions/:id/respond/stream",
+        parsedBody.data.session_state_writes,
+      ),
+      turnOperationLog: buildTurnOperationLogContext(request, "POST /sessions/:id/respond/stream"),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
@@ -385,6 +420,12 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      sessionStateOperationLog: buildSessionStateOperationLogContext(
+        request,
+        "POST /sessions/:id/respond",
+        parsedBody.data.session_state_writes,
+      ),
+      turnOperationLog: buildTurnOperationLogContext(request, "POST /sessions/:id/respond"),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
     const accountId = getRequestAuthContext(request).accountId;
@@ -449,7 +490,13 @@ export async function registerChatRoutes(
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
       sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      sessionStateOperationLog: buildSessionStateOperationLogContext(
+        request,
+        "POST /sessions/:id/regenerate",
+        parsedBody.data.session_state_writes,
+      ),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
+      turnOperationLog: buildTurnOperationLogContext(request, "POST /sessions/:id/regenerate"),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -518,7 +565,13 @@ export async function registerChatRoutes(
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
       sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      sessionStateOperationLog: buildSessionStateOperationLogContext(
+        request,
+        "POST /floors/:id/retry",
+        parsedBody.data.session_state_writes,
+      ),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
+      turnOperationLog: buildTurnOperationLogContext(request, "POST /floors/:id/retry"),
     };
 
     const accountId = getRequestAuthContext(request).accountId;
@@ -583,7 +636,13 @@ export async function registerChatRoutes(
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
       confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
       sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      sessionStateOperationLog: buildSessionStateOperationLogContext(
+        request,
+        "POST /messages/:id/edit-and-regenerate",
+        parsedBody.data.session_state_writes,
+      ),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
+      turnOperationLog: buildTurnOperationLogContext(request, "POST /messages/:id/edit-and-regenerate"),
     };
     const accountId = getRequestAuthContext(request).accountId;
 

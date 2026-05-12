@@ -29,6 +29,7 @@ import {
   type PromptRuntimeDiagnosticPhase,
   type PromptRuntimeHistorySourceMode,
   type PromptRuntimeInspectionResult,
+  type PromptRuntimeAssetsView,
   type PromptRuntimePersistentPolicy,
   type PromptRuntimeSectionStat,
   type ResolvedPromptRuntimePolicy,
@@ -230,7 +231,14 @@ export class PromptPreparationService {
       budgetByGroup: args.assembled?.tokenUsage.byGroup,
       prunedByGroup: args.assembled?.tokenUsage.prunedByGroup,
     });
-    const assets = await new PromptRuntimeControlService(this.db).getAssets(context.scope.sessionId, args.accountId);
+    const assets = mergeAssetsViewWithPromptSnapshot(
+      await new PromptRuntimeControlService(this.db).getAssets(
+        context.scope.sessionId,
+        args.accountId,
+        context.scope.targetBranchId,
+      ),
+      args.assembled?.promptSnapshot,
+    );
 
     return {
       scope: context.scope,
@@ -436,6 +444,47 @@ export class PromptPreparationService {
         tokenCount,
       }));
   }
+}
+
+function mergeAssetsViewWithPromptSnapshot(
+  assets: PromptRuntimeAssetsView,
+  snapshot: PromptSnapshotPreview | undefined,
+): PromptRuntimeAssetsView {
+  if (!snapshot) {
+    return assets;
+  }
+
+  return {
+    ...assets,
+    preset: mergeAssetVersionDetails(assets.preset, {
+      versionId: snapshot.presetVersionId,
+      versionNo: snapshot.presetVersion,
+      contentHash: snapshot.presetContentHash,
+    }),
+    worldbook: mergeAssetVersionDetails(assets.worldbook, {
+      versionId: snapshot.worldbookVersionId,
+      versionNo: snapshot.worldbookVersion,
+      contentHash: snapshot.worldbookContentHash,
+    }),
+    regexProfile: mergeAssetVersionDetails(assets.regexProfile, {
+      versionId: snapshot.regexProfileVersionId,
+      versionNo: snapshot.regexProfileVersion,
+      contentHash: snapshot.regexProfileContentHash,
+    }),
+  };
+}
+
+function mergeAssetVersionDetails(
+  asset: PromptRuntimeAssetsView[keyof PromptRuntimeAssetsView],
+  details: { versionId?: string | null; versionNo?: number | null; contentHash?: string | null },
+): PromptRuntimeAssetsView[keyof PromptRuntimeAssetsView] {
+  if (!asset) return asset;
+  return {
+    ...asset,
+    versionId: details.versionId ?? asset.versionId ?? null,
+    versionNo: details.versionNo ?? asset.versionNo ?? null,
+    contentHash: details.contentHash ?? asset.contentHash ?? null,
+  };
 }
 
 function hasPromptRuntimeWorldbookSource(promptSnapshot: AssembleResult["promptSnapshot"]): boolean {

@@ -64,9 +64,13 @@ POST /sessions
 | `character_snapshot` | object | 否 | 手动提供的角色快照。当前支持基础字段，以及 `primaryGreeting`、`alternateGreetings`、`systemPrompt`、`postHistoryInstructions`、`creatorNotes`、`characterBook` 等扩展字段 |
 | `user_id` | string | 否 | 绑定用户卡 ID |
 | `user_snapshot` | object | 否 | 手动提供的用户快照 |
-| `preset_id` | string | 否 | 绑定的 Preset ID |
-| `regex_profile_id` | string | 否 | 绑定的 Regex Profile ID |
-| `worldbook_profile_id` | string | 否 | 绑定的 Worldbook ID |
+| `preset_id` | string \| null | 否 | 绑定的 Preset ID。省略或传 `null` 表示创建时不绑定 |
+| `regex_profile_id` | string \| null | 否 | 绑定的 Regex Profile ID。省略或传 `null` 表示创建时不绑定 |
+| `worldbook_profile_id` | string \| null | 否 | 绑定的 Worldbook ID。省略或传 `null` 表示创建时不绑定 |
+| `deep_binding` | boolean | 否 | 是否开启会话级深度绑定。默认 `false`。开启后运行时优先读取绑定的资产版本内容 |
+| `preset_version_id` | string \| null | 否 | 绑定的 Preset 版本 ID。`deep_binding=true` 时生效；省略时使用该 Preset 的当前版本 |
+| `regex_profile_version_id` | string \| null | 否 | 绑定的 Regex Profile 版本 ID。`deep_binding=true` 时生效；省略时使用该 Regex Profile 的当前版本 |
+| `worldbook_version_id` | string \| null | 否 | 绑定的 Worldbook 版本 ID。`deep_binding=true` 时生效；省略时使用该 Worldbook 的当前版本 |
 | `model_provider` | string | 否 | 模型供应商 |
 | `model_name` | string | 否 | 模型名称 |
 | `model_params` | object | 否 | 模型参数（如 temperature, top_p 等） |
@@ -99,6 +103,10 @@ POST /sessions
     "preset_id": "preset_001",
     "regex_profile_id": null,
     "worldbook_profile_id": null,
+    "deep_binding": false,
+    "preset_version_id": null,
+    "regex_profile_version_id": null,
+    "worldbook_version_id": null,
     "model_provider": "openai",
     "model_name": "gpt-4o-mini",
     "model_params": { "temperature": 0.7 },
@@ -201,6 +209,19 @@ PATCH /sessions/:id
 
 至少提供一个字段。可更新的字段与创建时一致（除 `id`）。当前实现中，**只有用户绑定变化**会同步更新已有楼层的用户绑定元数据；角色绑定更新只会修改 session 自身字段。
 
+会话的浅绑定资产字段支持明确解绑：
+
+- 省略 `preset_id` / `regex_profile_id` / `worldbook_profile_id`：不改变现有资产绑定。
+- 传入字符串：绑定到当前账号下的对应资产。
+- 传入 `null`：解除该绑定。
+
+深度绑定字段也采用同样的 PATCH 语义：
+
+- `deep_binding=false`：清空三类 `*_version_id`，运行时按资产 ID 读取当前内容。
+- `deep_binding=true`：已绑定资产但未传版本 ID 时，服务端会绑定该资产当前版本。
+- 传入 `preset_version_id` / `regex_profile_version_id` / `worldbook_version_id` 字符串时，版本必须属于同一资产且资产属于当前账号。
+
+
 如果你只想改 `prompt_mode`，也可以改用 [Prompt Runtime Mode](./prompt-runtime-mode) 里的独立 `/mode` 控制面。两条写入口最终都落到同一份持久化真相：`sessions.prompt_mode`。
 
 ### 响应 `200`
@@ -212,8 +233,139 @@ PATCH /sessions/:id
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
 | `400` | `validation_error` / `character_version_mismatch` / `invalid_character_snapshot` / `invalid_user_snapshot` | 请求体为空、请求体校验失败，或绑定快照不合法 |
-| `404` | `not_found` / `character_not_found` / `user_not_found` | 会话、角色、角色版本或用户不存在 |
+| `404` | `not_found` / `character_not_found` / `user_not_found` / `preset_not_found` / `regex_profile_not_found` / `worldbook_not_found` / `asset_version_not_found` | 会话、角色、角色版本、用户、绑定资产或资产版本不存在，或不属于当前账号 |
 | `409` | `user_not_active` | 用户存在但当前不可绑定 |
+
+
+## 资产版本读取
+
+下面这些接口用于读取 Preset、Worldbook、Regex Profile 的不可变版本。它们只读取版本，不修改当前资产。
+
+```http
+GET /presets/:id/versions
+GET /presets/:id/versions/:version_id
+GET /worldbooks/:id/versions
+GET /worldbooks/:id/versions/:version_id
+GET /regex-profiles/:id/versions
+GET /regex-profiles/:id/versions/:version_id
+```
+
+单条版本响应：
+
+```json
+{
+  "data": {
+    "id": "preset_ver_001",
+    "asset_id": "preset_001",
+    "kind": "preset",
+    "version_no": 1,
+    "parent_version_id": null,
+    "content_hash": "sha256:...",
+    "snapshot": {},
+    "created_by_operation_id": null,
+    "created_at": 1735689600000
+  }
+}
+```
+
+版本列表响应为 `{ "data": [ ... ] }`。如果资产不存在或不属于当前账号，返回对应的 `preset_not_found`、`worldbook_not_found` 或 `regex_profile_not_found`。如果指定版本不存在，返回 `asset_version_not_found`。
+
+### 资产版本比较
+
+```http
+POST /presets/:id/versions/compare
+POST /worldbooks/:id/versions/compare
+POST /regex-profiles/:id/versions/compare
+```
+
+请求体：
+
+```json
+{
+  "left_version_id": "preset_ver_001",
+  "right_version_id": "preset_ver_002",
+  "mode": "summary"
+}
+```
+
+`mode` 默认为 `summary`，也可以传 `full`。默认摘要模式会使用结构化 diff，适合审计和调试列表展示。
+
+响应示例：
+
+```json
+{
+  "data": {
+    "asset_id": "preset_001",
+    "kind": "preset",
+    "left_version_id": "preset_ver_001",
+    "right_version_id": "preset_ver_002",
+    "diff": {
+      "mode": "summary",
+      "total_changes": 1,
+      "truncated": false,
+      "changes": [
+        {
+          "path": "temperature",
+          "change_type": "changed",
+          "before_hash": "sha256:...",
+          "after_hash": "sha256:...",
+          "redacted": false
+        }
+      ]
+    }
+  }
+}
+```
+
+如果任一版本不存在、版本不属于该资产，返回 `404 asset_version_not_found`。
+
+### 资产版本回滚
+
+```http
+POST /presets/:id/versions/:version_id/rollback
+POST /worldbooks/:id/versions/:version_id/rollback
+POST /regex-profiles/:id/versions/:version_id/rollback
+```
+
+回滚不会修改旧版本。服务端会把目标版本内容复制成一个新的最新版本，并更新资产当前内容。已经开启 deep binding 的 session 不会自动切到新版本，除非调用方再显式更新 session 绑定。
+
+请求体需要提供 `expected_version` 或 `expected_updated_at`，用于防止并发覆盖：
+
+```json
+{
+  "expected_version": 2
+}
+```
+
+响应示例：
+
+```json
+{
+  "data": {
+    "id": "preset_001",
+    "name": "Default Preset",
+    "source": "sillytavern",
+    "created_at": 1735689600000,
+    "updated_at": 1735689700000,
+    "version": 3,
+    "version_id": "preset_ver_003",
+    "content_hash": "sha256:...",
+    "rolled_back_from_version_id": "preset_ver_001"
+  }
+}
+```
+
+回滚会写入操作日志：`rollback_preset`、`rollback_worldbook` 或 `rollback_regex_profile`。
+
+常见错误：
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` | 缺少 `expected_version` / `expected_updated_at`，或请求体不合法 |
+| `404` | `preset_not_found` / `worldbook_not_found` / `regex_profile_not_found` / `asset_version_not_found` | 资产或版本不存在 |
+| `409` | `preset_conflict` / `worldbook_conflict` / `regex_profile_conflict` | 资产当前版本和请求中的期望版本不一致 |
+| `503` | `resource_busy` | 资源写入暂时繁忙，请稍后重试 |
+
 
 ## 删除会话
 
@@ -430,6 +582,177 @@ GET /sessions/:id/branches/diff
   }
 }
 ```
+
+## 重置分支
+
+```http
+POST /sessions/:id/branches/:branch_id/reset
+```
+
+将一个已经有楼层的分支显式重置到同分支内较早的 committed floor。这个操作不会删除旧 floor，而是把目标 floor 之后的 live floor 标记为 superseded。
+
+这个接口是破坏 live 视图的显式操作，因此请求体必须带 `expected_head_floor_id`。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `target_floor_id` | string | 是 | 要重置到的目标 floor。必须属于同 session、同 branch，且状态为 `committed` |
+| `expected_head_floor_id` | string | 是 | 调用方看到的当前分支 head floor ID，用于防止并发覆盖 |
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "session_id": "sess_001",
+    "branch_id": "main",
+    "target_floor_id": "floor_003",
+    "expected_head_floor_id": "floor_005",
+    "superseded_floor_ids": ["floor_004", "floor_005"],
+    "superseded_count": 2
+  }
+}
+```
+
+接口会写入 `reset_branch` 操作日志，目标类型为 `session_branch`。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `404` | `not_found` / `floor_not_found` | 会话或目标 floor 不存在 |
+| `409` | `session_busy` | 该分支有活跃生成运行 |
+| `409` | `branch_head_conflict` | `expected_head_floor_id` 已过期 |
+| `409` | `invalid_state` | 分支尚未物化、目标 floor 不是 committed，或目标 floor 已被 superseded |
+| `409` | `invalid_reset_target` | 目标 floor 不在当前分支 head 可达范围内 |
+
+## 预览分支合并
+
+```http
+POST /sessions/:id/branches/:branch_id/merge/preview
+```
+
+预览把 `:branch_id` 源分支合并到目标分支的结果。这个接口只做检查，不修改数据。
+
+当前版本只支持无冲突的 fast-forward 合并。如果源分支已经包含在目标分支历史里，会返回 `no_op`。源分支和目标分支都在共同祖先之后有新 floor 时会被阻止。源分支待合入 floor 必须全部是 `committed`；源分支和目标分支都不能有活跃 run。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `target_branch_id` | string | 是 | 目标分支 ID |
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "session_id": "sess_001",
+    "source_branch_id": "feature",
+    "target_branch_id": "main",
+    "strategy": "fast_forward",
+    "can_merge": true,
+    "source_head_floor_id": "floor_feature_003",
+    "target_head_floor_id": "floor_main_002",
+    "fork_floor_id": "floor_main_002",
+    "source_only_floors": [
+      {
+        "id": "floor_feature_003",
+        "branch_id": "feature",
+        "floor_no": 3,
+        "state": "committed",
+        "parent_floor_id": "floor_main_002"
+      }
+    ],
+    "target_only_floors": [],
+    "shared_floor_ids": ["floor_main_002", "floor_main_001"],
+    "conflicts": []
+  }
+}
+```
+
+如果不能合并，`strategy` 返回 `blocked`，`can_merge` 返回 `false`，`conflicts` 会列出原因。常见 `code` 包括：
+
+| code | 说明 |
+| ---- | ---- |
+| `same_branch` | 源分支和目标分支相同 |
+| `source_branch_not_found` | 源分支不存在 |
+| `target_branch_not_found` | 目标分支不存在 |
+| `no_common_ancestor` | 两个分支没有共同祖先 |
+| `target_diverged` | 源分支和目标分支都在共同祖先之后有自己的新 floor |
+| `source_floor_not_committed` | 源分支待合入 floor 不是 committed |
+| `source_branch_busy` / `target_branch_busy` | 分支存在活跃 run |
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `404` | `not_found` | 会话不存在 |
+
+## 执行分支合并
+
+```http
+POST /sessions/:id/branches/:branch_id/merge
+```
+
+执行把 `:branch_id` 源分支合并到目标分支。服务端会再次计算 preview，并用 `expected_target_head_floor_id` 做并发检查。
+
+合并成功后，源分支独有 floor 会被克隆到目标分支。克隆内容包括楼层、消息页、消息、prompt snapshot、result snapshot、explain snapshot 和 branch-local variable snapshot。接口会写入 `merge_branch` 操作日志，目标类型为 `session_branch`。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `target_branch_id` | string | 是 | 目标分支 ID |
+| `expected_target_head_floor_id` | string | 是 | 调用方看到的目标分支 head floor ID，用于防止并发覆盖 |
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "session_id": "sess_001",
+    "source_branch_id": "feature",
+    "target_branch_id": "main",
+    "strategy": "fast_forward",
+    "merged_floor_ids": ["floor_merged_003"],
+    "merged_count": 1,
+    "operation_id": "op_001",
+    "preview": {
+      "session_id": "sess_001",
+      "source_branch_id": "feature",
+      "target_branch_id": "main",
+      "strategy": "fast_forward",
+      "can_merge": true,
+      "source_head_floor_id": "floor_feature_003",
+      "target_head_floor_id": "floor_main_002",
+      "fork_floor_id": "floor_main_002",
+      "source_only_floors": [
+        {
+          "id": "floor_feature_003",
+          "branch_id": "feature",
+          "floor_no": 3,
+          "state": "committed",
+          "parent_floor_id": "floor_main_002"
+        }
+      ],
+      "target_only_floors": [],
+      "shared_floor_ids": ["floor_main_002", "floor_main_001"],
+      "conflicts": []
+    }
+  }
+}
+```
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `404` | `not_found` | 会话不存在 |
+| `409` | `branch_head_conflict` | `expected_target_head_floor_id` 已过期 |
+| `409` | `branch_merge_conflict` | preview 发现冲突，不能执行合并 |
+
 
 ## 批量更新会话状态
 
