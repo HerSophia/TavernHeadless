@@ -1,11 +1,15 @@
 import { z } from 'zod';
 
 export const TH_BACKUP_SPEC = 'tavern_headless_backup' as const;
-export const TH_BACKUP_SPEC_VERSION = '1.0.0' as const;
+export const TH_BACKUP_SPEC_VERSION = '1.1.0' as const;
+export const TH_BACKUP_SUPPORTED_SPEC_VERSIONS = ['1.0.0', '1.1.0'] as const;
 export const TH_BACKUP_KIND = 'account_core_assets' as const;
 export const TH_BACKUP_DOMAINS = ['characters', 'presets', 'worldbooks', 'regex_profiles', 'sessions'] as const;
+export const TH_BACKUP_VC_ASSET_KINDS = ['character', 'preset', 'worldbook', 'regex_profile'] as const;
 
 export type ThBackupDomain = (typeof TH_BACKUP_DOMAINS)[number];
+export type ThBackupSpecVersion = (typeof TH_BACKUP_SUPPORTED_SPEC_VERSIONS)[number];
+export type ThBackupVcAssetKind = (typeof TH_BACKUP_VC_ASSET_KINDS)[number];
 
 const thBackupDomainSchema = z.enum(TH_BACKUP_DOMAINS);
 const nullableStringSchema = z.string().min(1).nullable().optional();
@@ -144,10 +148,25 @@ export const thBackupRegexProfileSchema = z.object({
 
 export type ThBackupRegexProfile = z.infer<typeof thBackupRegexProfileSchema>;
 
+export const thBackupSessionBranchAssetBindingSchema = z.object({
+  deep_binding: z.boolean().default(false),
+  preset_id_ref: z.string().min(1).nullable().optional(),
+  preset_version_id_ref: z.string().min(1).nullable().optional(),
+  worldbook_id_ref: z.string().min(1).nullable().optional(),
+  worldbook_version_id_ref: z.string().min(1).nullable().optional(),
+  regex_profile_id_ref: z.string().min(1).nullable().optional(),
+  regex_profile_version_id_ref: z.string().min(1).nullable().optional(),
+});
+
+export type ThBackupSessionBranchAssetBinding = z.infer<
+  typeof thBackupSessionBranchAssetBindingSchema
+>;
+
 export const thBackupSessionBranchSchema = z.object({
   branch_id: z.string().min(1),
   source_floor_id_ref: nullableStringSchema,
   source_branch_id: nullableStringSchema,
+  asset_binding: thBackupSessionBranchAssetBindingSchema.nullable().default(null),
   created_at: z.number(),
   updated_at: z.number(),
 });
@@ -340,6 +359,51 @@ export const thBackupResourcesSchema = z.object({
 
 export type ThBackupResources = z.infer<typeof thBackupResourcesSchema>;
 
+export const thBackupVcTagSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  target_type: z.enum(['floor', 'asset_version']),
+  target_asset_kind: z.enum(TH_BACKUP_VC_ASSET_KINDS).nullable().optional(),
+  target_id_ref: z.string().min(1),
+  session_id_ref: nullableStringSchema,
+  metadata: z.unknown().nullable().optional(),
+  created_by_operation_id_ref: nullableStringSchema,
+  created_at: z.number(),
+});
+
+export type ThBackupVcTag = z.infer<typeof thBackupVcTagSchema>;
+
+export const thBackupOperationLogSchema = z.object({
+  id: z.string().min(1),
+  operation_group_id: nullableStringSchema,
+  request_id: nullableStringSchema,
+  actor_type: z.string().min(1),
+  actor_id: nullableStringSchema,
+  source_type: z.string().min(1),
+  action: z.string().min(1),
+  status: z.enum(['succeeded', 'failed', 'denied', 'cancelled']),
+  session_id_ref: nullableStringSchema,
+  branch_id: nullableStringSchema,
+  floor_id_ref: nullableStringSchema,
+  run_id: nullableStringSchema,
+  target_type: z.string().min(1),
+  target_id_ref: nullableStringSchema,
+  before_ref: z.unknown().nullable().optional(),
+  after_ref: z.unknown().nullable().optional(),
+  diff: z.unknown().nullable().optional(),
+  metadata: z.unknown().nullable().optional(),
+  created_at: z.number(),
+});
+
+export type ThBackupOperationLog = z.infer<typeof thBackupOperationLogSchema>;
+
+export const thBackupVcSchema = z.object({
+  tags: z.array(thBackupVcTagSchema).default([]),
+  operation_logs: z.array(thBackupOperationLogSchema).default([]),
+});
+
+export type ThBackupVc = z.infer<typeof thBackupVcSchema>;
+
 export const thBackupFileSchema = z.object({
   spec: z.literal(TH_BACKUP_SPEC),
   spec_version: z.string().min(1),
@@ -350,6 +414,7 @@ export const thBackupFileSchema = z.object({
   options: thBackupOptionsSchema.default({ include_secrets: false }),
   resources: thBackupResourcesSchema.default({ characters: [], presets: [], worldbooks: [], regex_profiles: [] }),
   sessions: z.array(thBackupSessionSchema).default([]),
+  vc: thBackupVcSchema.default({ tags: [], operation_logs: [] }),
   extensions: z.object({
     secrets: thBackupSecretsExtensionSchema.default({ mode: 'excluded' }),
   }).default({ secrets: { mode: 'excluded' } }),

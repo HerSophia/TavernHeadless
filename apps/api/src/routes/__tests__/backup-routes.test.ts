@@ -19,6 +19,7 @@ import {
   memoryItems,
   messagePages,
   messages,
+  operationLogs,
   runtimeScopeStates,
   sessionBranches,
   sessions,
@@ -27,6 +28,7 @@ import {
   regexProfileVersions,
   regexProfiles,
   variables,
+  vcTags,
   worldbookEntries,
   worldbookVersions,
   worldbooks,
@@ -91,6 +93,9 @@ describe("backup routes", () => {
     const chatMemoryId = "memory-chat-1";
     const branchMemoryId = "memory-branch-1";
     const floorMemoryId = "memory-floor-1";
+    const presetOperationId = "source-operation-1";
+    const tagOperationId = "source-operation-tag-1";
+    const floorOperationId = "source-operation-floor-1";
 
     await database.insert(accountUsers).values({
       id: userId,
@@ -144,7 +149,7 @@ describe("backup routes", () => {
       versionNo: 1,
       dataJson: stringifyJsonField({ prompts: [{ identifier: "main", content: "Preset v1" }] }) ?? "{}",
       contentHash: "sha256:preset-1",
-      createdByOperationId: null,
+      createdByOperationId: presetOperationId,
       createdAt: NOW,
     });
 
@@ -285,6 +290,13 @@ describe("backup routes", () => {
         branchId: "main",
         sourceFloorId: null,
         sourceBranchId: null,
+        assetBindingDeepBinding: null,
+        assetBindingPresetId: null,
+        assetBindingPresetVersionId: null,
+        assetBindingWorldbookProfileId: null,
+        assetBindingWorldbookVersionId: null,
+        assetBindingRegexProfileId: null,
+        assetBindingRegexProfileVersionId: null,
         createdAt: NOW,
         updatedAt: NOW,
       },
@@ -295,6 +307,13 @@ describe("backup routes", () => {
         branchId: "alt",
         sourceFloorId: mainFloorId,
         sourceBranchId: "main",
+        assetBindingDeepBinding: false,
+        assetBindingPresetId: presetId,
+        assetBindingPresetVersionId: presetVersionId,
+        assetBindingWorldbookProfileId: worldbookId,
+        assetBindingWorldbookVersionId: worldbookVersionId,
+        assetBindingRegexProfileId: regexProfileId,
+        assetBindingRegexProfileVersionId: regexProfileVersionId,
         createdAt: NOW + 100,
         updatedAt: NOW + 100,
       },
@@ -494,6 +513,122 @@ describe("backup routes", () => {
       createdAt: NOW + 200,
     });
 
+    await database.insert(operationLogs).values([
+      {
+        id: presetOperationId,
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        actorType: "user",
+        actorId: DEFAULT_ADMIN_ACCOUNT_ID,
+        operationGroupId: "source-operation-group-1",
+        requestId: "source-request-1",
+        sourceType: "http",
+        action: "update_preset",
+        status: "succeeded",
+        sessionId,
+        branchId: "alt",
+        floorId: altFloorId,
+        runId: "source-run-1",
+        targetType: "preset",
+        targetId: presetId,
+        beforeRefJson: stringifyJsonField({ preset_id: presetId, version_id: null }),
+        afterRefJson: stringifyJsonField({ preset_id: presetId, version_id: presetVersionId }),
+        diffJson: stringifyJsonField({ total_changes: 1 }),
+        metadataJson: stringifyJsonField({ route: "PATCH /presets/:id" }),
+        createdAt: NOW + 250,
+      },
+      {
+        id: tagOperationId,
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        actorType: "user",
+        actorId: DEFAULT_ADMIN_ACCOUNT_ID,
+        operationGroupId: "source-operation-group-1",
+        requestId: "source-request-2",
+        sourceType: "http",
+        action: "create_tag",
+        status: "succeeded",
+        sessionId,
+        branchId: "alt",
+        floorId: altFloorId,
+        runId: "source-run-2",
+        targetType: "vc_tag",
+        targetId: "tag-floor-alt",
+        beforeRefJson: null,
+        afterRefJson: stringifyJsonField({ tag_id: "tag-floor-alt", target_type: "floor", target_id: altFloorId }),
+        diffJson: stringifyJsonField({ total_changes: 1 }),
+        metadataJson: stringifyJsonField({ route: "POST /vc-tags" }),
+        createdAt: NOW + 251,
+      },
+      {
+        id: floorOperationId,
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        actorType: "system",
+        actorId: null,
+        operationGroupId: "source-operation-group-2",
+        requestId: "source-request-3",
+        sourceType: "worker",
+        action: "commit_floor",
+        status: "succeeded",
+        sessionId,
+        branchId: "alt",
+        floorId: altFloorId,
+        runId: "source-run-3",
+        targetType: "floor",
+        targetId: altFloorId,
+        beforeRefJson: null,
+        afterRefJson: stringifyJsonField({ floor_id: altFloorId }),
+        diffJson: stringifyJsonField({ total_changes: 1 }),
+        metadataJson: stringifyJsonField({ route: "turn_commit" }),
+        createdAt: NOW + 252,
+      },
+      {
+        id: "source-operation-unrelated-1",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        actorType: "system",
+        actorId: null,
+        operationGroupId: null,
+        requestId: "source-request-unrelated",
+        sourceType: "worker",
+        action: "external_cleanup",
+        status: "succeeded",
+        sessionId: null,
+        branchId: null,
+        floorId: null,
+        runId: null,
+        targetType: "system",
+        targetId: "system-1",
+        beforeRefJson: null,
+        afterRefJson: null,
+        diffJson: null,
+        metadataJson: null,
+        createdAt: NOW + 253,
+      },
+    ]);
+
+    await database.insert(vcTags).values([
+      {
+        id: "tag-floor-alt",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        name: "alt-checkpoint",
+        targetType: "floor",
+        targetId: altFloorId,
+        sessionId,
+        metadataJson: stringifyJsonField({ kind: "floor" }),
+        createdByOperationId: tagOperationId,
+        createdAt: NOW + 300,
+      },
+      {
+        id: "tag-preset-version",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        name: "preset-release",
+        targetType: "asset_version",
+        targetId: presetVersionId,
+        sessionId: null,
+        metadataJson: stringifyJsonField({ kind: "asset" }),
+        createdByOperationId: null,
+        createdAt: NOW + 301,
+      },
+    ]);
+
     return {
       characterId,
       presetId,
@@ -501,7 +636,33 @@ describe("backup routes", () => {
       regexProfileId,
       sessionId,
       altFloorId,
+      presetOperationId,
+      tagOperationId,
+      floorOperationId,
     };
+  }
+
+  function readRestoredSourceOperationId(metadataJson: string | null): string | null {
+    return readRestoredOperationLogSourceString(metadataJson, "operation_log_id");
+  }
+
+  function readRestoredSourceRequestId(metadataJson: string | null): string | null {
+    return readRestoredOperationLogSourceString(metadataJson, "request_id");
+  }
+
+  function readRestoredSourceRunId(metadataJson: string | null): string | null {
+    return readRestoredOperationLogSourceString(metadataJson, "run_id");
+  }
+
+  function readRestoredOperationLogSourceString(metadataJson: string | null, field: string): string | null {
+    if (!metadataJson) return null;
+    const parsed = JSON.parse(metadataJson) as {
+      restore?: {
+        source?: Record<string, unknown>;
+      };
+    };
+    const value = parsed.restore?.source?.[field];
+    return typeof value === "string" ? value : null;
   }
 
   it("exports, previews, restores, and keeps branch-aware session truth", async () => {
@@ -545,9 +706,11 @@ describe("backup routes", () => {
     expect(downloadResponse.statusCode).toBe(200);
     const backupFile = JSON.parse(downloadResponse.body) as ThBackupFile;
     expect(backupFile.spec).toBe("tavern_headless_backup");
+    expect(backupFile.spec_version).toBe("1.1.0");
     expect(backupFile.sessions).toHaveLength(1);
     expect(backupFile.resources.presets).toHaveLength(1);
     expect(backupFile.resources.presets[0]?.versions).toHaveLength(1);
+    expect(backupFile.resources.presets[0]?.versions[0]?.created_by_operation_id).toBe("source-operation-1");
     expect(backupFile.resources.worldbooks[0]?.versions).toHaveLength(1);
     expect(backupFile.resources.regex_profiles).toHaveLength(1);
     expect(backupFile.resources.regex_profiles[0]?.versions).toHaveLength(1);
@@ -555,6 +718,21 @@ describe("backup routes", () => {
     expect(backupFile.sessions[0]?.profile_binding.preset_version_id_ref).toBe("presetver-1");
     expect(backupFile.sessions[0]?.profile_binding.worldbook_version_id_ref).toBe("wbver-1");
     expect(backupFile.sessions[0]?.profile_binding.regex_profile_version_id_ref).toBe("regexver-1");
+    const exportedAltBranch = backupFile.sessions[0]?.branches.find((branch) => branch.branch_id === "alt");
+    expect(exportedAltBranch?.asset_binding).toMatchObject({
+      deep_binding: false,
+      preset_id_ref: "preset-1",
+      preset_version_id_ref: "presetver-1",
+      worldbook_id_ref: "wb-1",
+      worldbook_version_id_ref: "wbver-1",
+      regex_profile_id_ref: "regex-1",
+      regex_profile_version_id_ref: "regexver-1",
+    });
+    expect(backupFile.vc.tags).toHaveLength(2);
+    expect(backupFile.vc.tags.find((tag) => tag.id === "tag-floor-alt")?.target_asset_kind).toBeNull();
+    expect(backupFile.vc.tags.find((tag) => tag.id === "tag-preset-version")?.target_asset_kind).toBe("preset");
+    expect(backupFile.vc.tags.find((tag) => tag.id === "tag-floor-alt")?.created_by_operation_id_ref).toBeNull();
+    expect(backupFile.vc.operation_logs).toHaveLength(0);
 
     const previewResponse = await built.app.inject({
       method: "POST",
@@ -570,11 +748,13 @@ describe("backup routes", () => {
     expect(previewBody.data.warnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ code: "restore_drops_user_binding" }),
+        expect.objectContaining({ code: "operation_ref_dropped" }),
       ]),
     );
     expect(previewBody.data.counts.preset_versions).toBe(1);
     expect(previewBody.data.counts.worldbook_versions).toBe(1);
     expect(previewBody.data.counts.regex_profile_versions).toBe(1);
+    expect(previewBody.data.counts.vc_tags).toBe(2);
     expect(previewBody.data.dropped_bindings.presets).toBe(0);
     expect(previewBody.data.dropped_bindings.regex_profiles).toBe(0);
 
@@ -603,6 +783,8 @@ describe("backup routes", () => {
     expect(restoreDetailBody.data.result.created.regex_profile_versions).toBe(1);
     expect(restoreDetailBody.data.result.created.branch_local_variable_snapshots).toBe(1);
     expect(restoreDetailBody.data.result.created.runtime_scope_states).toBeGreaterThan(0);
+    expect(restoreDetailBody.data.result.created.vc_tags).toBe(2);
+    expect(restoreDetailBody.data.result.created.operation_logs).toBe(0);
 
     const sessionRows = await built.database.select().from(sessions).where(eq(sessions.accountId, DEFAULT_ADMIN_ACCOUNT_ID));
     expect(sessionRows).toHaveLength(2);
@@ -622,6 +804,13 @@ describe("backup routes", () => {
     expect(restoredSession?.regexProfileVersionId).not.toBeNull();
     expect(restoredSession?.userId).toBeNull();
 
+    const restoredPresetVersionRows = await built.database.select().from(presetVersions).where(eq(
+      presetVersions.presetId,
+      restoredSession!.presetId!,
+    ));
+    expect(restoredPresetVersionRows).toHaveLength(1);
+    expect(restoredPresetVersionRows[0]?.createdByOperationId).toBeNull();
+
     const restoredCharacter = await built.database.select().from(characters).where(and(
       eq(characters.accountId, DEFAULT_ADMIN_ACCOUNT_ID),
       like(characters.name, "%(restored)%"),
@@ -636,6 +825,15 @@ describe("backup routes", () => {
 
     const restoredBranches = await built.database.select().from(sessionBranches).where(eq(sessionBranches.sessionId, restoredSession!.id));
     expect(restoredBranches.map((row) => row.branchId).sort()).toEqual(["alt", "main"]);
+    const restoredAltBranch = restoredBranches.find((row) => row.branchId === "alt");
+    expect(restoredAltBranch?.assetBindingPresetId).not.toBeNull();
+    expect(restoredAltBranch?.assetBindingPresetId).not.toBe(seeded.presetId);
+    expect(restoredAltBranch?.assetBindingPresetVersionId).not.toBe("presetver-1");
+    expect(restoredAltBranch?.assetBindingWorldbookProfileId).not.toBe(seeded.worldbookId);
+    expect(restoredAltBranch?.assetBindingWorldbookVersionId).not.toBe("wbver-1");
+    expect(restoredAltBranch?.assetBindingRegexProfileId).not.toBe(seeded.regexProfileId);
+    expect(restoredAltBranch?.assetBindingRegexProfileVersionId).not.toBe("regexver-1");
+    expect(restoredAltBranch?.assetBindingDeepBinding).toBe(false);
 
     const restoredAltFloor = await built.database.select().from(floors).where(and(
       eq(floors.sessionId, restoredSession!.id),
@@ -673,12 +871,178 @@ describe("backup routes", () => {
     ));
     expect(runtimeScopeRows).toHaveLength(1);
 
+    const allTags = await built.database.select().from(vcTags).where(eq(vcTags.accountId, DEFAULT_ADMIN_ACCOUNT_ID));
+    expect(allTags).toHaveLength(4);
+    const restoredFloorTag = allTags.find((tag) => tag.name === "alt-checkpoint (restored)");
+    expect(restoredFloorTag).toBeDefined();
+    expect(restoredFloorTag?.targetType).toBe("floor");
+    expect(restoredFloorTag?.targetId).toBe(restoredAltFloor[0]!.id);
+    expect(restoredFloorTag?.sessionId).toBe(restoredSession!.id);
+    expect(restoredFloorTag?.createdByOperationId).toBeNull();
+
+    const restoredAssetTag = allTags.find((tag) => tag.name === "preset-release (restored)");
+    expect(restoredAssetTag).toBeDefined();
+    expect(restoredAssetTag?.targetType).toBe("asset_version");
+    expect(restoredAssetTag?.targetId).not.toBe("presetver-1");
+    expect(restoredAssetTag?.sessionId).toBeNull();
+    expect(restoredAssetTag?.createdByOperationId).toBeNull();
+
     const listResponse = await built.app.inject({
       method: "GET",
       url: "/backup-jobs",
     });
     expect(listResponse.statusCode).toBe(200);
     expect(JSON.parse(listResponse.body).data).toHaveLength(2);
+  });
+
+  it("exports referenced operation logs and restores remapped operation references", async () => {
+    const built = await createBackupApp();
+    const seeded = await seedCoreAssets(built.database);
+    const worker = new BackupWorker(built.database, {
+      artifactDir,
+      pollIntervalMs: 60_000,
+      workerId: "backup-worker-operation-log-test",
+      exportArtifactTtlMs: 60_000,
+    });
+
+    const createExportResponse = await built.app.inject({
+      method: "POST",
+      url: "/backup/jobs/export",
+      payload: {
+        session_ids: [seeded.sessionId],
+        include_linked_assets: true,
+        include_operation_logs: "referenced",
+      },
+    });
+
+    expect(createExportResponse.statusCode).toBe(202);
+    const exportJobId = JSON.parse(createExportResponse.body).data.job_id as string;
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    const exportDetailResponse = await built.app.inject({
+      method: "GET",
+      url: `/backup-jobs/${exportJobId}`,
+    });
+    expect(exportDetailResponse.statusCode).toBe(200);
+    expect(JSON.parse(exportDetailResponse.body).data.result.counts.operation_logs).toBe(2);
+
+    const downloadResponse = await built.app.inject({
+      method: "GET",
+      url: `/backup-jobs/${exportJobId}/file`,
+    });
+    expect(downloadResponse.statusCode).toBe(200);
+    const backupFile = JSON.parse(downloadResponse.body) as ThBackupFile;
+    expect(backupFile.vc.operation_logs.map((log) => log.id).sort()).toEqual([
+      seeded.presetOperationId,
+      seeded.tagOperationId,
+    ].sort());
+    expect(backupFile.vc.operation_logs.every((log) => log.operation_group_id === "source-operation-group-1")).toBe(true);
+    expect(backupFile.vc.tags.find((tag) => tag.id === "tag-floor-alt")?.created_by_operation_id_ref).toBe(seeded.tagOperationId);
+
+    const previewResponse = await built.app.inject({
+      method: "POST",
+      url: "/backup/restore/preview",
+      payload: { data: backupFile },
+    });
+    expect(previewResponse.statusCode).toBe(200);
+    expect(JSON.parse(previewResponse.body).data.counts.operation_logs).toBe(2);
+
+    const createRestoreResponse = await built.app.inject({
+      method: "POST",
+      url: "/backup/jobs/restore",
+      payload: {
+        data: backupFile,
+        mode: "create_copy",
+      },
+    });
+    expect(createRestoreResponse.statusCode).toBe(202);
+    const restoreJobId = JSON.parse(createRestoreResponse.body).data.job_id as string;
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    const restoreDetailResponse = await built.app.inject({
+      method: "GET",
+      url: `/backup-jobs/${restoreJobId}`,
+    });
+    expect(restoreDetailResponse.statusCode).toBe(200);
+    const restoreDetailBody = JSON.parse(restoreDetailResponse.body);
+    expect(restoreDetailBody.data.last_error).toBeNull();
+    expect(restoreDetailBody.data.status).toBe("succeeded");
+    expect(restoreDetailBody.data.result).not.toBeNull();
+    expect(restoreDetailBody.data.result.created.operation_logs).toBe(2);
+    expect(restoreDetailBody.data.result.created.vc_tags).toBe(2);
+
+    const allOperationLogs = await built.database.select().from(operationLogs).where(eq(
+      operationLogs.accountId,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+    ));
+    const restoredPresetOperation = allOperationLogs.find((row) => readRestoredSourceOperationId(row.metadataJson) === seeded.presetOperationId);
+    const restoredTagOperation = allOperationLogs.find((row) => readRestoredSourceOperationId(row.metadataJson) === seeded.tagOperationId);
+    expect(restoredPresetOperation).toBeDefined();
+    expect(restoredTagOperation).toBeDefined();
+    expect(restoredPresetOperation?.id).not.toBe(seeded.presetOperationId);
+    expect(restoredTagOperation?.id).not.toBe(seeded.tagOperationId);
+    expect(restoredPresetOperation?.requestId).toBeNull();
+    expect(restoredTagOperation?.requestId).toBeNull();
+    expect(restoredPresetOperation?.operationGroupId).toBe(restoredTagOperation?.operationGroupId);
+    expect(restoredPresetOperation?.operationGroupId).not.toBe("source-operation-group-1");
+    expect(readRestoredSourceRequestId(restoredPresetOperation?.metadataJson ?? null)).toBe("source-request-1");
+    expect(readRestoredSourceRunId(restoredTagOperation?.metadataJson ?? null)).toBe("source-run-2");
+
+    const restoredSession = (await built.database.select().from(sessions).where(eq(
+      sessions.accountId,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+    ))).find((row) => row.id !== seeded.sessionId);
+    expect(restoredSession).toBeDefined();
+
+    const restoredPresetVersionRows = await built.database.select().from(presetVersions).where(eq(
+      presetVersions.presetId,
+      restoredSession!.presetId!,
+    ));
+    expect(restoredPresetVersionRows).toHaveLength(1);
+    expect(restoredPresetVersionRows[0]?.createdByOperationId).toBe(restoredPresetOperation?.id);
+
+    const restoredTags = await built.database.select().from(vcTags).where(eq(vcTags.accountId, DEFAULT_ADMIN_ACCOUNT_ID));
+    const restoredFloorTag = restoredTags.find((tag) => tag.name === "alt-checkpoint (restored)");
+    expect(restoredFloorTag?.createdByOperationId).toBe(restoredTagOperation?.id);
+  });
+
+  it("exports selected-scope operation logs without unrelated logs", async () => {
+    const built = await createBackupApp();
+    const seeded = await seedCoreAssets(built.database);
+    const worker = new BackupWorker(built.database, {
+      artifactDir,
+      pollIntervalMs: 60_000,
+      workerId: "backup-worker-selected-scope-test",
+      exportArtifactTtlMs: 60_000,
+    });
+
+    const createExportResponse = await built.app.inject({
+      method: "POST",
+      url: "/backup/jobs/export",
+      payload: {
+        session_ids: [seeded.sessionId],
+        include_linked_assets: true,
+        include_operation_logs: "selected_scope",
+      },
+    });
+
+    expect(createExportResponse.statusCode).toBe(202);
+    const exportJobId = JSON.parse(createExportResponse.body).data.job_id as string;
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    const downloadResponse = await built.app.inject({
+      method: "GET",
+      url: `/backup-jobs/${exportJobId}/file`,
+    });
+    expect(downloadResponse.statusCode).toBe(200);
+    const backupFile = JSON.parse(downloadResponse.body) as ThBackupFile;
+    expect(backupFile.vc.operation_logs.map((log) => log.id).sort()).toEqual([
+      seeded.floorOperationId,
+      seeded.presetOperationId,
+      seeded.tagOperationId,
+    ].sort());
+    expect(backupFile.vc.operation_logs.some((log) => log.id === "source-operation-unrelated-1")).toBe(false);
+    expect(backupFile.vc.operation_logs.find((log) => log.id === seeded.floorOperationId)?.target_id_ref).toBe(seeded.altFloorId);
   });
 
   it("supports cancel and retry projections for backup jobs", async () => {

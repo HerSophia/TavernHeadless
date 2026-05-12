@@ -67,8 +67,10 @@ export type {
 export {
   TH_BACKUP_SPEC,
   TH_BACKUP_SPEC_VERSION,
+  TH_BACKUP_SUPPORTED_SPEC_VERSIONS,
   TH_BACKUP_KIND,
   TH_BACKUP_DOMAINS,
+  TH_BACKUP_VC_ASSET_KINDS,
   thBackupSourceSchema,
   thBackupOptionsSchema,
   thBackupSecretsExtensionSchema,
@@ -80,6 +82,7 @@ export {
   thBackupWorldbookEntrySchema,
   thBackupWorldbookSchema,
   thBackupRegexProfileSchema,
+  thBackupSessionBranchAssetBindingSchema,
   thBackupSessionBranchSchema,
   thBackupMessageSchema,
   thBackupPageSchema,
@@ -95,11 +98,16 @@ export {
   thBackupSessionProfileBindingSchema,
   thBackupSessionSchema,
   thBackupResourcesSchema,
+  thBackupVcTagSchema,
+  thBackupOperationLogSchema,
+  thBackupVcSchema,
   thBackupFileSchema,
 } from './types/index.js';
 
 export type {
   ThBackupDomain,
+  ThBackupSpecVersion,
+  ThBackupVcAssetKind,
   ThBackupSource,
   ThBackupOptions,
   ThBackupSecretsExtension,
@@ -111,6 +119,7 @@ export type {
   ThBackupWorldbookEntry,
   ThBackupWorldbook,
   ThBackupRegexProfile,
+  ThBackupSessionBranchAssetBinding,
   ThBackupSessionBranch,
   ThBackupMessage,
   ThBackupPage,
@@ -126,6 +135,9 @@ export type {
   ThBackupSessionProfileBinding,
   ThBackupSession,
   ThBackupResources,
+  ThBackupVcTag,
+  ThBackupOperationLog,
+  ThBackupVc,
   ThBackupFile,
 } from './types/index.js';
 

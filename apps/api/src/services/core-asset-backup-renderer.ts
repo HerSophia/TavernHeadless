@@ -35,6 +35,7 @@ export function renderCoreAssetBackup(
       regex_profiles: snapshot.resources.regexProfiles,
     },
     sessions: snapshot.sessions,
+    vc: snapshot.vc,
     extensions: {
       secrets: {
         mode: "excluded",

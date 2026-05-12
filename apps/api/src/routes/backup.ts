@@ -12,10 +12,12 @@ import { BackupJobScheduler } from "../services/backup-job-scheduler.js";
 import { executeResourceWrite, ResourceWriteRouteError } from "../services/resource-write.js";
 import { CoreAssetBackupError, assertCoreAssetBackupRestoreMode } from "../services/core-asset-backup-parser.js";
 import { previewCoreAssetBackup } from "../services/core-asset-backup-preview.js";
+import { BACKUP_OPERATION_LOG_INCLUDE_MODES } from "../services/backup-runtime-job-definitions.js";
 
 const BACKUP_DESCRIPTION = "高级开发特性。该组路由用于导出 TavernHeadless 核心资产备份、执行 restore preview，以及把恢复任务写入 Background Job Runtime。请求体固定为 JSON，不提供 multipart 上传。";
 
 const backupDomainSchema = z.enum(TH_BACKUP_DOMAINS);
+const backupOperationLogIncludeModeSchema = z.enum(BACKUP_OPERATION_LOG_INCLUDE_MODES);
 
 const createBackupExportJobBodySchema = z.object({
   domains: z.array(backupDomainSchema).min(1).optional(),
@@ -25,6 +27,8 @@ const createBackupExportJobBodySchema = z.object({
   worldbook_ids: z.array(z.string().min(1)).optional(),
   regex_profile_ids: z.array(z.string().min(1)).optional(),
   include_linked_assets: z.boolean().default(true),
+  include_vc_tags: z.boolean().default(true),
+  include_operation_logs: backupOperationLogIncludeModeSchema.default("none"),
   include_secrets: z.literal(false).default(false),
 });
 
@@ -58,6 +62,10 @@ const backupFileExample = {
     regex_profiles: [],
   },
   sessions: [],
+  vc: {
+    tags: [],
+    operation_logs: [],
+  },
   extensions: {
     secrets: {
       mode: "excluded",
@@ -68,6 +76,8 @@ const backupFileExample = {
 const createBackupExportJobBodyExample = {
   session_ids: ["sess_001"],
   include_linked_assets: true,
+  include_vc_tags: true,
+  include_operation_logs: "referenced",
 } as const;
 
 const createBackupRestoreBodyExample = {
@@ -96,6 +106,8 @@ const backupCountSummaryJsonSchema = {
     "branch_local_variable_snapshots",
     "memory_items",
     "memory_edges",
+    "vc_tags",
+    "operation_logs",
   ],
   properties: {
     characters: { type: "integer", minimum: 0 },
@@ -116,6 +128,8 @@ const backupCountSummaryJsonSchema = {
     branch_local_variable_snapshots: { type: "integer", minimum: 0 },
     memory_items: { type: "integer", minimum: 0 },
     memory_edges: { type: "integer", minimum: 0 },
+    vc_tags: { type: "integer", minimum: 0 },
+    operation_logs: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 } as const;
@@ -148,7 +162,7 @@ const backupRenamedResourceJsonSchema = {
   type: "object",
   required: ["type", "old_name", "new_name"],
   properties: {
-    type: { type: "string", enum: ["character", "preset", "worldbook", "regex_profile", "session"] },
+    type: { type: "string", enum: ["character", "preset", "worldbook", "regex_profile", "session", "vc_tag"] },
     old_name: { type: "string" },
     new_name: { type: "string" },
   },
@@ -180,6 +194,8 @@ const createBackupExportJobBodyJsonSchema = {
     worldbook_ids: { type: "array", items: { type: "string", minLength: 1 } },
     regex_profile_ids: { type: "array", items: { type: "string", minLength: 1 } },
     include_linked_assets: { type: "boolean", default: true },
+    include_vc_tags: { type: "boolean", default: true },
+    include_operation_logs: { type: "string", enum: [...BACKUP_OPERATION_LOG_INCLUDE_MODES], default: "none" },
     include_secrets: { type: "boolean", enum: [false], default: false },
   },
   additionalProperties: false,
@@ -225,6 +241,8 @@ const backupPreviewResponseExample = {
       branch_local_variable_snapshots: 1,
       memory_items: 3,
       memory_edges: 2,
+      vc_tags: 1,
+      operation_logs: 0,
     },
     will_create: {
       characters: 1,
@@ -398,6 +416,8 @@ export async function registerBackupRoutes(
           worldbookIds: parsedBody.data.worldbook_ids,
           regexProfileIds: parsedBody.data.regex_profile_ids,
           includeLinkedAssets: parsedBody.data.include_linked_assets,
+          includeVcTags: parsedBody.data.include_vc_tags,
+          includeOperationLogs: parsedBody.data.include_operation_logs,
           includeSecrets: parsedBody.data.include_secrets,
           createdAt,
         });

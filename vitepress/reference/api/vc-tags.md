@@ -6,7 +6,7 @@ outline: [2, 3]
 
 VC Tag 用来给重要的历史点命名。第一版支持给 Floor 和资产版本打标签。
 
-它只保存引用，不复制 Floor、Prompt、角色卡或资产正文。创建和删除标签会写入 Operation Log。
+它只保存引用，不复制 Floor、Prompt、角色卡或资产正文。创建和删除标签会写入 Operation Log。核心资产备份 `1.1.0` 会默认导出指向已导出 floor 或资产版本的 VC Tag。
 
 ## 什么时候需要看这页
 
@@ -21,6 +21,7 @@ VC Tag 用来给重要的历史点命名。第一版支持给 Floor 和资产版
 | tag | 一个账号内唯一的名字 |
 | target | 标签指向的对象，目前支持 `floor` 和 `asset_version` |
 | metadata | 标签自己的附加信息。Operation Log 只记录是否存在 metadata，不保存完整 metadata 内容 |
+| `target_asset_kind` | 备份文件里用于说明 `asset_version` 指向哪类资产版本，取值为 `character`、`preset`、`worldbook`、`regex_profile` |
 
 ## 创建标签
 
@@ -162,3 +163,12 @@ DELETE /vc-tags/:id
 | 状态码 | `error.code` | 说明 |
 | ---- | ---- | ---- |
 | `404` | `tag_not_found` | 标签不存在或不属于当前账号 |
+
+
+## 备份与恢复
+
+- `POST /backup/jobs/export` 默认 `include_vc_tags=true`，会导出目标已经进入备份文件的标签。
+- 如果请求 `include_operation_logs="referenced"` 或 `include_operation_logs="selected_scope"`，标签的 `created_by_operation_id` 会在对应日志也被导出时写入 `created_by_operation_id_ref`。
+- 恢复时标签会创建为新 ID。目标 floor 或资产版本会映射到恢复后的新 ID。
+- 如果标签名与现有标签重名，恢复规划会自动改名，例如追加 `(restored)`。
+- 如果对应 Operation Log 没有导入，恢复后的 `created_by_operation_id` 为 `null`。

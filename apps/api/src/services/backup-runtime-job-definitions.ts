@@ -23,6 +23,7 @@ export const BACKUP_JOB_PHASES = [
   "finalizing",
   "completed",
 ] as const;
+export const BACKUP_OPERATION_LOG_INCLUDE_MODES = ["none", "referenced", "selected_scope"] as const;
 
 export const BACKUP_RUNTIME_JOB_TYPES = {
   export_core_assets: "backup.export_core_assets",
@@ -31,9 +32,11 @@ export const BACKUP_RUNTIME_JOB_TYPES = {
 
 export type BackupJobKind = (typeof BACKUP_JOB_KINDS)[number];
 export type BackupJobPhase = (typeof BACKUP_JOB_PHASES)[number];
+export type BackupOperationLogIncludeMode = (typeof BACKUP_OPERATION_LOG_INCLUDE_MODES)[number];
 export type BackupRuntimeJobType = (typeof BACKUP_RUNTIME_JOB_TYPES)[BackupJobKind];
 
 export const backupDomainSchema = z.enum(TH_BACKUP_DOMAINS);
+export const backupOperationLogIncludeModeSchema = z.enum(BACKUP_OPERATION_LOG_INCLUDE_MODES);
 
 export const backupCountSummarySchema = z.object({
   characters: z.number().int().nonnegative(),
@@ -54,6 +57,8 @@ export const backupCountSummarySchema = z.object({
   branch_local_variable_snapshots: z.number().int().nonnegative(),
   memory_items: z.number().int().nonnegative(),
   memory_edges: z.number().int().nonnegative(),
+  vc_tags: z.number().int().nonnegative().default(0),
+  operation_logs: z.number().int().nonnegative().default(0),
 });
 
 export const backupTopLevelCreateSummarySchema = z.object({
@@ -75,7 +80,7 @@ export const backupWarningSchema = z.object({
 });
 
 export const backupRenamedResourceSchema = z.object({
-  type: z.enum(["character", "preset", "worldbook", "regex_profile", "session"]),
+  type: z.enum(["character", "preset", "worldbook", "regex_profile", "session", "vc_tag"]),
   old_name: z.string().min(1),
   new_name: z.string().min(1),
 });
@@ -94,6 +99,8 @@ export const exportCoreAssetsJobRequestSchema = z.object({
   worldbookIds: z.array(z.string().min(1)).optional(),
   regexProfileIds: z.array(z.string().min(1)).optional(),
   includeLinkedAssets: z.boolean().default(true),
+  includeVcTags: z.boolean().default(true),
+  includeOperationLogs: backupOperationLogIncludeModeSchema.default("none"),
   includeSecrets: z.literal(false).default(false),
 });
 
@@ -157,6 +164,8 @@ export function emptyBackupCountSummary(): BackupCountSummary {
     branch_local_variable_snapshots: 0,
     memory_items: 0,
     memory_edges: 0,
+    vc_tags: 0,
+    operation_logs: 0,
   };
 }
 
@@ -201,6 +210,8 @@ function normalizeSelectionDigestPayload(payload: ExportCoreAssetsJobRequest) {
     worldbookIds,
     regexProfileIds,
     includeLinkedAssets: payload.includeLinkedAssets,
+    includeVcTags: payload.includeVcTags,
+    includeOperationLogs: payload.includeOperationLogs,
     includeSecrets: payload.includeSecrets,
   };
 }
