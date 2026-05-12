@@ -379,6 +379,13 @@
                         "when":  1765300000000,
                         "tag":  "0053_unified_vc_tags",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  54,
+                        "version":  "6",
+                        "when":  1765400000000,
+                        "tag":  "0054_unified_vc_schema_constraints",
+                        "breakpoints":  true
                     }
                 ]
 }

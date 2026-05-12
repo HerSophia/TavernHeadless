@@ -138,6 +138,10 @@ export class SessionAssetBindingService {
       return { assetId, versionId: null };
     }
 
+    if (args.inputVersionId === null) {
+      return { assetId, versionId: null };
+    }
+
     const requestedVersionId = args.inputVersionId !== undefined
       ? args.inputVersionId
       : args.inputAssetId === undefined && args.currentAssetId === assetId

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
@@ -7,6 +7,7 @@ import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import {
   accounts,
   presets,
+  presetVersions,
   regexProfiles,
   worldbookEntries,
   worldbooks,
@@ -239,6 +240,170 @@ describe("PromptResourceLoader", () => {
     expect(JSON.stringify(shallow?.preset)).toContain("Use the updated style.");
     expect(deep).toMatchObject({ version: 1, versionId: version1.id, contentHash: version1.contentHash });
     expect(JSON.stringify(deep?.preset)).toContain("Stay in character.");
+  });
+
+  it("warns and falls back to the live preset when a deep-bound preset version is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const now = Date.now();
+      const presetId = nanoid();
+
+      await database.db.insert(presets).values({
+        id: presetId,
+        name: "Fallback Preset",
+        source: "sillytavern",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const loaded = await loader.loadPreset(DEFAULT_ADMIN_ACCOUNT_ID, presetId, {
+        deepBinding: true,
+        presetVersionId: "missing-preset-version",
+      });
+
+      expect(loaded).toMatchObject({ id: presetId, version: 1 });
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[PromptResourceLoader] deep binding fallback",
+        expect.objectContaining({
+          assetType: "preset",
+          assetId: presetId,
+          requestedVersionId: "missing-preset-version",
+          reason: "version_row_missing",
+          fallback: "live_asset",
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("warns and falls back to the live preset when a deep-bound preset version cannot be parsed", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const now = Date.now();
+      const presetId = nanoid();
+      const versionId = nanoid();
+
+      await database.db.insert(presets).values({
+        id: presetId,
+        name: "Invalid Version Preset",
+        source: "sillytavern",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+        version: 2,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await database.db.insert(presetVersions).values({
+        id: versionId,
+        presetId,
+        parentVersionId: null,
+        versionNo: 1,
+        dataJson: "{not-json",
+        contentHash: "invalid-json",
+        createdByOperationId: null,
+        createdAt: now,
+      });
+
+      const loaded = await loader.loadPreset(DEFAULT_ADMIN_ACCOUNT_ID, presetId, {
+        deepBinding: true,
+        presetVersionId: versionId,
+      });
+
+      expect(loaded).toMatchObject({ id: presetId, version: 2 });
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[PromptResourceLoader] deep binding fallback",
+        expect.objectContaining({
+          assetType: "preset",
+          assetId: presetId,
+          requestedVersionId: versionId,
+          reason: "version_parse_failed",
+          fallback: "live_asset",
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("warns and falls back to the live worldbook when a deep-bound worldbook version is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const now = Date.now();
+      const worldbookId = nanoid();
+
+      await database.db.insert(worldbooks).values({
+        id: worldbookId,
+        name: "Fallback Worldbook",
+        source: "sillytavern",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        dataJson: JSON.stringify({ scanDepth: 4 }),
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const loaded = await loader.loadWorldbookData(DEFAULT_ADMIN_ACCOUNT_ID, worldbookId, {
+        deepBinding: true,
+        worldbookVersionId: "missing-worldbook-version",
+      });
+
+      expect(loaded).toMatchObject({ id: worldbookId, version: 1, worldbook: { scanDepth: 4 } });
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[PromptResourceLoader] deep binding fallback",
+        expect.objectContaining({
+          assetType: "worldbook",
+          assetId: worldbookId,
+          requestedVersionId: "missing-worldbook-version",
+          reason: "version_row_missing",
+          fallback: "live_asset",
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("warns and falls back to the live regex profile when a deep-bound regex profile version is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const now = Date.now();
+      const regexProfileId = nanoid();
+
+      await database.db.insert(regexProfiles).values({
+        id: regexProfileId,
+        name: "Fallback Regex",
+        source: "sillytavern",
+        accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const loaded = await loader.loadRegexScripts(DEFAULT_ADMIN_ACCOUNT_ID, regexProfileId, {
+        deepBinding: true,
+        regexProfileVersionId: "missing-regex-profile-version",
+      });
+
+      expect(loaded).toMatchObject({ id: regexProfileId, version: 1 });
+      expect(loaded?.scripts).toHaveLength(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[PromptResourceLoader] deep binding fallback",
+        expect.objectContaining({
+          assetType: "regex_profile",
+          assetId: regexProfileId,
+          requestedVersionId: "missing-regex-profile-version",
+          reason: "version_row_missing",
+          fallback: "live_asset",
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("returns null when prompt resources belong to another account", async () => {

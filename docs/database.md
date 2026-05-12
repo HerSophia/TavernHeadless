@@ -7,7 +7,7 @@
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
 - 当前基础迁移: `0000_initial_schema.sql`
-- 当前最新迁移: `0042_session_state_governance.sql`
+- 当前最新迁移: `0054_unified_vc_schema_constraints.sql`
 
 ## `account`
 
@@ -115,6 +115,10 @@
 | `preset_id` | `TEXT` | `NULL` | 预设配置 ID |
 | `regex_profile_id` | `TEXT` | `NULL` | 正则配置 ID |
 | `worldbook_profile_id` | `TEXT` | `NULL` | 世界书配置 ID |
+| `deep_binding` | `INTEGER` | `NOT NULL`, default `0` | 是否启用深度资产版本绑定 |
+| `preset_version_id` | `TEXT` | `NULL` | 绑定的 Preset 版本 ID |
+| `worldbook_version_id` | `TEXT` | `NULL` | 绑定的 Worldbook 版本 ID |
+| `regex_profile_version_id` | `TEXT` | `NULL` | 绑定的 Regex Profile 版本 ID |
 | `model_provider` | `TEXT` | `NULL` | 模型服务商 |
 | `model_name` | `TEXT` | `NULL` | 模型名称 |
 | `model_params_json` | `TEXT` | `NULL` | 模型参数 JSON |
@@ -201,6 +205,130 @@
 - `source_floor_id` / `source_branch_id` 表达非破坏性 checkout 或分支创建的来源。
 - `asset_binding_*` 字段只在分支需要固定自己的资产绑定时使用。字段全为 `NULL` 时，运行时继续使用 session 级资产绑定。
 
+## `preset_version`
+
+Preset 版本表。主表 `preset` 保存当前内容，本表保存每次写入后的不可变快照，用于深度绑定、审计和历史回放。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Preset 版本 ID |
+| `preset_id` | `TEXT` | `NOT NULL`, FK -> `preset.id`, `ON DELETE CASCADE` | 所属 Preset |
+| `parent_version_id` | `TEXT` | `NULL`, FK -> `preset_version.id`, `ON DELETE SET NULL` | 父版本 ID |
+| `version_no` | `INTEGER` | `NOT NULL` | 版本号。同一 Preset 内递增 |
+| `data_json` | `TEXT` | `NOT NULL` | Preset 快照 JSON |
+| `content_hash` | `TEXT` | `NOT NULL` | 内容哈希 |
+| `created_by_operation_id` | `TEXT` | `NULL` | 创建该版本的操作日志 ID。当前只存文本，不加外键 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+
+索引：
+
+- 唯一索引 `preset_version_preset_no_uq(preset_id, version_no)`
+- 普通索引 `preset_version_preset_created_idx(preset_id, created_at)`
+- 普通索引 `preset_version_content_hash_idx(content_hash)`
+
+说明：
+
+- `parent_version_id` 是同表自引用外键，删除父版本时置为 `NULL`。
+- `created_by_operation_id` 第一版只记录引用值，不约束到 `operation_log.id`。
+
+## `worldbook_version`
+
+Worldbook 版本表。主表 `worldbook` 和 `worldbook_entry` 保存当前内容，本表保存组合后的世界书快照。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Worldbook 版本 ID |
+| `worldbook_id` | `TEXT` | `NOT NULL`, FK -> `worldbook.id`, `ON DELETE CASCADE` | 所属 Worldbook |
+| `parent_version_id` | `TEXT` | `NULL`, FK -> `worldbook_version.id`, `ON DELETE SET NULL` | 父版本 ID |
+| `version_no` | `INTEGER` | `NOT NULL` | 版本号。同一 Worldbook 内递增 |
+| `data_json` | `TEXT` | `NOT NULL` | Worldbook 快照 JSON |
+| `content_hash` | `TEXT` | `NOT NULL` | 内容哈希 |
+| `created_by_operation_id` | `TEXT` | `NULL` | 创建该版本的操作日志 ID。当前只存文本，不加外键 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+
+索引：
+
+- 唯一索引 `worldbook_version_worldbook_no_uq(worldbook_id, version_no)`
+- 普通索引 `worldbook_version_worldbook_created_idx(worldbook_id, created_at)`
+- 普通索引 `worldbook_version_content_hash_idx(content_hash)`
+
+说明：
+
+- `parent_version_id` 是同表自引用外键，删除父版本时置为 `NULL`。
+- `created_by_operation_id` 第一版只记录引用值，不约束到 `operation_log.id`。
+
+## `regex_profile_version`
+
+Regex Profile 版本表。主表 `regex_profile` 保存当前正则配置，本表保存每次写入后的不可变快照。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Regex Profile 版本 ID |
+| `regex_profile_id` | `TEXT` | `NOT NULL`, FK -> `regex_profile.id`, `ON DELETE CASCADE` | 所属 Regex Profile |
+| `parent_version_id` | `TEXT` | `NULL`, FK -> `regex_profile_version.id`, `ON DELETE SET NULL` | 父版本 ID |
+| `version_no` | `INTEGER` | `NOT NULL` | 版本号。同一 Regex Profile 内递增 |
+| `data_json` | `TEXT` | `NOT NULL` | Regex Profile 快照 JSON |
+| `content_hash` | `TEXT` | `NOT NULL` | 内容哈希 |
+| `created_by_operation_id` | `TEXT` | `NULL` | 创建该版本的操作日志 ID。当前只存文本，不加外键 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+
+索引：
+
+- 唯一索引 `regex_profile_version_profile_no_uq(regex_profile_id, version_no)`
+- 普通索引 `regex_profile_version_profile_created_idx(regex_profile_id, created_at)`
+- 普通索引 `regex_profile_version_content_hash_idx(content_hash)`
+
+说明：
+
+- `parent_version_id` 是同表自引用外键，删除父版本时置为 `NULL`。
+- `created_by_operation_id` 第一版只记录引用值，不约束到 `operation_log.id`。
+
+## `operation_log`
+
+操作日志表。它记录会影响统一 VC 追溯的写操作，是 append-only 记录。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | 操作日志 ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id`, `ON DELETE RESTRICT` | 所属账号 |
+| `actor_type` | `TEXT` | `NOT NULL` | 操作者类型 |
+| `actor_id` | `TEXT` | `NULL` | 操作者 ID |
+| `operation_group_id` | `TEXT` | `NULL` | 操作组 ID |
+| `request_id` | `TEXT` | `NULL` | 请求 ID |
+| `source_type` | `TEXT` | `NOT NULL` | 操作来源类型 |
+| `action` | `TEXT` | `NOT NULL` | 操作动作 |
+| `status` | `TEXT` | `NOT NULL` | 操作状态 |
+| `session_id` | `TEXT` | `NULL` | 关联会话 ID |
+| `branch_id` | `TEXT` | `NULL` | 关联分支 ID |
+| `floor_id` | `TEXT` | `NULL` | 关联楼层 ID |
+| `run_id` | `TEXT` | `NULL` | 关联 run ID |
+| `target_type` | `TEXT` | `NOT NULL` | 目标类型 |
+| `target_id` | `TEXT` | `NULL` | 目标 ID |
+| `before_ref_json` | `TEXT` | `NULL` | 变更前引用 JSON |
+| `after_ref_json` | `TEXT` | `NULL` | 变更后引用 JSON |
+| `diff_json` | `TEXT` | `NULL` | 摘要 diff JSON |
+| `metadata_json` | `TEXT` | `NULL` | 元信息 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+
+枚举约束：
+
+- `status`: `succeeded | failed | denied | cancelled`
+
+索引：
+
+- 普通索引 `operation_log_account_created_idx(account_id, created_at)`
+- 普通索引 `operation_log_session_created_idx(session_id, created_at)`
+- 普通索引 `operation_log_account_target_created_idx(account_id, target_type, target_id, created_at)`
+- 普通索引 `operation_log_group_idx(operation_group_id)`
+- 普通索引 `operation_log_request_idx(request_id)`
+- 普通索引 `operation_log_floor_created_idx(floor_id, created_at)`
+- 普通索引 `operation_log_run_created_idx(run_id, created_at)`
+
+说明：
+
+- `operation_log` 只追加，不做业务更新。
+- 日志不保存完整 prompt、用户消息、工具参数、工具结果或 LLM 输出正文。
+- `diff_json` 只保存摘要 diff。需要保存完整内容时，应保存目标对象引用和内容哈希。
 
 ## `vc_tag`
 
