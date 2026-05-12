@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const accounts = sqliteTable(
   "account",
@@ -984,7 +984,7 @@ export const presetVersions = sqliteTable(
   {
     id: text("id").primaryKey(),
     presetId: text("preset_id").notNull().references(() => presets.id, { onDelete: "cascade" }),
-    parentVersionId: text("parent_version_id"),
+    parentVersionId: text("parent_version_id").references((): AnySQLiteColumn => presetVersions.id, { onDelete: "set null" }),
     versionNo: integer("version_no").notNull(),
     dataJson: text("data_json").notNull(),
     contentHash: text("content_hash").notNull(),
@@ -994,6 +994,7 @@ export const presetVersions = sqliteTable(
   (table) => ({
     presetVersionUnique: uniqueIndex("preset_version_preset_no_uq").on(table.presetId, table.versionNo),
     presetCreatedAtIdx: index("preset_version_preset_created_idx").on(table.presetId, table.createdAt),
+    presetContentHashIdx: index("preset_version_content_hash_idx").on(table.contentHash),
   })
 );
 
@@ -1002,7 +1003,7 @@ export const worldbookVersions = sqliteTable(
   {
     id: text("id").primaryKey(),
     worldbookId: text("worldbook_id").notNull().references(() => worldbooks.id, { onDelete: "cascade" }),
-    parentVersionId: text("parent_version_id"),
+    parentVersionId: text("parent_version_id").references((): AnySQLiteColumn => worldbookVersions.id, { onDelete: "set null" }),
     versionNo: integer("version_no").notNull(),
     dataJson: text("data_json").notNull(),
     contentHash: text("content_hash").notNull(),
@@ -1012,6 +1013,7 @@ export const worldbookVersions = sqliteTable(
   (table) => ({
     worldbookVersionUnique: uniqueIndex("worldbook_version_worldbook_no_uq").on(table.worldbookId, table.versionNo),
     worldbookCreatedAtIdx: index("worldbook_version_worldbook_created_idx").on(table.worldbookId, table.createdAt),
+    worldbookContentHashIdx: index("worldbook_version_content_hash_idx").on(table.contentHash),
   })
 );
 
@@ -1020,7 +1022,7 @@ export const regexProfileVersions = sqliteTable(
   {
     id: text("id").primaryKey(),
     regexProfileId: text("regex_profile_id").notNull().references(() => regexProfiles.id, { onDelete: "cascade" }),
-    parentVersionId: text("parent_version_id"),
+    parentVersionId: text("parent_version_id").references((): AnySQLiteColumn => regexProfileVersions.id, { onDelete: "set null" }),
     versionNo: integer("version_no").notNull(),
     dataJson: text("data_json").notNull(),
     contentHash: text("content_hash").notNull(),
@@ -1030,6 +1032,7 @@ export const regexProfileVersions = sqliteTable(
   (table) => ({
     regexProfileVersionUnique: uniqueIndex("regex_profile_version_profile_no_uq").on(table.regexProfileId, table.versionNo),
     regexProfileCreatedAtIdx: index("regex_profile_version_profile_created_idx").on(table.regexProfileId, table.createdAt),
+    regexProfileContentHashIdx: index("regex_profile_version_content_hash_idx").on(table.contentHash),
   })
 );
 
