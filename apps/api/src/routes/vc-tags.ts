@@ -25,6 +25,7 @@ import {
   operationActorFromRequest,
   operationRequestIdFromRequest,
 } from "../services/operation-log-service.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 import { VcDiffService } from "../services/vc-diff-service.js";
 import { errorResponseJsonSchema } from "./schemas/common.js";
 
@@ -174,6 +175,7 @@ export async function registerVcTagRoutes(
   connection: DatabaseConnection,
 ): Promise<void> {
   const db = connection.db;
+  const projectAccessService = new ProjectAccessService(db);
 
   app.post("/vc-tags", {
     schema: {

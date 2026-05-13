@@ -81,6 +81,8 @@ import {
   createDefaultSessionStateSlotRegistry,
 } from "./session-state/index.js";
 import { SessionStateObservationService } from "./session-state/session-state-observation-service.js";
+import { ProjectEventLiveHub } from "./services/project-event-live-hub.js";
+import { ProjectAccessService } from "./services/project-access-service.js";
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 const API_VERSION: string = _pkgJson.version ?? "unknown";
@@ -251,6 +253,7 @@ export type BuildAppResult = {
   orchestrationContext?: OrchestrationContext;
   wsBridge?: WsBridge;
   mcpManager?: McpConnectionManager;
+  projectEventLiveHub: ProjectEventLiveHub;
 };
 
 export type MemoryMaintenanceScopeRef = {
@@ -559,7 +562,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let sessionStatePublicService: SessionStatePublicService | undefined;
   let sessionStateCustomNamespaceService: SessionStateCustomNamespaceService | undefined;
   let sessionStateObservationService: SessionStateObservationService | undefined;
-
+  const projectEventLiveHub = new ProjectEventLiveHub();
+  const projectAccessService = new ProjectAccessService(database.db);
 
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
@@ -725,6 +729,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     floorRun: {
       staleRunTimeoutMs: options.llmDefaultTimeoutMs,
     },
+    projectEventLiveHub,
   });
 
   const promptRuntimeControlService = new PromptRuntimeControlService(database.db, {
@@ -830,6 +835,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         sessionStateService,
         firstPartyGameStateService,
         defaultAccountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        projectEventLiveHub,
       }
     );
 
@@ -840,6 +846,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       enablePromptDryRun: options.enablePromptDryRun,
       enableClientData: options.enableClientData === true && Boolean(options.clientData),
       cors: options.cors,
+      projectAccessService,
     });
 
     const shouldEnableWs = options.enableWebSocket ?? Boolean(options.orchestration);
@@ -852,18 +859,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerPromptRuntimeRoutes(app, promptRuntimeControlService, {
     previewService: promptRuntimeReadOnlyService,
     inspectService: promptRuntimeReadOnlyService,
+    projectAccessService,
   });
 
   if (sessionStatePublicService) {
     await registerSessionStateRoutes(app, {
       publicService: sessionStatePublicService,
       customNamespaceService: sessionStateCustomNamespaceService,
+      projectAccessService,
     });
   }
 
   if (sessionStateObservationService) {
     await registerSessionStateObservationRoutes(app, {
       observationService: sessionStateObservationService,
+      projectAccessService,
     });
   }
 
@@ -994,5 +1004,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     orchestrationContext,
     wsBridge,
     mcpManager,
+    projectEventLiveHub,
   };
 }

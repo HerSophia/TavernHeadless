@@ -23,6 +23,7 @@ import {
   operationActorFromRequest,
   operationRequestIdFromRequest,
 } from "../services/operation-log-service.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 import { VcDiffService } from "../services/vc-diff-service.js";
 import { SessionBranchRegistryService } from "../services/variables/host/session-branch-registry-service.js";
 import { errorResponseJsonSchema } from "./schemas/common.js";
@@ -295,6 +296,40 @@ export async function registerBranchVcRoutes(
   const db = connection.db;
   const floorRunService = new FloorRunService(db, undefined, options.floorRun);
   const lineageService = new FloorLineageService(db);
+  const projectAccessService = new ProjectAccessService(db);
+
+  type BranchAccessOk = { ok: true; accountId: string };
+  type BranchAccessFail = { ok: false };
+  type BranchAccessResult = BranchAccessOk | BranchAccessFail;
+
+  function authorizeProjectActionBySessionId(
+    reply: import("fastify").FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+    action: "project.read" | "project.write",
+  ): BranchAccessResult {
+    try {
+      const access = projectAccessService.requireProjectActionBySessionId(
+        actorAccountId,
+        sessionId,
+        action,
+      );
+      return { ok: true, accountId: access.project.accountId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        if (error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
 
   app.post("/sessions/:id/branches/:branch_id/merge/preview", {
     schema: {
@@ -320,7 +355,7 @@ export async function registerBranchVcRoutes(
     const sourceBranchId = parsedParams.data.branch_id;
     const targetBranchId = parsedBody.data.target_branch_id;
 
-    const session = db
+    let session = db
       .select({ id: sessions.id })
       .from(sessions)
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, auth.accountId)))
@@ -328,8 +363,20 @@ export async function registerBranchVcRoutes(
       .get();
 
     if (!session) {
+      const readAccess = authorizeProjectActionBySessionId(reply, auth.accountId, sessionId, "project.read");
+      if (!readAccess.ok) return;
+      session = db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(eq(sessions.id, sessionId))
+        .limit(1)
+        .get();
+    }
+
+    if (!session) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
+
 
     const preview = await buildBranchMergePreview({
       sessionId,
@@ -367,16 +414,30 @@ export async function registerBranchVcRoutes(
     const sourceBranchId = parsedParams.data.branch_id;
     const targetBranchId = parsedBody.data.target_branch_id;
 
-    const session = db
+    let session = db
       .select({ id: sessions.id, accountId: sessions.accountId })
       .from(sessions)
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, auth.accountId)))
       .limit(1)
       .get();
+    let writeAccountId = auth.accountId;
+
+    if (!session) {
+      const writeAccess = authorizeProjectActionBySessionId(reply, auth.accountId, sessionId, "project.write");
+      if (!writeAccess.ok) return;
+      session = db
+        .select({ id: sessions.id, accountId: sessions.accountId })
+        .from(sessions)
+        .where(eq(sessions.id, sessionId))
+        .limit(1)
+        .get();
+      writeAccountId = writeAccess.accountId;
+    }
 
     if (!session) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
+
 
     const preview = await buildBranchMergePreview({
       sessionId,
@@ -406,7 +467,7 @@ export async function registerBranchVcRoutes(
       mergedFloorIds = cloneResult.newFloorIds;
 
       new SessionBranchRegistryService(tx).ensure({
-        accountId: auth.accountId,
+        accountId: writeAccountId,
         sessionId,
         branchId: targetBranchId,
         updatedAt: now,
@@ -415,7 +476,7 @@ export async function registerBranchVcRoutes(
       const afterRef = toMergeBranchOperationRef(preview, mergedFloorIds);
       const operation = new OperationLogService(tx).append({
         ...operationActorFromRequest(request),
-        accountId: auth.accountId,
+        accountId: writeAccountId,
         requestId: operationRequestIdFromRequest(request),
         sourceType: "http",
         action: "merge_branch",
@@ -479,16 +540,30 @@ export async function registerBranchVcRoutes(
     const sessionId = parsedParams.data.id;
     const branchId = parsedParams.data.branch_id;
 
-    const session = db
-      .select({ id: sessions.id, accountId: sessions.accountId })
+    let session = db
+      .select({id: sessions.id, accountId: sessions.accountId })
       .from(sessions)
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, auth.accountId)))
       .limit(1)
       .get();
+    let writeAccountId = auth.accountId;
+
+    if (!session) {
+      const writeAccess = authorizeProjectActionBySessionId(reply, auth.accountId, sessionId, "project.write");
+      if (!writeAccess.ok) return;
+      session = db
+        .select({ id: sessions.id, accountId: sessions.accountId })
+        .from(sessions)
+        .where(eq(sessions.id, sessionId))
+        .limit(1)
+        .get();
+      writeAccountId = writeAccess.accountId;
+    }
 
     if (!session) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
+
 
     const activeRun = await floorRunService.getActiveRunSummary(sessionId, branchId);
     if (activeRun) {
@@ -584,7 +659,7 @@ export async function registerBranchVcRoutes(
       }
 
       new SessionBranchRegistryService(tx).ensure({
-        accountId: auth.accountId,
+        accountId: writeAccountId,
         sessionId,
         branchId,
         updatedAt: now,
@@ -592,7 +667,7 @@ export async function registerBranchVcRoutes(
 
       new OperationLogService(tx).append({
         ...operationActorFromRequest(request),
-        accountId: auth.accountId,
+        accountId: writeAccountId,
         requestId: operationRequestIdFromRequest(request),
         sourceType: "http",
         action: "reset_branch",

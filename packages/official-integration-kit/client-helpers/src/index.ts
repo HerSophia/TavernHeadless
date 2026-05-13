@@ -26,6 +26,13 @@ export {
   summarizeRuntimeToolCatalog,
   type RuntimeToolCatalogSummary,
 } from "./tools/summarize-runtime-tool-catalog.js";
+export {
+  applyProjectEventCursor,
+  dedupeProjectEvents,
+  getProjectEventCursor,
+  isProjectEvent,
+} from "./projects/index.js";
+export type { ProjectEventCursor } from "./projects/index.js";
 export { buildTimelineMessages } from "./timeline/build-timeline-messages.js";
 export type { TimelineContentFormat, TimelineMessageView } from "./timeline/types.js";
 export { resolveUsage } from "./usage/resolve-usage.js";

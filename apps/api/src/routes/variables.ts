@@ -1,5 +1,6 @@
 import type { CoreEventBus } from "@tavern/core";
-import { buildBranchVariableScopeId, parseBranchVariableScopeId, type BranchVariableScopeRef } from "@tavern/shared";
+import { buildBranchVariableScopeId, parseBranchVariableScopeId, type BranchVariableScopeRef, type VariableScope } from "@tavern/shared";
+import { eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
@@ -8,6 +9,7 @@ import { buildListMeta, listQuerySchemaBase } from "../lib/pagination";
 import { parseWithSchema, sendError } from "../lib/http";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
+import { floors, messagePages, sessions, variables } from "../db/schema.js";
 import {
   VariableService,
   type VariableRecord,
@@ -17,6 +19,7 @@ import {
 } from "../services/variables/variable-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 
 const variableScopeSchema = z.enum(["global", "chat", "floor", "branch", "page"]);
 
@@ -408,10 +411,10 @@ const variableListResponseJsonSchema = {
 
 const batchUpsertVariableResultJsonSchema = {
   type: "object",
-  required: ["index", "action", "data"],
+  required: ["index", "action"],
   properties: {
     index: { type: "integer", minimum: 0 },
-    action: { type: "string", enum: ["created", "updated"] },
+    action: { type: "string", enum: ["created", "updated", "project_access_denied"] },
     data: variableJsonSchema,
   },
   additionalProperties: false,
@@ -424,6 +427,7 @@ const batchUpsertVariableMetaJsonSchema = {
     total: { type: "integer", minimum: 1 },
     created: { type: "integer", minimum: 0 },
     updated: { type: "integer", minimum: 0 },
+    access_denied: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 } as const;
@@ -633,10 +637,90 @@ export async function registerVariableRoutes(
   connection: DatabaseConnection,
   options: { eventBus?: CoreEventBus; mutationRuntime?: MutationRuntime } = {}
 ): Promise<void> {
-  const service = new VariableService(connection.db, {
+  const db = connection.db;
+  const service = new VariableService(db, {
     eventBus: options.eventBus,
     mutationRuntime: options.mutationRuntime,
   });
+  const projectAccessService = new ProjectAccessService(db);
+
+  async function resolveSessionOwnerForVariableScope(
+    scope: VariableScope,
+    scopeId: string,
+  ): Promise<{ sessionId: string; accountId: string } | null> {
+    if (scope === "global") {
+      return null;
+    }
+
+    if (scope === "chat") {
+      const [row] = await db
+        .select({ sessionId: sessions.id, accountId: sessions.accountId })
+        .from(sessions)
+        .where(eq(sessions.id, scopeId))
+        .limit(1);
+      return row ?? null;
+    }
+
+    if (scope === "branch") {
+      const parsed = parseBranchVariableScopeId(scopeId);
+      if (!parsed) {
+        return null;
+      }
+
+      const [row] = await db
+        .select({ sessionId: sessions.id, accountId: sessions.accountId })
+        .from(sessions)
+        .where(eq(sessions.id, parsed.sessionId))
+        .limit(1);
+      return row ?? null;
+    }
+
+    if (scope === "floor") {
+      const [row] = await db
+        .select({ sessionId: floors.sessionId, accountId: sessions.accountId })
+        .from(floors)
+        .innerJoin(sessions, eq(floors.sessionId, sessions.id))
+        .where(eq(floors.id, scopeId))
+        .limit(1);
+      return row ?? null;
+    }
+
+    const [row] = await db
+      .select({ sessionId: floors.sessionId, accountId: sessions.accountId })
+      .from(messagePages)
+      .innerJoin(floors, eq(messagePages.floorId, floors.id))
+      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
+      .where(eq(messagePages.id, scopeId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async function resolveVariableWriteAccess(
+    actorAccountId: string,
+    scope: VariableScope,
+    scopeId: string,
+  ): Promise<{ ok: true; accountId: string } | { ok: false; error: ProjectAccessServiceError }> {
+    const target = await resolveSessionOwnerForVariableScope(scope, scopeId);
+    if (!target) {
+      return { ok: true, accountId: actorAccountId };
+    }
+
+    try {
+      projectAccessService.requireProjectActionBySessionId(actorAccountId, target.sessionId, "project.write");
+      return { ok: true, accountId: target.accountId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        return { ok: false, error };
+      }
+      throw error;
+    }
+  }
 
   app.put("/variables", {
     schema: {
@@ -650,6 +734,7 @@ export async function registerVariableRoutes(
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -661,10 +746,16 @@ export async function registerVariableRoutes(
 
     try {
       const auth = getRequestAuthContext(request);
+      const scopeId = normalizeVariableWriteScopeId(parsedBody.data);
+      const writeAccess = await resolveVariableWriteAccess(auth.accountId, parsedBody.data.scope, scopeId);
+      if (!writeAccess.ok) {
+        return sendVariableProjectAccessError(reply, writeAccess.error);
+      }
+
       const result = await service.upsert({
-        accountId: auth.accountId,
+        accountId: writeAccess.accountId,
         scope: parsedBody.data.scope,
-        scopeId: normalizeVariableWriteScopeId(parsedBody.data),
+        scopeId,
         key: parsedBody.data.key,
         value: parsedBody.data.value,
       });
@@ -697,25 +788,83 @@ export async function registerVariableRoutes(
 
     try {
       const auth = getRequestAuthContext(request);
-      const result = await service.upsertMany({
-        accountId: auth.accountId,
-        items: parsedBody.data.items.map((item) => ({
-          accountId: auth.accountId,
+      const resultByIndex = new Map<number, { index: number; action: "created" | "updated" | "project_access_denied"; data?: ReturnType<typeof toVariableResponse> }>();
+      const groups = new Map<string, { accountId: string; originalIndices: number[]; items: Array<{ accountId: string; scope: VariableScope; scopeId: string; key: string; value: unknown }> }>();
+      let accessDenied = 0;
+
+      for (const [index, item] of parsedBody.data.items.entries()) {
+        const scopeId = normalizeVariableWriteScopeId(item);
+        const writeAccess = await resolveVariableWriteAccess(auth.accountId, item.scope, scopeId);
+
+        if (!writeAccess.ok) {
+          if (writeAccess.error.code === "project_access_denied") {
+            accessDenied += 1;
+            resultByIndex.set(index, { index, action: "project_access_denied" });
+            continue;
+          }
+
+          return sendVariableProjectAccessError(reply, writeAccess.error);
+        }
+
+        const group = groups.get(writeAccess.accountId) ?? {
+          accountId: writeAccess.accountId,
+          originalIndices: [],
+          items: [],
+        };
+        group.originalIndices.push(index);
+        group.items.push({
+          accountId: writeAccess.accountId,
           scope: item.scope,
-          scopeId: normalizeVariableWriteScopeId(item),
+          scopeId,
           key: item.key,
           value: item.value,
-        })),
+        });
+        groups.set(writeAccess.accountId, group);
+      }
+
+      let created = 0;
+      let updated = 0;
+
+      for (const group of groups.values()) {
+        const result = await service.upsertMany({
+          accountId: group.accountId,
+          items: group.items,
+        });
+
+        created += result.meta.created;
+        updated += result.meta.updated;
+
+        for (const item of result.results) {
+          const originalIndex = group.originalIndices[item.index];
+          if (originalIndex === undefined) {
+            throw new Error("Variable batch result index is out of range");
+          }
+
+          resultByIndex.set(originalIndex, {
+            index: originalIndex,
+            action: item.action,
+            data: toVariableResponse(item.variable),
+          });
+        }
+      }
+
+      const results = parsedBody.data.items.map((_item, index) => {
+        const item = resultByIndex.get(index);
+        if (!item) {
+          throw new Error("Variable batch upsert did not produce a result for every input item");
+        }
+        return item;
       });
 
       return reply.send({
         data: {
-          results: result.results.map((item) => ({
-            index: item.index,
-            action: item.action,
-            data: toVariableResponse(item.variable),
-          })),
-          meta: result.meta,
+          results,
+          meta: ({
+            total: results.length,
+            created,
+            updated,
+            ...(accessDenied > 0 ? { access_denied: accessDenied } : {}),
+          }),
         },
       });
     } catch (error) {
@@ -844,6 +993,7 @@ export async function registerVariableRoutes(
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -855,12 +1005,35 @@ export async function registerVariableRoutes(
 
     try {
       const auth = getRequestAuthContext(request);
-      await service.remove(parsedParams.data.id, auth.accountId);
+      const [existing] = await db
+        .select({ accountId: variables.accountId, scope: variables.scope, scopeId: variables.scopeId })
+        .from(variables)
+        .where(eq(variables.id, parsedParams.data.id))
+        .limit(1);
+      let accountId = auth.accountId;
+
+      if (existing) {
+        const writeAccess = await resolveVariableWriteAccess(auth.accountId, existing.scope, existing.scopeId);
+        if (!writeAccess.ok) {
+          return sendVariableProjectAccessError(reply, writeAccess.error);
+        }
+        accountId = writeAccess.accountId === existing.accountId ? writeAccess.accountId : auth.accountId;
+      }
+
+      await service.remove(parsedParams.data.id, accountId);
       return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
     } catch (error) {
       return sendServiceError(reply, error);
     }
   });
+}
+
+function sendVariableProjectAccessError(reply: FastifyReply, error: ProjectAccessServiceError) {
+  if (error.code === "session_not_found") {
+    return sendError(reply, 404, "not_found", "Variable target not found");
+  }
+
+  return sendError(reply, error.statusCode, error.code, error.message);
 }
 
 function sendServiceError(reply: FastifyReply, error: unknown) {

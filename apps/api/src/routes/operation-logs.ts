@@ -12,6 +12,7 @@ import {
   type OperationLogRecord,
   type OperationLogStatus,
 } from "../services/operation-log-service.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 
 const operationLogStatusSchema = z.enum(["succeeded", "failed", "denied", "cancelled"]);
@@ -137,6 +138,7 @@ export async function registerOperationLogRoutes(
 ): Promise<void> {
   const { db } = connection;
   const service = new OperationLogService(db);
+  const projectAccessService = new ProjectAccessService(db);
 
   app.get("/operation-logs", {
     schema: {
@@ -178,20 +180,43 @@ export async function registerOperationLogRoutes(
     if (!parsedQuery.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [session] = await db
+    let session: { id: string } | undefined = (await db
       .select({ id: sessions.id })
       .from(sessions)
       .where(and(eq(sessions.id, parsedParams.data.id), eq(sessions.accountId, auth.accountId)))
-      .limit(1);
+      .limit(1))[0];
+    let logAccountId = auth.accountId;
+
+    if (!session) {
+      try {
+        const access = projectAccessService.requireProjectActionBySessionId(
+          auth.accountId,
+          parsedParams.data.id,
+          "project.read",
+        );
+        const [fallback] = await db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(eq(sessions.id, parsedParams.data.id))
+          .limit(1);
+        if (fallback) {
+          session = { id: fallback.id };
+          logAccountId = access.project.accountId;
+        }
+      } catch (error) {
+        if (!(error instanceof ProjectAccessServiceError)) throw error;
+      }
+    }
 
     if (!session) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
-    return sendOperationLogList(reply, service, auth.accountId, {
+    return sendOperationLogList(reply, service, logAccountId, {
       ...parsedQuery.data,
       session_id: session.id,
     });
+
   });
 
   app.get("/floors/:id/operation-logs", {
@@ -215,21 +240,44 @@ export async function registerOperationLogRoutes(
     if (!parsedQuery.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const [floor] = await db
-      .select({ id: floors.id })
+    let floor: { id: string } | undefined = (await db
+      .select({id: floors.id })
       .from(floors)
       .innerJoin(sessions, eq(floors.sessionId, sessions.id))
       .where(and(eq(floors.id, parsedParams.data.id), eq(sessions.accountId, auth.accountId)))
-      .limit(1);
+      .limit(1))[0];
+    let logAccountId = auth.accountId;
+
+    if (!floor) {
+      try {
+        const access = projectAccessService.requireProjectActionByFloorId(
+          auth.accountId,
+          parsedParams.data.id,
+          "project.read",
+        );
+        const [fallback]= await db
+          .select({ id: floors.id })
+          .from(floors)
+          .where(eq(floors.id, parsedParams.data.id))
+          .limit(1);
+        if (fallback) {
+          floor = { id: fallback.id };
+          logAccountId = access.project.accountId;
+        }
+      } catch (error) {
+        if (!(error instanceof ProjectAccessServiceError)) throw error;
+      }
+    }
 
     if (!floor) {
       return sendError(reply, 404, "not_found", "Floor not found");
     }
 
-    return sendOperationLogList(reply, service, auth.accountId, {
+    return sendOperationLogList(reply, service, logAccountId, {
       ...parsedQuery.data,
       floor_id: floor.id,
     });
+
   });
 }
 

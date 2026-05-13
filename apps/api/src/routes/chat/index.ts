@@ -22,6 +22,10 @@ import {
 import { ChatService } from "../../services/chat/chat-service.js";
 import { ChatServiceError } from "../../services/chat/errors.js";
 import { ensureOptionalObjectBody, parseWithSchema, sendError } from "../../lib/http.js";
+import {
+  type ProjectAccessService,
+  ProjectAccessServiceError,
+} from "../../services/project-access-service.js";
 import { getRequestAuthContext } from "../../plugins/auth.js";
 import { applyCorsHeaders } from "../../plugins/cors.js";
 import {
@@ -89,6 +93,80 @@ export async function registerChatRoutes(
   const enablePromptDryRun = options.enablePromptDryRun === true;
   const enableClientData = options.enableClientData === true;
   const cors = options.cors ?? { origins: true, credentials: false };
+  const projectAccessService = options.projectAccessService;
+
+  function authorizeProjectWriteBySessionId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+  ): boolean {
+    if (!projectAccessService) {
+      return true;
+    }
+    try {
+     projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, "project.write");
+      return true;
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return false;
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  function authorizeProjectWriteByFloorId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    floorId: string,
+  ): boolean {
+    if (!projectAccessService) {
+      return true;
+    }
+    try {
+      projectAccessService.requireProjectActionByFloorId(actorAccountId, floorId, "project.write");
+      return true;
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Floor not found");
+          return false;
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  function authorizeProjectWriteByMessageId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    messageId: string,
+  ): boolean {
+    if (!projectAccessService) {
+      return true;
+    }
+    try {
+      projectAccessService.requireProjectActionByMessageId(actorAccountId, messageId, "project.write");
+      return true;
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+      sendError(reply, 404, "not_found", "Message not found");
+          return false;
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return false;
+      }
+      throw error;
+    }
+  }
+
 
   function hasSessionStateWritesField(body: unknown): boolean {
     return typeof body === "object" && body !== null && "session_state_writes" in body;
@@ -285,6 +363,10 @@ export async function registerChatRoutes(
     };
     const accountId = getRequestAuthContext(request).accountId;
 
+    if (!authorizeProjectWriteBySessionId(reply, accountId, parsedParams.data.id)) {
+      return;
+    }
+
     reply.hijack();
     reply.raw.statusCode = 200;
     applyCorsHeaders(reply.raw, request.headers.origin, cors);
@@ -400,6 +482,11 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
+    if (!authorizeProjectWriteBySessionId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+      return;
+    }
+
+
 
     const parsedBody = parseWithSchema(respondBodySchema, request.body, reply);
     if (!parsedBody.ok) return;
@@ -471,6 +558,11 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
+    if (!authorizeProjectWriteBySessionId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+      return;
+    }
+
+
 
     const body = request.body ?? {};
     const parsedBody = parseWithSchema(regenerateBodySchema, body, reply);
@@ -546,6 +638,11 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(floorIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
+    if (!authorizeProjectWriteByFloorId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+      return;
+    }
+
+
 
     const body = request.body ?? {};
     const parsedBody = parseWithSchema(retryFloorBodySchema, body, reply);
@@ -616,6 +713,11 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(messageIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
+    if (!authorizeProjectWriteByMessageId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+      return;
+    }
+
+
 
     const parsedBody = parseWithSchema(editAndRegenerateBodySchema, request.body, reply);
     if (!parsedBody.ok) return;

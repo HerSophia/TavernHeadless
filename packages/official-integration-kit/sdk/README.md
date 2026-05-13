@@ -131,6 +131,99 @@ const sessionInProject = await client.sessions.create({
 
 省略 `projectId` 时，服务端会使用当前账号默认 Workspace，并为新 Session 创建 `session_default` Project。
 
+### Projects 读取、事件和 observer 成员
+
+阶段二已经开放 Project 的读取面、Project Event 查询 / SSE，以及 observer 成员维护。
+
+```ts
+const projects = await client.projects.list({
+  accountId: "account-1",
+  role: "observer",
+});
+
+const project = await client.projects.get({
+  accountId: "account-1",
+  projectId: "proj-1",
+});
+
+const projectSessions = await client.projects.listSessions({
+  accountId: "account-1",
+  projectId: "proj-1",
+  status: "active",
+});
+
+const scope = await client.sessions.getScope({
+  accountId: "account-1",
+  sessionId: "session-1",
+});
+```
+
+`client.projects.listEvents(...)` 对应 `GET /projects/:id/events`：
+
+```ts
+const events = await client.projects.listEvents({
+  accountId: "account-1",
+  projectId: "proj-1",
+  after: 0,
+  types: ["session.created", "message.updated"],
+  sessionId: "session-1",
+  limit: 100,
+});
+
+let cursor = events.nextAfter;
+```
+
+`client.projects.streamEvents(...)` 对应 `GET /projects/:id/events/stream`。它会解析 Project Event SSE，并把每个事件交给 `onEvent`：
+
+```ts
+await client.projects.streamEvents({
+  accountId: "account-1",
+  projectId: "proj-1",
+  lastEventId: cursor ?? undefined,
+  types: ["session.created", "message.updated"],
+  onEvent(event) {
+    cursor = event.sequence;
+  },
+  onHeartbeat() {
+    // 服务端发送了 `: heartbeat`。
+  },
+});
+```
+
+说明：
+
+- `after` 会映射为查询参数 `after`。
+- `types` 数组会映射为逗号分隔的查询参数。
+- `sessionId` 会映射为 `session_id`。
+- `lastEventId` 会在没有传 `after` 时写入 `Last-Event-ID` 请求头。
+- owner 可以读写 Project 下资源；observer 只能读取。
+- observer 写入会得到 `403 project_access_denied`。
+- 非成员访问 Project 下资源时，服务端会隐藏资源存在性。Project API 通常返回 `404 project_not_found`，旧资源路由通常返回 `404 not_found`。
+
+成员维护方法只支持阶段二 observer：
+
+```ts
+const members = await client.projects.listMembers({
+  accountId: "account-1",
+  projectId: "proj-1",
+});
+
+await client.projects.addObserver({
+  accountId: "account-1",
+  projectId: "proj-1",
+  observerAccountId: "account-2",
+});
+
+await client.projects.removeMember({
+  accountId: "account-1",
+  projectId: "proj-1",
+  memberAccountId: "account-2",
+});
+```
+
+阶段二不开放 Project CRUD，也不支持新增非 observer 角色。
+
+
 ### Operation Logs 操作日志
 
 Operation Logs 用来读取审计记录。它保存操作来源、动作、目标、引用和摘要 diff，不保存完整提示词、完整消息、完整工具参数或模型密钥。
