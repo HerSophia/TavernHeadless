@@ -1,5 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNull, like, sql } from "drizzle-orm";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
@@ -29,10 +29,18 @@ import { SessionStateService } from "../session-state/session-state-service.js";
 import { SessionAssetBindingService } from "../services/session-asset-binding-service.js";
 import {
   OperationLogService,
+  type OperationLogRecord,
   operationActorFromRequest,
   operationRequestIdFromRequest,
 } from "../services/operation-log-service.js";
 import { VcDiffService } from "../services/vc-diff-service.js";
+import {
+  ProjectEventService,
+  ProjectEventServiceError,
+  type ProjectEventRecord,
+} from "../services/project-event-service.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
+import type { ProjectEventLiveHub } from "../services/project-event-live-hub.js";
 import { ProjectScopeServiceError } from "../services/project-scope-service.js";
 import { SessionScopeResolver } from "../services/session-scope-resolver.js";
 import { WorkspaceScopeService, WorkspaceScopeServiceError } from "../services/workspace-scope-service.js";
@@ -390,6 +398,17 @@ const deleteResponseJsonSchema = {
     },
   },
   examples: [sessionDeleteResponseExample],
+  additionalProperties: false,
+} as const;
+
+const sessionScopeResponseJsonSchema = {
+  type: "object",
+  required: ["session_id", "workspace_id", "project_id"],
+  properties: {
+    session_id: { type: "string" },
+    workspace_id: { type: "string" },
+    project_id: { type: "string" },
+  },
   additionalProperties: false,
 } as const;
 
@@ -900,6 +919,9 @@ type SessionOperationLogInput = {
   accountId: string;
   action: string;
   sessionId: string;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  actorAccountId?: string | null;
   branchId?: string | null;
   targetId?: string | null;
   beforeRef?: unknown;
@@ -912,13 +934,16 @@ function appendSessionOperationLog(
   tx: DbExecutor,
   request: FastifyRequest,
   input: SessionOperationLogInput,
-): void {
+): OperationLogRecord {
   const beforeRef = input.beforeRef ?? null;
   const afterRef = input.afterRef ?? null;
 
-  new OperationLogService(tx).append({
+  return new OperationLogService(tx).append({
     ...operationActorFromRequest(request),
     accountId: input.accountId,
+    workspaceId: input.workspaceId,
+    projectId: input.projectId,
+    actorAccountId: input.actorAccountId,
     requestId: operationRequestIdFromRequest(request),
     sourceType: "http",
     action: input.action,
@@ -933,6 +958,65 @@ function appendSessionOperationLog(
     metadata: input.metadata,
     createdAt: input.createdAt,
   });
+}
+
+type SessionProjectScope = {
+  workspaceId: string;
+  projectId: string;
+};
+
+function resolveSessionProjectScope(row: typeof sessions.$inferSelect): SessionProjectScope | null {
+  if (!row.workspaceId || !row.projectId) {
+    return null;
+  }
+
+  return {
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+  };
+}
+
+function appendSessionProjectEvent(input: {
+  tx: DbExecutor;
+  row: typeof sessions.$inferSelect;
+  type: "session.created" | "session.updated" | "session.archived";
+  actorAccountId: string;
+  operationLogId: string | null;
+  correlationId: string | null;
+  payload: Record<string, unknown>;
+  createdAt?: number;
+}): ProjectEventRecord | null {
+  const scope = resolveSessionProjectScope(input.row);
+  if (!scope) {
+    return null;
+  }
+
+  return new ProjectEventService(input.tx).append({
+    workspaceId: scope.workspaceId,
+    projectId: scope.projectId,
+    type: input.type,
+    visibility: "project",
+    source: "api",
+    actorAccountId: input.actorAccountId,
+    sessionId: input.row.id,
+    branchId: "main",
+    operationLogId: input.operationLogId,
+    correlationId: input.correlationId,
+    payload: input.payload,
+    createdAt: input.createdAt,
+  });
+}
+
+function publishProjectEvents(hub: ProjectEventLiveHub | undefined, events: readonly ProjectEventRecord[]): void {
+  if (!hub || events.length === 0) {
+    return;
+  }
+
+  try {
+    hub.publishMany(events);
+  } catch {
+    // Live delivery is best-effort. The durable event rows are already committed.
+  }
 }
 
 function toSessionActiveRunResponse(summary: Awaited<ReturnType<FloorRunService["getActiveRunSummary"]>>) {
@@ -1377,9 +1461,11 @@ export async function registerSessionRoutes(
   options: {
     clientData?: ClientDataConfig;
     floorRun?: FloorRunServiceOptions;
+    projectEventLiveHub?: ProjectEventLiveHub;
   } = {},
 ): Promise<void> {
   const { db } = connection;
+  const projectAccessService = new ProjectAccessService(db);
   const floorRunService = new FloorRunService(db, undefined, options.floorRun);
   const lineageService = new FloorLineageService(db);
   const branchRegistry = new SessionBranchRegistryService(db);
@@ -1387,6 +1473,50 @@ export async function registerSessionRoutes(
     ? new SessionStateService(db, { clientData: options.clientData })
     : undefined;
   const sessionAssetBindingService = new SessionAssetBindingService(db);
+  function authorizeProjectWrite(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+  ): { ok: true; hasProjectScope: boolean } | { ok: false } {
+    try {
+      projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, "project.write");
+      return { ok: true, hasProjectScope: true };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, hasProjectScope: false };
+        }
+        if (error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return { ok: false };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+  function authorizeProjectRead(actorAccountId: string, sessionId: string): { hasAccess: boolean; hasProjectScope: boolean } {
+    try {
+      projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, "project.read");
+      return { hasAccess: true, hasProjectScope: true };
+    } catch(error) {
+      if (error instanceof ProjectAccessServiceError && error.code === "session_project_scope_missing") {
+        return { hasAccess: false, hasProjectScope: false };
+      }
+      return { hasAccess: false, hasProjectScope: true };
+    }
+  }
+
+
+
+
+
 
   app.post("/sessions", {
     schema: {
@@ -1412,8 +1542,9 @@ export async function registerSessionRoutes(
     const sessionId = nanoid();
 
     let created: typeof sessions.$inferSelect;
+    let projectEvents: ProjectEventRecord[] = [];
     try {
-      created = db.transaction((tx) => {
+      const transactionResult = db.transaction((tx) => {
         const scope = new SessionScopeResolver(tx).resolveForCreate({
           accountId: auth.accountId,
           projectId: parsedBody.data.project_id,
@@ -1532,9 +1663,12 @@ export async function registerSessionRoutes(
           }
         }
 
-        appendSessionOperationLog(tx, request, {
+        const operation = appendSessionOperationLog(tx, request, {
           accountId: auth.accountId,
           action: "create_session",
+          workspaceId: scope.workspaceId,
+          projectId: scope.projectId,
+          actorAccountId: auth.accountId,
           sessionId: createdSession.id,
           branchId: "main",
           afterRef: toSessionOperationRef(createdSession),
@@ -1549,13 +1683,35 @@ export async function registerSessionRoutes(
           createdAt: now,
         });
 
-        return createdSession;
+        const projectEvent = appendSessionProjectEvent({
+          tx,
+          row: createdSession,
+          type: "session.created",
+          actorAccountId: auth.accountId,
+          operationLogId: operation.id,
+          correlationId: operation.requestId,
+          payload: {
+            session_id: createdSession.id,
+            title: createdSession.title,
+            status: createdSession.status,
+            project_was_created: scope.projectWasCreated,
+          },
+          createdAt: now,
+        });
+
+        return {
+          session: createdSession,
+          projectEvents: projectEvent ? [projectEvent] : [],
+        };
       });
+      created = transactionResult.session;
+      projectEvents = transactionResult.projectEvents;
     } catch (error) {
       if (
         error instanceof SessionRouteError
         || error instanceof WorkspaceScopeServiceError
         || error instanceof ProjectScopeServiceError
+        || error instanceof ProjectEventServiceError
       ) {
         return sendError(reply, error.statusCode, error.code, error.message);
       }
@@ -1563,6 +1719,7 @@ export async function registerSessionRoutes(
       throw error;
     }
 
+    publishProjectEvents(options.projectEventLiveHub, projectEvents);
     return reply.code(201).send({ data: toSessionResponse(created) });
   });
 
@@ -1644,13 +1801,77 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [row] = await db.select().from(sessions).where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId));
+    let [row] = await db.select().from(sessions).where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId));
+
+    if (!row) {
+      const readAccess = authorizeProjectRead(auth.accountId, parsedParams.data.id);
+      if (readAccess.hasAccess) {
+        const fetched = await db
+          .select()
+          .from(sessions)
+          .where(eq(sessions.id, parsedParams.data.id));
+        row = fetched[0];
+      }
+    }
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
     return reply.send({ data: toSessionResponse(row) });
+  });
+
+  app.get("/sessions/:id/scope", {
+    schema: {
+      tags: ["sessions"],
+      summary: "Get session project scope",
+      params: idParamsJsonSchema,
+      response: {
+        200: sessionScopeResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(sessionParamsSchema, request.params, reply);
+
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    try {
+      const access = projectAccessService.requireProjectActionBySessionId(
+        auth.accountId,
+        parsedParams.data.id,
+        "project.read",
+      );
+      const session = db
+        .select({ id: sessions.id, workspaceId: sessions.workspaceId, projectId: sessions.projectId })
+        .from(sessions)
+        .where(eq(sessions.id, parsedParams.data.id))
+        .limit(1)
+        .get();
+
+      if (!session || !session.projectId) {
+        return sendError(reply, 404, "not_found", "Session not found");
+      }
+
+      return reply.send({
+        session_id: session.id,
+        workspace_id: session.workspaceId ?? access.project.workspaceId,
+        project_id: session.projectId,
+      });
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          return sendError(reply, 404, "not_found", "Session not found");
+        }
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
+    }
   });
 
   app.get("/sessions/:id/active-run", {
@@ -1671,7 +1892,18 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [row] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId));
+    let [row] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId));
+
+    if (!row) {
+      const readAccess = authorizeProjectRead(auth.accountId, parsedParams.data.id);
+      if (readAccess.hasAccess) {
+        const fetched = await db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(eq(sessions.id, parsedParams.data.id));
+        row = fetched[0];
+      }
+    }
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Session not found");
@@ -1714,10 +1946,17 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const writeAuth = authorizeProjectWrite(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+
     const [existingSession] = await db
       .select()
       .from(sessions)
-      .where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
+      .where(writeAuth.hasProjectScope
+        ? eq(sessions.id, parsedParams.data.id)
+        : sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
       .limit(1);
 
     if (!existingSession) {
@@ -1867,61 +2106,122 @@ export async function registerSessionRoutes(
 
     const beforeRef = toSessionOperationRef(existingSession);
     const requestFields = Object.keys(parsedBody.data).sort();
-    const updated = db.transaction((tx) => {
-      const [updatedRow] = tx
-        .update(sessions)
-        .set(updates)
-        .where(eq(sessions.id, existingSession.id))
-        .returning()
-        .all();
-
-      if (updatedRow && shouldReplaceFloorUserBinding) {
-        const floorReplaceTimestamp = Date.now();
-        const floorRows = tx
-          .select({ id: floors.id, metadataJson: floors.metadataJson })
-          .from(floors)
-          .where(eq(floors.sessionId, existingSession.id))
+    let updated: typeof sessions.$inferSelect | null = null;
+    let pendingProjectEvents: ProjectEventRecord[] = [];
+    try {
+      updated = db.transaction((tx) => {
+        const [updatedRow] = tx
+          .update(sessions)
+          .set(updates)
+          .where(eq(sessions.id, existingSession.id))
+          .returning()
           .all();
 
-        for (const floor of floorRows) {
-          tx
-            .update(floors)
-            .set({
-              metadataJson: mergeFloorMetadataWithUserBinding(floor.metadataJson, nextUserId, nextUserSnapshotJson, floorReplaceTimestamp),
-              updatedAt: floorReplaceTimestamp
-            })
-            .where(eq(floors.id, floor.id))
-            .run();
+        if (updatedRow && shouldReplaceFloorUserBinding) {
+          const floorReplaceTimestamp = Date.now();
+          const floorRows = tx
+            .select({ id: floors.id, metadataJson: floors.metadataJson })
+            .from(floors)
+            .where(eq(floors.sessionId, existingSession.id))
+            .all();
+
+          for (const floor of floorRows) {
+            tx
+              .update(floors)
+              .set({
+                metadataJson: mergeFloorMetadataWithUserBinding(floor.metadataJson, nextUserId, nextUserSnapshotJson, floorReplaceTimestamp),
+                updatedAt: floorReplaceTimestamp
+              })
+              .where(eq(floors.id, floor.id))
+              .run();
+          }
         }
+
+        if (updatedRow) {
+          const operation = appendSessionOperationLog(tx, request, {
+            accountId: auth.accountId,
+            action: "update_session",
+            workspaceId: updatedRow.workspaceId,
+            projectId: updatedRow.projectId,
+            actorAccountId: auth.accountId,
+            sessionId: updatedRow.id,
+            beforeRef,
+            afterRef: toSessionOperationRef(updatedRow),
+            metadata: {
+              route: "PATCH /sessions/:id",
+              request_fields: requestFields,
+              character_binding_update: hasCharacterBindingUpdate,
+              user_binding_update: hasUserBindingUpdate,
+              prompt_asset_binding_update: hasPromptAssetBindingUpdate,
+              floor_user_binding_replaced: shouldReplaceFloorUserBinding,
+              workspace_id: updatedRow.workspaceId,
+              project_id: updatedRow.projectId,
+            },
+            createdAt: updatedRow.updatedAt,
+          });
+
+          const projectEvents: ProjectEventRecord[] = [];
+          const archivedTransition =
+            parsedBody.data.status === "archived" && existingSession.status !== "archived";
+
+          const updatedEvent = appendSessionProjectEvent({
+            tx,
+            row: updatedRow,
+            type: "session.updated",
+            actorAccountId: auth.accountId,
+            operationLogId: operation.id,
+            correlationId: operation.requestId,
+            payload: {
+              session_id: updatedRow.id,
+              changed_fields: requestFields,
+              character_binding_update: hasCharacterBindingUpdate,
+              user_binding_update: hasUserBindingUpdate,
+              prompt_asset_binding_update: hasPromptAssetBindingUpdate,
+              floor_user_binding_replaced: shouldReplaceFloorUserBinding,
+              ...(archivedTransition ? { status_changed_to: "archived" as const } : {}),
+            },
+            createdAt: updatedRow.updatedAt,
+          });
+          if (updatedEvent) {
+            projectEvents.push(updatedEvent);
+          }
+
+          if (archivedTransition) {
+            const archivedEvent = appendSessionProjectEvent({
+              tx,
+              row: updatedRow,
+              type: "session.archived",
+              actorAccountId: auth.accountId,
+              operationLogId: operation.id,
+              correlationId: operation.requestId,
+              payload: {
+                session_id: updatedRow.id,
+              },
+              createdAt: updatedRow.updatedAt,
+            });
+            if (archivedEvent) {
+              projectEvents.push(archivedEvent);
+            }
+          }
+
+          pendingProjectEvents = projectEvents;
+        }
+
+        return updatedRow ?? null;
+      });
+    } catch (error) {
+      if (error instanceof ProjectEventServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
       }
 
-      if (updatedRow) {
-        appendSessionOperationLog(tx, request, {
-          accountId: auth.accountId,
-          action: "update_session",
-          sessionId: updatedRow.id,
-          beforeRef,
-          afterRef: toSessionOperationRef(updatedRow),
-          metadata: {
-            route: "PATCH /sessions/:id",
-            request_fields: requestFields,
-            character_binding_update: hasCharacterBindingUpdate,
-            user_binding_update: hasUserBindingUpdate,
-            prompt_asset_binding_update: hasPromptAssetBindingUpdate,
-            floor_user_binding_replaced: shouldReplaceFloorUserBinding,
-            workspace_id: updatedRow.workspaceId,
-            project_id: updatedRow.projectId,
-          },
-        });
-      }
-
-      return updatedRow ?? null;
-    });
+      throw error;
+    }
 
     if (!updated) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
+    publishProjectEvents(options.projectEventLiveHub, pendingProjectEvents);
     return reply.send({ data: toSessionResponse(updated) });
   });
 
@@ -1954,7 +2254,13 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const [sessionRow] = await db.select().from(sessions).where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId)).limit(1);
+    const writeAuth = authorizeProjectWrite(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    const [sessionRow] = await db.select().from(sessions).where(writeAuth.hasProjectScope
+      ? eq(sessions.id, parsedParams.data.id)
+      : sessionOwnershipFilter(parsedParams.data.id, auth.accountId)).limit(1);
     if (!sessionRow) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
@@ -2024,10 +2330,16 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const writeAuth = authorizeProjectWrite(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
     const [sessionRow] = await db
       .select()
       .from(sessions)
-      .where(sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
+      .where(writeAuth.hasProjectScope
+        ? eq(sessions.id, parsedParams.data.id)
+        : sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
       .limit(1);
 
     if (!sessionRow) {
@@ -2040,7 +2352,12 @@ export async function registerSessionRoutes(
     }
     const beforeRef = toSessionOperationRef(sessionRow);
     const deleted = db.transaction((tx) => {
-      const deletedRows = deleteOwnedSessionAndBindings(tx, parsedParams.data.id, auth.accountId, { sessionStateService });
+      const deletedRows = deleteOwnedSessionAndBindings(
+        tx,
+        parsedParams.data.id,
+        sessionRow.accountId,
+        { sessionStateService },
+      );
       if (deletedRows.length > 0) {
         appendSessionOperationLog(tx, request, {
           accountId: auth.accountId,
@@ -2086,12 +2403,23 @@ export async function registerSessionRoutes(
 
     const auth = getRequestAuthContext(request);
     const sessionId = parsedParams.data.id;
-    const [session] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(sessionId, auth.accountId));
+    let [session] = await db.select({ id: sessions.id, accountId: sessions.accountId }).from(sessions).where(sessionOwnershipFilter(sessionId, auth.accountId));
+    if (!session) {
+      const readAccess = authorizeProjectRead(auth.accountId, sessionId);
+      if (readAccess.hasAccess) {
+        const fetched = await db
+          .select({ id: sessions.id, accountId: sessions.accountId })
+          .from(sessions)
+          .where(eq(sessions.id, sessionId));
+        session = fetched[0];
+      }
+    }
+
     if (!session) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
 
-    const registeredBranches = branchRegistry.listBySession(auth.accountId, sessionId);
+        const registeredBranches = branchRegistry.listBySession(session.accountId, sessionId);
 
     const floorRows = await db
       .select({
@@ -2221,7 +2549,17 @@ export async function registerSessionRoutes(
     const targetBranchId = parsedQuery.data.target_branch_id;
 
     const auth = getRequestAuthContext(request);
-    const [session] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(sessionId, auth.accountId));
+    let [session] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(sessionId, auth.accountId));
+    if (!session) {
+      const readAccess = authorizeProjectRead(auth.accountId, sessionId);
+      if (readAccess.hasAccess) {
+        const fetched = await db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(eq(sessions.id, sessionId));
+        session = fetched[0];
+      }
+    }
     if (!session) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
@@ -2308,7 +2646,17 @@ export async function registerSessionRoutes(
 
     const auth = getRequestAuthContext(request);
     // 验证 session 存在
-    const [session] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(sessionId, auth.accountId));
+    let [session] = await db.select({ id: sessions.id }).from(sessions).where(sessionOwnershipFilter(sessionId, auth.accountId));
+    if (!session) {
+      const readAccess = authorizeProjectRead(auth.accountId, sessionId);
+      if (readAccess.hasAccess) {
+        const fetched = await db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(eq(sessions.id, sessionId));
+        session = fetched[0];
+      }
+    }
     if (!session) {
       return sendError(reply, 404, "not_found", "Session not found");
     }
@@ -2509,6 +2857,8 @@ export async function registerSessionRoutes(
       response: {
         200: batchResultResponseJsonSchema,
         400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -2524,56 +2874,125 @@ export async function registerSessionRoutes(
     const results: { index: number; id: string; action: string }[] = [];
     let updated = 0;
     let notFound = 0;
+    let accessDenied = 0;
+    const batchProjectEvents: ProjectEventRecord[] = [];
 
-    db.transaction((tx) => {
-      ids.forEach((id, index) => {
-        const beforeRow = tx
-          .select()
-          .from(sessions)
-          .where(sessionOwnershipFilter(id, auth.accountId))
-          .limit(1)
-          .all()[0];
+    try {
+      db.transaction((tx) => {
+        ids.forEach((id, index) => {
+          let useProjectScope = false;
+          try {
+            projectAccessService.requireProjectActionBySessionId(auth.accountId, id, "project.write");
+            useProjectScope = true;
+          } catch (error) {
+            if (error instanceof ProjectAccessServiceError) {
+              if (error.code === "project_access_denied" && error.denyReason === "role_forbidden") {
+                results.push({ index, id, action: "project_access_denied" });
+                accessDenied++;
+                return;
+              }
+              // session_project_scope_missing / not_a_member → fall back to legacy ownership
+              useProjectScope = false;
+            } else { throw error; }
+          }
+          const beforeRow = tx
+            .select()
+            .from(sessions)
+            .where(useProjectScope ? eq(sessions.id, id) : sessionOwnershipFilter(id, auth.accountId))
+            .limit(1)
+            .all()[0];
 
-        if (!beforeRow) {
-          results.push({ index, id, action: "not_found" });
-          notFound++;
-          return;
-        }
+          if (!beforeRow) {
+            results.push({ index, id, action: "not_found" });
+            notFound++;
+            return;
+          }
 
-        const updatedAt = Date.now();
-        const [updatedRow] = tx
-          .update(sessions)
-          .set({ status, updatedAt })
-          .where(eq(sessions.id, beforeRow.id))
-          .returning()
-          .all();
+          const updatedAt = Date.now();
+          const [updatedRow] = tx
+            .update(sessions)
+            .set({ status, updatedAt })
+            .where(eq(sessions.id, beforeRow.id))
+            .returning()
+            .all();
 
-        if (updatedRow) {
-          results.push({ index, id, action: "updated" });
-          updated++;
-          appendSessionOperationLog(tx, request, {
-            accountId: auth.accountId,
-            action: "batch_update_session_status",
-            sessionId: updatedRow.id,
-            beforeRef: toSessionOperationRef(beforeRow),
-            afterRef: toSessionOperationRef(updatedRow),
-            metadata: {
-              route: "PATCH /sessions/batch/status",
-              batch_index: index,
-              batch_size: ids.length,
-              status,
-            },
-            createdAt: updatedAt,
-          });
-        } else {
-          results.push({ index, id, action: "not_found" });
-          notFound++;
-        }
+          if (updatedRow) {
+            results.push({ index, id, action: "updated" });
+            updated++;
+            const operation = appendSessionOperationLog(tx, request, {
+              accountId: auth.accountId,
+              action: "batch_update_session_status",
+              workspaceId: updatedRow.workspaceId,
+              projectId: updatedRow.projectId,
+              actorAccountId: auth.accountId,
+              sessionId: updatedRow.id,
+              beforeRef: toSessionOperationRef(beforeRow),
+              afterRef: toSessionOperationRef(updatedRow),
+              metadata: {
+                route: "PATCH /sessions/batch/status",
+                batch_index: index,
+                batch_size: ids.length,
+                status,
+              },
+              createdAt: updatedAt,
+            });
+
+            const archivedTransition =
+              status === "archived" && beforeRow.status !== "archived";
+
+            const updatedEvent = appendSessionProjectEvent({
+              tx,
+              row: updatedRow,
+              type: "session.updated",
+              actorAccountId: auth.accountId,
+              operationLogId: operation.id,
+              correlationId: operation.requestId,
+              payload: {
+                session_id: updatedRow.id,
+                changed_fields: ["status"],
+                status,
+                ...(archivedTransition ? { status_changed_to: "archived" as const } : {}),
+              },
+              createdAt: updatedAt,
+            });
+            if (updatedEvent) {
+              batchProjectEvents.push(updatedEvent);
+            }
+
+            if (archivedTransition) {
+              const archivedEvent = appendSessionProjectEvent({
+                tx,
+                row: updatedRow,
+                type: "session.archived",
+                actorAccountId: auth.accountId,
+                operationLogId: operation.id,
+                correlationId: operation.requestId,
+                payload: {
+                  session_id: updatedRow.id,
+                },
+                createdAt: updatedAt,
+              });
+              if (archivedEvent) {
+                batchProjectEvents.push(archivedEvent);
+              }
+            }
+          } else {
+            results.push({ index, id, action: "not_found" });
+            notFound++;
+          }
+        });
       });
-    });
+    } catch (error) {
+      if (error instanceof ProjectEventServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
 
+      throw error;
+    }
+
+    publishProjectEvents(options.projectEventLiveHub, batchProjectEvents);
     return reply.send({
-      data: { results, meta: { total: ids.length, updated, not_found: notFound, status } },
+      data: { results, meta: ({ total: ids.length, updated, not_found: notFound, ...(accessDenied > 0 ? { access_denied: accessDenied } : {}), status }) },
     });
   });
 
@@ -2599,11 +3018,12 @@ export async function registerSessionRoutes(
     let deleted = 0;
     let conflicts = 0;
     let notFound = 0;
+    let accessDenied = 0;
 
     const existingRows = await db
       .select()
       .from(sessions)
-      .where(and(eq(sessions.accountId, auth.accountId), inArray(sessions.id, ids)));
+      .where(inArray(sessions.id, ids));
     const existingSessionIds = new Set(existingRows.map((row) => row.id));
     const existingRowsById = new Map(existingRows.map((row) => [row.id, row]));
     const activeRunSessionIds = new Set(
@@ -2623,13 +3043,31 @@ export async function registerSessionRoutes(
           return;
         }
 
+        const row = existingRowsById.get(id);
+        if (row) {
+          try {
+            projectAccessService.requireProjectActionBySessionId(auth.accountId, id, "project.write");
+          } catch (error) {
+            if (error instanceof ProjectAccessServiceError) {
+              if (error.code === "project_access_denied" && error.denyReason === "role_forbidden") {
+                results.push({ index, id, action: "project_access_denied" });
+                accessDenied++;
+                return;
+              }
+              // session_project_scope_missing → legacy session, fall through to ownership filter
+            } else {
+              throw error;
+            }
+          }
+        }
+
         if (activeRunSessionIds.has(id)) {
           results.push({ index, id, action: "conflict" });
           conflicts++;
           return;
         }
 
-        const rows = deleteOwnedSessionAndBindings(tx, id, auth.accountId, { sessionStateService });
+        const rows = deleteOwnedSessionAndBindings(tx, id, row?.accountId ?? auth.accountId, { sessionStateService });
 
         if (rows.length > 0) {
           results.push({ index, id, action: "deleted" });
@@ -2656,7 +3094,7 @@ export async function registerSessionRoutes(
     });
 
     return reply.send({
-      data: { results, meta: { total: ids.length, deleted, not_found: notFound, conflicts } },
+      data: { results, meta: ({ total: ids.length, deleted, not_found: notFound, conflicts, ...(accessDenied > 0 ? { access_denied: accessDenied } : {}) }) },
     });
   });
 }

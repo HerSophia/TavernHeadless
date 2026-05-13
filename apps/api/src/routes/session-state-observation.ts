@@ -21,6 +21,7 @@ import type {
   SessionStateResolvedValue,
 } from "../session-state/session-state-types.js";
 import { SESSION_STATE_NAMESPACE_PATTERN } from "../session-state/session-state-types.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 
 /**
  * Phase 3 观察面路由包。
@@ -31,6 +32,7 @@ import { SESSION_STATE_NAMESPACE_PATTERN } from "../session-state/session-state-
  */
 export interface RegisterSessionStateObservationRoutesOptions {
   observationService?: SessionStateObservationService;
+  projectAccessService?: ProjectAccessService;
 }
 
 const sessionIdParamsSchema = z.object({ sessionId: z.string().min(1) });
@@ -110,6 +112,7 @@ export async function registerSessionStateObservationRoutes(
   options: RegisterSessionStateObservationRoutesOptions = {},
 ): Promise<void> {
   const observationService = options.observationService;
+  const projectAccessService = options.projectAccessService;
 
   function ensureServiceAvailable(reply: FastifyReply): SessionStateObservationService | null {
     if (!observationService) {
@@ -124,6 +127,109 @@ export async function registerSessionStateObservationRoutes(
     return observationService;
   }
 
+  type ObservationAccessOk = { ok: true; accountId: string };
+  type ObservationAccessFail = { ok: false };
+  type ObservationAccessResult = ObservationAccessOk | ObservationAccessFail;
+
+  function authorizeProjectReadBySessionId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+  ): ObservationAccessResult {
+    if (!projectAccessService) {
+      return { ok: true, accountId: actorAccountId };
+    }
+
+    try {
+      const access = projectAccessService.requireProjectActionBySessionId(
+        actorAccountId,
+        sessionId,
+        "project.read",
+      );
+      return { ok: true, accountId: access.project.accountId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        if (error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Resource not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+  type ObservationFloorAccessOk = {
+    ok: true;
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+  };
+  type ObservationFloorAccessResult = ObservationFloorAccessOk | { ok: false };
+
+  function authorizeProjectReadByFloorId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    floorId: string,
+  ): ObservationFloorAccessResult {
+    const observation = observationService;
+    if (!observation) {
+      sendError(
+        reply,
+        503,
+        "feature_unavailable",
+        "Session state observation is unavailable because client-data is disabled",
+      );
+      return { ok: false };
+    }
+    const ownedMeta = observation.resolveOwnedFloorMeta(actorAccountId, floorId);
+    if (ownedMeta) {
+      return {
+        ok: true,
+        accountId: actorAccountId,
+        sessionId: ownedMeta.sessionId,
+        branchId: ownedMeta.branchId,
+      };
+    }
+    if (!projectAccessService) {
+      sendError(reply, 404, "not_found", "Resource not found");
+      return { ok: false };
+    }
+    try {
+      const access = projectAccessService.requireProjectActionByFloorId(
+        actorAccountId,
+        floorId,
+        "project.read",
+      );
+      const meta = observation.resolveOwnedFloorMeta(access.project.accountId, floorId);
+      if (!meta) {
+        sendError(reply, 404, "not_found", "Resource not found");
+        return { ok: false };
+      }
+      return {
+        ok: true,
+        accountId: access.project.accountId,
+        sessionId: meta.sessionId,
+        branchId: meta.branchId,
+      };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "floor_not_found" || error.code === "session_project_scope_missing") {
+          sendError(reply, 404, "not_found", "Resource not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+
   app.get("/sessions/:sessionId/session-state/bindings", {
     schema: {
       tags: ["session-state"],
@@ -137,8 +243,10 @@ export async function registerSessionStateObservationRoutes(
     const params = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!params.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!access.ok) return;
     try {
-      const bindings = service.listBindingsForSession(accountId, params.data.sessionId);
+      const bindings = service.listBindingsForSession(access.accountId, params.data.sessionId);
       return reply.code(200).send({
         data: bindings.map((binding) => ({
           domain_id: binding.domainId,
@@ -173,9 +281,11 @@ export async function registerSessionStateObservationRoutes(
     const query = parseWithSchema(listMutationsQuerySchema, request.query, reply);
     if (!query.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!access.ok) return;
     try {
       const { rows, total } = service.listMutationsForSession(
-        accountId,
+        access.accountId,
         params.data.sessionId,
         {
           branchId: query.data.branch_id,
@@ -222,8 +332,10 @@ export async function registerSessionStateObservationRoutes(
     const params = parseWithSchema(mutationIdParamsSchema, request.params, reply);
     if (!params.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!access.ok) return;
     try {
-      const detail = service.getMutationById(accountId, params.data.sessionId, params.data.mutationId);
+      const detail = service.getMutationById(access.accountId, params.data.sessionId, params.data.mutationId);
       return reply.code(200).send({ data: mapMutationDetail(detail) });
     } catch (error) {
       return handleObservationError(error, reply);
@@ -245,8 +357,10 @@ export async function registerSessionStateObservationRoutes(
     const query = parseWithSchema(listLiveHeadsQuerySchema, request.query, reply);
     if (!query.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!access.ok) return;
     try {
-      const heads = service.listLiveHeadsForSession(accountId, params.data.sessionId, {
+      const heads = service.listLiveHeadsForSession(access.accountId, params.data.sessionId, {
         ...(query.data.state_namespace ? { stateNamespace: query.data.state_namespace } : {}),
         ...(query.data.branch_id ? { branchId: query.data.branch_id } : {}),
       });
@@ -270,9 +384,12 @@ export async function registerSessionStateObservationRoutes(
     const query = parseWithSchema(liveSlotQuerySchema, request.query, reply);
     if (!query.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!access.ok) return;
+
     try {
       const resolved = service.resolveLive(
-        accountId,
+        access.accountId,
         params.data.sessionId,
         query.data.branch_id,
         params.data.namespace,
@@ -303,11 +420,13 @@ export async function registerSessionStateObservationRoutes(
     const query = parseWithSchema(listFloorSnapshotsQuerySchema, request.query, reply);
     if (!query.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadByFloorId(reply, accountId, params.data.floorId);
+    if (!access.ok) return;
     try {
-      const meta = service.resolveOwnedFloorMeta(accountId, params.data.floorId);
+      const meta = service.resolveOwnedFloorMeta(access.accountId, params.data.floorId);
       if (!meta) return sendError(reply, 404, "not_found", "Resource not found");
       const snapshots = service.listFloorSnapshots(
-        accountId,
+        access.accountId,
         meta.sessionId,
         params.data.floorId,
         {
@@ -332,11 +451,13 @@ export async function registerSessionStateObservationRoutes(
     const params = parseWithSchema(snapshotSlotParamsSchema, request.params, reply);
     if (!params.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadByFloorId(reply, accountId, params.data.floorId);
+    if (!access.ok) return;
     try {
-      const meta = service.resolveOwnedFloorMeta(accountId, params.data.floorId);
+      const meta = service.resolveOwnedFloorMeta(access.accountId, params.data.floorId);
       if (!meta) return sendError(reply, 404, "not_found", "Resource not found");
       const snapshot = service.getFloorSnapshot(
-        accountId,
+        access.accountId,
         meta.sessionId,
         params.data.floorId,
         params.data.namespace,
@@ -365,11 +486,13 @@ export async function registerSessionStateObservationRoutes(
     const query = parseWithSchema(replaySafetyQuerySchema, request.query, reply);
     if (!query.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadByFloorId(reply, accountId, params.data.floorId);
+    if (!access.ok) return;
     try {
-      const meta = service.resolveOwnedFloorMeta(accountId, params.data.floorId);
+      const meta = service.resolveOwnedFloorMeta(access.accountId, params.data.floorId);
       if (!meta) return sendError(reply, 404, "not_found", "Resource not found");
       const evaluation = service.evaluateReplaySafetyForFloor(
-        accountId,
+        access.accountId,
         meta.sessionId,
         params.data.floorId,
         query.data.confirmed_mutation_ids,
@@ -395,8 +518,10 @@ export async function registerSessionStateObservationRoutes(
     const query = parseWithSchema(diffQuerySchema, request.query, reply);
     if (!query.ok) return;
     const { accountId } = getRequestAuthContext(request);
+    const access = authorizeProjectReadByFloorId(reply, accountId, params.data.floorId);
+    if (!access.ok) return;
     try {
-      const meta = service.resolveOwnedFloorMeta(accountId, params.data.floorId);
+      const meta = service.resolveOwnedFloorMeta(access.accountId, params.data.floorId);
       if (!meta) return sendError(reply, 404, "not_found", "Resource not found");
 
       const against = query.data.against;
@@ -415,7 +540,7 @@ export async function registerSessionStateObservationRoutes(
       }
 
       const entries = service.diffFloorAgainst(
-        accountId,
+        access.accountId,
         meta.sessionId,
         params.data.floorId,
         parsedAgainst,

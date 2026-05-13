@@ -25,6 +25,9 @@ export type CreateOperationLogInput = OperationLogActor & {
   sourceType: string;
   action: string;
   status: OperationLogStatus;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  actorAccountId?: string | null;
   sessionId?: string | null;
   branchId?: string | null;
   floorId?: string | null;
@@ -48,6 +51,9 @@ export type OperationLogRecord = {
   sourceType: string;
   action: string;
   status: OperationLogStatus;
+  workspaceId: string | null;
+  projectId: string | null;
+  actorAccountId: string | null;
   sessionId: string | null;
   branchId: string | null;
   floorId: string | null;
@@ -63,6 +69,9 @@ export type OperationLogRecord = {
 
 export type OperationLogListOptions = {
   accountId: string;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  actorAccountId?: string | null;
   sessionId?: string | null;
   floorId?: string | null;
   runId?: string | null;
@@ -95,6 +104,15 @@ export class OperationLogService {
     assertNonEmpty(input.status, "status");
     assertNonEmpty(input.targetType, "targetType");
 
+    const metadataWorkspaceId = readMetadataString(input.metadata, "workspace_id");
+    const metadataProjectId = readMetadataString(input.metadata, "project_id");
+    const workspaceId = normalizeNullableString(input.workspaceId) ?? metadataWorkspaceId;
+    const projectId = normalizeNullableString(input.projectId) ?? metadataProjectId;
+    const actorAccountId = normalizeNullableString(input.actorAccountId)
+      ?? (input.actorType === "account" ? normalizeNullableString(input.actorId) : null)
+      ?? normalizeNullableString(input.accountId);
+    const metadata = mergeOperationScopeMetadata(input.metadata, { workspaceId, projectId });
+
     const row = this.db
       .insert(operationLogs)
       .values({
@@ -116,7 +134,10 @@ export class OperationLogService {
         beforeRefJson: stringifyNullableJson(input.beforeRef),
         afterRefJson: stringifyNullableJson(input.afterRef),
         diffJson: stringifyNullableJson(input.diff),
-        metadataJson: stringifyNullableJson(input.metadata),
+        workspaceId,
+        projectId,
+        actorAccountId,
+        metadataJson: stringifyNullableJson(metadata),
         createdAt: input.createdAt ?? Date.now(),
       })
       .returning()
@@ -171,6 +192,9 @@ export function operationRequestIdFromRequest(request: FastifyRequest): string |
 
 function buildOperationLogWhereClause(options: OperationLogListOptions): SQL {
   const filters: SQL[] = [eq(operationLogs.accountId, options.accountId)];
+  pushOptionalFilter(filters, operationLogs.workspaceId, options.workspaceId);
+  pushOptionalFilter(filters, operationLogs.projectId, options.projectId);
+  pushOptionalFilter(filters, operationLogs.actorAccountId, options.actorAccountId);
   pushOptionalFilter(filters, operationLogs.sessionId, options.sessionId);
   pushOptionalFilter(filters, operationLogs.floorId, options.floorId);
   pushOptionalFilter(filters, operationLogs.runId, options.runId);
@@ -205,6 +229,9 @@ function mapOperationLogRow(row: OperationLogRow): OperationLogRecord {
     sourceType: row.sourceType,
     action: row.action,
     status: row.status as OperationLogStatus,
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+    actorAccountId: row.actorAccountId,
     sessionId: row.sessionId,
     branchId: row.branchId,
     floorId: row.floorId,
@@ -219,7 +246,7 @@ function mapOperationLogRow(row: OperationLogRow): OperationLogRecord {
   };
 }
 
-function normalizeNullableString(value: string | null | undefined): string | null {
+function normalizeNullableString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -237,6 +264,45 @@ function parseNullableJson(value: string | null): unknown | null {
   } catch {
     return value;
   }
+}
+
+function readMetadataString(metadata: unknown, key: string): string | null {
+  if (!isPlainRecord(metadata)) {
+    return null;
+  }
+
+  return normalizeNullableString(metadata[key]);
+}
+
+function mergeOperationScopeMetadata(
+  metadata: unknown,
+  scope: { workspaceId: string | null; projectId: string | null },
+): unknown {
+  const additions: Record<string, string> = {};
+  if (scope.workspaceId) {
+    additions.workspace_id = scope.workspaceId;
+  }
+  if (scope.projectId) {
+    additions.project_id = scope.projectId;
+  }
+
+  if (Object.keys(additions).length === 0) {
+    return metadata;
+  }
+
+  if (metadata === undefined || metadata === null) {
+    return additions;
+  }
+
+  if (isPlainRecord(metadata)) {
+    return { ...metadata, ...additions };
+  }
+
+  return { value: metadata, ...additions };
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function assertNonEmpty(value: string, fieldName: string): void {

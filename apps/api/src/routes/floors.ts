@@ -1,5 +1,5 @@
 import { and, count, eq, inArray, isNull } from "drizzle-orm";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
@@ -20,6 +20,7 @@ import {
   type SessionBranchRegistryRecord,
 } from "../services/variables/host/session-branch-registry-service.js";
 import { OperationLogService, operationActorFromRequest, operationRequestIdFromRequest } from "../services/operation-log-service.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 import { VcDiffService } from "../services/vc-diff-service.js";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
@@ -517,6 +518,93 @@ export async function registerFloorRoutes(
   const floorRunService = new FloorRunService(db, undefined, options.floorRun);
   const floorResultService = new FloorResultService(db);
   const branchRegistry = new SessionBranchRegistryService(db);
+  const projectAccessService = new ProjectAccessService(db);
+
+  function authorizeProjectWriteBySession(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+  ): { ok: true; hasProjectScope: boolean } | { ok: false } {
+    try {
+      projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, "project.write");
+      return { ok: true, hasProjectScope: true };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if(error.code === "session_project_scope_missing") {
+          return { ok: true, hasProjectScope: false };
+        }
+        if (error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return { ok: false };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return {ok: false };
+      }
+      throw error;
+    }
+  }
+
+  function authorizeProjectWriteByFloor(
+    reply: FastifyReply,
+    actorAccountId: string,
+    floorId: string,
+  ): { ok: true; hasProjectScope: boolean; sessionId: string } | { ok: false } {
+    try {
+      const access = projectAccessService.requireProjectActionByFloorId(actorAccountId, floorId, "project.write");
+      return { ok: true, hasProjectScope: true, sessionId: access.sessionId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, hasProjectScope: false, sessionId: "" };
+        }
+        if (error.code === "floor_not_found" || error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Floor not found");
+          return { ok: false };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Floor not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+  }
+      throw error;
+    }
+  }
+
+
+  function canReadProject(actorAccountId: string, sessionId: string): boolean {
+    try {
+      projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, "project.read");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function getFloorVisibleToActor(
+    actorAccountId: string,
+    floorId: string,
+  ): Promise<typeof floors.$inferSelect | null> {
+    const owned = await getOwnedFloorById(db, actorAccountId, floorId);
+    if (owned) {
+      return owned;
+    }
+    const [row] = await db.select().from(floors).where(eq(floors.id, floorId)).limit(1);
+    if (!row) {
+      return null;
+    }
+    if (canReadProject(actorAccountId, row.sessionId)) {
+      return row;
+    }
+    return null;
+  }
+
+
 
   app.post("/floors", {
     schema: {
@@ -541,6 +629,11 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const writeAuth = authorizeProjectWriteBySession(reply, auth.accountId, parsedBody.data.session_id);
+    if (!writeAuth.ok) {
+      return;
+    }
+
     const ownedSessionIds = await getOwnedSessionIds(db, auth.accountId, [parsedBody.data.session_id]);
     let parentFloor: Awaited<ReturnType<typeof getOwnedFloorById>> | null = null;
 
@@ -613,11 +706,15 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const ownedSessionIds = await getOwnedSessionIds(
+    let ownedSessionIds = await getOwnedSessionIds(
       db,
       auth.accountId,
       parsedQuery.data.session_id !== undefined ? [parsedQuery.data.session_id] : undefined
     );
+
+    if (ownedSessionIds.length === 0 && parsedQuery.data.session_id !== undefined && canReadProject(auth.accountId, parsedQuery.data.session_id)) {
+      ownedSessionIds = [parsedQuery.data.session_id];
+    }
 
     if (ownedSessionIds.length === 0) {
       return reply.send({
@@ -704,7 +801,7 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const row = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    const row = await getFloorVisibleToActor(auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Floor not found");
@@ -732,7 +829,7 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const row = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    const row = await getFloorVisibleToActor(auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Floor not found");
@@ -761,7 +858,7 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const row = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    const row = await getFloorVisibleToActor(auth.accountId, parsedParams.data.id);
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Floor not found");
@@ -824,7 +921,17 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByFloor(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    let existingFloor: Awaited<ReturnType<typeof getOwnedFloorById>> = null;
+    if (writeAuth.hasProjectScope) {
+      const [row] = await db.select().from(floors).where(eq(floors.id, parsedParams.data.id)).limit(1);
+      existingFloor = row ?? null;
+    } else {
+      existingFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    }
 
     if (!existingFloor) {
       return sendError(reply, 404, "not_found", "Floor not found");
@@ -989,7 +1096,17 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByFloor(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    let existingFloor: Awaited<ReturnType<typeof getOwnedFloorById>> = null;
+    if (writeAuth.hasProjectScope) {
+      const [row] = await db.select().from(floors).where(eq(floors.id, parsedParams.data.id)).limit(1);
+      existingFloor = row ?? null;
+    } else {
+      existingFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    }
 
     if (!existingFloor) {
       return sendError(reply, 404, "not_found", "Floor not found");
@@ -1071,7 +1188,17 @@ export async function registerFloorRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const sourceFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByFloor(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    let sourceFloor: Awaited<ReturnType<typeof getOwnedFloorById>> = null;
+    if (writeAuth.hasProjectScope) {
+      const [row] = await db.select().from(floors).where(eq(floors.id, parsedParams.data.id)).limit(1);
+      sourceFloor = row ?? null;
+    } else {
+      sourceFloor = await getOwnedFloorById(db, auth.accountId, parsedParams.data.id);
+    }
 
     if (!sourceFloor) {
       return sendError(reply, 404, "not_found", "Source floor not found");
@@ -1191,6 +1318,12 @@ export async function registerFloorRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    if (parsedQuery.data.session_id) {
+      const writeAuth = authorizeProjectWriteBySession(reply, auth.accountId, parsedQuery.data.session_id);
+      if (!writeAuth.ok) {
+        return;
+      }
+    }
     const ownedSessionIds = parsedQuery.data.session_id
       ? await getOwnedSessionIds(db, auth.accountId, [parsedQuery.data.session_id])
       : await getOwnedSessionIds(db, auth.accountId);

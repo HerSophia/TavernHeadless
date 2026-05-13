@@ -14,6 +14,7 @@ TavernHeadless 官方接入的语义层。
 - 选择 active page
 - 把 API 错误映射成更适合界面消费的状态
 - 提供 client-data 的通用语义 helper
+- 提供 Project Event 的 cursor 与去重 helper
 
 ## 它不做什么
 
@@ -54,6 +55,10 @@ TavernHeadless 官方接入的语义层。
 | `formatVariablePreview` | 把变量值格式化成适合界面展示的预览字符串 |
 | `mapApiErrorToUiState` | 把 API 错误转换成界面可用的错误状态 |
 | `summarizeRuntimeToolCatalog` | 把会话级运行时工具目录整理成摘要信息 |
+| `isProjectEvent` | 判断一个值是否是 SDK 归一化后的 Project Event |
+| `getProjectEventCursor` | 从单个 Project Event 读取 sequence cursor |
+| `dedupeProjectEvents` | 按 Project 和 sequence 对 Project Event 列表去重 |
+| `applyProjectEventCursor` | 根据上一个 cursor 和新事件计算新的 cursor |
 | `buildPluginOwner` | 构造 plugin owner 标识 |
 | `buildApplicationOwner` | 构造 application owner 标识 |
 | `groupItemsByCollection` | 把 client-data item 按 collection 分组 |
@@ -62,6 +67,46 @@ TavernHeadless 官方接入的语义层。
 | `resolveItemByPath` | 按 `collectionName + itemKey` 解析单个 client-data item |
 
 其中 `summarizeRuntimeToolCatalog` 只汇总 `/sessions/:id/tools/runtime` 返回的
+### Project Event helpers
+
+这组 helper 只处理已经由 SDK 归一化后的 Project Event，不发请求，也不绑定任何框架。
+
+```ts
+import {
+  applyProjectEventCursor,
+  dedupeProjectEvents,
+  getProjectEventCursor,
+  isProjectEvent,
+} from "@tavern/client-helpers";
+
+const events = await client.projects.listEvents({
+  projectId: "proj-1",
+  after: 0,
+});
+
+const visibleEvents = dedupeProjectEvents(events.items);
+let cursor = events.nextAfter;
+
+await client.projects.streamEvents({
+  projectId: "proj-1",
+  lastEventId: cursor ?? undefined,
+  onEvent(event) {
+    if (!isProjectEvent(event)) return;
+    cursor = applyProjectEventCursor(cursor, event);
+    const eventCursor = getProjectEventCursor(event);
+    console.log(eventCursor, event.type);
+  },
+});
+```
+
+说明：
+
+- `isProjectEvent(value)`：判断一个值是否是 SDK 中的 `ProjectEventRecord`。
+- `getProjectEventCursor(event)`：返回事件的 `sequence`，非法值返回 `null`。
+- `dedupeProjectEvents(events)`：按 `projectId + sequence` 去重，保留第一次出现的事件。
+- `applyProjectEventCursor(previousCursor, event)`：返回两者中更大的 cursor。事件无效时保留上一个 cursor。
+
+
 **session 级** 运行时工具目录。
 它不展开未来 run / node / step overlay。
 

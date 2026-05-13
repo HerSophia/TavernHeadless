@@ -480,6 +480,17 @@ export type SessionsGetDetailOptions = {
   sessionId: string;
 };
 
+export type SessionsGetScopeOptions = {
+  accountId?: AccountIdHint;
+  sessionId: string;
+};
+
+export type SessionScopeResult = {
+  sessionId: string;
+  workspaceId: string;
+  projectId: string;
+};
+
 export type SessionsUpdateOptions = {
   accountId?: AccountIdHint;
   characterId?: string;
@@ -681,6 +692,12 @@ export type SessionsResource = {
    * 对应 `metadata_json.tool_permissions`。
    */
   getToolPermissions(options: SessionsToolPermissionsOptions): Promise<SessionToolPermissions>;
+  /**
+   * 读取会话所属的 Workspace / Project 归属信息。
+   * 适用于 SDK 调用方在已知 sessionId 时反查所属 Project。
+   */
+  getScope(options: SessionsGetScopeOptions): Promise<SessionScopeResult>;
+
   list(options?: SessionsListOptions): Promise<SessionRecord[]>;
   listBranches(options: SessionsListBranchesOptions): Promise<SessionBranchSummary[]>;
   merge(options: SessionsMergeOptions): Promise<SessionBranchMergeResult>;
@@ -793,6 +810,22 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
 
       return payload;
     },
+    async getScope(options): Promise<SessionScopeResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/scope`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const body = readRecord(response.body);
+      return {
+        sessionId: readString(body?.session_id),
+        workspaceId: readString(body?.workspace_id),
+        projectId: readString(body?.project_id),
+      };
+    },
+
     async getRuntimeToolCatalog(options): Promise<SessionRuntimeToolCatalog> {
       const response = await client.fetchJson<Record<string, unknown>>(
         `/sessions/${encodeURIComponent(options.sessionId)}/tools/runtime`,

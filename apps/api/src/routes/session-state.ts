@@ -25,6 +25,7 @@ import {
   operationActorFromRequest,
   operationRequestIdFromRequest,
 } from "../services/operation-log-service.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 import {
   diffSessionStateQueryJsonSchema,
   diffSessionStateValuesResponseJsonSchema,
@@ -46,6 +47,7 @@ import {
 export interface RegisterSessionStateRoutesOptions {
   publicService?: SessionStatePublicService;
   customNamespaceService?: SessionStateCustomNamespaceService;
+  projectAccessService?: ProjectAccessService;
 }
 
 const sessionIdParamsSchema = z.object({ sessionId: z.string().min(1) });
@@ -132,6 +134,7 @@ export async function registerSessionStateRoutes(
 ): Promise<void> {
   const publicService = options.publicService;
   const customNamespaceService = options.customNamespaceService;
+  const projectAccessService = options.projectAccessService;
 
   function ensureServiceAvailable(reply: FastifyReply): SessionStatePublicService | null {
     if (!publicService) {
@@ -159,6 +162,55 @@ export async function registerSessionStateRoutes(
     return customNamespaceService;
   }
 
+  type SessionStateAccessOk = { ok: true; accountId: string };
+  type SessionStateAccessFail = { ok: false };
+  type SessionStateAccessResult = SessionStateAccessOk | SessionStateAccessFail;
+
+  function authorizeProjectActionBySessionId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+    action: "project.read" | "project.write",
+  ): SessionStateAccessResult {
+    if (!projectAccessService) {
+      return { ok: true, accountId: actorAccountId };
+    }
+
+    try {
+      const access = projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, action);
+      return { ok: true, accountId: access.project.accountId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        if (error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+  function authorizeProjectWriteBySessionId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+  ): SessionStateAccessResult {
+    return authorizeProjectActionBySessionId(reply, actorAccountId, sessionId, "project.write");
+  }
+
+  function authorizeProjectReadBySessionId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+  ): SessionStateAccessResult {
+    return authorizeProjectActionBySessionId(reply, actorAccountId, sessionId, "project.read");
+  }
+
   app.post("/sessions/:sessionId/state/namespaces", {
     schema: {
       tags: ["session-state"],
@@ -182,9 +234,12 @@ export async function registerSessionStateRoutes(
     if (!body.ok) return;
 
     const { accountId } = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, accountId, params.data.sessionId);
+    if (!writeAccess.ok) return;
+
     try {
       const registered = service.registerNamespace({
-        accountId,
+        accountId: writeAccess.accountId,
         sessionId: params.data.sessionId,
         namespace: body.data.namespace,
         logicalOwnerType: body.data.logical_owner_type,
@@ -224,8 +279,10 @@ export async function registerSessionStateRoutes(
     if (!params.ok) return;
 
     const { accountId } = getRequestAuthContext(request);
+    const readAccess = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!readAccess.ok) return;
     try {
-      const namespaces = service.listNamespaces(accountId, params.data.sessionId);
+      const namespaces = service.listNamespaces(readAccess.accountId, params.data.sessionId);
       return reply.code(200).send({
         data: namespaces.map((namespace) => toNamespaceResponse(namespace)),
       });
@@ -257,9 +314,12 @@ export async function registerSessionStateRoutes(
     if (!body.ok) return;
 
     const { accountId } = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, accountId, params.data.sessionId);
+    if (!writeAccess.ok) return;
+
     try {
       const value = service.writeValue({
-        accountId,
+        accountId: writeAccess.accountId,
         sessionId: params.data.sessionId,
         branchId: body.data.branch_id,
         namespace: body.data.namespace,
@@ -301,9 +361,12 @@ export async function registerSessionStateRoutes(
     if (!body.ok) return;
 
     const { accountId } = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, accountId, params.data.sessionId);
+    if (!writeAccess.ok) return;
+
     try {
       const value = service.deleteValue({
-        accountId,
+        accountId: writeAccess.accountId,
         sessionId: params.data.sessionId,
         branchId: body.data.branch_id,
         namespace: body.data.namespace,
@@ -344,9 +407,12 @@ export async function registerSessionStateRoutes(
     if (!query.ok) return;
 
     const { accountId } = getRequestAuthContext(request);
+    const readAccess = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!readAccess.ok) return;
+
     try {
       const values = service.resolveValues({
-        accountId,
+        accountId: readAccess.accountId,
         sessionId: params.data.sessionId,
         branchId: query.data.branch_id,
         sourceFloorId: query.data.source_floor_id,
@@ -382,9 +448,11 @@ export async function registerSessionStateRoutes(
     if (!query.ok) return;
 
     const { accountId } = getRequestAuthContext(request);
+    const readAccess = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!readAccess.ok) return;
     try {
       const snapshots = service.listFloorSnapshots({
-        accountId,
+        accountId: readAccess.accountId,
         sessionId: params.data.sessionId,
         floorId: params.data.floorId,
         namespace: query.data.namespace,
@@ -433,9 +501,11 @@ export async function registerSessionStateRoutes(
     if (!query.ok) return;
 
     const { accountId } = getRequestAuthContext(request);
+    const readAccess = authorizeProjectReadBySessionId(reply, accountId, params.data.sessionId);
+    if (!readAccess.ok) return;
     try {
       const entries = service.diff({
-        accountId,
+        accountId: readAccess.accountId,
         sessionId: params.data.sessionId,
         floorId: query.data.floor_id,
         against: query.data.against === "live"

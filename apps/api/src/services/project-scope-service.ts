@@ -8,6 +8,7 @@ import {
   WorkspaceScopeServiceError,
   type WorkspaceRecord,
 } from "./workspace-scope-service.js";
+import { ensureOwnerProjectMembership } from "./project-membership-service.js";
 
 export type ProjectScopeStatus = "active" | "archived";
 export type ProjectScopeKind = "session_default" | "manual";
@@ -87,6 +88,13 @@ export class ProjectScopeService {
     if (!inserted) {
       throw new Error("Failed to create session default project");
     }
+
+    ensureOwnerProjectMembership(this.db, {
+      accountId: inserted.accountId,
+      workspaceId: inserted.workspaceId,
+      projectId: inserted.id,
+      now: input.now,
+    });
 
     return toProjectRecord(inserted);
   }

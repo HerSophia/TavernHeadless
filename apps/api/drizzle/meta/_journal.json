@@ -393,6 +393,13 @@
                         "when":  1765500000000,
                         "tag":  "0055_workspace_project_scope",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  56,
+                        "version":  "6",
+                        "when":  1765600000000,
+                        "tag":  "0056_project_events_observer_scope",
+                        "breakpoints":  true
                     }
                 ]
 }

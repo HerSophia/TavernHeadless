@@ -50,6 +50,7 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairSessionStateGovernanceDrift(sqlite);
   repairSessionBranchRegistryDrift(sqlite);
   repairWorkspaceProjectScopeDrift(sqlite);
+  repairProjectEventsObserverScopeDrift(sqlite);
 }
 
 function tableHasColumns(
@@ -592,6 +593,202 @@ function createWorkspaceProjectScopeIndexes(sqlite: Database.Database): void {
   createIndexIfColumnsExist(sqlite, "llm_instance_config", ["account_id", "workspace_id", "scope", "scope_id"], "CREATE INDEX IF NOT EXISTS `llm_instance_config_account_workspace_scope_idx` ON `llm_instance_config` (`account_id`, `workspace_id`, `scope`, `scope_id`);");
   createIndexIfColumnsExist(sqlite, "tool_definition", ["account_id", "workspace_id", "source"], "CREATE INDEX IF NOT EXISTS `tool_definition_account_workspace_source_idx` ON `tool_definition` (`account_id`, `workspace_id`, `source`);");
   createIndexIfColumnsExist(sqlite, "mcp_server_config", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `mcp_server_config_account_workspace_updated_idx` ON `mcp_server_config` (`account_id`, `workspace_id`, `updated_at`);");
+}
+
+function repairProjectEventsObserverScopeDrift(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "project")) {
+    return;
+  }
+
+  addProjectEventsObserverScopeColumns(sqlite);
+  createProjectEventsObserverTables(sqlite);
+  backfillOperationLogProjectScope(sqlite);
+  backfillProjectOwnerMemberships(sqlite);
+  backfillProjectEventSequences(sqlite);
+  createProjectEventsObserverIndexes(sqlite);
+}
+
+function addProjectEventsObserverScopeColumns(sqlite: Database.Database): void {
+  addColumnIfMissing(
+    sqlite,
+    "operation_log",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE set null",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "operation_log",
+    "project_id",
+    "`project_id` text REFERENCES `project`(`id`) ON DELETE set null",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "operation_log",
+    "actor_account_id",
+    "`actor_account_id` text REFERENCES `account`(`id`) ON DELETE set null",
+  );
+}
+
+function createProjectEventsObserverTables(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "project_event_sequence")) {
+    sqlite.exec(`CREATE TABLE \`project_event_sequence\` (
+  \`project_id\` text PRIMARY KEY NOT NULL,
+  \`current_sequence\` integer NOT NULL DEFAULT 0,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE restrict
+);`);
+  }
+
+  if (!tableExists(sqlite, "project_event")) {
+    sqlite.exec(`CREATE TABLE \`project_event\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`project_id\` text NOT NULL,
+  \`sequence\` integer NOT NULL,
+  \`type\` text NOT NULL,
+  \`visibility\` text NOT NULL DEFAULT 'project',
+  \`source\` text NOT NULL DEFAULT 'api',
+  \`actor_account_id\` text,
+  \`session_id\` text,
+  \`branch_id\` text,
+  \`floor_id\` text,
+  \`page_id\` text,
+  \`message_id\` text,
+  \`operation_log_id\` text,
+  \`correlation_id\` text,
+  \`causation_event_id\` text,
+  \`payload_json\` text NOT NULL DEFAULT '{}',
+  \`created_at\` integer NOT NULL,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`actor_account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`floor_id\`) REFERENCES \`floor\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`page_id\`) REFERENCES \`message_page\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`message_id\`) REFERENCES \`message\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`operation_log_id\`) REFERENCES \`operation_log\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`causation_event_id\`) REFERENCES \`project_event\`(\`id\`) ON DELETE set null
+);`);
+  }
+
+  if (!tableExists(sqlite, "project_membership")) {
+    sqlite.exec(`CREATE TABLE \`project_membership\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`project_id\` text NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`role\` text NOT NULL,
+  \`status\` text NOT NULL DEFAULT 'active',
+  \`created_by_account_id\` text,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`created_by_account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE set null
+);`);
+  }
+}
+
+function backfillOperationLogProjectScope(sqlite: Database.Database): void {
+  if (!tableHasColumns(sqlite, "operation_log", ["account_id", "workspace_id", "project_id", "actor_account_id", "metadata_json"])) {
+    return;
+  }
+
+  sqlite.exec("UPDATE `operation_log` SET `actor_account_id` = `account_id` WHERE `actor_account_id` IS NULL;");
+
+  sqlite.exec(`UPDATE \`operation_log\`
+SET \`workspace_id\` = COALESCE(
+  CASE
+    WHEN \`metadata_json\` IS NOT NULL AND json_valid(\`metadata_json\`) THEN NULLIF(TRIM(CAST(json_extract(\`metadata_json\`, '$.workspace_id') AS TEXT)), '')
+  END,
+  CASE
+    WHEN \`session_id\` IS NOT NULL THEN (
+      SELECT \`session\`.\`workspace_id\`
+      FROM \`session\`
+      WHERE \`session\`.\`id\` = \`operation_log\`.\`session_id\`
+    )
+  END
+)
+WHERE \`workspace_id\` IS NULL;`);
+
+  sqlite.exec(`UPDATE \`operation_log\`
+SET \`project_id\` = COALESCE(
+  CASE
+    WHEN \`metadata_json\` IS NOT NULL AND json_valid(\`metadata_json\`) THEN NULLIF(TRIM(CAST(json_extract(\`metadata_json\`, '$.project_id') AS TEXT)), '')
+  END,
+  CASE
+    WHEN \`session_id\` IS NOT NULL THEN (
+      SELECT \`session\`.\`project_id\`
+      FROM \`session\`
+      WHERE \`session\`.\`id\` = \`operation_log\`.\`session_id\`
+    )
+  END
+)
+WHERE \`project_id\` IS NULL;`);
+}
+
+function backfillProjectOwnerMemberships(sqlite: Database.Database): void {
+  if (!tableHasColumns(sqlite, "project_membership", ["id", "workspace_id", "project_id", "account_id", "role", "status", "created_at", "updated_at"])) {
+    return;
+  }
+
+  sqlite.exec(`INSERT OR IGNORE INTO \`project_membership\` (
+  \`id\`,
+  \`workspace_id\`,
+  \`project_id\`,
+  \`account_id\`,
+  \`role\`,
+  \`status\`,
+  \`created_by_account_id\`,
+  \`created_at\`,
+  \`updated_at\`
+)
+SELECT
+  'pmem_owner_' || \`project\`.\`id\`,
+  \`project\`.\`workspace_id\`,
+  \`project\`.\`id\`,
+  \`project\`.\`account_id\`,
+  'owner',
+  'active',
+  NULL,
+  \`project\`.\`created_at\`,
+  \`project\`.\`updated_at\`
+FROM \`project\`;`);
+}
+
+function backfillProjectEventSequences(sqlite: Database.Database): void {
+  if (!tableHasColumns(sqlite, "project_event_sequence", ["project_id", "current_sequence", "updated_at"])) {
+    return;
+  }
+
+  sqlite.exec(`INSERT OR IGNORE INTO \`project_event_sequence\` (
+  \`project_id\`,
+  \`current_sequence\`,
+  \`updated_at\`
+)
+SELECT
+  \`project\`.\`id\`,
+  0,
+  \`project\`.\`updated_at\`
+FROM \`project\`;`);
+}
+
+function createProjectEventsObserverIndexes(sqlite: Database.Database): void {
+  createIndexIfColumnsExist(sqlite, "operation_log", ["workspace_id", "created_at"], "CREATE INDEX IF NOT EXISTS `operation_log_workspace_created_idx` ON `operation_log` (`workspace_id`, `created_at`);");
+  createIndexIfColumnsExist(sqlite, "operation_log", ["project_id", "created_at"], "CREATE INDEX IF NOT EXISTS `operation_log_project_created_idx` ON `operation_log` (`project_id`, `created_at`);");
+  createIndexIfColumnsExist(sqlite, "operation_log", ["actor_account_id", "created_at"], "CREATE INDEX IF NOT EXISTS `operation_log_actor_account_created_idx` ON `operation_log` (`actor_account_id`, `created_at`);");
+  createIndexIfColumnsExist(sqlite, "project_event", ["project_id", "sequence"], "CREATE INDEX IF NOT EXISTS `project_event_project_sequence_idx` ON `project_event` (`project_id`, `sequence`);");
+  createIndexIfColumnsExist(sqlite, "project_event", ["workspace_id", "created_at"], "CREATE INDEX IF NOT EXISTS `project_event_workspace_created_idx` ON `project_event` (`workspace_id`, `created_at`);");
+  createIndexIfColumnsExist(sqlite, "project_event", ["project_id", "created_at"], "CREATE INDEX IF NOT EXISTS `project_event_project_created_idx` ON `project_event` (`project_id`, `created_at`);");
+  createIndexIfColumnsExist(sqlite, "project_event", ["session_id", "sequence"], "CREATE INDEX IF NOT EXISTS `project_event_session_sequence_idx` ON `project_event` (`session_id`, `sequence`);");
+  createIndexIfColumnsExist(sqlite, "project_event", ["project_id", "type", "sequence"], "CREATE INDEX IF NOT EXISTS `project_event_project_type_sequence_idx` ON `project_event` (`project_id`, `type`, `sequence`);");
+  createIndexIfColumnsExist(sqlite, "project_event", ["operation_log_id"], "CREATE INDEX IF NOT EXISTS `project_event_operation_log_idx` ON `project_event` (`operation_log_id`);");
+  createIndexIfColumnsExist(sqlite, "project_event", ["project_id", "sequence"], "CREATE UNIQUE INDEX IF NOT EXISTS `project_event_project_sequence_uq` ON `project_event` (`project_id`, `sequence`);");
+  createIndexIfColumnsExist(sqlite, "project_membership", ["project_id", "account_id"], "CREATE UNIQUE INDEX IF NOT EXISTS `project_membership_project_account_uq` ON `project_membership` (`project_id`, `account_id`);");
+  createIndexIfColumnsExist(sqlite, "project_membership", ["account_id", "status"], "CREATE INDEX IF NOT EXISTS `project_membership_account_status_idx` ON `project_membership` (`account_id`, `status`);");
+  createIndexIfColumnsExist(sqlite, "project_membership", ["project_id", "role", "status"], "CREATE INDEX IF NOT EXISTS `project_membership_project_role_status_idx` ON `project_membership` (`project_id`, `role`, `status`);");
+  createIndexIfColumnsExist(sqlite, "project_membership", ["workspace_id", "account_id"], "CREATE INDEX IF NOT EXISTS `project_membership_workspace_account_idx` ON `project_membership` (`workspace_id`, `account_id`);");
 }
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;

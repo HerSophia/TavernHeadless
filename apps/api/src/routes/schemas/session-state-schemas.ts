@@ -565,6 +565,7 @@ export const diffSessionStateValuesResponseJsonSchema = {
 
 export const sessionStateRouteErrorResponses = {
   400: errorResponseJsonSchema,
+  403: errorResponseJsonSchema,
   404: errorResponseJsonSchema,
   409: errorResponseJsonSchema,
   500: errorResponseJsonSchema,

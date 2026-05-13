@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { accounts, operationLogs } from "../../db/schema.js";
+import { createTestSessionWithScope } from "../../__tests__/helpers/workspace-project.js";
 import { OperationLogService } from "../operation-log-service.js";
 import { VcDiffService } from "../vc-diff-service.js";
 
@@ -69,6 +70,7 @@ describe("OperationLogService", () => {
       sourceType: "http",
       action: "update_session",
       status: "succeeded",
+      actorAccountId: "account-a",
       sessionId: "session-1",
       targetType: "session",
       targetId: "session-1",
@@ -78,6 +80,45 @@ describe("OperationLogService", () => {
       createdAt: 100,
     });
     expect(created.diff).toMatchObject({ mode: "summary", total_changes: 1 });
+  });
+
+  it("writes formal scope columns and keeps metadata scope compatible", () => {
+    const scope = createTestSessionWithScope(database.db, {
+      accountId: "account-a",
+      id: "scoped-session-1",
+      now: 1_700_000_000_000,
+    });
+    const service = new OperationLogService(database.db);
+
+    const created = service.append({
+      id: "op-scoped",
+      accountId: "account-a",
+      actorType: "user",
+      actorId: "subject-1",
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      requestId: "req-scoped",
+      sourceType: "http",
+      action: "create_session",
+      status: "succeeded",
+      sessionId: scope.sessionId,
+      targetType: "session",
+      targetId: scope.sessionId,
+      metadata: { route: "POST /sessions" },
+      createdAt: 100,
+    });
+
+    expect(created.workspaceId).toBe(scope.workspaceId);
+    expect(created.projectId).toBe(scope.projectId);
+    expect(created.actorAccountId).toBe("account-a");
+    expect(created.metadata).toMatchObject({
+      route: "POST /sessions",
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+    });
+
+    const byProject = service.list({ accountId: "account-a", projectId: scope.projectId });
+    expect(byProject.rows.map((row) => row.id)).toEqual(["op-scoped"]);
   });
 
   it("queries logs with account isolation", () => {

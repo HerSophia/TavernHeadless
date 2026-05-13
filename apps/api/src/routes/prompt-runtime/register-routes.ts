@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
 import { sendError, parseWithSchema } from "../../lib/http.js";
@@ -68,6 +68,7 @@ import {
   mapPromptRuntimeMemoryTraceToSnakeCase,
 } from "../chat/presenters.js";
 import { sendPromptRuntimeInspectServiceError } from "./errors.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../../services/project-access-service.js";
 
 const sessionIdParamsSchema = z.object({
   id: z.string().min(1),
@@ -173,6 +174,7 @@ interface RegisterPromptRuntimeRoutesOptions {
   inspectService?: {
     inspectPromptRuntime(sessionId: string, request: PromptRuntimeInspectRequest, accountId?: string): Promise<PromptRuntimeInspectResult>;
   };
+  projectAccessService?: ProjectAccessService;
 }
 
 export async function registerPromptRuntimeRoutes(
@@ -180,6 +182,34 @@ export async function registerPromptRuntimeRoutes(
   promptRuntimeControlService: PromptRuntimeControlService,
   options: RegisterPromptRuntimeRoutesOptions = {},
 ): Promise<void> {
+  function authorizeProjectWriteBySessionId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    sessionId: string,
+  ): { ok: true; accountId: string } | { ok: false } {
+    if (!options.projectAccessService) {
+      return { ok: true, accountId: actorAccountId };
+    }
+
+    try {
+      const access = options.projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, "project.write");
+      return { ok: true, accountId: access.project.accountId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        if (error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Session not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
   app.get("/sessions/:id/prompt-runtime", {
     schema: {
       tags: ["prompt-runtime"],
@@ -249,7 +279,9 @@ export async function registerPromptRuntimeRoutes(
       response: {
         200: promptRuntimeModeResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         500: errorResponseJsonSchema,
       },
     },
@@ -263,11 +295,16 @@ export async function registerPromptRuntimeRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
     try {
-      const auth = getRequestAuthContext(request);
       const mode = await promptRuntimeControlService.updateMode(
         parsedParams.data.id,
-        auth.accountId,
+        writeAccess.accountId,
         mapModeViewToCamelCase(parsedBody.data as PromptRuntimeModePatchBody).promptMode,
         auth.subject ?? auth.accountId,
       );
@@ -314,7 +351,9 @@ export async function registerPromptRuntimeRoutes(
       response: {
         200: promptRuntimePolicyViewResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         500: errorResponseJsonSchema,
       },
     },
@@ -336,11 +375,16 @@ export async function registerPromptRuntimeRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
     try {
-      const auth = getRequestAuthContext(request);
       const policy = await promptRuntimeControlService.updatePolicy(
         parsedParams.data.id,
-        auth.accountId,
+        writeAccess.accountId,
         mapPolicyPatchBodyToCamelCase(parsedBody.data),
         auth.subject ?? auth.accountId,
         {
@@ -409,7 +453,9 @@ export async function registerPromptRuntimeRoutes(
       response: {
         200: promptRuntimePolicyViewResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
         500: errorResponseJsonSchema,
       },
     },
@@ -423,12 +469,17 @@ export async function registerPromptRuntimeRoutes(
       return;
     }
 
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
     try {
-      const auth = getRequestAuthContext(request);
       const policy = await promptRuntimeControlService.updateBranchPolicy(
         parsedParams.data.id,
         parsedParams.data.branchId,
-        auth.accountId,
+        writeAccess.accountId,
         mapPolicyPatchBodyToCamelCase(parsedBody.data),
         auth.subject ?? auth.accountId,
         {

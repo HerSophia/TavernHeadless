@@ -166,6 +166,7 @@ export class ChatService {
         accountMode: options.accountMode,
         defaultAccountId: options.defaultAccountId,
         sessionStateService: options.sessionStateService,
+        projectEventLiveHub: options.projectEventLiveHub,
       });
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard

@@ -1,14 +1,15 @@
 import { and, count, eq, inArray } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
-import { messagePages } from "../db/schema";
+import { floors, messagePages, sessions } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
 import {
   ConversationShapePolicyError,
@@ -369,6 +370,101 @@ export async function registerMessagePageRoutes(
   const pageActivationService = new PageActivationService(db);
   const variableStageInspectionService = new VariableStageInspectionService(db);
   const variablePromotionTraceService = new VariablePromotionTraceService(db);
+  const projectAccessService = new ProjectAccessService(db);
+
+  function authorizeProjectWriteByFloorId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    floorId: string,
+  ): { ok: true; hasProjectScope: boolean } | { ok: false } {
+    try {
+      projectAccessService.requireProjectActionByFloorId(actorAccountId, floorId, "project.write");
+      return { ok: true, hasProjectScope: true };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, hasProjectScope: false };
+        }
+        if (error.code === "floor_not_found" || error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Floor not found");
+          return { ok: false };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Floor not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code,error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+  function authorizeProjectWriteByPageId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    pageId: string,
+  ): { ok: true; hasProjectScope: boolean; floorId: string } | { ok: false } {
+    try {
+      const access = projectAccessService.requireProjectActionByPageId(actorAccountId, pageId, "project.write");
+      return { ok: true, hasProjectScope: true, floorId: access.floorId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, hasProjectScope: false, floorId: "" };
+        }
+        if (error.code === "page_not_found" || error.code === "floor_not_found" || error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Page not found");
+          return { ok: false };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Page not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+
+  function canReadProjectByFloorId(actorAccountId: string, floorId: string): boolean {
+    try {
+      projectAccessService.requireProjectActionByFloorId(actorAccountId, floorId, "project.read");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function canReadProjectByPageId(actorAccountId: string, pageId: string): boolean {
+    try {
+      projectAccessService.requireProjectActionByPageId(actorAccountId, pageId, "project.read");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function resolvePageOwnerAccountId(
+    _executor: typeof db,
+    pageId: string,
+  ): Promise<string | null> {
+    const row = await db
+      .select({ accountId: sessions.accountId })
+      .from(messagePages)
+      .innerJoin(floors, eq(messagePages.floorId, floors.id))
+      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
+      .where(eq(messagePages.id, pageId))
+      .limit(1);
+    return row[0]?.accountId ?? null;
+  }
+
+
+
+
+
 
   app.post("/pages", {
     schema: {
@@ -394,7 +490,21 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const floor = ownedFloors.getById(auth.accountId, parsedBody.data.floor_id);
+    const writeAuth = authorizeProjectWriteByFloorId(reply, auth.accountId, parsedBody.data.floor_id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    let floor: ReturnType<typeof ownedFloors.getById>;
+    if (writeAuth.hasProjectScope) {
+      const [row] = await db
+        .select()
+        .from(floors)
+        .where(eq(floors.id, parsedBody.data.floor_id))
+        .limit(1);
+      floor = (row ?? null) as ReturnType<typeof ownedFloors.getById>;
+    } else {
+      floor = ownedFloors.getById(auth.accountId, parsedBody.data.floor_id);
+    }
 
     if (!floor) {
       return sendError(reply, 404, "not_found", "Floor not found");
@@ -479,10 +589,13 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const ownedFloorIds = ownedFloors.listIds(
+    let ownedFloorIds = ownedFloors.listIds(
       auth.accountId,
       parsedQuery.data.floor_id !== undefined ? [parsedQuery.data.floor_id] : undefined
     );
+    if (ownedFloorIds.length === 0 && parsedQuery.data.floor_id !== undefined && canReadProjectByFloorId(auth.accountId, parsedQuery.data.floor_id)) {
+      ownedFloorIds = [parsedQuery.data.floor_id];
+    }
 
     if (ownedFloorIds.length === 0) {
       return reply.send({
@@ -572,7 +685,10 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const row = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
+    let row = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
+    if (!row && canReadProjectByPageId(auth.accountId, parsedParams.data.id)) {
+      row = ownedPages.getContextByIdAnyAccount(parsedParams.data.id);
+    }
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -691,7 +807,13 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingPage = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    const existingPage = writeAuth.hasProjectScope
+      ? ownedPages.getContextByIdAnyAccount(parsedParams.data.id)
+      : ownedPages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingPage) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -775,7 +897,13 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingPage = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    const existingPage = writeAuth.hasProjectScope
+      ? ownedPages.getContextByIdAnyAccount(parsedParams.data.id)
+      : ownedPages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingPage) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -837,7 +965,12 @@ export async function registerMessagePageRoutes(
     const targetId = parsedParams.data.id;
 
     const auth = getRequestAuthContext(request);
-    const activation = pageActivationService.activateVersion(auth.accountId, targetId);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth.accountId, targetId);
+    if (!writeAuth.ok) {
+      return;
+    }
+    const effectiveAccountId = writeAuth.hasProjectScope ? await resolvePageOwnerAccountId(db, targetId) ?? auth.accountId : auth.accountId;
+    const activation = pageActivationService.activateVersion(effectiveAccountId, targetId);
     if (activation.kind === "not_found") {
       return sendError(reply, 404, "not_found", "Message page not found");
     }
@@ -872,7 +1005,36 @@ export async function registerMessagePageRoutes(
 
     const { ids } = bodyParsed.data;
     const auth = getRequestAuthContext(request);
-    const ownedPageContexts = ownedPages.getContextsByIds(auth.accountId, ids);
+    // Determine which ids are accessible (owner-account OR Project owner via membership).
+    const accessDeniedIds = new Set<string>();
+    const ownedAccountById = new Map<string, string>();
+    for (const id of ids) {
+      try {
+        projectAccessService.requireProjectActionByPageId(auth.accountId, id, "project.write");
+        const ownerAccountId = await resolvePageOwnerAccountId(db, id);
+        if (ownerAccountId) {
+          ownedAccountById.set(id, ownerAccountId);
+        }
+      } catch (error) {
+        if (error instanceof ProjectAccessServiceError) {
+          if (error.code=== "project_access_denied" && error.denyReason === "role_forbidden") {
+            accessDeniedIds.add(id);
+          }
+          // session_project_scope_missing / not_a_member → fall back to legacy ownership (hide existence)
+        } else {
+          throw error;
+        }
+      }
+    }
+    // Always include legacy account-owned contexts.
+    const legacyOwnedContexts = ownedPages.getContextsByIds(auth.accountId, ids);
+    const ownedPageContexts = legacyOwnedContexts.slice();
+    for (const id of ids) {
+      if (ownedAccountById.has(id) && !ownedPageContexts.some((page) => page.id === id)) {
+        const ctx = ownedPages.getContextByIdAnyAccount(id);
+        if (ctx) ownedPageContexts.push(ctx);
+      }
+    }
     const ownedPageIds = new Set(ownedPageContexts.map((page) => page.id));
 
     const lockedPage = ownedPageContexts.find((page) =>
@@ -895,39 +1057,58 @@ export async function registerMessagePageRoutes(
     const results: { index: number; id: string; action: string }[] = [];
     let deleted = 0;
     let notFound = 0;
+    let accessDenied = 0;
 
     try {
       db.transaction((tx) => {
-      const deletablePageIds = ids.filter((id) => ownedPageIds.has(id));
-      const affectedFloorIds = Array.from(new Set(ownedPageContexts.map((page) => page.floorId)));
-      deleteVariablesForPages(tx, auth.accountId, deletablePageIds);
-
-      ids.forEach((id, index) => {
-        if (!ownedPageIds.has(id)) {
-          results.push({ index, id, action: "not_found" });
-          notFound++;
-          return;
+        const deletablePageIds = ids.filter((id) => ownedPageIds.has(id));
+        const deletablePageIdSet = new Set(deletablePageIds);
+        const affectedFloorIds = Array.from(new Set(ownedPageContexts
+          .filter((page) => deletablePageIdSet.has(page.id))
+          .map((page) => page.floorId)));
+        const deletablePageIdsByAccount = new Map<string, string[]>();
+        for (const id of deletablePageIds) {
+          const ownerAccountId = ownedAccountById.get(id) ?? auth.accountId;
+          const accountPageIds = deletablePageIdsByAccount.get(ownerAccountId) ?? [];
+          accountPageIds.push(id);
+          deletablePageIdsByAccount.set(ownerAccountId, accountPageIds);
+        }
+        for (const [accountId, pageIds] of deletablePageIdsByAccount) {
+          deleteVariablesForPages(tx, accountId, pageIds);
         }
 
-        const rows = tx
-          .delete(messagePages)
-          .where(eq(messagePages.id, id))
-          .returning({ id: messagePages.id })
-          .all();
+        ids.forEach((id, index) => {
+          if (accessDeniedIds.has(id)) {
+            results.push({ index, id, action: "project_access_denied" });
+            accessDenied++;
+            return;
+          }
 
-        if (rows.length > 0) {
-          results.push({ index, id, action: "deleted" });
-          deleted++;
-        } else {
-          results.push({ index, id, action: "not_found" });
-          notFound++;
+          if (!ownedPageIds.has(id)) {
+            results.push({ index, id, action: "not_found" });
+            notFound++;
+            return;
+          }
+
+          const rows = tx
+            .delete(messagePages)
+            .where(eq(messagePages.id, id))
+            .returning({ id: messagePages.id })
+            .all();
+
+          if (rows.length > 0) {
+            results.push({ index, id, action: "deleted" });
+            deleted++;
+          } else {
+            results.push({ index, id, action: "not_found" });
+            notFound++;
+          }
+        });
+
+        for (const affectedFloorId of affectedFloorIds) {
+          new ConversationShapePolicyService(tx).assertFloorMutationAllowed(affectedFloorId);
         }
       });
-
-      for (const affectedFloorId of affectedFloorIds) {
-        new ConversationShapePolicyService(tx).assertFloorMutationAllowed(affectedFloorId);
-      }
-    });
     } catch (error) {
       if (error instanceof ConversationShapePolicyError) {
         return sendConversationShapeRejection(reply, error.rejection);
@@ -936,7 +1117,7 @@ export async function registerMessagePageRoutes(
     }
 
     return reply.send({
-      data: { results, meta: { total: ids.length, deleted, not_found: notFound } },
+      data: { results, meta: ({ total: ids.length, deleted, not_found: notFound, ...(accessDenied > 0 ? { access_denied: accessDenied }: {}) }) },
     });
   });
 }
