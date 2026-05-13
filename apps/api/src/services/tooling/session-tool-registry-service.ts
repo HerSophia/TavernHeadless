@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 
 import {
   evaluateToolReplaySafety,
@@ -31,6 +31,7 @@ import {
   type RuntimeMetadataBasis,
   type RuntimeMetadataBasisDetail,
 } from "./shared/metadata-basis.js";
+import { WorkspaceScopeService } from "../workspace-scope-service.js";
 
 const INSTANCE_SLOTS = new Set<InstanceSlot>([
   "narrator",
@@ -320,6 +321,10 @@ function toPresetToolInput(row: typeof toolDefinitions.$inferSelect): PresetTool
   };
 }
 
+function toolDefinitionWorkspaceClause(workspaceId: string) {
+  return or(eq(toolDefinitions.workspaceId, workspaceId), isNull(toolDefinitions.workspaceId))!;
+}
+
 export class SessionToolRegistryService {
   private readonly mcpService?: McpService;
   private readonly mcpSnapshotStore?: McpToolCatalogSnapshotStore;
@@ -362,6 +367,7 @@ export class SessionToolRegistryService {
     }
 
     const generatedAt = Date.now();
+    const workspaceId = session.workspaceId ?? new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId).id;
     const registry = new ToolRegistry();
     const snapshot: SessionRuntimeToolCatalogSnapshot = {
       sessionId,
@@ -373,7 +379,7 @@ export class SessionToolRegistryService {
 
     await this.appendBaseProviders(registry, snapshot, callableOwners);
 
-    const definitionDescriptors = await this.loadDefinitionDescriptors(session, accountId);
+    const definitionDescriptors = await this.loadDefinitionDescriptors(session, accountId, workspaceId);
     const definitionCandidates = definitionDescriptors.flatMap((descriptor) =>
       descriptor.tools.map<RuntimeToolCandidate>((tool) => ({
         name: tool.name,
@@ -398,7 +404,7 @@ export class SessionToolRegistryService {
         snapshot.tools.push(buildCatalogEntry(candidate, "unavailable", SCRIPT_HANDLER_UNAVAILABLE_REASON));
       }
 
-      await this.appendMcpProviders(registry, snapshot, callableOwners, accountId);
+      await this.appendMcpProviders(registry, snapshot, callableOwners, accountId, workspaceId);
       sortSnapshot(snapshot);
       return {
         registry,
@@ -468,7 +474,7 @@ export class SessionToolRegistryService {
       }));
     }
 
-    await this.appendMcpProviders(registry, snapshot, callableOwners, accountId);
+    await this.appendMcpProviders(registry, snapshot, callableOwners, accountId, workspaceId);
 
     sortSnapshot(snapshot);
 
@@ -492,6 +498,7 @@ export class SessionToolRegistryService {
         id: sessions.id,
         presetId: sessions.presetId,
         characterId: sessions.characterId,
+        workspaceId: sessions.workspaceId,
       })
       .from(sessions)
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
@@ -537,8 +544,9 @@ export class SessionToolRegistryService {
   }
 
   private async loadDefinitionDescriptors(
-    session: { id: string; presetId: string | null; characterId: string | null },
+    session: { id: string; presetId: string | null; characterId: string | null; workspaceId: string | null },
     accountId: string,
+    workspaceId: string,
   ): Promise<DefinitionProviderDescriptor[]> {
     const descriptors: DefinitionProviderDescriptor[] = [];
 
@@ -547,6 +555,7 @@ export class SessionToolRegistryService {
       .from(toolDefinitions)
       .where(and(
         eq(toolDefinitions.accountId, accountId),
+        toolDefinitionWorkspaceClause(workspaceId),
         eq(toolDefinitions.source, "custom"),
         eq(toolDefinitions.handlerType, "script"),
         eq(toolDefinitions.enabled, true),
@@ -565,6 +574,7 @@ export class SessionToolRegistryService {
         .from(toolDefinitions)
         .where(and(
           eq(toolDefinitions.accountId, accountId),
+          toolDefinitionWorkspaceClause(workspaceId),
           eq(toolDefinitions.source, "preset"),
           eq(toolDefinitions.handlerType, "script"),
           eq(toolDefinitions.sourceId, session.presetId),
@@ -585,6 +595,7 @@ export class SessionToolRegistryService {
         .from(toolDefinitions)
         .where(and(
           eq(toolDefinitions.accountId, accountId),
+          toolDefinitionWorkspaceClause(workspaceId),
           eq(toolDefinitions.source, "character"),
           eq(toolDefinitions.handlerType, "script"),
           eq(toolDefinitions.sourceId, session.characterId),
@@ -607,12 +618,13 @@ export class SessionToolRegistryService {
     snapshot: SessionRuntimeToolCatalogSnapshot,
     callableOwners: Map<string, RuntimeToolCandidate>,
     accountId: string,
+    workspaceId: string,
   ): Promise<void> {
     if (!this.options.mcpManager || !this.mcpService) {
       return;
     }
 
-    const configs = await this.mcpService.listEnabledConfigs(accountId);
+    const configs = await this.mcpService.listEnabledConfigs(accountId, { workspaceId });
     if (configs.length === 0) {
       return;
     }

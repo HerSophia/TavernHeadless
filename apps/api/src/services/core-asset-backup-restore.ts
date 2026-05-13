@@ -40,6 +40,7 @@ import { BranchLocalVariableSnapshotService, type BranchLocalVariableProvenanceM
 import { buildImportedMemoryScopeStateRowsFromResolvedData } from "./imported-memory-scope-state-builder.js";
 import { SessionBranchRegistryService, type SessionBranchAssetBindingState } from "./variables/host/session-branch-registry-service.js";
 import { VariableService } from "./variables/variable-service.js";
+import { WorkspaceScopeService } from "./workspace-scope-service.js";
 
 export interface CoreAssetBackupRestorePrepared {
   analysis: CoreAssetBackupAnalysis;
@@ -86,6 +87,8 @@ export function restoreCoreAssetBackupInTransaction(
   const { analysis, idMap } = prepared;
   const { file, namePlan, preview } = analysis;
   const created = emptyBackupRestoreCreatedSummary();
+  const accountId = file.source.account_id;
+  const workspaceId = new WorkspaceScopeService(tx).getDefaultWorkspace(accountId).id;
 
 
   for (const character of file.resources.characters) {
@@ -99,7 +102,8 @@ export function restoreCoreAssetBackupInTransaction(
     tx.insert(characters).values({
       id: newCharacterId,
       name: restoredName,
-      accountId: file.source.account_id,
+      accountId,
+      workspaceId,
       source: character.source,
       status: "active",
       deletedAt: null,
@@ -140,7 +144,8 @@ export function restoreCoreAssetBackupInTransaction(
       id: newPresetId,
       name: restoredName,
       source: preset.source,
-      accountId: file.source.account_id,
+      accountId,
+      workspaceId,
       dataJson: JSON.stringify(preset.data ?? {}),
       version: preset.version,
       createdAt: preset.created_at,
@@ -182,6 +187,7 @@ export function restoreCoreAssetBackupInTransaction(
       name: restoredName,
       source: worldbook.source,
       accountId: file.source.account_id,
+      workspaceId,
       dataJson: JSON.stringify(worldbook.data ?? {}),
       version: worldbook.version,
       createdAt: worldbook.created_at,
@@ -254,7 +260,8 @@ export function restoreCoreAssetBackupInTransaction(
       id: newProfileId,
       name: restoredName,
       source: profile.source,
-      accountId: file.source.account_id,
+      accountId,
+      workspaceId,
       dataJson: JSON.stringify(profile.data ?? {}),
       version: profile.version,
       createdAt: profile.created_at,
@@ -348,7 +355,8 @@ export function restoreCoreAssetBackupInTransaction(
       id: newSessionId,
       title: restoredTitle,
       status: session.status,
-      accountId: file.source.account_id,
+      accountId,
+      workspaceId,
       characterId,
       characterVersionId,
       characterSnapshotJson: session.character_binding.snapshot == null

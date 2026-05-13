@@ -49,6 +49,47 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairClientDataPhase2Drift(sqlite);
   repairSessionStateGovernanceDrift(sqlite);
   repairSessionBranchRegistryDrift(sqlite);
+  repairWorkspaceProjectScopeDrift(sqlite);
+}
+
+function tableHasColumns(
+  sqlite: Database.Database,
+  tableName: string,
+  columnNames: readonly string[],
+): boolean {
+  if (!tableExists(sqlite, tableName)) {
+    return false;
+  }
+
+  const columns = getTableColumnNames(sqlite, tableName);
+  return columnNames.every((columnName) => columns.has(columnName));
+}
+
+function addColumnIfMissing(
+  sqlite: Database.Database,
+  tableName: string,
+  columnName: string,
+  definition: string,
+): void {
+  if (!tableExists(sqlite, tableName)) {
+    return;
+  }
+
+  const columns = getTableColumnNames(sqlite, tableName);
+  if (!columns.has(columnName)) {
+    sqlite.exec(`ALTER TABLE \`${tableName}\` ADD COLUMN ${definition};`);
+  }
+}
+
+function createIndexIfColumnsExist(
+  sqlite: Database.Database,
+  tableName: string,
+  columnNames: readonly string[],
+  statement: string,
+): void {
+  if (tableHasColumns(sqlite, tableName, columnNames)) {
+    sqlite.exec(statement);
+  }
 }
 
 function repairBranchLocalVariableSnapshotDrift(sqlite: Database.Database): void {
@@ -259,6 +300,298 @@ WHERE NOT EXISTS (
     AND \`sb\`.\`session_id\` = \`s\`.\`id\`
     AND \`sb\`.\`branch_id\` = 'main'
 );`);
+}
+
+function repairWorkspaceProjectScopeDrift(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "account")) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "workspace")) {
+    sqlite.exec(`CREATE TABLE \`workspace\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`name\` text NOT NULL,
+  \`kind\` text NOT NULL DEFAULT 'default',
+  \`is_default\` integer NOT NULL DEFAULT 0,
+  \`status\` text NOT NULL DEFAULT 'active',
+  \`settings_json\` text NOT NULL DEFAULT '{}',
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE restrict
+);`);
+  }
+
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `workspace_account_updated_idx` ON `workspace` (`account_id`, `updated_at`);");
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `workspace_account_default_uq` ON `workspace` (`account_id`) WHERE `is_default` = 1;");
+
+  if (!tableExists(sqlite, "project")) {
+    sqlite.exec(`CREATE TABLE \`project\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`name\` text NOT NULL,
+  \`description\` text,
+  \`kind\` text NOT NULL DEFAULT 'session_default',
+  \`status\` text NOT NULL DEFAULT 'active',
+  \`settings_override_json\` text NOT NULL DEFAULT '{}',
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON DELETE restrict
+);`);
+  }
+
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `project_account_workspace_updated_idx` ON `project` (`account_id`, `workspace_id`, `updated_at`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `project_workspace_updated_idx` ON `project` (`workspace_id`, `updated_at`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `project_account_status_updated_idx` ON `project` (`account_id`, `status`, `updated_at`);");
+
+  addWorkspaceProjectScopeColumns(sqlite);
+  backfillDefaultWorkspaces(sqlite);
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "character");
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "account_user");
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "preset");
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "worldbook");
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "regex_profile");
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "llm_profile");
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "tool_definition");
+  backfillWorkspaceIdFromDefaultWorkspace(sqlite, "mcp_server_config");
+  backfillSessionProjects(sqlite);
+  backfillConfigWorkspaceIds(sqlite, "llm_profile_binding");
+  backfillConfigWorkspaceIds(sqlite, "llm_instance_config");
+  createWorkspaceProjectScopeIndexes(sqlite);
+}
+
+function addWorkspaceProjectScopeColumns(sqlite: Database.Database): void {
+  addColumnIfMissing(
+    sqlite,
+    "session",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "session",
+    "project_id",
+    "`project_id` text REFERENCES `project`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "character",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "account_user",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "preset",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "worldbook",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "regex_profile",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "llm_profile",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "llm_profile_binding",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "llm_instance_config",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "tool_definition",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "mcp_server_config",
+    "workspace_id",
+    "`workspace_id` text REFERENCES `workspace`(`id`) ON DELETE restrict",
+  );
+}
+
+function backfillDefaultWorkspaces(sqlite: Database.Database): void {
+  sqlite.exec(`INSERT OR IGNORE INTO \`workspace\` (
+  \`id\`,
+  \`account_id\`,
+  \`name\`,
+  \`kind\`,
+  \`is_default\`,
+  \`status\`,
+  \`settings_json\`,
+  \`created_at\`,
+  \`updated_at\`
+)
+SELECT
+  'ws_default_' || \`account\`.\`id\`,
+  \`account\`.\`id\`,
+  '默认 Workspace',
+  'default',
+  1,
+  'active',
+  '{}',
+  \`account\`.\`created_at\`,
+  \`account\`.\`updated_at\`
+FROM \`account\`
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM \`workspace\`
+  WHERE \`workspace\`.\`account_id\` = \`account\`.\`id\`
+    AND \`workspace\`.\`is_default\` = 1
+);`);
+}
+
+function backfillWorkspaceIdFromDefaultWorkspace(sqlite: Database.Database, tableName: string): void {
+  if (!tableHasColumns(sqlite, tableName, ["account_id", "workspace_id"])) {
+    return;
+  }
+
+  sqlite.exec(`UPDATE \`${tableName}\`
+SET \`workspace_id\` = (
+  SELECT \`workspace\`.\`id\`
+  FROM \`workspace\`
+  WHERE \`workspace\`.\`account_id\` = \`${tableName}\`.\`account_id\`
+    AND \`workspace\`.\`is_default\` = 1
+)
+WHERE \`workspace_id\` IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM \`workspace\`
+    WHERE \`workspace\`.\`account_id\` = \`${tableName}\`.\`account_id\`
+      AND \`workspace\`.\`is_default\` = 1
+  );`);
+}
+
+function backfillSessionProjects(sqlite: Database.Database): void {
+  if (!tableHasColumns(sqlite, "session", ["id", "account_id", "workspace_id", "project_id", "created_at", "updated_at"])) {
+    return;
+  }
+
+  sqlite.exec(`INSERT OR IGNORE INTO \`project\` (
+  \`id\`,
+  \`account_id\`,
+  \`workspace_id\`,
+  \`name\`,
+  \`description\`,
+  \`kind\`,
+  \`status\`,
+  \`settings_override_json\`,
+  \`created_at\`,
+  \`updated_at\`
+)
+SELECT
+  'proj_session_' || \`session\`.\`id\`,
+  \`session\`.\`account_id\`,
+  \`workspace\`.\`id\`,
+  COALESCE(NULLIF(TRIM(\`session\`.\`title\`), ''), '默认项目 - ' || \`session\`.\`id\`),
+  NULL,
+  'session_default',
+  'active',
+  '{}',
+  \`session\`.\`created_at\`,
+  \`session\`.\`updated_at\`
+FROM \`session\`
+JOIN \`workspace\`
+  ON \`workspace\`.\`account_id\` = \`session\`.\`account_id\`
+  AND \`workspace\`.\`is_default\` = 1
+WHERE \`session\`.\`project_id\` IS NULL;
+
+UPDATE \`session\`
+SET
+  \`workspace_id\` = (
+    SELECT \`project\`.\`workspace_id\`
+    FROM \`project\`
+    WHERE \`project\`.\`id\` = 'proj_session_' || \`session\`.\`id\`
+  ),
+  \`project_id\` = 'proj_session_' || \`id\`
+WHERE \`project_id\` IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM \`project\`
+    WHERE \`project\`.\`id\` = 'proj_session_' || \`session\`.\`id\`
+  );
+
+UPDATE \`session\`
+SET \`workspace_id\` = (
+  SELECT \`project\`.\`workspace_id\`
+  FROM \`project\`
+  WHERE \`project\`.\`id\` = \`session\`.\`project_id\`
+)
+WHERE \`workspace_id\` IS NULL
+  AND \`project_id\` IS NOT NULL
+  AND EXISTS (
+    SELECT 1
+    FROM \`project\`
+    WHERE \`project\`.\`id\` = \`session\`.\`project_id\`
+  );`);
+}
+
+function backfillConfigWorkspaceIds(sqlite: Database.Database, tableName: string): void {
+  if (!tableHasColumns(sqlite, tableName, ["account_id", "workspace_id", "scope", "scope_id"])) {
+    return;
+  }
+
+  sqlite.exec(`UPDATE \`${tableName}\`
+SET \`workspace_id\` = COALESCE(
+  CASE
+    WHEN \`scope\` = 'session' THEN (
+      SELECT \`session\`.\`workspace_id\`
+      FROM \`session\`
+      WHERE \`session\`.\`id\` = \`${tableName}\`.\`scope_id\`
+        AND \`session\`.\`account_id\` = \`${tableName}\`.\`account_id\`
+    )
+  END,
+  (
+    SELECT \`workspace\`.\`id\`
+    FROM \`workspace\`
+    WHERE \`workspace\`.\`account_id\` = \`${tableName}\`.\`account_id\`
+      AND \`workspace\`.\`is_default\` = 1
+  )
+)
+WHERE \`workspace_id\` IS NULL;`);
+}
+
+function createWorkspaceProjectScopeIndexes(sqlite: Database.Database): void {
+  createIndexIfColumnsExist(sqlite, "session", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `session_account_workspace_updated_idx` ON `session` (`account_id`, `workspace_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "session", ["account_id", "project_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `session_account_project_updated_idx` ON `session` (`account_id`, `project_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "session", ["project_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `session_project_updated_idx` ON `session` (`project_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "character", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `character_account_workspace_updated_idx` ON `character` (`account_id`, `workspace_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "account_user", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `account_user_account_workspace_updated_idx` ON `account_user` (`account_id`, `workspace_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "preset", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `preset_account_workspace_updated_idx` ON `preset` (`account_id`, `workspace_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "worldbook", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `worldbook_account_workspace_updated_idx` ON `worldbook` (`account_id`, `workspace_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "regex_profile", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `regex_profile_account_workspace_updated_idx` ON `regex_profile` (`account_id`, `workspace_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "llm_profile", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `llm_profile_account_workspace_updated_idx` ON `llm_profile` (`account_id`, `workspace_id`, `updated_at`);");
+  createIndexIfColumnsExist(sqlite, "llm_profile_binding", ["account_id", "workspace_id", "scope", "scope_id"], "CREATE INDEX IF NOT EXISTS `llm_profile_binding_account_workspace_scope_idx` ON `llm_profile_binding` (`account_id`, `workspace_id`, `scope`, `scope_id`);");
+  createIndexIfColumnsExist(sqlite, "llm_instance_config", ["account_id", "workspace_id", "scope", "scope_id"], "CREATE INDEX IF NOT EXISTS `llm_instance_config_account_workspace_scope_idx` ON `llm_instance_config` (`account_id`, `workspace_id`, `scope`, `scope_id`);");
+  createIndexIfColumnsExist(sqlite, "tool_definition", ["account_id", "workspace_id", "source"], "CREATE INDEX IF NOT EXISTS `tool_definition_account_workspace_source_idx` ON `tool_definition` (`account_id`, `workspace_id`, `source`);");
+  createIndexIfColumnsExist(sqlite, "mcp_server_config", ["account_id", "workspace_id", "updated_at"], "CREATE INDEX IF NOT EXISTS `mcp_server_config_account_workspace_updated_idx` ON `mcp_server_config` (`account_id`, `workspace_id`, `updated_at`);");
 }
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;

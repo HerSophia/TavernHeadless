@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { eq } from 'drizzle-orm';
 
 import { createDatabase, type AppDb } from '../../db/client.js';
 import { accounts, toolDefinitions } from '../../db/schema.js';
 import { DEFAULT_ADMIN_ACCOUNT_ID } from '../../accounts/constants.js';
 import { ToolService, ToolServiceError, type CreateDefinitionInput } from '../tool-service.js';
+import { ensureTestDefaultWorkspace } from '../../__tests__/helpers/workspace-project.js';
 
 // ── helpers ──────────────────────────────────────────────
 
@@ -27,11 +29,13 @@ describe('ToolService', () => {
   let db: AppDb;
   let closeDb: () => void;
   let service: ToolService;
+  let defaultWorkspaceId: string;
 
   beforeEach(async () => {
     const conn = createDatabase(':memory:');
     db = conn.db;
     closeDb = conn.close;
+    defaultWorkspaceId = ensureTestDefaultWorkspace(db, DEFAULT_ADMIN_ACCOUNT_ID).workspaceId;
 
     const now = Date.now();
     await db.insert(accounts).values({
@@ -43,6 +47,7 @@ describe('ToolService', () => {
       createdAt: now,
       updatedAt: now,
     });
+    ensureTestDefaultWorkspace(db, 'acc-other', now);
 
     service = new ToolService(db);
   });
@@ -76,6 +81,12 @@ describe('ToolService', () => {
       expect(result.side_effect_level).toBe('none');
       expect(result.handler_type).toBe('script');
       expect(result.enabled).toBe(true);
+
+      const [row] = await db
+        .select({ workspaceId: toolDefinitions.workspaceId })
+        .from(toolDefinitions)
+        .where(eq(toolDefinitions.id, result.id));
+      expect(row?.workspaceId).toBe(defaultWorkspaceId);
     });
 
     it('rejects duplicate definition identity within the same account', async () => {
@@ -116,6 +127,7 @@ describe('ToolService', () => {
           handlerType: 'script',
           handlerJson: '{}',
           accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+          workspaceId: defaultWorkspaceId,
           createdAt: now,
           updatedAt: now,
         })

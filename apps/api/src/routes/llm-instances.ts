@@ -27,6 +27,7 @@ import {
   type ResolvedInstanceSlot,
 } from "../services/llm-instance-service";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
+import { WorkspaceScopeServiceError } from "../services/workspace-scope-service.js";
 
 // ── Zod schemas for runtime validation ──
 
@@ -107,8 +108,12 @@ export async function registerLlmInstanceRoutes(
     const { scope, session_id } = parsed.data;
     const scopeId = scope === "session" && session_id ? session_id : undefined;
 
-    const configs = await service.listConfigs(auth.accountId, scope, scopeId);
-    return { data: configs.map(toApiConfig) };
+    try {
+      const configs = await service.listConfigs(auth.accountId, scope, scopeId);
+      return { data: configs.map(toApiConfig) };
+    } catch (error) {
+      return sendServiceError(reply, error);
+    }
   });
 
   // GET /llm-instances/resolved — MUST be registered before /:slot
@@ -130,13 +135,17 @@ export async function registerLlmInstanceRoutes(
     const auth = getRequestAuthContext(request);
     const { session_id } = parsed.data;
 
-    const slots = await service.resolveConfigs(auth.accountId, session_id);
-    return {
-      data: {
-        session_id: session_id ?? null,
-        slots: slots.map(toApiResolvedSlot),
-      },
-    };
+    try {
+      const slots = await service.resolveConfigs(auth.accountId, session_id);
+      return {
+        data: {
+          session_id: session_id ?? null,
+          slots: slots.map(toApiResolvedSlot),
+        },
+      };
+    } catch (error) {
+      return sendServiceError(reply, error);
+    }
   });
 
   // GET /llm-instances/:slot
@@ -172,10 +181,7 @@ export async function registerLlmInstanceRoutes(
       const configs = await service.getConfigsBySlot(auth.accountId, slotResult.data, scope, scopeId);
       return { data: configs.map(toApiConfig) };
     } catch (error) {
-      if (error instanceof LlmInstanceServiceError) {
-        return sendServiceError(reply, error);
-      }
-      throw error;
+      return sendServiceError(reply, error);
     }
   });
 
@@ -222,10 +228,7 @@ export async function registerLlmInstanceRoutes(
       );
       return { data: toApiConfig(config) };
     } catch (error) {
-      if (error instanceof LlmInstanceServiceError) {
-        return sendServiceError(reply, error);
-      }
-      throw error;
+      return sendServiceError(reply, error);
     }
   });
 
@@ -274,10 +277,7 @@ export async function registerLlmInstanceRoutes(
         },
       };
     } catch (error) {
-      if (error instanceof LlmInstanceServiceError) {
-        return sendServiceError(reply, error);
-      }
-      throw error;
+      return sendServiceError(reply, error);
     }
   });
 }
@@ -355,7 +355,15 @@ function fromApiParams(
   };
 }
 
-function sendServiceError(reply: FastifyReply, error: LlmInstanceServiceError) {
+function sendServiceError(reply: FastifyReply, error: unknown) {
+  if (error instanceof WorkspaceScopeServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
+
+  if (!(error instanceof LlmInstanceServiceError)) {
+    throw error;
+  }
+
   switch (error.code) {
     case "config_not_found":
       return sendError(reply, 404, error.code, error.message);

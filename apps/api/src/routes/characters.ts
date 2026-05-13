@@ -1,4 +1,4 @@
-import { and, count, eq, like } from "drizzle-orm";
+import { and, count, eq, isNull, like, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
@@ -19,6 +19,7 @@ import {
   assertRevisionWriteApplied,
   withResourceWriteCas,
 } from "../services/resource-write.js";
+import { WorkspaceScopeService, WorkspaceScopeServiceError } from "../services/workspace-scope-service.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 
 const characterStatusSchema = z.enum(["active", "deleted"]);
@@ -245,11 +246,11 @@ const restoreCharacterResponseJsonSchema = {
   additionalProperties: false
 } as const;
 
-function loadOwnedCharacter(tx: DbExecutor, characterId: string, accountId: string) {
+function loadOwnedCharacter(tx: DbExecutor, characterId: string, accountId: string, workspaceId: string) {
   return tx
     .select()
     .from(characters)
-    .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId)))
+    .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId), characterWorkspaceClause(workspaceId)))
     .limit(1)
     .get();
 }
@@ -299,6 +300,14 @@ function sendCharacterWriteError(reply: Parameters<typeof sendError>[0], error: 
   return sendError(reply, error.statusCode, error.code, error.message, error.details);
 }
 
+function characterWorkspaceClause(workspaceId: string) {
+  return or(eq(characters.workspaceId, workspaceId), isNull(characters.workspaceId))!;
+}
+
+function sendWorkspaceScopeError(reply: Parameters<typeof sendError>[0], error: WorkspaceScopeServiceError) {
+  return sendError(reply, error.statusCode, error.code, error.message);
+}
+
 export async function registerCharacterRoutes(
   app: FastifyInstance,
   connection: DatabaseConnection
@@ -323,7 +332,15 @@ export async function registerCharacterRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const conditions = [eq(characters.accountId, auth.accountId)];
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
+    const conditions = [eq(characters.accountId, auth.accountId), characterWorkspaceClause(workspaceId)];
     if (parsed.data.status) {
       conditions.push(eq(characters.status, parsed.data.status));
     }
@@ -402,10 +419,18 @@ export async function registerCharacterRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const [character] = await db
       .select()
       .from(characters)
-      .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId)))
+      .where(and(eq(characters.id, parsed.data.id), eq(characters.accountId, auth.accountId), characterWorkspaceClause(workspaceId)))
       .limit(1);
 
     if (!character) {
@@ -470,10 +495,18 @@ export async function registerCharacterRoutes(
       return;
     }
 
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const [character] = await db
       .select({ id: characters.id })
       .from(characters)
-      .where(and(eq(characters.id, parsedParams.data.id), eq(characters.accountId, auth.accountId)))
+      .where(and(eq(characters.id, parsedParams.data.id), eq(characters.accountId, auth.accountId), characterWorkspaceClause(workspaceId)))
       .limit(1);
 
     if (!character) {
@@ -541,11 +574,19 @@ export async function registerCharacterRoutes(
 
     const auth = getRequestAuthContext(request);
 
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       const created = await withResourceWriteCas({
         db,
         expectedRevision: parsedBody.data.expected_revision,
-        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId, workspaceId),
         getRevision: (row) => row.revision,
         onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
         onRevisionConflict: createCharacterRevisionConflictError,
@@ -679,11 +720,19 @@ export async function registerCharacterRoutes(
 
     const auth = getRequestAuthContext(request);
 
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       const rolledBack = await withResourceWriteCas({
         db,
         expectedRevision: parsedBody.data.expected_revision,
-        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId, workspaceId),
         getRevision: (row) => row.revision,
         onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
         onRevisionConflict: createCharacterRevisionConflictError,
@@ -824,11 +873,19 @@ export async function registerCharacterRoutes(
 
     const auth = getRequestAuthContext(request);
 
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       const deleted = await withResourceWriteCas({
         db,
         expectedRevision: parsedBody.data.expected_revision,
-        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId, workspaceId),
         getRevision: (row) => row.revision,
         onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
         onRevisionConflict: createCharacterRevisionConflictError,
@@ -915,11 +972,19 @@ export async function registerCharacterRoutes(
 
     const auth = getRequestAuthContext(request);
 
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       const restored = await withResourceWriteCas({
         db,
         expectedRevision: parsedBody.data.expected_revision,
-        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId),
+        load: (tx) => loadOwnedCharacter(tx, parsedParams.data.id, auth.accountId, workspaceId),
         getRevision: (row) => row.revision,
         onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
         onRevisionConflict: createCharacterRevisionConflictError,

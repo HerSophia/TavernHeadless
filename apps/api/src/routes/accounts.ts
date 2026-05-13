@@ -6,9 +6,10 @@ import { z } from "zod";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "../accounts/constants.js";
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
-import { accounts } from "../db/schema";
+import { accounts, workspaces } from "../db/schema";
 import { parseWithSchema, sendError } from "../lib/http";
 import { getRequestAuthContext } from "../plugins/auth";
+import { WorkspaceScopeService } from "../services/workspace-scope-service.js";
 
 const ACCOUNT_WRITE_DISABLED_MESSAGE = "Account write operations are unavailable in single account mode";
 
@@ -236,17 +237,21 @@ export async function registerAccountRoutes(
       }
 
       const now = Date.now();
-      await db.insert(accounts).values({
-        id: accountId,
-        name: parsed.data.name,
-        role: parsed.data.role,
-        status: "active",
-        isDefault: false,
-        createdAt: now,
-        updatedAt: now,
-      });
+      const created = db.transaction((tx) => {
+        tx.insert(accounts).values({
+          id: accountId,
+          name: parsed.data.name,
+          role: parsed.data.role,
+          status: "active",
+          isDefault: false,
+          createdAt: now,
+          updatedAt: now,
+        }).run();
 
-      const [created] = await db.select().from(accounts).where(eq(accounts.id, accountId)).limit(1);
+        new WorkspaceScopeService(tx).ensureDefaultWorkspace(accountId, now);
+
+        return tx.select().from(accounts).where(eq(accounts.id, accountId)).limit(1).all()[0];
+      });
       if (!created) {
         return sendError(reply, 500, "account_create_failed", `Failed to create account: ${accountId}`);
       }
@@ -389,7 +394,10 @@ export async function registerAccountRoutes(
       }
 
       try {
-        await db.delete(accounts).where(eq(accounts.id, row.id));
+        db.transaction((tx) => {
+          tx.delete(workspaces).where(eq(workspaces.accountId, row.id)).run();
+          tx.delete(accounts).where(eq(accounts.id, row.id)).run();
+        });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         if (msg.includes("FOREIGN KEY")) {

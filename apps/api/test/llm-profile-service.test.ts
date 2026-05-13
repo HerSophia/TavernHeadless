@@ -2,19 +2,22 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { MissingAccountContextError } from "../src/accounts/account-context";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
-import { llmProfileBindings, llmProfiles, sessions } from "../src/db/schema";
+import { llmProfileBindings, llmProfiles } from "../src/db/schema";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
 import { LlmProfileService } from "../src/services/llm-profile-service";
 import { eq } from "drizzle-orm";
+import { createTestSessionWithScope, ensureTestDefaultWorkspace } from "../src/__tests__/helpers/workspace-project";
 
 const MASTER_KEY = "test-master-key";
 
 describe("LlmProfileService", () => {
   let connection: DatabaseConnection;
   let service: LlmProfileService;
+  let defaultWorkspaceId: string;
 
   beforeEach(() => {
     connection = createDatabase(":memory:");
+    defaultWorkspaceId = ensureTestDefaultWorkspace(connection.db, DEFAULT_ADMIN_ACCOUNT_ID).workspaceId;
     service = new LlmProfileService(connection.db, { masterKey: MASTER_KEY, now: () => 1_700_000_000_000 });
   });
 
@@ -33,6 +36,16 @@ describe("LlmProfileService", () => {
     return created.id;
   }
 
+  it("writes created profiles to the default Workspace", async () => {
+    const profileId = await createProfile("default-workspace-profile");
+
+    const [row] = await connection.db
+      .select({ workspaceId: llmProfiles.workspaceId })
+      .from(llmProfiles)
+      .where(eq(llmProfiles.id, profileId));
+    expect(row?.workspaceId).toBe(defaultWorkspaceId);
+  });
+
   it("rejects missing account context in multi-account mode", async () => {
     const multiService = new LlmProfileService(connection.db, { accountMode: "multi", masterKey: MASTER_KEY });
 
@@ -50,16 +63,16 @@ describe("LlmProfileService", () => {
   it("unbinds an existing binding by scope and slot", async () => {
     const profileId = await createProfile("unbind-profile");
 
-    await connection.db.insert(sessions).values({
+    const sessionScope = createTestSessionWithScope(connection.db, {
       id: "session-unbind",
-      title: "Session Unbind",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      status: "active",
-      createdAt: 1,
-      updatedAt: 1,
+      title: "Session Unbind",
     });
 
     await service.activateProfile("session", "session-unbind", profileId, "director", undefined, DEFAULT_ADMIN_ACCOUNT_ID);
+    const [createdBinding] = await connection.db.select().from(llmProfileBindings).where(eq(llmProfileBindings.profileId, profileId));
+    expect(createdBinding?.workspaceId).toBe(sessionScope.workspaceId);
+
     await service.unbindProfile("session", "session-unbind", "director", DEFAULT_ADMIN_ACCOUNT_ID);
 
     const remaining = await connection.db.select().from(llmProfileBindings).where(eq(llmProfileBindings.profileId, profileId));

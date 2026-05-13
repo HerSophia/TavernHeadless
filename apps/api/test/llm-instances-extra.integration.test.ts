@@ -10,17 +10,24 @@
 
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { AppDb } from "../src/db/client";
 
 import { buildApp } from "../src/app";
+import { createTestSessionWithScope } from "../src/__tests__/helpers/workspace-project";
 
 type ConfigResponse = { data: { id: string; scope: string; scope_id: string; instance_slot: string; preset_id: string | null; enabled: boolean; params: Record<string, unknown> | null } };
 type DeleteResponse = { data: { instance_slot: string; scope: string; deleted: boolean } };
 
 describe("LLM Instances extra branch coverage", () => {
   let app: FastifyInstance;
+  let db: AppDb;
 
   beforeEach(async () => {
-    ({ app} = await buildApp({ databasePath: ":memory:", logger: false }));
+    const result = await buildApp({ databasePath: ":memory:", logger: false });
+    app = result.app;
+    db = result.database;
+
+    createTestSessionWithScope(db, { id: "s1", accountId: "default-admin", title: "Test s1" });
   });
 
   afterEach(async () => {

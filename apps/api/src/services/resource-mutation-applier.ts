@@ -19,6 +19,7 @@ import { ResourceWriteRouteError, assertRevisionWriteApplied } from "./resource-
 import { RuntimeMutationError } from "./runtime-mutation-errors.js"
 import type { RuntimeMutationApplier, RuntimeMutationApplyRequest } from "./runtime-mutation-types.js"
 import { AssetVersionService } from "./asset-version-service.js"
+import { WorkspaceScopeService } from "./workspace-scope-service.js"
 import {
   appendPromptAssetOperationLogForActor,
   toPromptAssetOperationRef,
@@ -387,6 +388,10 @@ function appendResourceMutationCharacterOperationLog(
   })
 }
 
+function resolveWorkspaceId(request: RuntimeMutationApplyRequest<unknown>): string {
+  return new WorkspaceScopeService(request.context.tx).getDefaultWorkspace(request.envelope.accountId).id;
+}
+
 export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, unknown> {
   apply(request: RuntimeMutationApplyRequest<unknown>) {
     if (isMutationKind<CreateCharacterMutationPayload>(request, RESOURCE_MUTATION_KINDS.characterCreate)) {
@@ -435,6 +440,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
   private applyCreateCharacter(request: RuntimeMutationApplyRequest<CreateCharacterMutationPayload>) {
     const characterId = nanoid()
     const versionId = nanoid()
+    const workspaceId = resolveWorkspaceId(request);
     const snapshotJson = JSON.stringify(request.envelope.payload.snapshot)
     const contentHash = computeContentHash(snapshotJson)
     const now = request.context.now()
@@ -446,6 +452,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
         name: request.envelope.payload.snapshot.name,
         source: "tool",
         accountId: request.envelope.accountId,
+        workspaceId,
         status: "active",
         revision: 0,
         latestVersionNo: 1,
@@ -602,6 +609,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
   private applyCreateWorldbook(request: RuntimeMutationApplyRequest<CreateWorldbookMutationPayload>) {
     const id = nanoid()
     const now = request.context.now()
+    const workspaceId = resolveWorkspaceId(request);
     const operationId = nanoid()
 
     request.context.tx.insert(worldbooks).values({
@@ -609,6 +617,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       name: request.envelope.payload.name,
       source: "tool",
       accountId: request.envelope.accountId,
+      workspaceId,
       dataJson: "{}",
       createdAt: now,
       updatedAt: now,
@@ -848,6 +857,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
   private applyCreateRegexProfile(request: RuntimeMutationApplyRequest<CreateRegexProfileMutationPayload>) {
     const id = nanoid()
     const now = request.context.now()
+    const workspaceId = resolveWorkspaceId(request);
     const operationId = nanoid()
 
     request.context.tx.insert(regexProfiles).values({
@@ -855,6 +865,7 @@ export class ResourceMutationApplier implements RuntimeMutationApplier<unknown, 
       name: request.envelope.payload.name,
       source: "tool",
       accountId: request.envelope.accountId,
+      workspaceId,
       dataJson: "[]",
       createdAt: now,
       updatedAt: now,

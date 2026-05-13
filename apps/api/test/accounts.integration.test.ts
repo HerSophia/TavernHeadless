@@ -1,9 +1,12 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
 import { registerAccountRoutes } from "../src/routes/accounts";
 import { registerDevelopmentTestAuth } from "./helpers/register-test-auth";
+import { workspaces } from "../src/db/schema.js";
+import type { DatabaseConnection } from "../src/db/client.js";
 
 type ErrorResponse = {
   error: {
@@ -26,11 +29,12 @@ type AccountResponse = {
 
 describe("Account routes", () => {
   let app: FastifyInstance;
+  let database: DatabaseConnection["db"];
   let adminToken: string;
   let userToken: string;
 
   beforeEach(async () => {
-    ({ app } = await buildApp({
+    ({ app, database } = await buildApp({
       databasePath: ":memory:",
       logger: false,
       accountMode: "multi",
@@ -107,6 +111,17 @@ describe("Account routes", () => {
     expect(created.role).toBe("user");
     expect(created.status).toBe("active");
     expect(created.is_default).toBe(false);
+
+    const [defaultWorkspace] = await database
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.accountId, created.id))
+      .limit(1);
+    expect(defaultWorkspace).toEqual(expect.objectContaining({
+      accountId: created.id,
+      isDefault: true,
+      status: "active",
+    }));
 
     const listRes = await app.inject({
       method: "GET",
@@ -309,10 +324,13 @@ describe("Account routes", () => {
         })
       }),
       delete: () => ({
-        where: async () => {
-          throw new Error("FOREIGN KEY constraint failed");
-        }
-      })
+        where: () => ({
+          run: () => {
+            throw new Error("FOREIGN KEY constraint failed");
+          }
+        })
+      }),
+      transaction: (callback: (tx: unknown) => unknown) => callback(mockConnection),
     };
 
     await registerDevelopmentTestAuth(routeApp, mockConnection);

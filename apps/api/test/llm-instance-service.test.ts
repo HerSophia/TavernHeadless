@@ -1,19 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { and, eq } from "drizzle-orm";
 
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
+import { llmInstanceConfigs } from "../src/db/schema";
 import {
   LlmInstanceService,
   LlmInstanceServiceError,
 } from "../src/services/llm-instance-service";
+import { createTestSessionWithScope } from "../src/__tests__/helpers/workspace-project";
 
 describe("LlmInstanceService", () => {
   let connection: DatabaseConnection;
   let service: LlmInstanceService;
   const accountId = "default-admin";
+  let sessionWorkspaceId: string;
   let clock: number;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     connection = createDatabase(":memory:");
+    sessionWorkspaceId = createTestSessionWithScope(connection.db, {
+      id: "sess-1",
+      accountId,
+      title: "Test Session",
+    }).workspaceId;
     clock = 1700000000000;
     service = new LlmInstanceService(connection.db, { now: () => clock });
   });
@@ -39,6 +48,12 @@ describe("LlmInstanceService", () => {
       expect(config.params).toEqual({ temperature: 0.8, maxOutputTokens: 1024 });
       expect(config.createdAt).toBe(clock);
       expect(config.updatedAt).toBe(clock);
+
+      const [row] = await connection.db
+        .select({ workspaceId: llmInstanceConfigs.workspaceId })
+        .from(llmInstanceConfigs)
+        .where(eq(llmInstanceConfigs.id, config.id));
+      expect(row?.workspaceId).toBe("ws_default_default-admin");
     });
 
     it("updates an existing config on conflict", async () => {
@@ -71,6 +86,15 @@ describe("LlmInstanceService", () => {
       expect(config.scopeId).toBe("sess-1");
       expect(config.instanceSlot).toBe("director");
       expect(config.presetId).toBe("preset-abc");
+
+      const [row] = await connection.db
+        .select({ workspaceId: llmInstanceConfigs.workspaceId })
+        .from(llmInstanceConfigs)
+        .where(and(
+          eq(llmInstanceConfigs.scope, "session"),
+          eq(llmInstanceConfigs.scopeId, "sess-1"),
+        ));
+      expect(row?.workspaceId).toBe(sessionWorkspaceId);
     });
 
     it("accepts null params to clear existing params", async () => {
