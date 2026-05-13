@@ -67,6 +67,49 @@ export const projects = sqliteTable(
   })
 );
 
+export const projectEventSequences = sqliteTable(
+  "project_event_sequence",
+  {
+    projectId: text("project_id").primaryKey().references(() => projects.id, { onDelete: "restrict" }),
+    currentSequence: integer("current_sequence").notNull().default(0),
+    updatedAt: integer("updated_at").notNull(),
+  }
+);
+
+export const projectMemberships = sqliteTable(
+  "project_membership",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    role: text("role", { enum: ["owner", "observer"] }).notNull(),
+    status: text("status", { enum: ["active", "removed"] }).notNull().default("active"),
+    createdByAccountId: text("created_by_account_id").references(() => accounts.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectAccountUnique: uniqueIndex("project_membership_project_account_uq").on(
+      table.projectId,
+      table.accountId,
+    ),
+    accountStatusIdx: index("project_membership_account_status_idx").on(
+      table.accountId,
+      table.status,
+    ),
+    projectRoleStatusIdx: index("project_membership_project_role_status_idx").on(
+      table.projectId,
+      table.role,
+      table.status,
+    ),
+    workspaceAccountIdx: index("project_membership_workspace_account_idx").on(
+      table.workspaceId,
+      table.accountId,
+    ),
+  })
+);
+
 export const accountUsers = sqliteTable(
   "account_user",
   {
@@ -578,6 +621,9 @@ export const operationLogs = sqliteTable(
     beforeRefJson: text("before_ref_json"),
     afterRefJson: text("after_ref_json"),
     diffJson: text("diff_json"),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    actorAccountId: text("actor_account_id").references(() => accounts.id, { onDelete: "set null" }),
     metadataJson: text("metadata_json"),
     createdAt: integer("created_at").notNull(),
   },
@@ -594,6 +640,61 @@ export const operationLogs = sqliteTable(
     requestIdx: index("operation_log_request_idx").on(table.requestId),
     floorCreatedIdx: index("operation_log_floor_created_idx").on(table.floorId, table.createdAt),
     runCreatedIdx: index("operation_log_run_created_idx").on(table.runId, table.createdAt),
+    workspaceCreatedIdx: index("operation_log_workspace_created_idx").on(table.workspaceId, table.createdAt),
+    projectCreatedIdx: index("operation_log_project_created_idx").on(table.projectId, table.createdAt),
+    actorAccountCreatedIdx: index("operation_log_actor_account_created_idx").on(table.actorAccountId, table.createdAt),
+  })
+);
+
+export const projectEvents = sqliteTable(
+  "project_event",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    sequence: integer("sequence").notNull(),
+    type: text("type").notNull(),
+    visibility: text("visibility", { enum: ["project", "owner", "internal"] }).notNull().default("project"),
+    source: text("source", { enum: ["api", "runtime_job", "migration", "system"] }).notNull().default("api"),
+    actorAccountId: text("actor_account_id").references(() => accounts.id, { onDelete: "set null" }),
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    branchId: text("branch_id"),
+    floorId: text("floor_id").references(() => floors.id, { onDelete: "set null" }),
+    pageId: text("page_id").references(() => messagePages.id, { onDelete: "set null" }),
+    messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+    operationLogId: text("operation_log_id").references(() => operationLogs.id, { onDelete: "set null" }),
+    correlationId: text("correlation_id"),
+    causationEventId: text("causation_event_id").references((): AnySQLiteColumn => projectEvents.id, { onDelete: "set null" }),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    projectSequenceIdx: index("project_event_project_sequence_idx").on(
+      table.projectId,
+      table.sequence,
+    ),
+    workspaceCreatedIdx: index("project_event_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    projectCreatedIdx: index("project_event_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+    sessionSequenceIdx: index("project_event_session_sequence_idx").on(
+      table.sessionId,
+      table.sequence,
+    ),
+    projectTypeSequenceIdx: index("project_event_project_type_sequence_idx").on(
+      table.projectId,
+      table.type,
+      table.sequence,
+    ),
+    operationLogIdx: index("project_event_operation_log_idx").on(table.operationLogId),
+    projectSequenceUnique: uniqueIndex("project_event_project_sequence_uq").on(
+      table.projectId,
+      table.sequence,
+    ),
   })
 );
 

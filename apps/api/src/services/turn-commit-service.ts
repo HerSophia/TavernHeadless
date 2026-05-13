@@ -73,7 +73,13 @@ import {
   type FloorConversationInputSnapshot,
 } from "./chat/shared/metadata.js";
 import { OperationLogService } from "./operation-log-service.js";
+import type { OperationLogRecord } from "./operation-log-service.js";
 import { VcDiffService } from "./vc-diff-service.js";
+import {
+  ProjectEventService,
+  type ProjectEventRecord,
+} from "./project-event-service.js";
+import type { ProjectEventLiveHub } from "./project-event-live-hub.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -167,6 +173,7 @@ export interface TurnCommitServiceOptions extends AccountContextOptions {
   floorRunService?: FloorRunService;
   toolRuntimeJobBridge?: ToolRuntimeJobBridge;
   sessionStateService?: SessionStateService;
+  projectEventLiveHub?:ProjectEventLiveHub;
 }
 
 class MemoryPersistError extends Error {
@@ -427,13 +434,15 @@ function appendFloorCommitOperationLog(
   input: FloorCommitOperationRefInput & {
     accountId: string;
     sessionId: string;
+    workspaceId?: string | null;
+    projectId?: string | null;
     branchId: string;
     committedAt: number;
     operationLog?: TurnCommitOperationLogContext;
   },
-): void {
+): OperationLogRecord {
   const afterRef = toFloorCommitOperationRef(input);
-  new OperationLogService(tx).append({
+  return new OperationLogService(tx).append({
     accountId: input.accountId,
     actorType: "llm",
     actorId: input.runId,
@@ -442,6 +451,9 @@ function appendFloorCommitOperationLog(
     sourceType: "llm_run",
     action: "commit_floor",
     status: "succeeded",
+    workspaceId: input.workspaceId ?? null,
+    projectId: input.projectId ?? null,
+    actorAccountId: input.accountId,
     sessionId: input.sessionId,
     branchId: input.branchId,
     floorId: input.floorId,
@@ -463,6 +475,29 @@ function appendFloorCommitOperationLog(
   });
 }
 
+function loadProjectScopeForSession(
+  tx: DbExecutor,
+  sessionId: string,
+): { workspaceId: string; projectId: string } | null {
+  const row = tx
+    .select({
+      workspaceId: sessions.workspaceId,
+      projectId: sessions.projectId,
+    })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId))
+    .limit(1)
+    .get();
+
+  if (!row?.workspaceId || !row.projectId) {
+    return null;
+  }
+  return {
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+  };
+}
+
 export class TurnCommitService {
   private readonly variableCommitService: VariableCommitService;
   private readonly enableAsyncMemoryIngest: boolean;
@@ -470,6 +505,7 @@ export class TurnCommitService {
   private readonly floorRunService?: FloorRunService;
   private readonly toolRuntimeJobBridge?: ToolRuntimeJobBridge;
   private readonly sessionStateService?: SessionStateService;
+  private readonly projectEventLiveHub?: ProjectEventLiveHub;
   private readonly floorStateMachine: FloorStateMachine;
 
   constructor(
@@ -493,6 +529,7 @@ export class TurnCommitService {
     this.floorStateMachine = new FloorStateMachine(new DrizzleFloorRepository(db), this.eventBus);
     this.toolRuntimeJobBridge = options.toolRuntimeJobBridge;
     this.sessionStateService = options.sessionStateService;
+    this.projectEventLiveHub = options.projectEventLiveHub;
   }
 
   private loadUserInputDigest(
@@ -618,6 +655,7 @@ export class TurnCommitService {
       variableCommit: TurnVariableCommitResult;
       variableMutationApply: { runAfterCommit(): Promise<void> };
       memory?: TurnCommitMemoryReceipt;
+      projectEvents: ProjectEventRecord[];
     };
     try {
       transactionResult = this.db.transaction((tx) => {
@@ -1009,9 +1047,12 @@ export class TurnCommitService {
           }
         }
 
-        appendFloorCommitOperationLog(tx, {
+        const projectScope = loadProjectScopeForSession(tx, input.sessionId);
+        const floorOperation = appendFloorCommitOperationLog(tx, {
           accountId: input.accountId,
           sessionId: input.sessionId,
+          workspaceId: projectScope?.workspaceId ?? null,
+          projectId: projectScope?.projectId ?? null,
           branchId: effectiveBranchId,
           floorId: input.floorId,
           runId: effectiveRunId,
@@ -1024,6 +1065,125 @@ export class TurnCommitService {
           operationLog: input.operationLog,
         });
 
+        const projectEvents: ProjectEventRecord[] = [];
+        if (projectScope) {
+          const eventService = new ProjectEventService(tx);
+          const correlationId = input.operationLog?.requestId ?? null;
+          const stateChangedEvent = eventService.append({
+            workspaceId: projectScope.workspaceId,
+            projectId: projectScope.projectId,
+            type: "floor.stateChanged",
+            visibility: "project",
+            source: "api",
+            actorAccountId: input.accountId,
+            sessionId: input.sessionId,
+            branchId: effectiveBranchId,
+            floorId: input.floorId,
+            operationLogId: floorOperation.id,
+            correlationId,
+            payload: {
+              floor_id: input.floorId,
+              floor_no: floor.floorNo,
+              branch_id: effectiveBranchId,
+              from: floorTransition.previousState,
+              to: floorTransition.newState,
+            },
+            createdAt: committedAt,
+          });
+          projectEvents.push(stateChangedEvent);
+
+          const committedEvent = eventService.append({
+            workspaceId: projectScope.workspaceId,
+            projectId: projectScope.projectId,
+            type: "floor.committed",
+            visibility: "project",
+            source: "api",
+            actorAccountId: input.accountId,
+            sessionId: input.sessionId,
+            branchId: effectiveBranchId,
+            floorId: input.floorId,
+            pageId: assistantMessage.pageId,
+            messageId: assistantMessage.messageId,
+            operationLogId: floorOperation.id,
+            correlationId,
+            causationEventId: stateChangedEvent.id,
+            payload: {
+              floor_id: input.floorId,
+              floor_no: floor.floorNo,
+              branch_id: effectiveBranchId,
+              page_id: assistantMessage.pageId,
+              assistant_message_ids: [assistantMessage.messageId],
+              usage,
+              memory_status: memory?.status ?? null,
+              memory_mode: memory?.mode ?? null,
+              tool_execution_count: actualToolExecutionRecords.length,
+              session_state_mutation_count: sessionStateMutationCount,
+            },
+            createdAt: committedAt,
+          });
+          projectEvents.push(committedEvent);
+
+          for (const materialized of variableCommit.pageVariables) {
+            const variableEvent = eventService.append({
+              workspaceId: projectScope.workspaceId,
+              projectId: projectScope.projectId,
+              type: "variable.set",
+              visibility: "project",
+              source: "api",
+              actorAccountId: input.accountId,
+              sessionId: input.sessionId,
+              branchId: effectiveBranchId,
+              floorId: input.floorId,
+              pageId: input.variableCommit?.pageId ?? null,
+              operationLogId: floorOperation.id,
+              correlationId,
+              causationEventId: committedEvent.id,
+              payload: {
+                session_id: input.sessionId,
+                branch_id: effectiveBranchId,
+                floor_id: input.floorId,
+                page_id: input.variableCommit?.pageId ?? null,
+                variable_id: materialized.entry.id,
+                scope: materialized.entry.scope,
+                scope_id: materialized.entry.scopeId,
+                key: materialized.entry.key,
+                is_new: materialized.isNew,
+              },
+              createdAt: committedAt,
+            });
+            projectEvents.push(variableEvent);
+          }
+
+          for (const promoted of variableCommit.promotedVariables) {
+            const variableEvent = eventService.append({
+              workspaceId: projectScope.workspaceId,
+              projectId: projectScope.projectId,
+              type: "variable.promoted",
+              visibility: "project",
+              source: "api",
+              actorAccountId: input.accountId,
+              sessionId: input.sessionId,
+              branchId: effectiveBranchId,
+              floorId: input.floorId,
+              pageId: input.variableCommit?.pageId ?? null,
+              operationLogId: floorOperation.id,
+              correlationId,
+              causationEventId: committedEvent.id,
+              payload: {
+                session_id: input.sessionId,
+                branch_id: effectiveBranchId,
+                floor_id: input.floorId,
+                page_id: input.variableCommit?.pageId ?? null,
+                key: promoted.key,
+                from_scope: variableCommit.fromScope,
+                to_scope: variableCommit.toScope,
+              },
+              createdAt: committedAt,
+            });
+            projectEvents.push(variableEvent);
+          }
+        }
+
         return {
           floor,
           floorTransition,
@@ -1031,6 +1191,7 @@ export class TurnCommitService {
           variableCommit,
           variableMutationApply,
           ...(memory ? { memory } : {}),
+          projectEvents,
         };
       });
     } catch (error) {
@@ -1063,6 +1224,14 @@ export class TurnCommitService {
       transactionResult.variableCommit,
       pendingEvents,
     );
+
+    if (this.projectEventLiveHub && transactionResult.projectEvents.length > 0) {
+      try {
+        this.projectEventLiveHub.publishMany(transactionResult.projectEvents);
+      } catch {
+        // Live publish is best-effort. The durable events have already been persisted.
+      }
+    }
 
     try {
       await this.floorRunService?.advancePhase(input.floorId, "post_commit_scheduled");

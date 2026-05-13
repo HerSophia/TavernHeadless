@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { TavernApiError, type ClientDataItemRecord, type TavernClient } from "@tavern/sdk";
+import { TavernApiError, type ClientDataItemRecord, type ProjectEventRecord, type TavernClient } from "@tavern/sdk";
 
 import * as clientHelpers from "../index.js";
 import { mapApiErrorToUiState } from "../errors/map-api-error-to-ui-state.js";
@@ -11,6 +11,12 @@ import { createInitialRespondStreamState, reduceRespondStream } from "../stream/
 import { buildTimelineMessages } from "../timeline/build-timeline-messages.js";
 import { flattenVariableSnapshot, formatVariablePreview, sortVariableInspectorRows } from "../variables/index.js";
 import { resolveUsage } from "../usage/resolve-usage.js";
+import {
+  applyProjectEventCursor,
+  dedupeProjectEvents,
+  getProjectEventCursor,
+  isProjectEvent,
+} from "../projects/index.js";
 import { summarizeRuntimeToolCatalog } from "../tools/summarize-runtime-tool-catalog.js";
 import {
   buildApplicationOwner,
@@ -24,17 +30,21 @@ import {
 describe("client-helpers public exports", () => {
   it("exposes the expected runtime helpers", () => {
     expect(clientHelpers).toMatchObject({
+      applyProjectEventCursor: expect.any(Function),
       buildApplicationOwner: expect.any(Function),
       buildPluginOwner: expect.any(Function),
       buildTimelineMessages: expect.any(Function),
       createInitialRespondStreamState: expect.any(Function),
+      dedupeProjectEvents: expect.any(Function),
       getActivePage: expect.any(Function),
       getDisplayPage: expect.any(Function),
-      mapApiErrorToUiState: expect.any(Function),
+      getProjectEventCursor: expect.any(Function),
       flattenVariableSnapshot: expect.any(Function),
       formatVariablePreview: expect.any(Function),
       groupItemsByCollection: expect.any(Function),
       groupToolEventsByExecution: expect.any(Function),
+      isProjectEvent: expect.any(Function),
+      mapApiErrorToUiState: expect.any(Function),
       organizeCollectionItems: expect.any(Function),
       reduceRespondStream: expect.any(Function),
       resolveItemByPath: expect.any(Function),
@@ -49,6 +59,60 @@ describe("client-helpers public exports", () => {
     expect(clientHelpers.flattenVariableSnapshot).toBe(flattenVariableSnapshot);
     expect(clientHelpers.formatVariablePreview).toBe(formatVariablePreview);
     expect(clientHelpers.sortVariableInspectorRows).toBe(sortVariableInspectorRows);
+  });
+});
+
+describe("project event helpers", () => {
+  const event: ProjectEventRecord = {
+    actorAccountId: "acc-1",
+    branchId: "main",
+    causationEventId: null,
+    correlationId: "corr-1",
+    createdAt: 100,
+    floorId: "floor-1",
+    id: "evt-1",
+    messageId: "msg-1",
+    operationLogId: "op-1",
+    pageId: "page-1",
+    payload: { count: 1 },
+    projectId: "proj-1",
+    sequence: 3,
+    sessionId: "sess-1",
+    source: "api",
+    type: "session.updated",
+    visibility: "project",
+    workspaceId: "ws-1",
+  };
+
+  it("recognizes normalized SDK project events", () => {
+    expect(isProjectEvent(event)).toBe(true);
+    expect(isProjectEvent({ ...event, sequence: 0 })).toBe(false);
+    expect(isProjectEvent({ ...event, visibility: "private" })).toBe(false);
+    expect(isProjectEvent({ ...event, source: "client" })).toBe(false);
+  });
+
+  it("reads and applies project event cursors", () => {
+    expect(getProjectEventCursor(event)).toBe(3);
+    expect(getProjectEventCursor({})).toBeNull();
+    expect(applyProjectEventCursor(null, event)).toBe(3);
+    expect(applyProjectEventCursor(10, event)).toBe(10);
+    expect(applyProjectEventCursor("2", event)).toBe(3);
+    expect(applyProjectEventCursor("bad", event)).toBe(3);
+    expect(applyProjectEventCursor(5, {})).toBe(5);
+  });
+
+  it("deduplicates project events by project and sequence", () => {
+    expect(dedupeProjectEvents([
+      event,
+      { ...event, id: "evt-duplicate" },
+      { ...event, id: "evt-2", sequence: 4 },
+      { ...event, id: "evt-other-project", projectId: "proj-2" },
+      { invalid: true },
+    ])).toEqual([
+      event,
+      { ...event, id: "evt-2", sequence: 4 },
+      { ...event, id: "evt-other-project", projectId: "proj-2" },
+    ]);
   });
 });
 

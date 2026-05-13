@@ -176,6 +176,39 @@ GET /sessions/:id
 
 返回完整的 Session 对象（结构同创建时的响应）。
 
+## 获取会话 Project scope
+
+```http
+GET /sessions/:id/scope
+```
+
+读取 Session 所属的 Workspace / Project。该接口面向需要从已知 `session_id` 反查 Project 的接入方。Project owner 和 observer 都可读取自己可访问 Project 下的 Session scope。
+
+### 路径参数
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | string | 会话 ID |
+
+### 响应 `200`
+
+```json
+{
+  "session_id": "sess_001",
+  "workspace_id": "ws_default_acc_1",
+  "project_id": "proj_main"
+}
+```
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `403` | `project_access_denied` | 当前账号是 Project 成员，但没有对应读权限 |
+| `404` | `not_found` | 会话不存在，或按旧账号隔离规则对当前账号隐藏 |
+| `409` | `project_archived` | Project 已归档 |
+
+
 ## 获取会话当前活跃运行
 
 ```http

@@ -241,6 +241,7 @@ export interface RegisterChatRoutesOptions {
   enablePromptDryRun?: boolean;
   enableClientData?: boolean;
   cors?: import("../../plugins/cors.js").CorsConfig;
+  projectAccessService?: import("../../services/project-access-service.js").ProjectAccessService;
 }
 
 export {

@@ -39,6 +39,7 @@ import type {
   TurnCommitService,
 } from "../turn-commit-service.js";
 import type { FloorRunService } from "../floor-run-service.js";
+import type { ProjectEventLiveHub } from "../project-event-live-hub.js";
 import type {
   CoordinatorRuntime,
   GenerationCoordinator,
@@ -275,4 +276,5 @@ export interface ChatServiceOptions {
   defaultNarratorProviderType?: ProviderType;
   accountMode?: AccountContextOptions["accountMode"];
   defaultAccountId?: string;
+  projectEventLiveHub?: ProjectEventLiveHub;
 }

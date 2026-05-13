@@ -22,6 +22,7 @@ import {
   runtimeJobs,
   messagePages,
   messages,
+  projectEvents,
   promptRuntimeExplainSnapshots,
   promptSnapshots,
   sessions,
@@ -40,6 +41,10 @@ import {
 } from "../prompt-runtime-control-service.js";
 import { parsePromptRuntimeExplainSourceMapEnvelope } from "../prompt-runtime/explain-snapshot.js";
 import { TurnCommitService } from "../turn-commit-service.js";
+import { ProjectEventLiveHub } from "../project-event-live-hub.js";
+import type { ProjectEventRecord } from "../project-event-service.js";
+import { createTestSessionWithScope } from "../../__tests__/helpers/workspace-project.js";
+
 import { OperationLogService } from "../operation-log-service.js";
 import { buildBranchVariableScopeId, type VariableScope } from "@tavern/shared";
 import {
@@ -1913,4 +1918,168 @@ describe("TurnCommitService", () => {
     expect(variableDeletedHandler).not.toHaveBeenCalled();
     expect(variablePromotedHandler).not.toHaveBeenCalled();
   });
+
+  it("writes Project Events for committed turns and publishes them to the live hub after the transaction commits", async () => {
+    const sessionId = `sess_${nanoid()}`;
+    const floorId = `floor_${nanoid()}`;
+    const pageId = `page_${nanoid()}`;
+    const now = 1_735_690_000_000;
+    const committedAt = now + 1_000;
+
+    const scope = createTestSessionWithScope(database.db, {
+      id: sessionId,
+      accountId: DEFAULT_ACCOUNT_ID,
+      now,
+    });
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await seedInputPage({ database, floorId, pageId, now });
+    await seedVariable({
+      database,
+      scope: "page",
+      scopeId: pageId,
+      key: "mood",
+      value: "steady",
+      now,
+    });
+
+    const liveHub = new ProjectEventLiveHub();
+    const liveEvents: ProjectEventRecord[] = [];
+    const unsubscribe = liveHub.subscribe(scope.projectId, (event) => {
+      liveEvents.push(event);
+    });
+
+    const turnCommitService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      eventBus,
+      { projectEventLiveHub: liveHub },
+    );
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with promoted variable.",
+      rawText: "Assistant reply with promoted variable.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 3,
+        completionTokens: 4,
+        totalTokens: 7,
+      },
+    };
+
+    // No project events should be observed via the live hub before the
+    // commit transaction returns control to the caller.
+    expect(liveEvents).toEqual([]);
+
+    await turnCommitService.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      variableCommit: { pageId },
+    });
+
+    unsubscribe();
+
+    const persistedEvents = await database.db
+      .select()
+      .from(projectEvents)
+      .where(eq(projectEvents.projectId, scope.projectId))
+      .orderBy(projectEvents.sequence);
+
+    const eventTypes = persistedEvents.map((row) => row.type);
+    expect(eventTypes).toEqual(
+      expect.arrayContaining([
+        "floor.stateChanged",
+        "floor.committed",
+        "variable.promoted",
+      ]),
+    );
+
+    for (const row of persistedEvents) {
+      expect(row.workspaceId).toBe(scope.workspaceId);
+      expect(row.projectId).toBe(scope.projectId);
+      expect(row.sequence).toBeGreaterThan(0);
+    }
+
+    const liveTypes = liveEvents.map((event) => event.type);
+    expect(liveTypes).toEqual(eventTypes);
+    expect(liveEvents.map((event) => event.sequence)).toEqual(
+      persistedEvents.map((row) => row.sequence),
+    );
+
+    const floorCommitted = persistedEvents.find((row) => row.type === "floor.committed");
+    expect(floorCommitted).toBeDefined();
+    expect(JSON.parse(floorCommitted!.payloadJson)).toMatchObject({
+      floor_id: floorId,
+      session_state_mutation_count: expect.any(Number),
+      tool_execution_count: expect.any(Number),
+    });
+  });
+
+  it("does not write Project Events or publish to the live hub when the commit transaction rolls back", async () => {
+    const sessionId = `sess_${nanoid()}`;
+    const floorId = `floor_${nanoid()}`;
+    const pageId = `page_${nanoid()}`;
+    const now = 1_735_691_000_000;
+    const committedAt = now + 1_000;
+
+    const scope = createTestSessionWithScope(database.db, {
+      id: sessionId,
+      accountId: DEFAULT_ACCOUNT_ID,
+      now,
+    });
+    // Floor seeded in committed state -> FloorStateConflictError on commit.
+    await seedFloor({ database, sessionId, floorId, state: "committed", now });
+    await seedInputPage({ database, floorId, pageId, now });
+
+    const liveHub = new ProjectEventLiveHub();
+    const liveEvents: ProjectEventRecord[] = [];
+    const unsubscribe = liveHub.subscribe(scope.projectId, (event) => {
+      liveEvents.push(event);
+    });
+
+    const turnCommitService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      eventBus,
+      { projectEventLiveHub: liveHub },
+    );
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Should not commit.",
+      rawText: "Should not commit.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 1,
+        completionTokens: 1,
+        totalTokens: 2,
+      },
+    };
+
+    await expect(
+      turnCommitService.commit({
+        accountId: DEFAULT_ACCOUNT_ID,
+        floorId,
+        sessionId,
+        execution,
+        committedAt,
+        variableCommit: { pageId },
+      }),
+    ).rejects.toBeInstanceOf(FloorStateConflictError);
+
+    unsubscribe();
+
+    const rolledBack = await database.db
+      .select()
+      .from(projectEvents)
+      .where(eq(projectEvents.projectId, scope.projectId));
+    expect(rolledBack).toEqual([]);
+    expect(liveEvents).toEqual([]);
+  });
+
 });

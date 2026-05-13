@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import type { AppDb, DbExecutor } from "../../db/client.js";
-import { accounts, projects, sessions, workspaces } from "../../db/schema.js";
+import { accounts, projectMemberships, projects, sessions, workspaces } from "../../db/schema.js";
 import {
   DEFAULT_WORKSPACE_NAME,
   WorkspaceScopeService,
@@ -122,6 +122,21 @@ export function createTestProject(
       kind: "session_default",
       status: input.status ?? "active",
       settingsOverrideJson: "{}",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing()
+    .run();
+
+  db.insert(projectMemberships)
+    .values({
+      id: `pmem_owner_${projectId}`,
+      accountId,
+      workspaceId,
+      projectId,
+      role: "owner",
+      status: "active",
+      createdByAccountId: null,
       createdAt: now,
       updatedAt: now,
     })

@@ -41,6 +41,7 @@ import {
 } from '../../services/tooling/shared/permission-overlay.js';
 import { errorResponseJsonSchema, idParamsJsonSchema } from '../schemas/common.js';
 import { WorkspaceScopeServiceError } from '../../services/workspace-scope-service.js';
+import { ProjectAccessService, ProjectAccessServiceError } from '../../services/project-access-service.js';
 
 // ══════════════════════════════════════════════════════════
 // Zod Schemas
@@ -487,6 +488,37 @@ export async function registerToolRoutes(
 ): Promise<void> {
   const { db } = connection;
   const toolService = new ToolService(db);
+  const projectAccessService = new ProjectAccessService(db);
+
+  function authorizeProjectWriteBySessionId(
+    reply: Parameters<typeof sendError>[0],
+    actorAccountId: string,
+    sessionId: string,
+  ): { ok: true; accountId: string } | { ok: false } {
+    try {
+      const access = projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, 'project.write');
+      return { ok: true, accountId: access.project.accountId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === 'session_project_scope_missing') {
+          return { ok: true, accountId: actorAccountId };
+        }
+        if (error.code === 'session_not_found') {
+          sendError(reply, 404, 'not_found', 'Session not found');
+          return { ok: false };
+        }
+        if (error.code === 'project_access_denied' && error.denyReason === 'not_a_member') {
+          sendError(reply, 404, 'not_found', 'Session not found');
+          return { ok: false };
+        }
+
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+
+      throw error;
+    }
+  }
 
   function rejectDisabledScriptHandler(reply: Parameters<typeof sendError>[0]) {
     return sendError(reply, 403, 'tool_script_handler_disabled', SCRIPT_HANDLER_DISABLED_MESSAGE, {
@@ -912,7 +944,9 @@ export async function registerToolRoutes(
       response: {
         200: toolPermissionsResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -923,12 +957,17 @@ export async function registerToolRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
     const [session] = await db
       .select({ id: sessions.id, metadataJson: sessions.metadataJson })
       .from(sessions)
       .where(and(
         eq(sessions.id, parsedParams.data.id),
-        eq(sessions.accountId, auth.accountId),
+        eq(sessions.accountId, writeAccess.accountId),
       ))
       .limit(1);
 
@@ -968,7 +1007,9 @@ export async function registerToolRoutes(
       response: {
         200: toolPermissionsResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -979,12 +1020,17 @@ export async function registerToolRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
     const [session] = await db
       .select({ id: sessions.id, metadataJson: sessions.metadataJson })
       .from(sessions)
       .where(and(
         eq(sessions.id, parsedParams.data.id),
-        eq(sessions.accountId, auth.accountId),
+        eq(sessions.accountId, writeAccess.accountId),
       ))
       .limit(1);
 

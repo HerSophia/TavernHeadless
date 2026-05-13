@@ -143,6 +143,31 @@ export class OwnedPageRepository {
     return this.getContextsByIds(accountId, [pageId])[0] ?? null;
   }
 
+  getContextByIdAnyAccount(pageId: string): OwnedPageContext | null {
+    const row = this.db
+      .select({
+        id: messagePages.id,
+        floorId: messagePages.floorId,
+        pageNo: messagePages.pageNo,
+        pageKind: messagePages.pageKind,
+        isActive: messagePages.isActive,
+        version: messagePages.version,
+        checksum: messagePages.checksum,
+        createdAt: messagePages.createdAt,
+        updatedAt: messagePages.updatedAt,
+        floorState: floors.state,
+        floorSupersededAt: floors.supersededAt,
+        sessionId: floors.sessionId,
+        branchId: floors.branchId,
+      })
+      .from(messagePages)
+      .innerJoin(floors, eq(messagePages.floorId, floors.id))
+      .where(eq(messagePages.id, pageId))
+      .limit(1)
+      .all()[0];
+    return row ?? null;
+  }
+
   getContextsByIds(accountId: string, candidatePageIds: readonly string[]): OwnedPageContext[] {
     const pageIds = normalizeCandidateIds(candidatePageIds);
 
@@ -203,6 +228,38 @@ export class OwnedMessageRepository {
   getContextById(accountId: string, messageId: string): OwnedMessageContext | null {
     return this.getContextsByIds(accountId, [messageId])[0] ?? null;
   }
+
+  getContextByIdAnyAccount(messageId: string): OwnedMessageContext | null {
+    const row = this.db
+      .select({
+        id: messages.id,
+        pageId: messages.pageId,
+        seq: messages.seq,
+        role: messages.role,
+        content: messages.content,
+        contentFormat: messages.contentFormat,
+        tokenCount: messages.tokenCount,
+        isHidden: messages.isHidden,
+        source: messages.source,
+        createdAt: messages.createdAt,
+        pageKind: messagePages.pageKind,
+        pageIsActive: messagePages.isActive,
+        floorId: floors.id,
+        floorNo: floors.floorNo,
+        floorState: floors.state,
+        floorSupersededAt: floors.supersededAt,
+        sessionId: floors.sessionId,
+        branchId: floors.branchId,
+      })
+      .from(messages)
+      .innerJoin(messagePages, eq(messages.pageId, messagePages.id))
+      .innerJoin(floors, eq(messagePages.floorId, floors.id))
+      .where(eq(messages.id, messageId))
+      .limit(1)
+      .all()[0];
+    return row ?? null;
+  }
+
 
   getContextsByIds(accountId: string, candidateMessageIds: readonly string[]): OwnedMessageContext[] {
     const messageIds = normalizeCandidateIds(candidateMessageIds);

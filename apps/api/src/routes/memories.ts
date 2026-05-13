@@ -1,12 +1,12 @@
 import { and, count, eq, gte, inArray, like, lte } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { SimpleTokenCounter, type CoreEventBus } from "@tavern/core";
-import { MEMORY_SCOPES } from "@tavern/shared";
+import { MEMORY_SCOPES, parseBranchMemoryScopeId, type MemoryScope } from "@tavern/shared";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
-import { memoryEdges, memoryItems } from "../db/schema";
+import { floors, memoryEdges, memoryItems, sessions } from "../db/schema";
 import { parseJsonField, parseWithSchema, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth.js";
@@ -14,6 +14,7 @@ import {
   ManualMemoryMutationService,
   ManualMemoryMutationServiceError,
 } from "../services/manual-memory-mutation-service.js";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 
 const memoryScopeSchema = z.enum(MEMORY_SCOPES);
 const memoryTypeSchema = z.enum(["fact", "summary", "open_loop"]);
@@ -619,7 +620,7 @@ const batchUpdateMemoryStatusResultJsonSchema = {
   properties: {
     index: { type: "integer", minimum: 0 },
     id: { type: "string" },
-    action: { type: "string", enum: ["updated", "not_found"] },
+    action: { type: "string", enum: ["updated", "not_found", "project_access_denied"] },
     data: memoryItemJsonSchema,
   },
   additionalProperties: false,
@@ -632,6 +633,7 @@ const batchUpdateMemoryStatusMetaJsonSchema = {
     total: { type: "integer", minimum: 1 },
     updated: { type: "integer", minimum: 0 },
     not_found: { type: "integer", minimum: 0 },
+    access_denied: { type: "integer", minimum: 0 },
     status: { type: "string", enum: ["active", "deprecated"] },
   },
   additionalProperties: false,
@@ -664,7 +666,7 @@ const batchDeleteMemoryResultJsonSchema = {
   properties: {
     index: { type: "integer", minimum: 0 },
     id: { type: "string" },
-    action: { type: "string", enum: ["deleted", "not_found"] },
+    action: { type: "string", enum: ["deleted", "not_found", "project_access_denied"] },
   },
   additionalProperties: false,
 } as const;
@@ -676,6 +678,7 @@ const batchDeleteMemoriesMetaJsonSchema = {
     total: { type: "integer", minimum: 1 },
     deleted: { type: "integer", minimum: 0 },
     not_found: { type: "integer", minimum: 0 },
+    access_denied: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 } as const;
@@ -740,6 +743,12 @@ function toMemoryEdgeResponse(row: typeof memoryEdges.$inferSelect) {
 export interface MemoryRoutesOptions {
   eventBus?: CoreEventBus;
 }
+
+type MemoryWriteAccess =
+  | { ok: true; accountId: string }
+  | { ok: false; error: ProjectAccessServiceError };
+
+type MemoryScopeRow = Pick<typeof memoryItems.$inferSelect, "accountId" | "scope" | "scopeId">;
 
 function handleManualMemoryMutationError(reply: Parameters<typeof sendError>[0], error: unknown) {
   if (error instanceof ManualMemoryMutationServiceError) {
@@ -861,6 +870,169 @@ export async function registerMemoryRoutes(
   const mutationService = new ManualMemoryMutationService(db, {
     eventBus: options.eventBus,
   });
+  const projectAccessService = new ProjectAccessService(db);
+
+  async function resolveSessionOwnerForMemoryScope(
+    scope: MemoryScope,
+    scopeId: string,
+  ): Promise<{ sessionId: string; accountId: string } | null> {
+    if (scope === "global") {
+      return null;
+    }
+
+    if (scope === "chat") {
+      const [row] = await db
+        .select({ sessionId: sessions.id, accountId: sessions.accountId })
+        .from(sessions)
+        .where(eq(sessions.id, scopeId))
+        .limit(1);
+      return row ?? null;
+    }
+
+    if (scope === "branch") {
+      const parsed = parseBranchMemoryScopeId(scopeId);
+      if (!parsed) {
+        return null;
+      }
+
+      const [row] = await db
+        .select({ sessionId: sessions.id, accountId: sessions.accountId })
+        .from(sessions)
+        .where(eq(sessions.id, parsed.sessionId))
+        .limit(1);
+      return row ?? null;
+    }
+
+    const [row] = await db
+      .select({ sessionId: floors.sessionId, accountId: sessions.accountId })
+      .from(floors)
+      .innerJoin(sessions, eq(floors.sessionId, sessions.id))
+      .where(eq(floors.id, scopeId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async function resolveMemoryWriteAccess(
+    actorAccountId: string,
+    scope: MemoryScope,
+    scopeId: string,
+  ): Promise<MemoryWriteAccess> {
+    const target = await resolveSessionOwnerForMemoryScope(scope, scopeId);
+    if (!target) {
+      return { ok: true, accountId: actorAccountId };
+    }
+
+    try {
+      projectAccessService.requireProjectActionBySessionId(actorAccountId, target.sessionId, "project.write");
+      return { ok: true, accountId: target.accountId };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          return { ok: true, accountId: actorAccountId };
+        }
+        return { ok: false, error };
+      }
+      throw error;
+    }
+  }
+
+  async function resolveMemoryWriteAccountId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    scope: MemoryScope,
+    scopeId: string,
+  ): Promise<string | null> {
+    const access = await resolveMemoryWriteAccess(actorAccountId, scope, scopeId);
+    if (!access.ok) {
+      sendMemoryProjectAccessError(reply, access.error);
+      return null;
+    }
+
+    return access.accountId;
+  }
+
+  async function findMemoryItemScopeRow(id: string): Promise<MemoryScopeRow | null> {
+    const [row] = await db
+      .select({ accountId: memoryItems.accountId, scope: memoryItems.scope, scopeId: memoryItems.scopeId })
+      .from(memoryItems)
+      .where(eq(memoryItems.id, id))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async function resolveExistingMemoryItemWriteAccountId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    id: string,
+  ): Promise<string | null> {
+    const existing = await findMemoryItemScopeRow(id);
+    if (!existing) {
+      return actorAccountId;
+    }
+
+    const access = await resolveMemoryWriteAccess(actorAccountId, existing.scope, existing.scopeId);
+    if (!access.ok) {
+      sendMemoryProjectAccessError(reply, access.error);
+      return null;
+    }
+
+    return access.accountId === existing.accountId ? access.accountId : actorAccountId;
+  }
+
+  async function resolveMemoryEdgeCreateAccountId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    fromId: string,
+  ): Promise<string | null> {
+    const fromItem = await findMemoryItemScopeRow(fromId);
+    if (!fromItem) {
+      return actorAccountId;
+    }
+
+    const access = await resolveMemoryWriteAccess(actorAccountId, fromItem.scope, fromItem.scopeId);
+    if (!access.ok) {
+      sendMemoryProjectAccessError(reply, access.error);
+      return null;
+    }
+
+    return access.accountId === fromItem.accountId ? access.accountId : actorAccountId;
+  }
+
+  async function resolveMemoryEdgeWriteAccountId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    edgeId: string,
+  ): Promise<string | null> {
+    const [edge] = await db
+      .select({ accountId: memoryEdges.accountId, fromId: memoryEdges.fromId })
+      .from(memoryEdges)
+      .where(eq(memoryEdges.id, edgeId))
+      .limit(1);
+
+    if (!edge) {
+      return actorAccountId;
+    }
+
+    const fromItem = await findMemoryItemScopeRow(edge.fromId);
+    if (!fromItem) {
+      return actorAccountId;
+    }
+
+    const access = await resolveMemoryWriteAccess(actorAccountId, fromItem.scope, fromItem.scopeId);
+    if (!access.ok) {
+      sendMemoryProjectAccessError(reply, access.error);
+      return null;
+    }
+
+    return access.accountId === edge.accountId ? access.accountId : actorAccountId;
+  }
+
+  function sendBatchMemoryProjectAccessError(reply: FastifyReply, error: ProjectAccessServiceError) {
+    return sendMemoryProjectAccessError(reply, error);
+  }
 
   app.post("/memories", {
     schema: {
@@ -870,6 +1042,8 @@ export async function registerMemoryRoutes(
       response: {
         201: memoryItemResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
     },
@@ -887,8 +1061,16 @@ export async function registerMemoryRoutes(
       return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
     }
 
+    const accountId = await resolveMemoryWriteAccountId(
+      reply,
+      auth.accountId,
+      parsedBody.data.scope,
+      parsedBody.data.scope_id,
+    );
+    if (!accountId) return;
+
     const created = await mutationService.createItem({
-      accountId: auth.accountId,
+      accountId,
       scope: parsedBody.data.scope,
       scopeId: parsedBody.data.scope_id,
       type: parsedBody.data.type,
@@ -1076,6 +1258,9 @@ export async function registerMemoryRoutes(
       response: {
         200: batchUpdateMemoryStatusResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1086,14 +1271,52 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const updatedRows = await mutationService.batchUpdateItemStatus({
-      accountId: auth.accountId,
-      ids: parsedBody.data.ids,
-      status: parsedBody.data.status,
-    });
+    const accessibleIdsByAccount = new Map<string, string[]>();
+    const accessDeniedIds = new Set<string>();
+
+    for (const id of parsedBody.data.ids) {
+      const existing = await findMemoryItemScopeRow(id);
+      if (!existing) {
+        continue;
+      }
+
+      const access = await resolveMemoryWriteAccess(auth.accountId, existing.scope, existing.scopeId);
+      if (!access.ok) {
+        if (access.error.code === "project_access_denied" && access.error.denyReason === "role_forbidden") {
+          accessDeniedIds.add(id);
+          continue;
+        }
+        if (access.error.code === "project_access_denied" && access.error.denyReason === "not_a_member") {
+          continue;
+        }
+
+        return sendBatchMemoryProjectAccessError(reply, access.error);
+      }
+
+      if (access.accountId !== existing.accountId) {
+        continue;
+      }
+
+      const ids = accessibleIdsByAccount.get(access.accountId) ?? [];
+      ids.push(id);
+      accessibleIdsByAccount.set(access.accountId, ids);
+    }
+
+    const updatedRows = [] as Array<typeof memoryItems.$inferSelect>;
+    for (const [accountId, ids] of accessibleIdsByAccount.entries()) {
+      updatedRows.push(...await mutationService.batchUpdateItemStatus({
+        accountId,
+        ids,
+        status: parsedBody.data.status,
+      }));
+    }
 
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
     const results = parsedBody.data.ids.map((id, index) => {
+      if (accessDeniedIds.has(id)) {
+        return { index, id, action: "project_access_denied" as const };
+      }
+
       const row = updatedById.get(id);
 
       if (!row) {
@@ -1111,12 +1334,13 @@ export async function registerMemoryRoutes(
     return reply.send({
       data: {
         results,
-        meta: {
+        meta: ({
           total: results.length,
           updated: updatedRows.length,
-          not_found: results.length - updatedRows.length,
+          not_found: results.length - updatedRows.length - accessDeniedIds.size,
+          ...(accessDeniedIds.size > 0 ? { access_denied: accessDeniedIds.size } : {}),
           status: parsedBody.data.status
-        }
+        })
       }
     });
   });
@@ -1130,6 +1354,9 @@ export async function registerMemoryRoutes(
       response: {
         200: batchDeleteMemoriesResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1140,26 +1367,63 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const deletedRows = await mutationService.deleteItems({
-      accountId: auth.accountId,
-      ids: parsedBody.data.ids,
-    });
+    const accessibleIdsByAccount = new Map<string, string[]>();
+    const accessDeniedIds = new Set<string>();
+
+    for (const id of parsedBody.data.ids) {
+      const existing = await findMemoryItemScopeRow(id);
+      if (!existing) {
+        continue;
+      }
+
+      const access = await resolveMemoryWriteAccess(auth.accountId, existing.scope, existing.scopeId);
+      if (!access.ok) {
+        if (access.error.code === "project_access_denied" && access.error.denyReason === "role_forbidden") {
+          accessDeniedIds.add(id);
+          continue;
+        }
+        if (access.error.code === "project_access_denied"&& access.error.denyReason === "not_a_member") {
+          continue;
+        }
+
+        return sendBatchMemoryProjectAccessError(reply, access.error);
+      }
+
+      if (access.accountId !== existing.accountId) {
+        continue;
+      }
+
+      const ids = accessibleIdsByAccount.get(access.accountId) ?? [];
+      ids.push(id);
+      accessibleIdsByAccount.set(access.accountId, ids);
+    }
+
+    const deletedRows = [] as Array<typeof memoryItems.$inferSelect>;
+    for (const [accountId, ids] of accessibleIdsByAccount.entries()) {
+      deletedRows.push(...await mutationService.deleteItems({
+        accountId,
+        ids,
+      }));
+    }
 
     const deletedIds = new Set(deletedRows.map((row) => row.id));
     const results = parsedBody.data.ids.map((id, index) => ({
       index,
       id,
-      action: deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const)
+      action: accessDeniedIds.has(id)
+        ? ("project_access_denied" as const)
+        : deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const)
     }));
 
     return reply.send({
       data: {
         results,
-        meta: {
+        meta: ({
           total: results.length,
           deleted: deletedRows.length,
-          not_found: results.length - deletedRows.length
-        }
+          not_found: results.length - deletedRows.length - accessDeniedIds.size,
+          ...(accessDeniedIds.size> 0 ? { access_denied: accessDeniedIds.size } : {}),
+        })
       }
     });
   });
@@ -1201,6 +1465,8 @@ export async function registerMemoryRoutes(
         200: memoryItemResponseJsonSchema,
         400: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1226,8 +1492,32 @@ export async function registerMemoryRoutes(
       return sendError(reply, 400, "validation_error", "Memory content cannot be undefined");
     }
 
+    const existing = await findMemoryItemScopeRow(parsedParams.data.id);
+    let accountId = auth.accountId;
+
+    if (existing) {
+      const existingAccess = await resolveMemoryWriteAccess(auth.accountId, existing.scope, existing.scopeId);
+      if (!existingAccess.ok) {
+        return sendMemoryProjectAccessError(reply, existingAccess.error);
+      }
+
+      accountId = existingAccess.accountId === existing.accountId ? existingAccess.accountId : auth.accountId;
+
+      const targetScope = parsedBody.data.scope ?? existing.scope;
+      const targetScopeId = parsedBody.data.scope_id ?? existing.scopeId;
+      if (targetScope !== existing.scope || targetScopeId !== existing.scopeId) {
+        const targetAccess = await resolveMemoryWriteAccess(auth.accountId, targetScope, targetScopeId);
+        if (!targetAccess.ok) {
+          return sendMemoryProjectAccessError(reply, targetAccess.error);
+        }
+        if (targetAccess.accountId !== accountId) {
+          return sendError(reply, 403, "project_access_denied", "Project action denied: project.write");
+        }
+      }
+    }
+
     const updated = await mutationService.updateItem({
-      accountId: auth.accountId,
+      accountId,
       id: parsedParams.data.id,
       scope: parsedBody.data.scope,
       scopeId: parsedBody.data.scope_id,
@@ -1258,6 +1548,8 @@ export async function registerMemoryRoutes(
       response: {
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1268,8 +1560,11 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const accountId = await resolveExistingMemoryItemWriteAccountId(reply, auth.accountId, parsedParams.data.id);
+    if (!accountId) return;
+
     const deleted = await mutationService.deleteItem({
-      accountId: auth.accountId,
+      accountId,
       id: parsedParams.data.id,
     });
 
@@ -1288,6 +1583,7 @@ export async function registerMemoryRoutes(
       response: {
         201: memoryEdgeResponseJsonSchema,
         400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
       },
@@ -1300,9 +1596,12 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const accountId = await resolveMemoryEdgeCreateAccountId(reply, auth.accountId, parsedBody.data.from_id);
+    if (!accountId) return;
+
     try {
       const created = await mutationService.createEdge({
-        accountId: auth.accountId,
+        accountId,
         fromId: parsedBody.data.from_id,
         toId: parsedBody.data.to_id,
         relation: parsedBody.data.relation,
@@ -1420,6 +1719,7 @@ export async function registerMemoryRoutes(
         200: memoryEdgeResponseJsonSchema,
         400: errorResponseJsonSchema,
         409: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
         404: errorResponseJsonSchema,
       },
     },
@@ -1437,9 +1737,12 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const accountId = await resolveMemoryEdgeWriteAccountId(reply, auth.accountId, parsedParams.data.id);
+    if (!accountId) return;
+
     try {
       const updated = await mutationService.updateEdgeRelation({
-        accountId: auth.accountId,
+        accountId,
         id: parsedParams.data.id,
         relation: parsedBody.data.relation,
       });
@@ -1462,6 +1765,8 @@ export async function registerMemoryRoutes(
       response: {
         200: deleteResponseJsonSchema,
         404: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
       },
     },
   }, async (request, reply) => {
@@ -1472,8 +1777,11 @@ export async function registerMemoryRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const accountId = await resolveMemoryEdgeWriteAccountId(reply, auth.accountId, parsedParams.data.id);
+    if (!accountId) return;
+
     const deleted = await mutationService.deleteEdge({
-      accountId: auth.accountId,
+      accountId,
       id: parsedParams.data.id,
     });
 
@@ -1483,4 +1791,12 @@ export async function registerMemoryRoutes(
 
     return reply.send({ data: { id: parsedParams.data.id, deleted: true } });
   });
+}
+
+function sendMemoryProjectAccessError(reply: FastifyReply, error: ProjectAccessServiceError) {
+  if (error.code === "session_not_found") {
+    return sendError(reply, 404, "not_found", "Memory target not found");
+  }
+
+  return sendError(reply, error.statusCode, error.code, error.message);
 }

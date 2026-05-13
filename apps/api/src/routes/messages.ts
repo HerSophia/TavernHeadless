@@ -1,5 +1,5 @@
 import { and, count, eq, inArray } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 
@@ -9,6 +9,7 @@ import { messages } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
+import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
 import {
   ConversationShapePolicyError,
@@ -262,7 +263,7 @@ const batchUpdateMessageVisibilityResultJsonSchema = {
   properties: {
     index: { type: "integer", minimum: 0 },
     id: { type: "string" },
-    action: { type: "string", enum: ["updated", "not_found"] },
+    action: { type: "string", enum: ["updated", "not_found", "project_access_denied"] },
     data: messageJsonSchema,
   },
   additionalProperties: false,
@@ -275,6 +276,7 @@ const batchUpdateMessageVisibilityMetaJsonSchema = {
     total: { type: "integer", minimum: 1 },
     updated: { type: "integer", minimum: 0 },
     not_found: { type: "integer", minimum: 0 },
+    access_denied: { type: "integer", minimum: 0 },
     is_hidden: { type: "boolean" },
   },
   additionalProperties: false,
@@ -307,7 +309,7 @@ const batchDeleteMessageResultJsonSchema = {
   properties: {
     index: { type: "integer", minimum: 0 },
     id: { type: "string" },
-    action: { type: "string", enum: ["deleted", "not_found"] },
+    action: { type: "string", enum: ["deleted", "not_found", "project_access_denied"] },
   },
   additionalProperties: false,
 } as const;
@@ -319,6 +321,7 @@ const batchDeleteMessagesMetaJsonSchema = {
     total: { type: "integer", minimum: 1 },
     deleted: { type: "integer", minimum: 0 },
     not_found: { type: "integer", minimum: 0 },
+    access_denied: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 } as const;
@@ -409,6 +412,99 @@ export async function registerMessageRoutes(
   const { db } = connection;
   const ownedPages = new OwnedPageRepository(db);
   const ownedMessages = new OwnedMessageRepository(db);
+  const projectAccessService = new ProjectAccessService(db);
+
+  function authorizeProjectWriteByPageId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    pageId: string,
+  ): { ok: true; hasProjectScope: boolean } | { ok: false } {
+    try {
+      projectAccessService.requireProjectActionByPageId(actorAccountId, pageId, "project.write");
+      return { ok: true, hasProjectScope: true};
+    } catch(error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, hasProjectScope: false };
+        }
+        if (error.code === "page_not_found" || error.code === "floor_not_found" || error.code === "session_not_found") {
+          sendError(reply, 404, "not_found", "Message page not found");
+          return { ok: false };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+          sendError(reply, 404, "not_found", "Message page not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+  function authorizeProjectWriteByMessageId(
+    reply: FastifyReply,
+    actorAccountId: string,
+    messageId: string,
+  ): { ok: true; hasProjectScope: boolean } | { ok: false } {
+    try {
+      projectAccessService.requireProjectActionByMessageId(actorAccountId, messageId, "project.write");
+      return { ok: true, hasProjectScope: true };
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        if (error.code === "session_project_scope_missing") {
+          return { ok: true, hasProjectScope: false };
+        }
+        if (
+          error.code === "message_not_found"
+          || error.code === "page_not_found"
+          || error.code === "floor_not_found"
+          || error.code === "session_not_found"
+        ) {
+          sendError(reply, 404, "not_found", "Message not found");
+          return { ok: false };
+        }
+        if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+     sendError(reply, 404, "not_found", "Message not found");
+          return { ok: false };
+        }
+        sendError(reply, error.statusCode, error.code, error.message);
+        return { ok: false };
+      }
+      throw error;
+    }
+  }
+
+
+  function canReadProjectByPageId(actorAccountId: string, pageId: string): boolean {
+    try {
+      projectAccessService.requireProjectActionByPageId(actorAccountId, pageId, "project.read");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function canReadProjectByMessageId(actorAccountId: string, messageId: string): boolean {
+    try {
+      projectAccessService.requireProjectActionByMessageId(actorAccountId, messageId, "project.read");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function isBatchMessageProjectAccessFallback(error: ProjectAccessServiceError): boolean {
+    return error.code === "session_project_scope_missing"
+      || error.code === "message_not_found"
+      || error.code === "page_not_found"
+      || error.code === "floor_not_found"
+      || error.code === "session_not_found";
+  }
+
+  function sendBatchProjectAccessError(reply: FastifyReply, error: ProjectAccessServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
 
   app.post("/messages", {
     schema: {
@@ -439,7 +535,13 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const page = ownedPages.getContextById(auth.accountId, parsedBody.data.page_id);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth.accountId, parsedBody.data.page_id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    const page = writeAuth.hasProjectScope
+      ? ownedPages.getContextByIdAnyAccount(parsedBody.data.page_id)
+      : ownedPages.getContextById(auth.accountId, parsedBody.data.page_id);
 
     if (!page) {
       return sendError(reply, 404, "not_found", "Message page not found");
@@ -517,10 +619,13 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const ownedPageIds = ownedPages.listIds(
+    let ownedPageIds = ownedPages.listIds(
       auth.accountId,
       parsedQuery.data.page_id !== undefined ? [parsedQuery.data.page_id] : undefined
     );
+    if (ownedPageIds.length === 0 && parsedQuery.data.page_id !== undefined && canReadProjectByPageId(auth.accountId, parsedQuery.data.page_id)) {
+      ownedPageIds = [parsedQuery.data.page_id];
+    }
 
     if (ownedPageIds.length === 0) {
       return reply.send({
@@ -603,7 +708,37 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const accessDeniedIds = new Set<string>();
+    const projectWritableIds = new Set<string>();
+    for (const id of parsedBody.data.ids) {
+      try {
+        projectAccessService.requireProjectActionByMessageId(auth.accountId, id, "project.write");
+        projectWritableIds.add(id);
+      } catch (error) {
+        if (error instanceof ProjectAccessServiceError) {
+          if (error.code === "project_access_denied" && error.denyReason === "role_forbidden") {
+            accessDeniedIds.add(id);
+            continue;
+          }
+          if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+            // 非成员对受 Project 保护的资源应当感知为not_found，沿用旧账号隔离。
+            continue;
+          }
+          if (isBatchMessageProjectAccessFallback(error)) {
+            continue;
+          }
+          return sendBatchProjectAccessError(reply, error);
+        }
+        throw error;
+      }
+    }
     const ownedMessageContexts = ownedMessages.getContextsByIds(auth.accountId, parsedBody.data.ids);
+    for (const id of projectWritableIds) {
+      if (!ownedMessageContexts.some((message) => message.id === id)) {
+        const context = ownedMessages.getContextByIdAnyAccount(id);
+        if (context) ownedMessageContexts.push(context);
+      }
+    }
     const ownedMessageIds = ownedMessageContexts.map((message) => message.id);
     const mutationKind = parsedBody.data.is_hidden ? "message.hide" : "message.unhide";
 
@@ -655,6 +790,10 @@ export async function registerMessageRoutes(
 
     const updatedById = new Map(updatedRows.map((row) => [row.id, row]));
     const results = parsedBody.data.ids.map((id, index) => {
+      if (accessDeniedIds.has(id)) {
+        return { index, id, action: "project_access_denied" as const };
+      }
+
       const row = updatedById.get(id);
 
       if (!row) {
@@ -672,12 +811,13 @@ export async function registerMessageRoutes(
     return reply.send({
       data: {
         results,
-        meta: {
+        meta:({
           total: results.length,
           updated: updatedRows.length,
-          not_found: results.length - updatedRows.length,
+          not_found: results.filter((result) => result.action === "not_found").length,
+          ...(accessDeniedIds.size > 0 ? { access_denied: accessDeniedIds.size } : {}),
           is_hidden: parsedBody.data.is_hidden
-        }
+        })
       }
     });
   });
@@ -702,7 +842,36 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    const accessDeniedIds = new Set<string>();
+    const projectWritableIds = new Set<string>();
+    for (const id of parsedBody.data.ids) {
+      try {
+        projectAccessService.requireProjectActionByMessageId(auth.accountId, id, "project.write");
+        projectWritableIds.add(id);
+      } catch (error) {
+        if (error instanceof ProjectAccessServiceError) {
+          if (error.code === "project_access_denied" && error.denyReason === "role_forbidden") {
+            accessDeniedIds.add(id);
+            continue;
+          }
+          if (error.code === "project_access_denied" && error.denyReason === "not_a_member") {
+            continue;
+          }
+          if (isBatchMessageProjectAccessFallback(error)) {
+            continue;
+          }
+          return sendBatchProjectAccessError(reply, error);
+        }
+        throw error;
+      }
+    }
     const ownedMessageContexts = ownedMessages.getContextsByIds(auth.accountId, parsedBody.data.ids);
+    for (const id of projectWritableIds) {
+      if (!ownedMessageContexts.some((message) => message.id === id)) {
+        const context = ownedMessages.getContextByIdAnyAccount(id);
+        if (context) ownedMessageContexts.push(context);
+      }
+    }
     const ownedMessageIds = ownedMessageContexts.map((message) => message.id);
 
     const lockedMessage = ownedMessageContexts.find((message) =>
@@ -751,17 +920,23 @@ export async function registerMessageRoutes(
     const results = parsedBody.data.ids.map((id, index) => ({
       index,
       id,
-      action: deletedIds.has(id) ? ("deleted" as const) : ("not_found" as const)
+      action: accessDeniedIds.has(id)
+        ? ("project_access_denied" as const)
+        : deletedIds.has(id)
+          ? ("deleted" as const)
+          : ("not_found" as const)
     }));
+    const notFound = results.filter((result) => result.action === "not_found").length;
 
     return reply.send({
       data: {
         results,
-        meta: {
+        meta: ({
           total: results.length,
           deleted: deletedRows.length,
-          not_found: results.length - deletedRows.length
-        }
+          not_found: notFound,
+          ...(accessDeniedIds.size > 0 ? { access_denied: accessDeniedIds.size } : {}),
+        })
       }
     });
   });
@@ -790,7 +965,10 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const row = ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
+    let row = ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
+    if (!row && canReadProjectByMessageId(auth.accountId, parsedParams.data.id)) {
+      row = ownedMessages.getContextByIdAnyAccount(parsedParams.data.id);
+    }
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Message not found");
@@ -836,7 +1014,13 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingMessage = ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByMessageId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    const existingMessage = writeAuth.hasProjectScope
+      ? ownedMessages.getContextByIdAnyAccount(parsedParams.data.id)
+      : ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingMessage) {
       return sendError(reply, 404, "not_found", "Message not found");
@@ -940,7 +1124,13 @@ export async function registerMessageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const existingMessage = ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByMessageId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+    const existingMessage = writeAuth.hasProjectScope
+      ? ownedMessages.getContextByIdAnyAccount(parsedParams.data.id)
+      : ownedMessages.getContextById(auth.accountId, parsedParams.data.id);
 
     if (!existingMessage) {
       return sendError(reply, 404, "not_found", "Message not found");

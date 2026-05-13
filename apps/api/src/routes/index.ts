@@ -7,6 +7,7 @@ import type { SessionToolRegistryService } from "../services/tooling/session-too
 import type { FloorRunServiceOptions } from "../services/floor-run-service.js";
 import type { McpConnectionManager } from "../services/tooling/mcp/mcp-connection-manager.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
+import type { ProjectEventLiveHub } from "../services/project-event-live-hub.js";
 import { registerCharacterRoutes } from "./characters";
 import { registerFloorRoutes } from "./floors";
 import { registerImportRoutes } from "./imports";
@@ -31,6 +32,7 @@ import { registerClientDataRoutes } from "../client-data/client-data-routes.js";
 import { registerAssetVersionRoutes } from "./asset-versions.js";
 import { registerBranchVcRoutes } from "./branch-vc.js";
 import { registerOperationLogRoutes } from "./operation-logs.js";
+import { registerProjectRoutes } from "./projects.js";
 import { registerVcTagRoutes } from "./vc-tags.js";
 import type { AccountMode } from "../accounts/constants.js";
 
@@ -48,6 +50,7 @@ export interface CrudRoutesOptions {
   enableClientData?: boolean;
   clientData?: ClientDataConfig;
   floorRun?: FloorRunServiceOptions;
+  projectEventLiveHub?: ProjectEventLiveHub;
 }
 
 export async function registerCrudRoutes(
@@ -61,9 +64,13 @@ export async function registerCrudRoutes(
   await registerSessionRoutes(app, connection, {
     clientData: options.enableClientData ? options.clientData : undefined,
     floorRun: options.floorRun,
+    projectEventLiveHub: options.projectEventLiveHub,
   });
   await registerSessionRuntimeToolRoutes(app, {
     sessionToolRegistryService: options.sessionToolRegistryService,
+  });
+  await registerProjectRoutes(app, connection, {
+    projectEventLiveHub: options.projectEventLiveHub,
   });
   await registerCharacterRoutes(app, connection);
   await registerFloorRoutes(app, connection, {
