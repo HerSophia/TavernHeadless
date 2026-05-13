@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import {
   parseBranchMemoryScopeId,
   parseBranchVariableScopeId,
@@ -22,6 +22,7 @@ import {
 } from "@tavern/shared/types/backup-file";
 
 import type { AppDb } from "../db/client.js";
+import { WorkspaceScopeService } from "./workspace-scope-service.js";
 import {
   characterVersions,
   characters,
@@ -89,6 +90,19 @@ type BackupVcTagExportItem = {
   sourceOperationId: string | null;
 };
 
+function characterWorkspaceClause(workspaceId: string) {
+  return or(eq(characters.workspaceId, workspaceId), isNull(characters.workspaceId))!;
+}
+function presetWorkspaceClause(workspaceId: string) {
+  return or(eq(presets.workspaceId, workspaceId), isNull(presets.workspaceId))!;
+}
+function worldbookWorkspaceClause(workspaceId: string) {
+  return or(eq(worldbooks.workspaceId, workspaceId), isNull(worldbooks.workspaceId))!;
+}
+function regexProfileWorkspaceClause(workspaceId: string) {
+  return or(eq(regexProfiles.workspaceId, workspaceId), isNull(regexProfiles.workspaceId))!;
+}
+
 export function captureCoreAssetBackupSnapshot(
   db: AppDb,
   input: CoreAssetBackupExportSelection,
@@ -98,6 +112,7 @@ export function captureCoreAssetBackupSnapshot(
   }
 
   const accountId = input.accountId;
+  const workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(accountId).id;
   const sessionIds = normalizeIdList(input.sessionIds);
   const characterIds = normalizeIdList(input.characterIds);
   const presetIds = normalizeIdList(input.presetIds);

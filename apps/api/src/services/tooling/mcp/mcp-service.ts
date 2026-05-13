@@ -6,7 +6,7 @@
  * 以及数据库行与业务类型之间的转换。
  */
 
-import { and, count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, or } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import type {
   InstanceSlot,
@@ -38,6 +38,7 @@ import type {
   MaskedHttpTransportConfig,
   McpTransportType,
 } from './types.js';
+import { WorkspaceScopeService } from '../../workspace-scope-service.js';
 
 // ── 内部辅助 ─────────────────────────────────────
 
@@ -102,6 +103,7 @@ export interface ListMcpServersQuery {
 type ListEnabledConfigsOptions = {
   resolveSecrets?: boolean;
   skipInvalidConfigs?: boolean;
+  workspaceId?: string;
 };
 
 type ServiceOptions = {
@@ -582,6 +584,10 @@ function mergeUpdatedTransportConfig(
   };
 }
 
+function mcpWorkspaceClause(workspaceId: string) {
+  return or(eq(mcpServerConfigs.workspaceId, workspaceId), isNull(mcpServerConfigs.workspaceId))!;
+}
+
 export class McpService {
   private readonly masterKey: string;
 
@@ -604,7 +610,8 @@ export class McpService {
   }> {
     const { enabled, limit = 50, offset = 0 } = query;
 
-    const conditions = [eq(mcpServerConfigs.accountId, accountId)];
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    const conditions = [eq(mcpServerConfigs.accountId, accountId), mcpWorkspaceClause(workspaceId)];
     if (enabled !== undefined) {
       conditions.push(eq(mcpServerConfigs.enabled, enabled ? 1 : 0));
     }
@@ -637,13 +644,15 @@ export class McpService {
    */
   async listEnabledConfigs(
     accountId: string,
-    _options: ListEnabledConfigsOptions = {},
+    options: ListEnabledConfigsOptions = {},
   ): Promise<McpServerConfig[]> {
+    const workspaceId = options.workspaceId ?? this.resolveDefaultWorkspaceId(accountId);
     const rows = await this.db
       .select()
       .from(mcpServerConfigs)
       .where(and(
         eq(mcpServerConfigs.accountId, accountId),
+        mcpWorkspaceClause(workspaceId),
         eq(mcpServerConfigs.enabled, 1),
       ))
       .orderBy(mcpServerConfigs.createdAt);
@@ -741,13 +750,20 @@ export class McpService {
    * 返回属于指定账号的配置 ID 列表。
    * 若提供 candidateIds，则只在候选集合内过滤。
    */
-  async getOwnedConfigIds(accountId: string, candidateIds?: string[]): Promise<string[]> {
+  async getOwnedConfigIds(
+    accountId: string,
+    candidateIds?: string[],
+    workspaceId: string = this.resolveDefaultWorkspaceId(accountId),
+  ): Promise<string[]> {
     const normalizedCandidateIds = normalizeCandidateIds(candidateIds);
     if (candidateIds && normalizedCandidateIds.length === 0) {
       return [];
     }
 
-    const conditions = [eq(mcpServerConfigs.accountId, accountId)];
+    const conditions = [
+      eq(mcpServerConfigs.accountId, accountId),
+      mcpWorkspaceClause(workspaceId),
+    ];
     if (candidateIds) {
       conditions.push(inArray(mcpServerConfigs.id, normalizedCandidateIds));
     }
@@ -763,16 +779,16 @@ export class McpService {
   /**
    * 根据 ID 获取单条配置（管理视图，不返回真实 secret）。
    */
-  async getConfig(id: string, accountId: string): Promise<McpServerConfigResponse | null> {
-    const row = await this.getConfigRow(id, accountId);
+  async getConfig(id: string, accountId: string, workspaceId: string = this.resolveDefaultWorkspaceId(accountId)): Promise<McpServerConfigResponse | null> {
+    const row = await this.getConfigRow(id, accountId, workspaceId);
     return row ? configToResponse(row) : null;
   }
 
   /**
    * 根据 ID 获取运行时业务对象（包含真实 secret）。
    */
-  async getConfigEntity(id: string, accountId: string): Promise<McpServerConfig | null> {
-    const row = await this.getConfigRow(id, accountId);
+  async getConfigEntity(id: string, accountId: string, workspaceId: string = this.resolveDefaultWorkspaceId(accountId)): Promise<McpServerConfig | null> {
+    const row = await this.getConfigRow(id, accountId, workspaceId);
     if (!row) {
       return null;
     }
@@ -785,6 +801,7 @@ export class McpService {
    * name 在账号内必须唯一，否则抛出异常。
    */
   async createConfig(input: CreateMcpServerInput, accountId: string): Promise<McpServerConfigResponse> {
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
     const existing = await this.db
       .select({ id: mcpServerConfigs.id })
       .from(mcpServerConfigs)
@@ -818,6 +835,7 @@ export class McpService {
     await this.db.insert(mcpServerConfigs).values({
       id,
       accountId,
+      workspaceId,
       name: input.name,
       transport: input.transport,
       configJson: storageColumns.configJson,
@@ -833,7 +851,7 @@ export class McpService {
       updatedAt: now,
     });
 
-    return (await this.getConfig(id, accountId))!;
+    return (await this.getConfig(id, accountId, workspaceId))!;
   }
 
   /**
@@ -845,7 +863,8 @@ export class McpService {
     input: UpdateMcpServerInput,
     accountId: string
   ): Promise<McpServerConfigResponse | null> {
-    const row = await this.getConfigRow(id, accountId);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    const row = await this.getConfigRow(id, accountId, workspaceId);
     if (!row) {
       return null;
     }
@@ -913,9 +932,10 @@ export class McpService {
       .where(and(
         eq(mcpServerConfigs.id, id),
         eq(mcpServerConfigs.accountId, accountId),
+        mcpWorkspaceClause(workspaceId),
       ));
 
-    return this.getConfig(id, accountId);
+    return this.getConfig(id, accountId, workspaceId);
   }
 
   /**
@@ -923,11 +943,13 @@ export class McpService {
    * 返回 true 表示删除成功，false 表示不存在或不属于该账号。
    */
   async deleteConfig(id: string, accountId: string): Promise<boolean> {
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
     const result = await this.db
       .delete(mcpServerConfigs)
       .where(and(
         eq(mcpServerConfigs.id, id),
         eq(mcpServerConfigs.accountId, accountId),
+        mcpWorkspaceClause(workspaceId),
       ));
 
     return result.changes > 0;
@@ -938,7 +960,8 @@ export class McpService {
    * 返回更新后的配置，或 null 表示不存在或不属于该账号。
    */
   async toggleConfig(id: string, enabled: boolean, accountId: string): Promise<McpServerConfigResponse | null> {
-    const current = await this.getConfig(id, accountId);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    const current = await this.getConfig(id, accountId, workspaceId);
     if (!current) return null;
 
     await this.db
@@ -950,19 +973,22 @@ export class McpService {
       .where(and(
         eq(mcpServerConfigs.id, id),
         eq(mcpServerConfigs.accountId, accountId),
+        mcpWorkspaceClause(workspaceId),
       ));
 
-    return this.getConfig(id, accountId);
+    return this.getConfig(id, accountId, workspaceId);
   }
 
-  private async getConfigRow(id: string, accountId: string): Promise<McpRow | null> {
+  private async getConfigRow(id: string, accountId: string, workspaceId?: string): Promise<McpRow | null> {
+    const conditions = [eq(mcpServerConfigs.id, id), eq(mcpServerConfigs.accountId, accountId)];
+    if (workspaceId) {
+      conditions.push(mcpWorkspaceClause(workspaceId));
+    }
+
     const rows = await this.db
       .select()
       .from(mcpServerConfigs)
-      .where(and(
-        eq(mcpServerConfigs.id, id),
-        eq(mcpServerConfigs.accountId, accountId),
-      ))
+      .where(and(...conditions))
       .limit(1);
 
     return rows[0] ?? null;
@@ -1035,6 +1061,10 @@ export class McpService {
 
   private hasMasterKey(): boolean {
     return this.masterKey.trim().length > 0;
+  }
+
+  private resolveDefaultWorkspaceId(accountId: string): string {
+    return new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId).id;
   }
 }
 

@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from "drizzle-orm"
+import { and, count, eq, inArray, isNull, or } from "drizzle-orm"
 import { nanoid } from "nanoid"
 import type { ProviderType } from "@tavern/core"
 
@@ -8,6 +8,7 @@ import { encryptSecret, maskSecret } from "../lib/secrets.js"
 import { MutationApplierRegistry } from "./mutation-applier-registry.js"
 import { RuntimeMutationError } from "./runtime-mutation-errors.js"
 import type { RuntimeMutationApplier, RuntimeMutationApplyRequest } from "./runtime-mutation-types.js"
+import { WorkspaceScopeService } from "./workspace-scope-service.js"
 
 const GLOBAL_SCOPE_ID = "global"
 const VALID_INSTANCE_SLOTS = new Set(["*", "narrator", "director", "verifier", "memory"])
@@ -200,6 +201,11 @@ function toInstanceConfigItem(
   }
 }
 
+function isWorkspaceCompatible(rowWorkspaceId: string | null, workspaceId: string): boolean {
+  // 兼容历史数据：Phase 1 期间 NULL workspace_id 视为所有 Workspace 可见。
+  return rowWorkspaceId === null || rowWorkspaceId === workspaceId
+}
+
 export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, unknown> {
   private readonly masterKey: string
 
@@ -239,6 +245,41 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
     throw new RuntimeMutationError(`Unsupported config mutation kind: ${request.envelope.kind}`)
   }
 
+  private getDefaultWorkspaceId(request: RuntimeMutationApplyRequest<unknown>): string {
+    return new WorkspaceScopeService(request.context.tx)
+      .getDefaultWorkspace(request.envelope.accountId)
+      .id
+  }
+
+  private getSessionWorkspaceId(
+    request: RuntimeMutationApplyRequest<unknown>,
+    sessionId: string,
+  ): string {
+    const session = request.context.tx
+      .select({ id: sessions.id, workspaceId: sessions.workspaceId })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, request.envelope.accountId)))
+      .limit(1)
+      .get()
+
+    if (!session) {
+      throw new ConfigMutationError(
+        "session_scope_not_found",
+        `Session not found for session-scoped binding: ${sessionId}`,
+      )
+    }
+
+    return session.workspaceId ?? this.getDefaultWorkspaceId(request)
+  }
+
+  private resolveWorkspaceIdForScope(
+    request: RuntimeMutationApplyRequest<unknown>,
+    scope: LlmProfileScope | LlmInstanceScope,
+    scopeId: string,
+  ): string {
+    return scope === "session" ? this.getSessionWorkspaceId(request, scopeId) : this.getDefaultWorkspaceId(request)
+  }
+
   private applyCreateLlmProfile(request: RuntimeMutationApplyRequest<CreateLlmProfileMutationPayload>) {
     const existingByName = request.context.tx
       .select()
@@ -258,6 +299,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
     }
 
     const now = request.context.now()
+    const workspaceId = this.getDefaultWorkspaceId(request)
     const id = nanoid()
     const apiKeyEncrypted = encryptSecret(
       request.envelope.payload.apiKey,
@@ -268,6 +310,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       id,
       presetName: request.envelope.payload.presetName,
       accountId: request.envelope.accountId,
+      workspaceId,
       provider: request.envelope.payload.provider,
       modelId: request.envelope.payload.modelId,
       baseUrl: request.envelope.payload.baseUrl ?? null,
@@ -294,6 +337,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
 
   private applyUpdateLlmProfile(request: RuntimeMutationApplyRequest<UpdateLlmProfileMutationPayload>) {
     const { id, patch } = request.envelope.payload
+    const workspaceId = this.getDefaultWorkspaceId(request)
     const current = request.context.tx
       .select()
       .from(llmProfiles)
@@ -301,7 +345,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       .limit(1)
       .get()
 
-    if (!current) {
+    if (!current || !isWorkspaceCompatible(current.workspaceId, workspaceId)) {
       throw new ConfigMutationError("profile_not_found", `Profile not found: ${id}`)
     }
 
@@ -371,6 +415,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
 
   private applyDeleteLlmProfile(request: RuntimeMutationApplyRequest<DeleteLlmProfileMutationPayload>) {
     const { id } = request.envelope.payload
+    const workspaceId = this.getDefaultWorkspaceId(request)
     const profile = request.context.tx
       .select()
       .from(llmProfiles)
@@ -378,7 +423,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       .limit(1)
       .get()
 
-    if (!profile) {
+    if (!profile || !isWorkspaceCompatible(profile.workspaceId, workspaceId)) {
       throw new ConfigMutationError("profile_not_found", `Profile not found: ${id}`)
     }
 
@@ -431,6 +476,11 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       throw error
     }
 
+    const bindingScopeId = request.envelope.payload.scope === "global"
+      ? GLOBAL_SCOPE_ID
+      : request.envelope.payload.scopeId
+    const workspaceId = this.resolveWorkspaceIdForScope(request, request.envelope.payload.scope, bindingScopeId)
+
     const profile = request.context.tx
       .select()
       .from(llmProfiles)
@@ -441,7 +491,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       .limit(1)
       .get()
 
-    if (!profile) {
+    if (!profile || !isWorkspaceCompatible(profile.workspaceId, workspaceId)) {
       throw new ConfigMutationError(
         "profile_not_found",
         `Profile not found: ${request.envelope.payload.profileId}`,
@@ -456,18 +506,12 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
     }
 
     const now = request.context.now()
-    const bindingScopeId = request.envelope.payload.scope === "global"
-      ? GLOBAL_SCOPE_ID
-      : request.envelope.payload.scopeId
-
-    if (request.envelope.payload.scope === "session") {
-      this.ensureSessionScopeExists(request, bindingScopeId)
-    }
 
     const hasParams = Object.prototype.hasOwnProperty.call(request.envelope.payload, "params")
     const paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null
     const conflictSet: Partial<typeof llmProfileBindings.$inferInsert> = {
       profileId: request.envelope.payload.profileId,
+      workspaceId,
       updatedAt: now,
     }
 
@@ -480,6 +524,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
         id: nanoid(),
         scope: request.envelope.payload.scope,
         accountId: request.envelope.accountId,
+        workspaceId,
         scopeId: bindingScopeId,
         instanceSlot: request.envelope.payload.instanceSlot,
         profileId: request.envelope.payload.profileId,
@@ -510,9 +555,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       ? GLOBAL_SCOPE_ID
       : request.envelope.payload.scopeId
 
-    if (request.envelope.payload.scope === "session") {
-      this.ensureSessionScopeExists(request, bindingScopeId)
-    }
+    const workspaceId = this.resolveWorkspaceIdForScope(request, request.envelope.payload.scope, bindingScopeId)
 
     const deleted = request.context.tx.delete(llmProfileBindings)
       .where(and(
@@ -520,6 +563,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
         eq(llmProfileBindings.scope, request.envelope.payload.scope),
         eq(llmProfileBindings.scopeId, bindingScopeId),
         eq(llmProfileBindings.instanceSlot, request.envelope.payload.instanceSlot),
+        or(eq(llmProfileBindings.workspaceId, workspaceId), isNull(llmProfileBindings.workspaceId))!,
       ))
       .returning({ id: llmProfileBindings.id })
       .all()
@@ -557,6 +601,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
     const effectiveScopeId = request.envelope.payload.scope === "global"
       ? GLOBAL_SCOPE_ID
       : request.envelope.payload.scopeId
+    const workspaceId = this.resolveWorkspaceIdForScope(request, request.envelope.payload.scope, effectiveScopeId)
 
     let paramsJson: string | null | undefined
     if (!Object.prototype.hasOwnProperty.call(request.envelope.payload.input, "params")) {
@@ -568,6 +613,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
     }
 
     const conflictSet: Partial<typeof llmInstanceConfigs.$inferInsert> = {
+      workspaceId,
       updatedAt: now,
     }
 
@@ -586,6 +632,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       .values({
         id: nanoid(),
         accountId: request.envelope.accountId,
+        workspaceId,
         scope: request.envelope.payload.scope,
         scopeId: effectiveScopeId,
         instanceSlot: request.envelope.payload.slot,
@@ -614,6 +661,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
         eq(llmInstanceConfigs.scope, request.envelope.payload.scope),
         eq(llmInstanceConfigs.scopeId, effectiveScopeId),
         eq(llmInstanceConfigs.instanceSlot, request.envelope.payload.slot),
+        or(eq(llmInstanceConfigs.workspaceId, workspaceId), isNull(llmInstanceConfigs.workspaceId))!,
       ))
       .limit(1)
       .get()
@@ -635,6 +683,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
     const effectiveScopeId = request.envelope.payload.scope === "global"
       ? GLOBAL_SCOPE_ID
       : request.envelope.payload.scopeId
+    const workspaceId = this.resolveWorkspaceIdForScope(request, request.envelope.payload.scope, effectiveScopeId)
 
     const existing = request.context.tx
       .select({ id: llmInstanceConfigs.id })
@@ -644,6 +693,7 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
         eq(llmInstanceConfigs.scope, request.envelope.payload.scope),
         eq(llmInstanceConfigs.scopeId, effectiveScopeId),
         eq(llmInstanceConfigs.instanceSlot, request.envelope.payload.slot),
+        or(eq(llmInstanceConfigs.workspaceId, workspaceId), isNull(llmInstanceConfigs.workspaceId))!,
       ))
       .all()
 
@@ -661,25 +711,6 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
 
     return {
       result: undefined,
-    }
-  }
-
-  private ensureSessionScopeExists(
-    request: RuntimeMutationApplyRequest<unknown>,
-    sessionId: string,
-  ): void {
-    const session = request.context.tx
-      .select({ id: sessions.id })
-      .from(sessions)
-      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, request.envelope.accountId)))
-      .limit(1)
-      .get()
-
-    if (!session) {
-      throw new ConfigMutationError(
-        "session_scope_not_found",
-        `Session not found for session-scoped binding: ${sessionId}`,
-      )
     }
   }
 

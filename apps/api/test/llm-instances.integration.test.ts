@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { AppDb } from "../src/db/client";
 
 import { buildApp } from "../src/app";
+import { createTestSessionWithScope } from "../src/__tests__/helpers/workspace-project";
 
 type InstanceConfig = {
   id: string;
@@ -52,9 +54,20 @@ type ErrorResponse = {
 
 describe("LLM Instance Config Routes", () => {
   let app: FastifyInstance;
+  let db: AppDb;
 
   beforeEach(async () => {
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    const result = await buildApp({ databasePath: ":memory:", logger: false });
+    app = result.app;
+    db = result.database;
+
+    for (const sid of ["sess-1", "sess-2", "test-sess-1"]) {
+      createTestSessionWithScope(db, {
+        id: sid,
+        accountId: "default-admin",
+        title: `Test ${sid}`,
+      });
+    }
   });
 
   afterEach(async () => {

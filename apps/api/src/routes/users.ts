@@ -1,4 +1,4 @@
-import { and, count, eq, like, or } from "drizzle-orm";
+import { and, count, eq, isNull, like, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -15,6 +15,7 @@ import {
   executeResourceWrite,
   withResourceWriteCas,
 } from "../services/resource-write.js";
+import { WorkspaceScopeService, WorkspaceScopeServiceError } from "../services/workspace-scope-service.js";
 import {
   batchDeleteBodyJsonSchema,
   batchIdArraySchema,
@@ -224,11 +225,20 @@ const deleteResponseJsonSchema = {
   additionalProperties: false
 } as const;
 
-function loadOwnedUser(tx: DbExecutor, userId: string, accountId: string) {
+function accountUserWorkspaceClause(workspaceId: string) {
+  // 兼容 Phase 1 之前的直接插库测试和旧数据：workspace_id 为空的记录视为默认 Workspace 资源。
+  return or(eq(accountUsers.workspaceId, workspaceId), isNull(accountUsers.workspaceId))!;
+}
+
+function loadOwnedUser(tx: DbExecutor, userId: string, accountId: string, workspaceId: string) {
   return tx
     .select()
     .from(accountUsers)
-    .where(and(eq(accountUsers.id, userId), eq(accountUsers.accountId, accountId)))
+    .where(and(
+      eq(accountUsers.id, userId),
+      eq(accountUsers.accountId, accountId),
+      accountUserWorkspaceClause(workspaceId),
+    ))
     .limit(1)
     .get();
 }
@@ -251,6 +261,10 @@ function createUserRevisionConflictError() {
 
 function sendUserWriteError(reply: Parameters<typeof sendError>[0], error: ResourceWriteRouteError) {
   return sendError(reply, error.statusCode, error.code, error.message, error.details);
+}
+
+function sendWorkspaceScopeError(reply: Parameters<typeof sendError>[0], error: WorkspaceScopeServiceError) {
+  return sendError(reply, error.statusCode, error.code, error.message);
 }
 
 export async function registerUserRoutes(app: FastifyInstance, connection: DatabaseConnection): Promise<void> {
@@ -277,6 +291,14 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
     const auth = getRequestAuthContext(request);
     const snapshotJson = stringifyJsonField(parsedBody.data.snapshot) ?? "{}";
 
+    let workspace: { id: string };
+    try {
+      workspace = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId);
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       const created = await executeResourceWrite(
         () =>
@@ -290,12 +312,13 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
               name: parsedBody.data.snapshot.name,
               snapshotJson,
               status: "active",
+              workspaceId: workspace.id,
               revision: 0,
               createdAt: now,
               updatedAt: now
             }).run();
 
-            return loadOwnedUser(tx, userId, auth.accountId);
+            return loadOwnedUser(tx, userId, auth.accountId, workspace.id);
           }),
         { constraintMappings: [USER_NAME_CONSTRAINT_MAPPING] }
       );
@@ -331,7 +354,15 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
     }
 
     const auth = getRequestAuthContext(request);
-    const filters = [eq(accountUsers.accountId, auth.accountId)];
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
+    const filters = [eq(accountUsers.accountId, auth.accountId), accountUserWorkspaceClause(workspaceId)];
 
     if (parsedQuery.data.status !== undefined) {
       filters.push(eq(accountUsers.status, parsedQuery.data.status));
@@ -390,10 +421,18 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
     }
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const [row] = await db
       .select()
       .from(accountUsers)
-      .where(and(eq(accountUsers.id, parsedParams.data.id), eq(accountUsers.accountId, auth.accountId)))
+      .where(and(eq(accountUsers.id, parsedParams.data.id), eq(accountUsers.accountId, auth.accountId), accountUserWorkspaceClause(workspaceId)))
       .limit(1);
 
     if (!row || row.status === "deleted") {
@@ -430,11 +469,19 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
 
     const auth = getRequestAuthContext(request);
 
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       const updated = await withResourceWriteCas({
         db,
         expectedRevision: parsedBody.data.expected_revision,
-        load: (tx) => loadOwnedUser(tx, parsedParams.data.id, auth.accountId),
+        load: (tx) => loadOwnedUser(tx, parsedParams.data.id, auth.accountId, workspaceId),
         getRevision: (row) => row.revision,
         onMissing: () => new ResourceWriteRouteError(404, "not_found", "User not found"),
         onRevisionConflict: createUserRevisionConflictError,
@@ -468,7 +515,7 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
 
           assertRevisionWriteApplied(updateResult.changes, createUserRevisionConflictError);
 
-          const refreshed = loadOwnedUser(tx, row.id, auth.accountId);
+          const refreshed = loadOwnedUser(tx, row.id, auth.accountId, workspaceId);
           if (!refreshed) {
             throw new Error("Failed to reload updated user");
           }
@@ -518,11 +565,19 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
 
     const auth = getRequestAuthContext(request);
 
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       const deleted = await withResourceWriteCas({
         db,
         expectedRevision: parsedBody.data.expected_revision,
-        load: (tx) => loadOwnedUser(tx, parsedParams.data.id, auth.accountId),
+        load: (tx) => loadOwnedUser(tx, parsedParams.data.id, auth.accountId, workspaceId),
         getRevision: (row) => row.revision,
         onMissing: () => new ResourceWriteRouteError(404, "not_found", "User not found"),
         onRevisionConflict: createUserRevisionConflictError,
@@ -580,9 +635,17 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
 
     const auth = getRequestAuthContext(request);
     const { ids, status } = bodyParsed.data;
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
 
     try {
       const mutation = await executeResourceWrite(() => {
+        const clause = accountUserWorkspaceClause(workspaceId);
         const results: { index: number; id: string; action: string }[] = [];
         let updated = 0;
         let notFound = 0;
@@ -592,7 +655,7 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
             const row = tx
               .select({ id: accountUsers.id, status: accountUsers.status, revision: accountUsers.revision })
               .from(accountUsers)
-              .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
+              .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId), clause))
               .limit(1)
               .get();
 
@@ -643,9 +706,17 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
 
     const auth = getRequestAuthContext(request);
     const { ids } = bodyParsed.data;
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
 
     try {
       const mutation = await executeResourceWrite(() => {
+        const clause = accountUserWorkspaceClause(workspaceId);
         const results: { index: number; id: string; action: string }[] = [];
         let deleted = 0;
         let notFound = 0;
@@ -655,7 +726,7 @@ export async function registerUserRoutes(app: FastifyInstance, connection: Datab
             const row = tx
               .select({ id: accountUsers.id, status: accountUsers.status, revision: accountUsers.revision })
               .from(accountUsers)
-              .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId)))
+              .where(and(eq(accountUsers.id, id), eq(accountUsers.accountId, auth.accountId), clause))
               .limit(1)
               .get();
 

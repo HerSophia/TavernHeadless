@@ -29,7 +29,7 @@
  */
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { CoreEventBus } from "@tavern/core";
 import { createHash } from "node:crypto";
@@ -103,6 +103,10 @@ import {
   withResourceWriteCas,
   assertRevisionWriteApplied,
 } from "../services/resource-write.js";
+import {
+  WorkspaceScopeService,
+  WorkspaceScopeServiceError,
+} from "../services/workspace-scope-service.js";
 import { getLatestOwnedActiveCharacterVersion } from "../services/resource-ownership.js";
 import { buildRegexCompatReport } from "../services/prompt-runtime/regex/index.js";
 import { AssetVersionService } from "../services/asset-version-service.js";
@@ -899,6 +903,22 @@ function sendImportWriteError(reply: Parameters<typeof sendError>[0], error: Res
   return sendError(reply, error.statusCode, error.code, error.message, error.details);
 }
 
+function sendWorkspaceScopeError(reply: Parameters<typeof sendError>[0], error: WorkspaceScopeServiceError) {
+  return sendError(reply, error.statusCode, error.code, error.message);
+}
+
+function presetWorkspaceClause(workspaceId: string) {
+  return or(eq(presets.workspaceId, workspaceId), isNull(presets.workspaceId))!;
+}
+
+function worldbookWorkspaceClause(workspaceId: string) {
+  return or(eq(worldbooks.workspaceId, workspaceId), isNull(worldbooks.workspaceId))!;
+}
+
+function regexProfileWorkspaceClause(workspaceId: string) {
+  return or(eq(regexProfiles.workspaceId, workspaceId), isNull(regexProfiles.workspaceId))!;
+}
+
 function createRegexProfileConflictError() {
   return new ResourceWriteRouteError(409, "regex_profile_conflict", "Regex profile has been modified by another operation");
 }
@@ -992,6 +1012,14 @@ export async function registerImportRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const id = nanoid();
     const name = parsed.data.name || "Unnamed Preset";
     const now = Date.now();
@@ -1012,6 +1040,7 @@ export async function registerImportRoutes(
           name,
           source: "sillytavern",
           accountId: auth.accountId,
+          workspaceId,
           dataJson: JSON.stringify(parsed.data.data),
           createdAt: now,
           updatedAt: now,
@@ -1087,6 +1116,14 @@ export async function registerImportRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const id = nanoid();
     const name = parsed.data.name || stWorldBook.name || "Unnamed Worldbook";
     const now = Date.now();
@@ -1109,6 +1146,7 @@ export async function registerImportRoutes(
           name,
           source: "sillytavern",
           accountId: auth.accountId,
+          workspaceId,
           dataJson: JSON.stringify(buildPersistedWorldbookGlobalSettings(stWorldBook)),
           createdAt: now,
           updatedAt: now,
@@ -1197,6 +1235,14 @@ export async function registerImportRoutes(
     }
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const id = nanoid();
     const name = parsed.data.name;
     const operationId = nanoid();
@@ -1219,6 +1265,7 @@ export async function registerImportRoutes(
             name,
             source: "sillytavern",
             accountId: auth.accountId,
+            workspaceId,
             dataJson: JSON.stringify(stScripts),
             createdAt: now,
             updatedAt: now,
@@ -1286,6 +1333,14 @@ export async function registerImportRoutes(
     if (!parsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const payloadSize = Buffer.byteLength(JSON.stringify(parsed.data.payload), "utf-8");
     if (payloadSize > MAX_CHARACTER_IMPORT_BYTES) {
       return sendError(
@@ -1318,6 +1373,7 @@ export async function registerImportRoutes(
         const characterBinding = await executeResourceWriteOrThrow(() => createCharacterFromImport(db, request, {
           name: characterProfile.core.name,
           accountId: auth.accountId,
+          workspaceId,
           snapshot,
           sourceArtifact,
           source: "sillytavern",
@@ -1354,6 +1410,7 @@ export async function registerImportRoutes(
       const imported = await executeResourceWriteOrThrow(() => createCharacterWithSessionFromImport(db, request, {
         name: characterProfile.core.name,
         accountId: auth.accountId,
+        workspaceId,
         snapshot,
         sourceArtifact,
         source: "sillytavern",
@@ -1496,6 +1553,14 @@ export async function registerImportRoutes(
     if (!parsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const now = Date.now();
 
     // ── 自动格式识别 ──
@@ -1523,7 +1588,7 @@ export async function registerImportRoutes(
 
     // ── 原生格式导入路径 ──
     if (detectedThChat) {
-      return handleThChatImport(db, detectedThChat, parsed.data, auth.accountId, now, reply);
+      return handleThChatImport(db, detectedThChat, parsed.data, auth.accountId, workspaceId, now, reply);
     }
 
     // ── ST jsonl 导入路径（原有逻辑） ──
@@ -1563,6 +1628,7 @@ export async function registerImportRoutes(
       header: chatData.header,
       floorGroups,
       accountId: auth.accountId,
+      workspaceId,
       characterId: characterBinding.characterId,
       characterVersionId: characterBinding.characterVersionId,
       characterSnapshotJson: characterBinding.characterSnapshotJson,
@@ -1600,6 +1666,14 @@ export async function registerImportRoutes(
     }
   }, async (request, reply) => {
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const rows = await db
       .select({
         id: presets.id,
@@ -1610,7 +1684,7 @@ export async function registerImportRoutes(
         version: presets.version,
       })
       .from(presets)
-      .where(eq(presets.accountId, auth.accountId));
+      .where(and(eq(presets.accountId, auth.accountId), presetWorkspaceClause(workspaceId)));
 
     return reply.send({
       data: rows.map(toResourceListItem),
@@ -1634,10 +1708,18 @@ export async function registerImportRoutes(
     if (!parsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const [row] = await db
       .select()
       .from(presets)
-      .where(and(eq(presets.id, parsed.data.id), eq(presets.accountId, auth.accountId)));
+      .where(and(eq(presets.id, parsed.data.id), eq(presets.accountId, auth.accountId), presetWorkspaceClause(workspaceId)));
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Preset not found");
@@ -1674,10 +1756,18 @@ export async function registerImportRoutes(
     if (!parsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const [row] = await db
       .select()
       .from(presets)
-      .where(and(eq(presets.id, parsed.data.id), eq(presets.accountId, auth.accountId)));
+      .where(and(eq(presets.id, parsed.data.id), eq(presets.accountId, auth.accountId), presetWorkspaceClause(workspaceId)));
 
     if (!row) {
       return sendError(reply, 404, "preset_not_found", "Preset not found");
@@ -1729,11 +1819,19 @@ export async function registerImportRoutes(
     if (!bodyParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const mutation = await executeResourceWrite(async () => {
       const [row] = await db
         .select()
         .from(presets)
-        .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId)));
+        .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId), presetWorkspaceClause(workspaceId)));
 
       if (!row) {
         return { kind: "error", statusCode: 404, code: "preset_not_found", message: "Preset not found" };
@@ -1842,11 +1940,19 @@ export async function registerImportRoutes(
     if (!queryParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const mutation = await executeResourceWrite(async () => {
       if (queryParsed.data.expected_version === undefined) {
         await db
           .delete(presets)
-          .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId)));
+          .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId), presetWorkspaceClause(workspaceId)));
 
         return { kind: "ok", data: undefined };
       }
@@ -1854,7 +1960,7 @@ export async function registerImportRoutes(
       const [row] = await db
         .select()
         .from(presets)
-        .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId)));
+        .where(and(eq(presets.id, paramsParsed.data.id), eq(presets.accountId, auth.accountId), presetWorkspaceClause(workspaceId)));
 
       if (!row) {
         return { kind: "error", statusCode: 404, code: "preset_not_found", message: "Preset not found" };
@@ -1869,6 +1975,7 @@ export async function registerImportRoutes(
         .where(and(
           eq(presets.id, paramsParsed.data.id),
           eq(presets.accountId, auth.accountId),
+          presetWorkspaceClause(workspaceId),
           eq(presets.version, queryParsed.data.expected_version)
         ))
         .run();
@@ -1903,6 +2010,14 @@ export async function registerImportRoutes(
     }
   }, async (request, reply) => {
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const rows = await db
       .select({
         id: worldbooks.id,
@@ -1913,7 +2028,7 @@ export async function registerImportRoutes(
         version: worldbooks.version,
       })
       .from(worldbooks)
-      .where(eq(worldbooks.accountId, auth.accountId));
+      .where(and(eq(worldbooks.accountId, auth.accountId), worldbookWorkspaceClause(workspaceId)));
 
     return reply.send({
       data: rows.map(toResourceListItem),
@@ -1937,10 +2052,18 @@ export async function registerImportRoutes(
     if (!parsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const [row] = await db
       .select()
       .from(worldbooks)
-      .where(and(eq(worldbooks.id, parsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+      .where(and(eq(worldbooks.id, parsed.data.id), eq(worldbooks.accountId, auth.accountId), worldbookWorkspaceClause(workspaceId)));
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Worldbook not found");
@@ -1995,11 +2118,19 @@ export async function registerImportRoutes(
     if (!bodyParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const mutation = await executeResourceWrite(async () => {
       const [row] = await db
         .select()
         .from(worldbooks)
-        .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+        .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId), worldbookWorkspaceClause(workspaceId)));
 
       if (!row) {
         return { kind: "error", statusCode: 404, code: "worldbook_not_found", message: "Worldbook not found" };
@@ -2132,11 +2263,19 @@ export async function registerImportRoutes(
     if (!queryParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const mutation = await executeResourceWrite(async () => {
       if (queryParsed.data.expected_version === undefined) {
         await db
           .delete(worldbooks)
-          .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+          .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId), worldbookWorkspaceClause(workspaceId)));
 
         return { kind: "ok", data: undefined };
       }
@@ -2144,7 +2283,7 @@ export async function registerImportRoutes(
       const [row] = await db
         .select()
         .from(worldbooks)
-        .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId)));
+        .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId), worldbookWorkspaceClause(workspaceId)));
 
       if (!row) {
         return { kind: "error", statusCode: 404, code: "worldbook_not_found", message: "Worldbook not found" };
@@ -2159,6 +2298,7 @@ export async function registerImportRoutes(
         .where(and(
           eq(worldbooks.id, paramsParsed.data.id),
           eq(worldbooks.accountId, auth.accountId),
+          worldbookWorkspaceClause(workspaceId),
           eq(worldbooks.version, queryParsed.data.expected_version)
         ))
         .run();
@@ -2193,6 +2333,14 @@ export async function registerImportRoutes(
     }
   }, async (request, reply) => {
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const rows = await db
       .select({
         id: regexProfiles.id,
@@ -2203,7 +2351,7 @@ export async function registerImportRoutes(
         version: regexProfiles.version,
       })
       .from(regexProfiles)
-      .where(eq(regexProfiles.accountId, auth.accountId));
+      .where(and(eq(regexProfiles.accountId, auth.accountId), regexProfileWorkspaceClause(workspaceId)));
 
     return reply.send({
       data: rows.map(toResourceListItem),
@@ -2227,10 +2375,18 @@ export async function registerImportRoutes(
     if (!parsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     const [row] = await db
       .select()
       .from(regexProfiles)
-      .where(and(eq(regexProfiles.id, parsed.data.id), eq(regexProfiles.accountId, auth.accountId)));
+      .where(and(eq(regexProfiles.id, parsed.data.id), eq(regexProfiles.accountId, auth.accountId), regexProfileWorkspaceClause(workspaceId)));
 
     if (!row) {
       return sendError(reply, 404, "not_found", "Regex profile not found");
@@ -2272,6 +2428,14 @@ export async function registerImportRoutes(
     if (!bodyParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     let stScripts;
     try {
       stScripts = parseRegexScripts(bodyParsed.data.data);
@@ -2292,7 +2456,7 @@ export async function registerImportRoutes(
         load: (tx) => tx
           .select()
           .from(regexProfiles)
-          .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId)))
+          .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId), regexProfileWorkspaceClause(workspaceId)))
           .get(),
         getRevision: (row) => row.version,
         onMissing: createRegexProfileNotFoundError,
@@ -2384,11 +2548,19 @@ export async function registerImportRoutes(
     if (!queryParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
+    let workspaceId: string;
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) return sendWorkspaceScopeError(reply, error);
+      throw error;
+    }
+
     try {
       if (queryParsed.data.expected_version === undefined) {
         await executeResourceWriteOrThrow(() => db
           .delete(regexProfiles)
-          .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId))));
+          .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId), regexProfileWorkspaceClause(workspaceId))));
       } else {
         await withResourceWriteCas({
           db,
@@ -2396,7 +2568,7 @@ export async function registerImportRoutes(
           load: (tx) => tx
             .select()
             .from(regexProfiles)
-            .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId)))
+            .where(and(eq(regexProfiles.id, paramsParsed.data.id), eq(regexProfiles.accountId, auth.accountId), regexProfileWorkspaceClause(workspaceId)))
             .get(),
           getRevision: (row) => row.version,
           onMissing: createRegexProfileNotFoundError,
@@ -2506,6 +2678,7 @@ function createCharacterFromImport(
   input: {
     name: string;
     accountId: string;
+    workspaceId: string;
     source: string;
     snapshot: SessionCharacterSnapshot;
     sourceArtifact: CharacterSourceArtifact;
@@ -2523,6 +2696,7 @@ function createCharacterWithSessionFromImport(
   input: {
     name: string;
     accountId: string;
+    workspaceId: string;
     source: string;
     snapshot: SessionCharacterSnapshot;
     sourceArtifact: CharacterSourceArtifact;
@@ -2536,6 +2710,7 @@ function createCharacterWithSessionFromImport(
     const characterBinding = createCharacterFromImportInternal(tx, request, {
       name: input.name,
       accountId: input.accountId,
+      workspaceId: input.workspaceId,
       source: input.source,
       snapshot: input.snapshot,
       sourceArtifact: input.sourceArtifact,
@@ -2548,6 +2723,7 @@ function createCharacterWithSessionFromImport(
     const session = createSessionFromCharacterImportInternal(tx, {
       title: input.title,
       accountId: input.accountId,
+      workspaceId: input.workspaceId,
       characterBinding,
       now: input.now
     });
@@ -2578,6 +2754,7 @@ function createCharacterFromImportInternal(
   input: {
     name: string;
     accountId: string;
+    workspaceId: string;
     source: string;
     snapshot: SessionCharacterSnapshot;
     sourceArtifact: CharacterSourceArtifact;
@@ -2596,6 +2773,7 @@ function createCharacterFromImportInternal(
     id: characterId,
     name: input.name,
     accountId: input.accountId,
+    workspaceId: input.workspaceId,
     source: input.source,
     status: "active",
     deletedAt: null,
@@ -2648,7 +2826,7 @@ function createCharacterFromImportInternal(
 
 function createSessionFromCharacterImportInternal(
   db: any,
-  input: { title: string; accountId: string; characterBinding: CharacterBindingPayload; now: number }
+  input: { title: string; accountId: string; workspaceId: string; characterBinding: CharacterBindingPayload; now: number }
 ): ImportedSessionResponse {
   const sessionId = nanoid();
 
@@ -2657,6 +2835,7 @@ function createSessionFromCharacterImportInternal(
     title: input.title,
     status: "active",
     accountId: input.accountId,
+    workspaceId: input.workspaceId,
     characterId: input.characterBinding.characterId,
     characterVersionId: input.characterBinding.characterVersionId,
     characterSnapshotJson: input.characterBinding.characterSnapshotJson,
@@ -2768,6 +2947,7 @@ function createSessionFromChatImport(
     header: { chat_metadata?: Record<string, unknown> };
     floorGroups: FloorGroup[];
     accountId: string;
+    workspaceId: string;
     characterId: string | null;
     characterVersionId: string | null;
     characterSnapshotJson: string | null;
@@ -2785,6 +2965,7 @@ function createSessionFromChatImport(
       title: input.title,
       status: "active",
       accountId: input.accountId,
+      workspaceId: input.workspaceId,
       characterId: input.characterId,
       characterVersionId: input.characterVersionId,
       characterSnapshotJson: input.characterSnapshotJson,
@@ -2954,7 +3135,7 @@ async function handleThChatImport(
   db: DatabaseConnection["db"],
   file: ThChatFile,
   params: { character_id?: string; title?: string },
-  accountId: string,
+  accountId: string, workspaceId: string,
   now: number,
   reply: import("fastify").FastifyReply,
 ) {
@@ -2993,6 +3174,7 @@ async function handleThChatImport(
       file,
       idMap,
       accountId,
+      workspaceId,
       characterId: characterBinding.characterId,
       characterVersionId: characterBinding.characterVersionId,
       characterSnapshotJson: characterBinding.characterSnapshotJson,
@@ -3204,6 +3386,7 @@ function createSessionFromThChatImport(
     file: ThChatFile;
     idMap: Map<string, string>;
     accountId: string;
+    workspaceId: string;
     characterId: string | null;
     characterVersionId: string | null;
     characterSnapshotJson: string | null;
@@ -3242,6 +3425,7 @@ function createSessionFromThChatImport(
       title,
       status: "active",
       accountId: input.accountId,
+      workspaceId: input.workspaceId,
       characterId: input.characterId,
       characterVersionId: input.characterVersionId,
       characterSnapshotJson: input.characterId

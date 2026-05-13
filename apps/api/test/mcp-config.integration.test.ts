@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants";
+import type { AppDb } from "../src/db/client";
+import { mcpServerConfigs } from "../src/db/schema";
 
 const originalMasterKey = process.env.APP_SECRETS_MASTER_KEY;
 
@@ -61,10 +65,11 @@ type McpServerResponse = {
 
 describe("MCP config routes", () => {
   let app: FastifyInstance;
+  let database: AppDb;
 
   beforeEach(async () => {
     delete process.env.APP_SECRETS_MASTER_KEY;
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    ({ app, database } = await buildApp({ databasePath: ":memory:", logger: false }));
   });
 
   afterEach(async () => {
@@ -82,7 +87,7 @@ describe("MCP config routes", () => {
   it("masks stdio env and http headers in create, detail, and list responses", async () => {
     await app.close();
     process.env.APP_SECRETS_MASTER_KEY = "mcp-test-master-key";
-    ({ app } = await buildApp({ databasePath: ":memory:", logger: false }));
+    ({ app, database } = await buildApp({ databasePath: ":memory:", logger: false }));
 
     const stdioRes = await app.inject({
       method: "POST",
@@ -132,6 +137,15 @@ describe("MCP config routes", () => {
     expect(httpServer.enabled).toBe(false);
     expect(httpServer.http?.headers_masked).toEqual({ authorization: "secr****5678" });
     expect(httpServer.http).not.toHaveProperty("headers");
+
+    const [stdioRow] = await database
+      .select({ accountId: mcpServerConfigs.accountId, workspaceId: mcpServerConfigs.workspaceId })
+      .from(mcpServerConfigs)
+      .where(eq(mcpServerConfigs.id, stdioServer.id));
+    expect(stdioRow).toEqual({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      workspaceId: `ws_default_${DEFAULT_ADMIN_ACCOUNT_ID}`,
+    });
 
     const allRes = await app.inject({ method: "GET", url: "/mcp/servers" });
     expect(allRes.statusCode).toBe(200);

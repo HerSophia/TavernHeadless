@@ -105,6 +105,32 @@ const rawSession = await client.request("GET", "/sessions/{id}", {
 
 下面用几个常见场景展示资源方法的用法。
 
+### Sessions 创建会话
+
+`client.sessions.create(...)` 对应 `POST /sessions`。普通客户端不需要传 Workspace 或 Project。
+
+```ts
+const session = await client.sessions.create({
+  accountId: "account-1",
+  title: "Campfire",
+  characterId: "char-1",
+  userId: "user-1",
+  presetId: "preset-1",
+});
+```
+
+如果调用方已经知道目标 Project，可以传 `projectId`。SDK 会把它写成 REST 请求体里的 `project_id`：
+
+```ts
+const sessionInProject = await client.sessions.create({
+  accountId: "account-1",
+  projectId: "proj-1",
+  title: "Project Session",
+});
+```
+
+省略 `projectId` 时，服务端会使用当前账号默认 Workspace，并为新 Session 创建 `session_default` Project。
+
 ### Operation Logs 操作日志
 
 Operation Logs 用来读取审计记录。它保存操作来源、动作、目标、引用和摘要 diff，不保存完整提示词、完整消息、完整工具参数或模型密钥。

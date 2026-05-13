@@ -464,6 +464,7 @@ export type SessionsCreateOptions = {
   presetId?: string | null;
   presetVersionId?: string | null;
   promptMode?: SessionPromptMode;
+  projectId?: string;
   regexProfileId?: string | null;
   regexProfileVersionId?: string | null;
   status?: "active" | "archived";
@@ -1123,6 +1124,7 @@ function mapSessionWriteBody(options: SessionsCreateOptions | SessionsUpdateOpti
     deep_binding: options.deepBinding,
     preset_id: options.presetId,
     preset_version_id: options.presetVersionId,
+    project_id: (options as SessionsCreateOptions).projectId,
     prompt_mode: options.promptMode,
     regex_profile_id: options.regexProfileId,
     regex_profile_version_id: options.regexProfileVersionId,

@@ -12,11 +12,23 @@
 
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
-import { accounts, clientDataDomains, clientDataManagedDomains, floors, presets, regexProfiles, worldbooks } from "../src/db/schema";
+import {
+  accounts,
+  clientDataDomains,
+  clientDataManagedDomains,
+  floors,
+  operationLogs,
+  projects,
+  presets,
+  regexProfiles,
+  sessions,
+  workspaces,
+  worldbooks,
+} from "../src/db/schema";
 import type { DatabaseConnection } from "../src/db/client";
 import { SessionStateService } from "../src/session-state";
 
@@ -272,7 +284,151 @@ expect(res.json<E>().error.code).toBe("user_not_active");
 
   // ── GET /sessions filters ──────────────────────────
 
+  it("POST /sessions without project_id creates a default Workspace-scoped Project", async () => {
+    const session = await createSession(app, { title: "Scoped Session" });
+
+    expect(session).not.toHaveProperty("workspace_id");
+    expect(session).not.toHaveProperty("project_id");
+
+    const [sessionRow] = await database
+      .select({ workspaceId: sessions.workspaceId, projectId: sessions.projectId })
+      .from(sessions)
+      .where(eq(sessions.id, session.id))
+      .limit(1);
+
+    expect(sessionRow?.workspaceId).toEqual(expect.any(String));
+    expect(sessionRow?.projectId).toEqual(expect.any(String));
+
+    const [project] = await database
+      .select()
+      .from(projects)
+      .where(eq(projects.id, sessionRow!.projectId!))
+      .limit(1);
+
+    expect(project).toEqual(expect.objectContaining({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      workspaceId: sessionRow!.workspaceId,
+      kind: "session_default",
+      status: "active",
+    }));
+
+    const [log] = await database
+      .select({ metadataJson: operationLogs.metadataJson })
+      .from(operationLogs)
+      .where(and(eq(operationLogs.sessionId, session.id), eq(operationLogs.action, "create_session")))
+      .limit(1);
+
+    const metadata = JSON.parse(log!.metadataJson ?? "{}");
+    expect(metadata.workspace_id).toBe(sessionRow!.workspaceId);
+    expect(metadata.project_id).toBe(sessionRow!.projectId);
+    expect(metadata.project_was_created).toBe(true);
+  });
+
+  it("POST /sessions with project_id uses an existing Project from the same account", async () => {
+    const [workspace] = await database
+      .select()
+      .from(workspaces)
+      .where(and(eq(workspaces.accountId, DEFAULT_ADMIN_ACCOUNT_ID), eq(workspaces.isDefault, true)))
+      .limit(1);
+    expect(workspace).toBeDefined();
+
+    const now = Date.now();
+    await database.insert(projects).values({
+      id: "manual-project",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      workspaceId: workspace!.id,
+      name: "Manual Project",
+      description: null,
+      kind: "manual",
+      status: "active",
+      settingsOverrideJson: "{}",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const session = await createSession(app, {
+      title: "Manual Project Session",
+      project_id: "manual-project",
+    });
+
+    const [sessionRow] = await database
+      .select({ workspaceId: sessions.workspaceId, projectId: sessions.projectId })
+      .from(sessions)
+      .where(eq(sessions.id, session.id))
+      .limit(1);
+
+    expect(sessionRow).toEqual({
+      workspaceId: workspace!.id,
+      projectId: "manual-project",
+    });
+
+    const workspaceProjects = await database
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.workspaceId, workspace!.id));
+    expect(workspaceProjects).toEqual([{ id: "manual-project" }]);
+  });
+
+  it("POST /sessions rejects project_id from another account", async () => {
+    const now = Date.now();
+    await database.insert(accounts).values({
+      id: "foreign-account",
+      name: "Foreign Account",
+      role: "user",
+      status: "active",
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.insert(workspaces).values({
+      id: "foreign-workspace",
+      accountId: "foreign-account",
+      name: "Foreign Workspace",
+      kind: "default",
+      isDefault: true,
+      status: "active",
+      settingsJson: "{}",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.insert(projects).values({
+      id: "foreign-project",
+      accountId: "foreign-account",
+      workspaceId: "foreign-workspace",
+      name: "Foreign Project",
+      description: null,
+      kind: "manual",
+      status: "active",
+      settingsOverrideJson: "{}",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/sessions",
+      payload: { title: "Foreign Project", project_id: "foreign-project" },
+    });
+
+    expect(res.statusCode, res.body).toBe(404);
+    expect(res.json<E>().error.code).toBe("project_not_found");
+  });
+
+  it("PATCH /sessions/:id rejects project_id changes", async () => {
+    const session = await createSession(app, { title: "Patch Project Guard" });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/sessions/${session.id}`,
+      payload: { project_id: "another-project" },
+    });
+
+    expect(res.statusCode, res.body).toBe(400);
+    expect(res.json<E>().error.code).toBe("session_project_move_not_supported");
+  });
+
   it("GET /sessions filters by status", async ()=> {
+
     await createSession(app, { title: "Active One" });
     const s = await createSession(app, { title: "Archived One" });
     await app.inject({

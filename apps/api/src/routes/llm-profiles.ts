@@ -44,6 +44,7 @@ import {
   type LlmProfileListItem,
 } from "../services/llm-profile-service";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
+import { WorkspaceScopeServiceError } from "../services/workspace-scope-service.js";
 
 const providerSchema = z.enum(["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"]);
 const profileStatusSchema = z.enum(["active", "disabled", "deleted"]);
@@ -245,13 +246,17 @@ export async function registerLlmProfileRoutes(
 
       const auth = getRequestAuthContext(request);
 
-      const profiles = await service.listProfiles({
-        includeDeleted: parsed.data.include_deleted,
-        accountId: auth.accountId,
-      });
+      try {
+        const profiles = await service.listProfiles({
+          includeDeleted: parsed.data.include_deleted,
+          accountId: auth.accountId,
+        });
 
-      const filtered = parsed.data.status ? profiles.filter((profile) => profile.status === parsed.data.status) : profiles;
-      return reply.send({ data: filtered.map(toApiProfile) });
+        const filtered = parsed.data.status ? profiles.filter((profile) => profile.status === parsed.data.status) : profiles;
+        return reply.send({ data: filtered.map(toApiProfile) });
+      } catch (error) {
+        return sendServiceError(reply, error);
+      }
     }
   );
 
@@ -370,12 +375,16 @@ export async function registerLlmProfileRoutes(
       }
 
       const auth = getRequestAuthContext(request);
-      const profile = await service.getProfile(params.data.id, auth.accountId);
-      if (!profile) {
-        return sendError(reply, 404, "profile_not_found", `Profile not found: ${params.data.id}`);
-      }
+      try {
+        const profile = await service.getProfile(params.data.id, auth.accountId);
+        if (!profile) {
+          return sendError(reply, 404, "profile_not_found", `Profile not found: ${params.data.id}`);
+        }
 
-      return reply.send({ data: toApiProfile(profile) });
+        return reply.send({ data: toApiProfile(profile) });
+      } catch (error) {
+        return sendServiceError(reply, error);
+      }
     }
   );
 
@@ -635,6 +644,10 @@ function toApiProfile(profile: LlmProfileListItem) {
 }
 
 function sendServiceError(reply: FastifyReply, error: unknown) {
+  if (error instanceof WorkspaceScopeServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
+
   if (error instanceof LlmProfileServiceError) {
     if (error.code === "profile_not_found") {
       return sendError(reply, 404, error.code, error.message);

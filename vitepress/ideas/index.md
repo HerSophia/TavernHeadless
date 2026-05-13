@@ -26,6 +26,7 @@
 | [因为它很重要，所以它被扩展](/ideas/why-prompt-runtime) | 说明为什么观测能力会从世界书扩展为 Prompt Runtime |
 | [可追踪的记忆](/ideas/traceable-memory) | 说明为什么 AI RP 需要能够揭示来源、更新和因果关系的记忆系统 |
 | [LLM 实例化？其实是 Sub Agent 的前身](/ideas/llm-instantiation-sub-agent) | 说明 LLM 实例化如何从多模型协作需求，演变为 Sub Agent 的基础 |
+| [为什么需要工作区？](/ideas/why-workspace) | 说明 Workspace / Project 为什么是多客户端联动、插件、后台 Agent 和权限治理的高级边界 |
 | [RP Agentic 与 NodeGraph](/ideas/agentic-nodegraph) | TavernHeadless 后续 Agentic 能力、Native Prompt mode、节点图编排、状态和记忆边界的设计思路 |
 
 ## 和其他文档的关系

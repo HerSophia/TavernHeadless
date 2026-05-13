@@ -97,6 +97,32 @@ const client = createTavernClient({
 - `AUTH_MODE=api_key` 时，应当由服务端通过 `AUTH_API_KEY_ACCOUNTS` 把 API Key 绑定到账号
 - SDK 各资源方法里的 `accountId` 参数，以及 `buildAccountHeaders()` 生成的 `x-account-id`，都只是兼容头提示，不能替代服务端认证，也不会直接切换账号
 
+### 创建会话和 Project 兼容字段
+
+`client.sessions.create(...)` 对应 `POST /sessions`。普通客户端不需要传 Workspace 或 Project。
+
+```ts
+const session = await client.sessions.create({
+  accountId: "account-1",
+  title: "Campfire",
+  characterId: "char-1",
+  userId: "user-1",
+  presetId: "preset-1",
+});
+```
+
+如果调用方已经知道目标 Project，可以传 `projectId`。SDK 会把它写成 REST 请求体里的 `project_id`：
+
+```ts
+const sessionInProject = await client.sessions.create({
+  accountId: "account-1",
+  projectId: "proj-1",
+  title: "Project Session",
+});
+```
+
+省略 `projectId` 时，服务端会使用当前账号默认 Workspace，并为新 Session 创建 `session_default` Project。
+
 ### Client Data 第二期接入
 
 如果接入方要启用插件级 caller owner 隔离，优先建议在单次 domain-scoped 调用上显式传 `callerOwner`：

@@ -12,7 +12,7 @@
 import type { FastifyInstance } from "fastify";
 import type { CoreEventBus } from "@tavern/core";
 import { z } from "zod";
-import { and, eq, asc, desc } from "drizzle-orm";
+import { and, eq, asc, desc, isNull, or } from "drizzle-orm";
 
 import type { DatabaseConnection } from "../db/client.js";
 import {
@@ -39,6 +39,10 @@ import {
   executeResourceWrite,
   ResourceWriteRouteError,
 } from "../services/resource-write.js";
+import {
+  WorkspaceScopeService,
+  WorkspaceScopeServiceError,
+} from "../services/workspace-scope-service.js";
 import {
   snapshotToCharacterCardV3,
   snapshotToStCharacterCard,

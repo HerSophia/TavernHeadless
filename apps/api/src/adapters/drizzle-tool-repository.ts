@@ -6,7 +6,7 @@
  * 主执行审计真相位于 `tool_execution_record`；这里的 call records 只保留兼容读写职责。
  */
 
-import { eq, and, desc, asc, sql, isNull, ne } from "drizzle-orm";
+import { eq, and, desc, asc, sql, isNull, ne, or } from "drizzle-orm";
 import type { AppDb } from "../db/client.js";
 import { floors, messagePages, sessions, toolCallRecords, toolDefinitions } from "../db/schema.js";
 import type { ToolCallRecord, ToolCallStatus } from "@tavern/core";
@@ -56,17 +56,23 @@ export interface ToolDefinitionInsert {
   handlerType: 'script';
   handlerJson: string;
   accountId: string;
+  workspaceId?: string | null;
   createdAt: number;
   updatedAt: number;
 }
 
 export interface ToolDefinitionQuery {
   accountId: string;
+  workspaceId?: string;
   source?: string;
   sourceId?: string;
   enabled?: boolean;
   limit?: number;
   offset?: number;
+}
+
+function toolDefinitionWorkspaceClause(workspaceId: string) {
+  return or(eq(toolDefinitions.workspaceId, workspaceId), isNull(toolDefinitions.workspaceId))!;
 }
 
 // ── DrizzleToolRepository ──────────────────────────
@@ -187,6 +193,7 @@ export class DrizzleToolRepository {
       handlerType: data.handlerType,
       handlerJson: data.handlerJson,
       accountId: data.accountId,
+      workspaceId: data.workspaceId ?? null,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     });
@@ -203,15 +210,20 @@ export class DrizzleToolRepository {
   /**
    * 按 ID 获取工具定义。
    */
-  async getDefinitionById(id: string, accountId: string): Promise<ToolDefinitionRow | null> {
+  async getDefinitionById(id: string, accountId: string, workspaceId?: string): Promise<ToolDefinitionRow | null> {
+    const conditions = [
+      eq(toolDefinitions.id, id),
+      eq(toolDefinitions.handlerType, 'script'),
+      eq(toolDefinitions.accountId, accountId),
+    ];
+    if (workspaceId) {
+      conditions.push(toolDefinitionWorkspaceClause(workspaceId));
+    }
+
     const [row] = await this.db
       .select()
       .from(toolDefinitions)
-      .where(and(
-        eq(toolDefinitions.id, id),
-        eq(toolDefinitions.handlerType, 'script'),
-        eq(toolDefinitions.accountId, accountId),
-      ))
+      .where(and(...conditions))
       .limit(1);
 
     return row ?? null;
@@ -225,6 +237,9 @@ export class DrizzleToolRepository {
     total: number;
   }> {
     const conditions = [eq(toolDefinitions.accountId, query.accountId), eq(toolDefinitions.handlerType, 'script')];
+    if (query.workspaceId) {
+      conditions.push(toolDefinitionWorkspaceClause(query.workspaceId));
+    }
     if (query.source) {
       conditions.push(eq(toolDefinitions.source, query.source as 'preset' | 'character' | 'custom'));
     }
@@ -291,9 +306,13 @@ export class DrizzleToolRepository {
     id: string,
     accountId: string,
     data: Partial<Omit<ToolDefinitionInsert, 'id' | 'createdAt' | 'accountId'>>,
+    workspaceId?: string,
   ): Promise<ToolDefinitionRow | null> {
-    const existing = await this.getDefinitionById(id, accountId);
+    const existing = await this.getDefinitionById(id, accountId, workspaceId);
     if (!existing) return null;
+
+    const conditions = [eq(toolDefinitions.id, id), eq(toolDefinitions.accountId, accountId)];
+    if (workspaceId) conditions.push(toolDefinitionWorkspaceClause(workspaceId));
 
     await this.db
       .update(toolDefinitions)
@@ -301,18 +320,21 @@ export class DrizzleToolRepository {
         ...data,
         updatedAt: Date.now(),
       })
-      .where(and(eq(toolDefinitions.id, id), eq(toolDefinitions.accountId, accountId)));
+      .where(and(...conditions));
 
-    return this.getDefinitionById(id, accountId);
+    return this.getDefinitionById(id, accountId, workspaceId);
   }
 
   /**
    * 删除工具定义。
    */
-  async deleteDefinition(id: string, accountId: string): Promise<boolean> {
+  async deleteDefinition(id: string, accountId: string, workspaceId?: string): Promise<boolean> {
+    const conditions = [eq(toolDefinitions.id, id), eq(toolDefinitions.accountId, accountId)];
+    if (workspaceId) conditions.push(toolDefinitionWorkspaceClause(workspaceId));
+
     const result = await this.db
       .delete(toolDefinitions)
-      .where(and(eq(toolDefinitions.id, id), eq(toolDefinitions.accountId, accountId)));
+      .where(and(...conditions));
 
     return (result.changes ?? 0) > 0;
   }
@@ -320,7 +342,7 @@ export class DrizzleToolRepository {
   /**
    * 启用/禁用工具定义。
    */
-  async toggleDefinition(id: string, accountId: string, enabled: boolean): Promise<ToolDefinitionRow | null> {
-    return this.updateDefinition(id, accountId, { enabled });
+  async toggleDefinition(id: string, accountId: string, enabled: boolean, workspaceId?: string): Promise<ToolDefinitionRow | null> {
+    return this.updateDefinition(id, accountId, { enabled }, workspaceId);
   }
 }
