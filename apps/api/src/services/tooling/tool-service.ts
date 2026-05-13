@@ -26,6 +26,7 @@ import type {
 } from "../../adapters/drizzle-tool-repository.js";
 import type { AppDb } from "../../db/client.js";
 import { parseJsonField, stringifyJsonField } from "../../lib/http.js";
+import { WorkspaceScopeService } from "../workspace-scope-service.js";
 
 // ── Types ───────────────────────────────────────────
 
@@ -150,9 +151,9 @@ export class ToolService {
   private executionRepo: DrizzleToolExecutionRepository;
   private builtinProvider: BuiltinToolProvider;
 
-  constructor(db: AppDb) {
-    this.repo = new DrizzleToolRepository(db);
-    this.executionRepo = new DrizzleToolExecutionRepository(db);
+  constructor(private readonly db: AppDb) {
+    this.repo = new DrizzleToolRepository(this.db);
+    this.executionRepo = new DrizzleToolExecutionRepository(this.db);
     this.builtinProvider = new BuiltinToolProvider();
   }
 
@@ -188,6 +189,7 @@ export class ToolService {
       });
 
       const now = Date.now();
+      const workspaceId = this.resolveDefaultWorkspaceId(accountId);
       const row = await this.repo.insertDefinition({
         id: nanoid(),
         name: input.name,
@@ -201,6 +203,7 @@ export class ToolService {
         handlerType: input.handler_type,
         handlerJson: stringifyJsonField(input.handler) ?? "{}",
         accountId,
+        workspaceId,
         createdAt: now,
         updatedAt: now,
       });
@@ -215,14 +218,16 @@ export class ToolService {
     id: string,
     accountId: string,
   ): Promise<ToolDefinitionResponse | null> {
-    const row = await this.repo.getDefinitionById(id, accountId);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    const row = await this.repo.getDefinitionById(id, accountId, workspaceId);
     return row ? toDefinitionResponse(row) : null;
   }
 
   async listDefinitions(
     query: ToolDefinitionQuery,
   ): Promise<{ definitions: ToolDefinitionResponse[]; total: number }> {
-    const result = await this.repo.queryDefinitions(query);
+    const workspaceId = this.resolveDefaultWorkspaceId(query.accountId);
+    const result = await this.repo.queryDefinitions({ ...query, workspaceId });
     return {
       definitions: result.definitions.map(toDefinitionResponse),
       total: result.total,
@@ -234,7 +239,8 @@ export class ToolService {
     accountId: string,
     input: UpdateDefinitionInput,
   ): Promise<ToolDefinitionResponse | null> {
-    const existing = await this.repo.getDefinitionById(id, accountId);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    const existing = await this.repo.getDefinitionById(id, accountId, workspaceId);
     if (!existing) {
       return null;
     }
@@ -270,7 +276,7 @@ export class ToolService {
         excludeId: id,
       });
 
-      const row = await this.repo.updateDefinition(id, accountId, updates as any);
+      const row = await this.repo.updateDefinition(id, accountId, updates as any, workspaceId);
       return row ? toDefinitionResponse(row) : null;
     } catch (error) {
       throw this.mapWriteError(error, input.name ?? existing.name);
@@ -278,7 +284,8 @@ export class ToolService {
   }
 
   async deleteDefinition(id: string, accountId: string): Promise<boolean> {
-    return this.repo.deleteDefinition(id, accountId);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    return this.repo.deleteDefinition(id, accountId, workspaceId);
   }
 
   async toggleDefinition(
@@ -286,7 +293,8 @@ export class ToolService {
     accountId: string,
     enabled: boolean,
   ): Promise<ToolDefinitionResponse | null> {
-    const row = await this.repo.toggleDefinition(id, accountId, enabled);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    const row = await this.repo.toggleDefinition(id, accountId, enabled, workspaceId);
     return row ? toDefinitionResponse(row) : null;
   }
 
@@ -388,5 +396,9 @@ export class ToolService {
 
   private buildDefinitionConflictMessage(name?: string): string {
     return name ? `Tool definition already exists: ${name}` : "Tool definition already exists";
+  }
+
+  private resolveDefaultWorkspaceId(accountId: string): string {
+    return new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId).id;
   }
 }

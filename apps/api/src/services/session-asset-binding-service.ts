@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 
-import type { AppDb } from "../db/client.js";
+import type { AppDb, DbExecutor } from "../db/client.js";
 import { presets, regexProfiles, worldbooks } from "../db/schema.js";
 import { AssetVersionService } from "./asset-version-service.js";
 
@@ -30,31 +30,36 @@ export type SessionAssetBindingWriteInput = {
   worldbook_version_id?: string | null;
 };
 
+type PromptAssetKind = "preset" | "worldbook" | "regex_profile";
+
 /**
  * 解析会话的 prompt 资产绑定。
  *
  * 该服务只处理 preset、worldbook、regex profile。角色卡仍沿用现有角色版本和快照逻辑。
  */
 export class SessionAssetBindingService {
-  constructor(private readonly db: AppDb) {}
+  constructor(private readonly db: AppDb | DbExecutor) {}
 
   resolveCreate(
     accountId: string,
+    workspaceId: string,
     input: SessionAssetBindingWriteInput,
   ): SessionAssetBindingState | SessionAssetBindingError {
-    return this.resolve(accountId, emptySessionAssetBindingState(), input);
+    return this.resolve(accountId, workspaceId, emptySessionAssetBindingState(), input);
   }
 
   resolveUpdate(
     accountId: string,
+    workspaceId: string,
     current: SessionAssetBindingState,
     input: SessionAssetBindingWriteInput,
   ): SessionAssetBindingState | SessionAssetBindingError {
-    return this.resolve(accountId, current, input);
+    return this.resolve(accountId, workspaceId, current, input);
   }
 
   private resolve(
     accountId: string,
+    workspaceId: string,
     current: SessionAssetBindingState,
     input: SessionAssetBindingWriteInput,
   ): SessionAssetBindingState | SessionAssetBindingError {
@@ -65,6 +70,7 @@ export class SessionAssetBindingService {
 
     const preset = this.resolveOne({
       accountId,
+      workspaceId,
       kind: "preset",
       currentAssetId: current.presetId,
       currentVersionId: current.presetVersionId,
@@ -76,6 +82,7 @@ export class SessionAssetBindingService {
 
     const regexProfile = this.resolveOne({
       accountId,
+      workspaceId,
       kind: "regex_profile",
       currentAssetId: current.regexProfileId,
       currentVersionId: current.regexProfileVersionId,
@@ -87,6 +94,7 @@ export class SessionAssetBindingService {
 
     const worldbook = this.resolveOne({
       accountId,
+      workspaceId,
       kind: "worldbook",
       currentAssetId: current.worldbookProfileId,
       currentVersionId: current.worldbookVersionId,
@@ -109,7 +117,8 @@ export class SessionAssetBindingService {
 
   private resolveOne(args: {
     accountId: string;
-    kind: "preset" | "worldbook" | "regex_profile";
+    workspaceId: string;
+    kind: PromptAssetKind;
     currentAssetId: string | null;
     currentVersionId: string | null;
     inputAssetId?: string | null;
@@ -120,7 +129,7 @@ export class SessionAssetBindingService {
     let assetId = args.inputAssetId !== undefined ? args.inputAssetId : args.currentAssetId;
 
     if (args.deepBinding && args.inputVersionId && args.inputAssetId !== null) {
-      const loaded = this.loadVersionById(args.kind, versionService, args.accountId, args.inputVersionId);
+      const loaded = this.loadVersionById(args.kind, versionService, args.accountId, args.workspaceId, args.inputVersionId);
       if (!loaded) return assetVersionNotFoundError();
       if (assetId && loaded.assetId !== assetId) return assetVersionNotFoundError();
       assetId = loaded.assetId;
@@ -130,7 +139,7 @@ export class SessionAssetBindingService {
       return { assetId: null, versionId: null };
     }
 
-    if (!assetId || !this.assetOwnedByAccount(args.kind, args.accountId, assetId)) {
+    if (!assetId || !this.assetOwnedByWorkspace(args.kind, args.accountId, args.workspaceId, assetId)) {
       return assetNotFoundError(args.kind);
     }
 
@@ -149,7 +158,7 @@ export class SessionAssetBindingService {
         : undefined;
 
     if (requestedVersionId) {
-      const loaded = this.loadVersionById(args.kind, versionService, args.accountId, requestedVersionId);
+      const loaded = this.loadVersionById(args.kind, versionService, args.accountId, args.workspaceId, requestedVersionId);
       if (!loaded || loaded.assetId !== assetId) return assetVersionNotFoundError();
       return { assetId, versionId: loaded.id };
     }
@@ -159,58 +168,64 @@ export class SessionAssetBindingService {
     return { assetId, versionId: latest.id };
   }
 
-  private assetOwnedByAccount(kind: "preset" | "worldbook" | "regex_profile", accountId: string, assetId: string): boolean {
+  private assetOwnedByWorkspace(kind: PromptAssetKind, accountId: string, workspaceId: string, assetId: string): boolean {
+    const row = this.loadAssetRecord(kind, accountId, assetId);
+    return Boolean(row && isWorkspaceCompatible(row.workspaceId, workspaceId));
+  }
+
+  private loadAssetRecord(kind: PromptAssetKind, accountId: string, assetId: string): { id: string; workspaceId: string | null } | null {
     if (kind === "preset") {
-      const row = this.db
-        .select({ id: presets.id })
+      return this.db
+        .select({ id: presets.id, workspaceId: presets.workspaceId })
         .from(presets)
         .where(and(eq(presets.id, assetId), eq(presets.accountId, accountId)))
         .limit(1)
-        .get();
-      return Boolean(row);
+        .get() ?? null;
     }
 
     if (kind === "worldbook") {
-      const row = this.db
-        .select({ id: worldbooks.id })
+      return this.db
+        .select({ id: worldbooks.id, workspaceId: worldbooks.workspaceId })
         .from(worldbooks)
         .where(and(eq(worldbooks.id, assetId), eq(worldbooks.accountId, accountId)))
         .limit(1)
-        .get();
-      return Boolean(row);
+        .get() ?? null;
     }
 
-    const row = this.db
-      .select({ id: regexProfiles.id })
+    return this.db
+      .select({ id: regexProfiles.id, workspaceId: regexProfiles.workspaceId })
       .from(regexProfiles)
       .where(and(eq(regexProfiles.id, assetId), eq(regexProfiles.accountId, accountId)))
       .limit(1)
-      .get();
-    return Boolean(row);
+      .get() ?? null;
   }
 
   private loadVersionById(
-    kind: "preset" | "worldbook" | "regex_profile",
+    kind: PromptAssetKind,
     versionService: AssetVersionService,
     accountId: string,
+    workspaceId: string,
     versionId: string,
   ): { id: string; assetId: string } | null {
     if (kind === "preset") {
       const version = versionService.loadPresetVersionById(accountId, versionId);
-      return version ? { id: version.id, assetId: version.presetId } : null;
+      if (!version || !this.assetOwnedByWorkspace(kind, accountId, workspaceId, version.presetId)) return null;
+      return { id: version.id, assetId: version.presetId };
     }
 
     if (kind === "worldbook") {
       const version = versionService.loadWorldbookVersionById(accountId, versionId);
-      return version ? { id: version.id, assetId: version.worldbookId } : null;
+      if (!version || !this.assetOwnedByWorkspace(kind, accountId, workspaceId, version.worldbookId)) return null;
+      return { id: version.id, assetId: version.worldbookId };
     }
 
     const version = versionService.loadRegexProfileVersionById(accountId, versionId);
-    return version ? { id: version.id, assetId: version.regexProfileId } : null;
+    if (!version || !this.assetOwnedByWorkspace(kind, accountId, workspaceId, version.regexProfileId)) return null;
+    return { id: version.id, assetId: version.regexProfileId };
   }
 
   private ensureCurrentVersion(
-    kind: "preset" | "worldbook" | "regex_profile",
+    kind: PromptAssetKind,
     versionService: AssetVersionService,
     accountId: string,
     assetId: string,
@@ -233,7 +248,12 @@ export function emptySessionAssetBindingState(): SessionAssetBindingState {
   };
 }
 
-function assetNotFoundError(kind: "preset" | "worldbook" | "regex_profile"): SessionAssetBindingError {
+function isWorkspaceCompatible(rowWorkspaceId: string | null, workspaceId: string): boolean {
+  // 兼容历史数据：nullable workspace_id 在 Phase 1 期间视为旧账号默认 Workspace 资源。
+  return rowWorkspaceId === null || rowWorkspaceId === workspaceId;
+}
+
+function assetNotFoundError(kind: PromptAssetKind): SessionAssetBindingError {
   if (kind === "preset") {
     return { statusCode: 404, code: "preset_not_found", message: "Preset not found" };
   }

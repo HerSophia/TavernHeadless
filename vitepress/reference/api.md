@@ -117,6 +117,17 @@ WebSocket 也遵循相同边界：
 | `503`  | 服务不可用或暂时繁忙                   |
 | `504`  | 上游生成超时                           |
 
+## Workspace / Project 阶段一兼容规则
+
+阶段一已经在数据库和服务层为新数据补齐 Workspace / Project 归属，但旧 API 仍保持兼容：
+
+- 普通客户端创建和使用会话时，不需要传 `workspace_id` 或 `project_id`。
+- `POST /sessions` 支持可选请求字段 `project_id`。这是高级字段，只在调用方已经知道目标 Project 时使用。
+- 如果 `POST /sessions` 不传 `project_id`，服务端会使用当前账号默认 Workspace，并为该 Session 创建 `session_default` Project。
+- Session 的默认响应不新增 `workspace_id` 和 `project_id` 字段。
+- 阶段一不开放 `GET /sessions?workspace_id=...`、`GET /sessions?project_id=...` 或 `include=workspace,project`。
+- 旧的 `global` 配置语义在阶段一表示“当前账号默认 Workspace 的默认配置”。
+
 ## 分页
 
 大多数复用通用分页基类的列表接口支持以下查询参数：
@@ -160,6 +171,7 @@ WebSocket 也遵循相同边界：
 | Client Data | 为应用或插件保存自己的结构化数据 | [Client Data](./api/client-data) |
 | Session State | 管理会话内受治理状态：注册、写入、读取和比较 | [Session State](./api/session-state) |
 | Operation Logs | 用户、LLM 和系统操作的审计日志 | [Operation Logs](./api/operation-logs) |
+| Workspace / Project | 工作区与项目的阶段一归属说明与兼容规则 | [Workspace / Project](./api/workspace-project) |
 | VC Tags | 给 Floor 和资产版本保存命名引用 | [VC Tags](./api/vc-tags) |
 
 ## 高级 API 资源
@@ -186,6 +198,7 @@ WebSocket 也遵循相同边界：
 - [Session State](./api/session-state)
 - [Session-State Observation（内部）](./api/session-state-observation)
 - [Operation Logs](./api/operation-logs)
+- [Workspace / Project](./api/workspace-project)
 - [VC Tags](./api/vc-tags)
 
 其中 `Client Data` 是一个独立的高级系统功能。它用于：

@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 
 import type { AppDb } from "../db/client";
-import { llmInstanceConfigs } from "../db/schema";
+import { llmInstanceConfigs, sessions } from "../db/schema";
 import {
   normalizeBindingParams,
   parseBindingParamsJson,
@@ -16,6 +16,7 @@ import {
   type LlmInstanceConfigItemMutationResult,
   type UpsertLlmInstanceConfigMutationPayload,
 } from "./config-mutation-applier.js";
+import { WorkspaceScopeService } from "./workspace-scope-service.js";
 
 const GLOBAL_SCOPE_ID = "global";
 
@@ -68,6 +69,10 @@ export class LlmInstanceServiceError extends Error {
   }
 }
 
+function llmInstanceWorkspaceClause(workspaceId: string) {
+  return or(eq(llmInstanceConfigs.workspaceId, workspaceId), isNull(llmInstanceConfigs.workspaceId))!;
+}
+
 export class LlmInstanceService {
   private db: AppDb;
   private now: () => number;
@@ -86,7 +91,11 @@ export class LlmInstanceService {
     scope?: LlmInstanceScope,
     scopeId?: string,
   ): Promise<LlmInstanceConfigItem[]> {
-    const conditions = [eq(llmInstanceConfigs.accountId, accountId)];
+    const workspaceId = await this.resolveWorkspaceIdForRead(accountId, scope === "session" ? scopeId : undefined);
+    const conditions = [
+      eq(llmInstanceConfigs.accountId, accountId),
+      llmInstanceWorkspaceClause(workspaceId),
+    ];
 
     if (scope) {
       conditions.push(eq(llmInstanceConfigs.scope, scope));
@@ -110,9 +119,11 @@ export class LlmInstanceService {
     scopeId?: string,
   ): Promise<LlmInstanceConfigItem[]> {
     validateSlot(slot);
+    const workspaceId = await this.resolveWorkspaceIdForRead(accountId, scope === "session" ? scopeId : undefined);
 
     const conditions = [
       eq(llmInstanceConfigs.accountId, accountId),
+      llmInstanceWorkspaceClause(workspaceId),
       eq(llmInstanceConfigs.instanceSlot, slot),
     ];
 
@@ -207,10 +218,14 @@ export class LlmInstanceService {
     accountId: string,
     sessionId?: string,
   ): Promise<ResolvedInstanceSlot[]> {
+    const workspaceId = await this.resolveWorkspaceIdForRead(accountId, sessionId);
     const allConfigs = await this.db
       .select()
       .from(llmInstanceConfigs)
-      .where(eq(llmInstanceConfigs.accountId, accountId));
+      .where(and(
+        eq(llmInstanceConfigs.accountId, accountId),
+        llmInstanceWorkspaceClause(workspaceId),
+      ));
 
     const results: ResolvedInstanceSlot[] = [];
     for (const slot of ALL_SLOTS) {
@@ -274,6 +289,24 @@ export class LlmInstanceService {
     }
 
     return defaultResult;
+  }
+
+  private resolveDefaultWorkspaceId(accountId: string): string {
+    return new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId).id;
+  }
+
+  private async resolveWorkspaceIdForRead(accountId: string, sessionId?: string): Promise<string> {
+    if (!sessionId) {
+      return this.resolveDefaultWorkspaceId(accountId);
+    }
+
+    const [session] = await this.db
+      .select({ workspaceId: sessions.workspaceId })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
+      .limit(1);
+
+    return session?.workspaceId ?? this.resolveDefaultWorkspaceId(accountId);
   }
 }
 

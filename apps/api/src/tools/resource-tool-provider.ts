@@ -10,7 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { nanoid } from 'nanoid';
-import { eq, and, like, desc } from 'drizzle-orm';
+import { eq, and, isNull, like, or, desc } from 'drizzle-orm';
 
 import type {
   ToolProviderType,
@@ -71,6 +71,10 @@ import {
   getEditorEntryFromRaw,
   getAllEditorEntriesFromRaw,
 } from '../lib/preset-utils.js';
+import {
+  WorkspaceScopeService,
+  WorkspaceScopeServiceError,
+} from '../services/workspace-scope-service.js';
 
 // ── Tool Definitions ────────────────────────────────────────
 
@@ -703,11 +707,27 @@ function computeContentHash(json: string): string {
   return createHash('sha256').update(json).digest('hex');
 }
 
-function loadOwnedCharacter(tx: DbExecutor, characterId: string, accountId: string) {
+function characterWorkspaceClause(workspaceId: string) {
+  return or(eq(characters.workspaceId, workspaceId), isNull(characters.workspaceId))!;
+}
+
+function worldbookWorkspaceClause(workspaceId: string) {
+  return or(eq(worldbooks.workspaceId, workspaceId), isNull(worldbooks.workspaceId))!;
+}
+
+function regexProfileWorkspaceClause(workspaceId: string) {
+  return or(eq(regexProfiles.workspaceId, workspaceId), isNull(regexProfiles.workspaceId))!;
+}
+
+function presetWorkspaceClause(workspaceId: string) {
+  return or(eq(presets.workspaceId, workspaceId), isNull(presets.workspaceId))!;
+}
+
+function loadOwnedCharacter(tx: DbExecutor, characterId: string, accountId: string, workspaceId: string) {
   return tx
     .select()
     .from(characters)
-    .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId)))
+    .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId), characterWorkspaceClause(workspaceId)))
     .limit(1)
     .get();
 }
@@ -869,6 +889,14 @@ export class ResourceToolProvider implements ToolProvider {
     }
   }
 
+  private resolveWorkspace(accountId: string): string {
+    try {
+      return new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId).id;
+    } catch (err) {
+      throw new Error(`Failed to resolve workspace: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   // ── Character handlers ────────────────────────────────
 
   private async handleCreateCharacter(
@@ -957,6 +985,7 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const characterId = args.character_id as string | undefined;
+    const workspaceId = this.resolveWorkspace(accountId);
     if (!characterId) {
       return { error: 'character_id is required' };
     }
@@ -968,6 +997,7 @@ export class ResourceToolProvider implements ToolProvider {
         and(
           eq(characters.id, characterId),
           eq(characters.accountId, accountId),
+          characterWorkspaceClause(workspaceId),
         ),
       )
       .limit(1);
@@ -1014,10 +1044,12 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const limit = clampLimit(args.limit);
+    const workspaceId = this.resolveWorkspace(accountId);
     const keyword = typeof args.keyword === 'string' ? args.keyword.trim() : '';
 
     const conditions = [
       eq(characters.accountId, accountId),
+      characterWorkspaceClause(workspaceId),
       eq(characters.status, 'active'),
     ];
     if (keyword) {
@@ -1188,6 +1220,7 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const worldbookId = args.worldbook_id as string | undefined;
+    const workspaceId = this.resolveWorkspace(accountId);
     if (!worldbookId) return { error: 'worldbook_id is required' };
 
     const [wb] = await this.db
@@ -1197,6 +1230,7 @@ export class ResourceToolProvider implements ToolProvider {
         and(
           eq(worldbooks.id, worldbookId),
           eq(worldbooks.accountId, accountId),
+          worldbookWorkspaceClause(workspaceId),
         ),
       )
       .limit(1);
@@ -1237,6 +1271,7 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const limit = clampLimit(args.limit);
+    const workspaceId = this.resolveWorkspace(accountId);
 
     const rows = await this.db
       .select({
@@ -1246,7 +1281,7 @@ export class ResourceToolProvider implements ToolProvider {
         updatedAt: worldbooks.updatedAt,
       })
       .from(worldbooks)
-      .where(eq(worldbooks.accountId, accountId))
+      .where(and(eq(worldbooks.accountId, accountId), worldbookWorkspaceClause(workspaceId)))
       .orderBy(desc(worldbooks.updatedAt))
       .limit(limit);
 
@@ -1361,6 +1396,7 @@ export class ResourceToolProvider implements ToolProvider {
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
     const profileId = args.profile_id as string | undefined;
     if (!profileId) return { error: 'profile_id is required' };
 
@@ -1371,6 +1407,7 @@ export class ResourceToolProvider implements ToolProvider {
         and(
           eq(regexProfiles.id, profileId),
           eq(regexProfiles.accountId, accountId),
+          regexProfileWorkspaceClause(workspaceId),
         ),
       )
       .limit(1);
@@ -1407,11 +1444,12 @@ export class ResourceToolProvider implements ToolProvider {
   private loadPresetRawForTool(
     presetId: string,
     accountId: string,
+    workspaceId: string,
   ): { row: typeof presets.$inferSelect; raw: JsonRecord } | null {
     const [row] = this.db
       .select()
       .from(presets)
-      .where(and(eq(presets.id, presetId), eq(presets.accountId, accountId)))
+      .where(and(eq(presets.id, presetId), eq(presets.accountId, accountId), presetWorkspaceClause(workspaceId)))
       .limit(1)
       .all();
     if (!row) return null;
@@ -1449,6 +1487,7 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const limit = clampLimit(args.limit, 20, 50);
+    const workspaceId = this.resolveWorkspace(accountId);
 
     const rows = await this.db
       .select({
@@ -1458,7 +1497,7 @@ export class ResourceToolProvider implements ToolProvider {
         updatedAt: regexProfiles.updatedAt,
       })
       .from(regexProfiles)
-      .where(eq(regexProfiles.accountId, accountId))
+      .where(and(eq(regexProfiles.accountId, accountId), regexProfileWorkspaceClause(workspaceId)))
       .orderBy(desc(regexProfiles.updatedAt))
       .limit(limit);
 
@@ -1478,6 +1517,7 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const limit = clampLimit(args.limit, 20, 50);
+    const workspaceId = this.resolveWorkspace(accountId);
 
     const rows = await this.db
       .select({
@@ -1487,7 +1527,7 @@ export class ResourceToolProvider implements ToolProvider {
         updatedAt: presets.updatedAt,
       })
       .from(presets)
-      .where(eq(presets.accountId, accountId))
+      .where(and(eq(presets.accountId, accountId), presetWorkspaceClause(workspaceId)))
       .orderBy(desc(presets.updatedAt))
       .limit(limit);
 
@@ -1506,6 +1546,7 @@ export class ResourceToolProvider implements ToolProvider {
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
     const worldbookId = args.worldbook_id as string | undefined;
     if (!worldbookId) return { error: 'worldbook_id is required' };
 
@@ -1513,12 +1554,7 @@ export class ResourceToolProvider implements ToolProvider {
     const [wb] = await this.db
       .select()
       .from(worldbooks)
-      .where(
-        and(
-          eq(worldbooks.id, worldbookId),
-          eq(worldbooks.accountId, accountId),
-        ),
-      )
+      .where(and(eq(worldbooks.id, worldbookId), eq(worldbooks.accountId, accountId), worldbookWorkspaceClause(workspaceId)))
       .limit(1);
     if (!wb) return { error: `Worldbook not found: ${worldbookId}` };
 
@@ -1552,6 +1588,7 @@ export class ResourceToolProvider implements ToolProvider {
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
     const characterId = args.character_id as string | undefined;
     if (!characterId) return { error: 'character_id is required' };
 
@@ -1559,12 +1596,7 @@ export class ResourceToolProvider implements ToolProvider {
     const [charRow] = await this.db
       .select()
       .from(characters)
-      .where(
-        and(
-          eq(characters.id, characterId),
-          eq(characters.accountId, accountId),
-        ),
-      )
+      .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId), characterWorkspaceClause(workspaceId)))
       .limit(1);
     if (!charRow) return { error: `Character not found: ${characterId}` };
 
@@ -1605,6 +1637,7 @@ export class ResourceToolProvider implements ToolProvider {
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
     const worldbookId = args.worldbook_id as string | undefined;
     const entryId = args.entry_id as string | undefined;
     if (!worldbookId) return { error: 'worldbook_id is required' };
@@ -1614,12 +1647,7 @@ export class ResourceToolProvider implements ToolProvider {
     const [wb] = await this.db
       .select()
       .from(worldbooks)
-      .where(
-        and(
-          eq(worldbooks.id, worldbookId),
-          eq(worldbooks.accountId, accountId),
-        ),
-      )
+      .where(and(eq(worldbooks.id, worldbookId), eq(worldbooks.accountId, accountId), worldbookWorkspaceClause(workspaceId)))
       .limit(1);
     if (!wb) return { error: `Worldbook not found: ${worldbookId}` };
 
@@ -1659,6 +1687,7 @@ export class ResourceToolProvider implements ToolProvider {
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
     const profileId = args.profile_id as string | undefined;
     if (!profileId) return { error: 'profile_id is required' };
 
@@ -1674,6 +1703,7 @@ export class ResourceToolProvider implements ToolProvider {
         and(
           eq(regexProfiles.id, profileId),
           eq(regexProfiles.accountId, accountId),
+          regexProfileWorkspaceClause(workspaceId),
         ),
       )
       .limit(1);
@@ -1712,10 +1742,11 @@ export class ResourceToolProvider implements ToolProvider {
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
     const presetId = args.preset_id as string | undefined;
     if (!presetId) return { error: 'preset_id is required' };
 
-    const loaded = this.loadPresetRawForTool(presetId, accountId);
+    const loaded = this.loadPresetRawForTool(presetId, accountId, workspaceId);
     if (!loaded) return { error: `Preset not found: ${presetId}` };
 
     const { entries } = getAllEditorEntriesFromRaw(loaded.raw);
@@ -1743,12 +1774,13 @@ export class ResourceToolProvider implements ToolProvider {
     context: ToolExecutionContext,
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
     const presetId = args.preset_id as string | undefined;
     const identifier = args.identifier as string | undefined;
     if (!presetId) return { error: 'preset_id is required' };
     if (!identifier) return { error: 'identifier is required' };
 
-    const loaded = this.loadPresetRawForTool(presetId, accountId);
+    const loaded = this.loadPresetRawForTool(presetId, accountId, workspaceId);
     if (!loaded) return { error: `Preset not found: ${presetId}` };
 
     const entry = getEditorEntryFromRaw(loaded.raw, identifier);

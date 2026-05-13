@@ -11009,6 +11009,7 @@ export interface paths {
                      *       "model_provider": "openai",
                      *       "preset_id": "preset_story",
                      *       "preset_version_id": null,
+                     *       "project_id": "proj_main",
                      *       "prompt_mode": "native",
                      *       "regex_profile_id": "regex_safe",
                      *       "regex_profile_version_id": null,
@@ -11032,6 +11033,8 @@ export interface paths {
                         model_provider?: string;
                         preset_id?: string | null;
                         preset_version_id?: string | null;
+                        /** @description Advanced field for POST /sessions. Omit it for the default Workspace and session_default Project. PATCH /sessions/:id rejects project_id changes. */
+                        project_id?: string;
                         /** @enum {string} */
                         prompt_mode?: "compat_strict" | "compat_plus" | "native";
                         regex_profile_id?: string | null;
@@ -11528,6 +11531,7 @@ export interface paths {
                      *       "model_provider": "openai",
                      *       "preset_id": "preset_story",
                      *       "preset_version_id": null,
+                     *       "project_id": "proj_main",
                      *       "prompt_mode": "native",
                      *       "regex_profile_id": "regex_safe",
                      *       "regex_profile_version_id": null,
@@ -11551,6 +11555,8 @@ export interface paths {
                         model_provider?: string;
                         preset_id?: string | null;
                         preset_version_id?: string | null;
+                        /** @description Advanced field for POST /sessions. Omit it for the default Workspace and session_default Project. PATCH /sessions/:id rejects project_id changes. */
+                        project_id?: string;
                         /** @enum {string} */
                         prompt_mode?: "compat_strict" | "compat_plus" | "native";
                         regex_profile_id?: string | null;

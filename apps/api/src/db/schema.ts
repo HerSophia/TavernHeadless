@@ -14,11 +14,65 @@ export const accounts = sqliteTable(
   }
 );
 
+export const workspaces = sqliteTable(
+  "workspace",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: ["default"] }).notNull().default("default"),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    settingsJson: text("settings_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountUpdatedIdx: index("workspace_account_updated_idx").on(table.accountId, table.updatedAt),
+    accountDefaultUnique: uniqueIndex("workspace_account_default_uq")
+      .on(table.accountId)
+      .where(sql`${table.isDefault} = 1`),
+  })
+);
+
+export const projects = sqliteTable(
+  "project",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    kind: text("kind", { enum: ["session_default", "manual"] }).notNull().default("session_default"),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    settingsOverrideJson: text("settings_override_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountWorkspaceUpdatedIdx: index("project_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
+    workspaceUpdatedIdx: index("project_workspace_updated_idx").on(
+      table.workspaceId,
+      table.updatedAt,
+    ),
+    accountStatusUpdatedIdx: index("project_account_status_updated_idx").on(
+      table.accountId,
+      table.status,
+      table.updatedAt,
+    ),
+  })
+);
+
 export const accountUsers = sqliteTable(
   "account_user",
   {
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
     snapshotJson: text("snapshot_json").notNull(),
     status: text("status", { enum: ["active", "disabled", "deleted"] }).notNull().default("active"),
@@ -28,6 +82,11 @@ export const accountUsers = sqliteTable(
   },
   (table) => ({
     accountUpdatedIdx: index("account_user_account_updated_idx").on(table.accountId, table.updatedAt),
+    accountWorkspaceUpdatedIdx: index("account_user_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
     accountNameUnique: uniqueIndex("account_user_account_name_uq").on(table.accountId, table.name),
   })
 );
@@ -39,6 +98,7 @@ export const characters = sqliteTable(
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     status: text("status", { enum: ["active", "deleted"] }).notNull().default("active"),
     deletedAt: integer("deleted_at"),
     revision: integer("revision").notNull().default(0),
@@ -48,6 +108,11 @@ export const characters = sqliteTable(
   },
   (table) => ({
     accountUpdatedIdx: index("character_account_updated_idx").on(table.accountId, table.updatedAt),
+    accountWorkspaceUpdatedIdx: index("character_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
   })
 );
 
@@ -71,32 +136,42 @@ export const characterVersions = sqliteTable(
   })
 );
 
-export const sessions = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  title: text("title"),
-  characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
-  accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
-  characterVersionId: text("character_version_id").references(() => characterVersions.id, { onDelete: "set null" }),
-  characterSnapshotJson: text("character_snapshot_json"),
-  characterSyncPolicy: text("character_sync_policy", { enum: ["pin", "manual", "force"] }).notNull().default("pin"),
-  userId: text("user_id").references(() => accountUsers.id, { onDelete: "set null" }),
-  userSnapshotJson: text("user_snapshot_json"),
-  status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
-  presetId: text("preset_id"),
-  regexProfileId: text("regex_profile_id"),
-  worldbookProfileId: text("worldbook_profile_id"),
-  deepBinding: integer("deep_binding", { mode: "boolean" }).notNull().default(false),
-  presetVersionId: text("preset_version_id"),
-  worldbookVersionId: text("worldbook_version_id"),
-  regexProfileVersionId: text("regex_profile_version_id"),
-  modelProvider: text("model_provider"),
-  modelName: text("model_name"),
-  modelParamsJson: text("model_params_json"),
-  promptMode: text("prompt_mode", { enum: ["compat_strict", "compat_plus", "native"] }),
-  metadataJson: text("metadata_json"),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull()
-});
+export const sessions = sqliteTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    title: text("title"),
+    characterId: text("character_id").references(() => characters.id, { onDelete: "set null" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "restrict" }),
+    characterVersionId: text("character_version_id").references(() => characterVersions.id, { onDelete: "set null" }),
+    characterSnapshotJson: text("character_snapshot_json"),
+    characterSyncPolicy: text("character_sync_policy", { enum: ["pin", "manual", "force"] }).notNull().default("pin"),
+    userId: text("user_id").references(() => accountUsers.id, { onDelete: "set null" }),
+    userSnapshotJson: text("user_snapshot_json"),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    presetId: text("preset_id"),
+    regexProfileId: text("regex_profile_id"),
+    worldbookProfileId: text("worldbook_profile_id"),
+    deepBinding: integer("deep_binding", { mode: "boolean" }).notNull().default(false),
+    presetVersionId: text("preset_version_id"),
+    worldbookVersionId: text("worldbook_version_id"),
+    regexProfileVersionId: text("regex_profile_version_id"),
+    modelProvider: text("model_provider"),
+    modelName: text("model_name"),
+    modelParamsJson: text("model_params_json"),
+    promptMode: text("prompt_mode", { enum: ["compat_strict", "compat_plus", "native"] }),
+    metadataJson: text("metadata_json"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountWorkspaceUpdatedIdx: index("session_account_workspace_updated_idx").on(table.accountId, table.workspaceId, table.updatedAt),
+    accountProjectUpdatedIdx: index("session_account_project_updated_idx").on(table.accountId, table.projectId, table.updatedAt),
+    projectUpdatedIdx: index("session_project_updated_idx").on(table.projectId, table.updatedAt),
+  })
+);
 
 export const sessionBranches = sqliteTable(
   "session_branch",
@@ -898,6 +973,7 @@ export const presets = sqliteTable(
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     dataJson: text("data_json").notNull(),
     version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
@@ -905,6 +981,11 @@ export const presets = sqliteTable(
   },
   (table) => ({
     accountUpdatedIdx: index("preset_account_updated_idx").on(table.accountId, table.updatedAt),
+    accountWorkspaceUpdatedIdx: index("preset_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
   })
 );
 
@@ -915,6 +996,7 @@ export const worldbooks = sqliteTable(
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     dataJson: text("data_json").notNull(),
     version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
@@ -922,6 +1004,11 @@ export const worldbooks = sqliteTable(
   },
   (table) => ({
     accountUpdatedIdx: index("worldbook_account_updated_idx").on(table.accountId, table.updatedAt),
+    accountWorkspaceUpdatedIdx: index("worldbook_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
   })
 );
 
@@ -969,6 +1056,7 @@ export const regexProfiles = sqliteTable(
     name: text("name").notNull(),
     source: text("source").notNull().default("sillytavern"),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     dataJson: text("data_json").notNull(),
     version: integer("version").notNull().default(1),
     createdAt: integer("created_at").notNull(),
@@ -976,6 +1064,11 @@ export const regexProfiles = sqliteTable(
   },
   (table) => ({
     accountUpdatedIdx: index("regex_profile_account_updated_idx").on(table.accountId, table.updatedAt),
+    accountWorkspaceUpdatedIdx: index("regex_profile_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
   })
 );
 
@@ -1180,6 +1273,7 @@ export const llmProfiles = sqliteTable(
     id: text("id").primaryKey(),
     presetName: text("preset_name").notNull(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     provider: text("provider", { enum: ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] }).notNull(),
     modelId: text("model_id").notNull(),
     baseUrl: text("base_url"),
@@ -1194,6 +1288,11 @@ export const llmProfiles = sqliteTable(
   (table) => ({
     presetNameUnique: uniqueIndex("llm_profile_account_preset_name_uq").on(table.accountId, table.presetName),
     statusUpdatedIdx: index("llm_profile_status_updated_idx").on(table.status, table.updatedAt),
+    accountWorkspaceUpdatedIdx: index("llm_profile_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
   })
 );
 
@@ -1203,6 +1302,7 @@ export const llmProfileBindings = sqliteTable(
     id: text("id").primaryKey(),
     scope: text("scope", { enum: ["global", "session"] }).notNull(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot").notNull().default("*"),
     paramsJson: text("params_json"),
@@ -1213,6 +1313,12 @@ export const llmProfileBindings = sqliteTable(
   (table) => ({
     scopeSlotUnique: uniqueIndex("llm_profile_binding_account_scope_scope_id_slot_uq").on(table.accountId, table.scope, table.scopeId, table.instanceSlot),
     profileScopeIdx: index("llm_profile_binding_profile_account_scope_idx").on(table.profileId, table.accountId, table.scope, table.scopeId, table.instanceSlot),
+    accountWorkspaceScopeIdx: index("llm_profile_binding_account_workspace_scope_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.scope,
+      table.scopeId,
+    ),
   })
 );
 
@@ -1221,6 +1327,7 @@ export const llmInstanceConfigs = sqliteTable(
   {
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     scope: text("scope", { enum: ["global", "session"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot", { enum: ["*", "narrator", "director", "verifier", "memory"] }).notNull(),
@@ -1233,6 +1340,12 @@ export const llmInstanceConfigs = sqliteTable(
   (table) => ({
     scopeSlotUnique: uniqueIndex("llm_instance_config_account_scope_slot_uq").on(table.accountId, table.scope, table.scopeId, table.instanceSlot),
     scopeIdx: index("llm_instance_config_account_scope_idx").on(table.accountId, table.scope, table.scopeId),
+    accountWorkspaceScopeIdx: index("llm_instance_config_account_workspace_scope_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.scope,
+      table.scopeId,
+    ),
   })
 );
 
@@ -1334,6 +1447,7 @@ export const toolDefinitions = sqliteTable(
     handlerType: text("handler_type", { enum: ["script", "prompt", "delegate"] }).notNull().default("script"),
     handlerJson: text("handler_json").notNull().default('{}'),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -1342,6 +1456,11 @@ export const toolDefinitions = sqliteTable(
       .on(table.accountId, table.name, table.source, table.sourceId)
       .where(sql`${table.sourceId} IS NOT NULL`),
     nameSourceWithoutSourceIdUnique: uniqueIndex("tool_definition_account_name_source_null_source_id_uq").on(table.accountId, table.name, table.source).where(sql`${table.sourceId} IS NULL`),
+    accountWorkspaceSourceIdx: index("tool_definition_account_workspace_source_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.source,
+    ),
     accountSourceIdx: index("tool_definition_account_source_idx").on(table.accountId, table.source),
   })
 );
@@ -1354,6 +1473,7 @@ export const mcpServerConfigs = sqliteTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "restrict" }),
     transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
     configJson: text("config_json").notNull(),
     secretConfigEncrypted: text("secret_config_encrypted"),
@@ -1375,5 +1495,10 @@ export const mcpServerConfigs = sqliteTable(
       table.name,
     ),
     accountUpdatedIdx: index("mcp_server_config_account_updated_idx").on(table.accountId, table.updatedAt),
+    accountWorkspaceUpdatedIdx: index("mcp_server_config_account_workspace_updated_idx").on(
+      table.accountId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
   })
 );

@@ -48908,6 +48908,7 @@
                 "model_provider": "openai",
                 "preset_id": "preset_story",
                 "preset_version_id": null,
+                "project_id": "proj_main",
                 "prompt_mode": "native",
                 "regex_profile_id": "regex_safe",
                 "regex_profile_version_id": null,
@@ -48973,6 +48974,11 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "project_id": {
+                    "description": "Advanced field for POST /sessions. Omit it for the default Workspace and session_default Project. PATCH /sessions/:id rejects project_id changes.",
+                    "minLength": 1,
+                    "type": "string"
                   },
                   "prompt_mode": {
                     "enum": [
@@ -50120,6 +50126,7 @@
                 "model_provider": "openai",
                 "preset_id": "preset_story",
                 "preset_version_id": null,
+                "project_id": "proj_main",
                 "prompt_mode": "native",
                 "regex_profile_id": "regex_safe",
                 "regex_profile_version_id": null,
@@ -50186,6 +50193,11 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "project_id": {
+                    "description": "Advanced field for POST /sessions. Omit it for the default Workspace and session_default Project. PATCH /sessions/:id rejects project_id changes.",
+                    "minLength": 1,
+                    "type": "string"
                   },
                   "prompt_mode": {
                     "enum": [

@@ -15,6 +15,11 @@ import {
   SessionToolRegistryServiceError,
 } from "../session-tool-registry-service.js";
 import { ToolRuntimePolicy } from "../tool-runtime-policy.js";
+import {
+  createTestSessionWithScope,
+  createTestWorkspace,
+  ensureTestDefaultWorkspace,
+} from "../../__tests__/helpers/workspace-project.js";
 
 function makeTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
   return {
@@ -44,11 +49,13 @@ describe("SessionToolRegistryService", () => {
   let db: AppDb;
   let closeDb: () => void;
   let baseRegistry: ToolRegistry;
+  let defaultWorkspaceId: string;
 
   beforeEach(() => {
     const connection = createDatabase(":memory:");
     db = connection.db;
     closeDb = connection.close;
+    defaultWorkspaceId = ensureTestDefaultWorkspace(db, DEFAULT_ADMIN_ACCOUNT_ID).workspaceId;
 
     baseRegistry = new ToolRegistry();
     baseRegistry.register(new BuiltinToolProvider());
@@ -66,6 +73,7 @@ describe("SessionToolRegistryService", () => {
       name: `Character ${id}`,
       source: "test",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      workspaceId: defaultWorkspaceId,
       status: "active",
       deletedAt: null,
       revision: 0,
@@ -76,15 +84,14 @@ describe("SessionToolRegistryService", () => {
   }
 
   async function insertSession(overrides: Partial<typeof sessions.$inferInsert> = {}) {
-    const now = Date.now();
-    await db.insert(sessions).values({
-      id: "sess-1",
-      title: "Runtime Session",
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-      ...overrides,
+    const { id: overrideId, title: overrideTitle, accountId: overrideAccountId, workspaceId: overrideWorkspaceId, projectId: _projectId, ...values } = overrides;
+    createTestSessionWithScope(db, {
+      id: overrideId ?? "sess-1",
+      title: overrideTitle ?? "Runtime Session",
+      accountId: overrideAccountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
+      workspaceId: overrideWorkspaceId ?? defaultWorkspaceId,
+      projectId: _projectId ?? undefined,
+      values,
     });
   }
 
@@ -103,6 +110,7 @@ describe("SessionToolRegistryService", () => {
       handlerType: "script",
       handlerJson: JSON.stringify({ script: "return args" }),
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      workspaceId: defaultWorkspaceId,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -115,6 +123,7 @@ describe("SessionToolRegistryService", () => {
       id: "mcp-1",
       name: "Runtime MCP",
       accountId: overrides.accountId ?? DEFAULT_ADMIN_ACCOUNT_ID,
+      workspaceId: overrides.workspaceId ?? defaultWorkspaceId,
       transport: "http" as const,
       configJson: JSON.stringify({ http: { url: "http://localhost:8123" } }),
       toolPrefix: null,
@@ -164,6 +173,29 @@ describe("SessionToolRegistryService", () => {
         expect.objectContaining({ name: "mcp_lookup", source: "mcp", availability: "available", catalogSource: "live", sideEffectLevelBasis: "server_default", allowedSlotsBasis: "platform_default", parameterSchemaBasis: "shallow_schema_projection", replaySafetyBasis: "inferred_from_execution_policy" }),
       ]),
     );
+  });
+
+  it("loads only tool definitions from the session Workspace", async () => {
+    const otherWorkspace = createTestWorkspace(db, {
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      id: "ws-other-runtime-tools",
+      isDefault: false,
+    });
+    await insertSession();
+    await insertDefinition({ name: "same_workspace_tool", workspaceId: defaultWorkspaceId });
+    await insertDefinition({ name: "other_workspace_tool", workspaceId: otherWorkspace.workspaceId });
+
+    const service = new SessionToolRegistryService(db, {
+      baseRegistry,
+      mcpManager: createMockMcpManager([]),
+      enableUnsafeScriptHandler: true,
+    });
+
+    const runtime = await service.buildRuntime("sess-1", DEFAULT_ADMIN_ACCOUNT_ID);
+    const toolNames = (await runtime.registry.listAll()).map((tool) => tool.name);
+
+    expect(toolNames).toContain("same_workspace_tool");
+    expect(toolNames).not.toContain("other_workspace_tool");
   });
 
   it("propagates deferred MCP delivery metadata into the session runtime registry", async () => {

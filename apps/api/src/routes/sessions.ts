@@ -4,13 +4,12 @@ import { nanoid } from "nanoid";
 import { SimpleTokenCounter } from "@tavern/core";
 import { z } from "zod";
 
-import type { DatabaseConnection, DbExecutor } from "../db/client";
+import type { AppDb, DatabaseConnection, DbExecutor } from "../db/client";
 import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchStatusBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
-import { accountUsers, floors, llmProfileBindings, messagePages, messages, sessions } from "../db/schema";
+import { accountUsers, characters, characterVersions, floors, llmProfileBindings, messagePages, messages, sessions } from "../db/schema";
 import { ensureOptionalObjectBody, parseJsonField, parseWithSchema, requireRow, sendError, stringifyJsonField } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
-import { getLatestOwnedActiveCharacterVersion, getOwnedActiveCharacterVersionById } from "../services/resource-ownership";
 import { FloorRunService } from "../services/floor-run-service";
 import type { FloorRunServiceOptions } from "../services/floor-run-service.js";
 import { FloorLineageService } from "../services/floor-lineage-service.js";
@@ -34,6 +33,9 @@ import {
   operationRequestIdFromRequest,
 } from "../services/operation-log-service.js";
 import { VcDiffService } from "../services/vc-diff-service.js";
+import { ProjectScopeServiceError } from "../services/project-scope-service.js";
+import { SessionScopeResolver } from "../services/session-scope-resolver.js";
+import { WorkspaceScopeService, WorkspaceScopeServiceError } from "../services/workspace-scope-service.js";
 
 const sessionStatusSchema = z.enum(["active", "archived"]);
 const promptModeSchema = z.enum(["compat_strict", "compat_plus", "native"]);
@@ -55,6 +57,7 @@ const listSessionsQuerySchema = listQuerySchemaBase.extend({
 });
 
 const createSessionSchema = z.object({
+  project_id: z.string().trim().min(1).optional(),
   title: z.string().trim().min(1).max(200).optional(),
   status: sessionStatusSchema.optional(),
   character_id: z.string().trim().min(1).optional(),
@@ -122,6 +125,7 @@ const sessionBodyExample = {
   character_id: "char_hero",
   character_sync_policy: "pin",
   user_id: "usr_demo",
+  project_id: "proj_main",
   preset_id: "preset_story",
   regex_profile_id: "regex_safe",
   worldbook_profile_id: "wb_world",
@@ -223,6 +227,11 @@ const sessionBodyJsonSchema = {
   type: "object",
   properties: {
     title: { type: "string", minLength: 1, maxLength: 200 },
+    project_id: {
+      type: "string",
+      minLength: 1,
+      description: "Advanced field for POST /sessions. Omit it for the default Workspace and session_default Project. PATCH /sessions/:id rejects project_id changes.",
+    },
     status: { type: "string", enum: ["active", "archived"] },
     character_id: { type: "string", minLength: 1 },
     character_version_id: { type: "string", minLength: 1 },
@@ -972,11 +981,125 @@ type BindingResolutionError = {
   message: string;
 };
 
-async function resolveCharacterBinding(
-  db: DatabaseConnection["db"],
+class SessionRouteError extends Error {
+  constructor(
+    public readonly statusCode: number,
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "SessionRouteError";
+  }
+}
+
+function isBindingResolutionError(value: unknown): value is BindingResolutionError {
+  return Boolean(value && typeof value === "object" && "statusCode" in value);
+}
+
+function throwIfSessionWriteError<T>(result: T | BindingResolutionError): T {
+  if (isBindingResolutionError(result)) {
+    throw new SessionRouteError(result.statusCode, result.code, result.message);
+  }
+
+  return result;
+}
+
+type OwnedWorkspaceCharacterVersionRecord = {
+  id: string;
+  characterId: string;
+  dataJson: string;
+};
+
+function isWorkspaceCompatible(rowWorkspaceId: string | null, workspaceId: string): boolean {
+  // 兼容历史数据：nullable workspace_id 在 Phase 1 期间视为旧账号默认 Workspace 资源。
+  return rowWorkspaceId === null || rowWorkspaceId === workspaceId;
+}
+
+function getOwnedActiveCharacterVersionByIdForWorkspace(
+  db: AppDb | DbExecutor,
   accountId: string,
+  workspaceId: string,
+  characterVersionId: string,
+): OwnedWorkspaceCharacterVersionRecord | null {
+  const versionRow = db
+    .select({
+      id: characterVersions.id,
+      characterId: characterVersions.characterId,
+      dataJson: characterVersions.dataJson,
+    })
+    .from(characterVersions)
+    .where(eq(characterVersions.id, characterVersionId))
+    .limit(1)
+    .all()[0];
+
+  if (!versionRow) {
+    return null;
+  }
+
+  const character = db
+    .select({ id: characters.id, workspaceId: characters.workspaceId })
+    .from(characters)
+    .where(
+      and(
+        eq(characters.id, versionRow.characterId),
+        eq(characters.accountId, accountId),
+        eq(characters.status, "active"),
+      ),
+    )
+    .limit(1)
+    .all()[0];
+
+  if (!character || !isWorkspaceCompatible(character.workspaceId, workspaceId)) {
+    return null;
+  }
+
+  return versionRow;
+}
+
+function getLatestOwnedActiveCharacterVersionForWorkspace(
+  db: AppDb | DbExecutor,
+  accountId: string,
+  workspaceId: string,
+  characterId: string,
+): OwnedWorkspaceCharacterVersionRecord | null {
+  const character = db
+    .select({ id: characters.id, workspaceId: characters.workspaceId })
+    .from(characters)
+    .where(
+      and(
+        eq(characters.id, characterId),
+        eq(characters.accountId, accountId),
+        eq(characters.status, "active"),
+      ),
+    )
+    .limit(1)
+    .all()[0];
+
+  if (!character || !isWorkspaceCompatible(character.workspaceId, workspaceId)) {
+    return null;
+  }
+
+  const versionRow = db
+    .select({
+      id: characterVersions.id,
+      characterId: characterVersions.characterId,
+      dataJson: characterVersions.dataJson,
+    })
+    .from(characterVersions)
+    .where(eq(characterVersions.characterId, characterId))
+    .orderBy(desc(characterVersions.versionNo))
+    .limit(1)
+    .all()[0];
+
+  return versionRow ?? null;
+}
+
+function resolveCharacterBinding(
+  db: AppDb | DbExecutor,
+  accountId: string,
+  workspaceId: string,
   input: ResolveCharacterBindingInput
-): Promise<ResolvedCharacterBinding | BindingResolutionError> {
+): ResolvedCharacterBinding | BindingResolutionError {
   const syncPolicy = input.character_sync_policy ?? "pin";
 
   if (!input.character_id && !input.character_version_id && !input.character_snapshot) {
@@ -1006,8 +1129,8 @@ async function resolveCharacterBinding(
   }
 
   const versionRow = input.character_version_id
-    ? await getOwnedActiveCharacterVersionById(db, accountId, input.character_version_id)
-    : await getLatestOwnedActiveCharacterVersion(db, accountId, input.character_id ?? "");
+    ? getOwnedActiveCharacterVersionByIdForWorkspace(db, accountId, workspaceId, input.character_version_id)
+    : getLatestOwnedActiveCharacterVersionForWorkspace(db, accountId, workspaceId, input.character_id ?? "");
 
   if (!versionRow) {
     return { statusCode: 404, code: "character_not_found", message: "Character or version not found" };
@@ -1030,11 +1153,12 @@ async function resolveCharacterBinding(
   };
 }
 
-async function resolveUserBinding(
-  db: DatabaseConnection["db"],
+function resolveUserBinding(
+  db: AppDb | DbExecutor,
   accountId: string,
+  workspaceId: string,
   input: ResolveUserBindingInput
-): Promise<ResolvedUserBinding | BindingResolutionError> {
+): ResolvedUserBinding | BindingResolutionError {
   if (!input.user_id && !input.user_snapshot) {
     return {
       userId: null,
@@ -1049,17 +1173,27 @@ async function resolveUserBinding(
     };
   }
 
-  const [userRow] = await db
+  const userRow = db
     .select({
       id: accountUsers.id,
+      workspaceId: accountUsers.workspaceId,
       snapshotJson: accountUsers.snapshotJson,
       status: accountUsers.status
     })
     .from(accountUsers)
     .where(and(eq(accountUsers.id, input.user_id ?? ""), eq(accountUsers.accountId, accountId)))
-    .limit(1);
+    .limit(1)
+    .all()[0];
 
   if (!userRow || userRow.status === "deleted") {
+    return {
+      statusCode: 404,
+      code: "user_not_found",
+      message: "User not found"
+    };
+  }
+
+  if (!isWorkspaceCompatible(userRow.workspaceId, workspaceId)) {
     return {
       statusCode: 404,
       code: "user_not_found",
@@ -1202,7 +1336,19 @@ async function resolveCharacterBindingSync(
     };
   }
 
-  const latestVersion = await getLatestOwnedActiveCharacterVersion(db, accountId, sessionRow.characterId);
+  let workspaceId = sessionRow.workspaceId;
+  if (!workspaceId) {
+    try {
+      workspaceId = new WorkspaceScopeService(db).getDefaultWorkspace(accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) {
+        return { statusCode: error.statusCode, code: error.code, message: error.message };
+      }
+      throw error;
+    }
+  }
+
+  const latestVersion = getLatestOwnedActiveCharacterVersionForWorkspace(db, accountId, workspaceId, sessionRow.characterId);
 
   if (!latestVersion) {
     return { statusCode: 404, code: "character_not_found", message: "Character version not found" };
@@ -1263,136 +1409,159 @@ export async function registerSessionRoutes(
 
     const now = Date.now();
     const auth = getRequestAuthContext(request);
-
-    const characterBinding = await resolveCharacterBinding(db, auth.accountId, parsedBody.data);
-    const userBinding = await resolveUserBinding(db, auth.accountId, parsedBody.data);
-    const promptAssetBindings = sessionAssetBindingService.resolveCreate(auth.accountId, parsedBody.data);
-    if ("statusCode" in characterBinding) {
-      return sendError(reply, characterBinding.statusCode, characterBinding.code, characterBinding.message);
-    }
-    if ("statusCode" in userBinding) {
-      return sendError(reply, userBinding.statusCode, userBinding.code, userBinding.message);
-    }
-    if ("statusCode" in promptAssetBindings) {
-      return sendError(reply, promptAssetBindings.statusCode, promptAssetBindings.code, promptAssetBindings.message);
-    }
-
-    const snapshot = parseSessionCharacterSnapshot(characterBinding.characterSnapshotJson);
-    const greetingCandidates = getGreetingCandidates(snapshot);
-    const tokenCounter = new SimpleTokenCounter();
     const sessionId = nanoid();
 
-    const created = db.transaction((tx) => {
-      const [insertedSession] = tx
-        .insert(sessions)
-        .values({
-          id: sessionId,
-          title: parsedBody.data.title ?? null,
-          userId: userBinding.userId,
-          userSnapshotJson: userBinding.userSnapshotJson,
-          characterId: characterBinding.characterId,
+    let created: typeof sessions.$inferSelect;
+    try {
+      created = db.transaction((tx) => {
+        const scope = new SessionScopeResolver(tx).resolveForCreate({
           accountId: auth.accountId,
-          characterVersionId: characterBinding.characterVersionId,
-          characterSnapshotJson: characterBinding.characterSnapshotJson,
-          characterSyncPolicy: characterBinding.characterSyncPolicy,
-          status: parsedBody.data.status ?? "active",
-          presetId: promptAssetBindings.presetId,
-          regexProfileId: promptAssetBindings.regexProfileId,
-          worldbookProfileId: promptAssetBindings.worldbookProfileId,
-          deepBinding: promptAssetBindings.deepBinding,
-          presetVersionId: promptAssetBindings.presetVersionId,
-          regexProfileVersionId: promptAssetBindings.regexProfileVersionId,
-          worldbookVersionId: promptAssetBindings.worldbookVersionId,
-          modelProvider: parsedBody.data.model_provider ?? null,
-          modelName: parsedBody.data.model_name ?? null,
-          modelParamsJson: stringifyJsonField(parsedBody.data.model_params),
-          promptMode: parsedBody.data.prompt_mode ?? null,
-          metadataJson: stringifyJsonField(parsedBody.data.metadata ?? {}),
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning()
-        .all();
+          projectId: parsedBody.data.project_id,
+          title: parsedBody.data.title ?? null,
+          sessionId,
+          now,
+        });
 
-      const createdSession = requireRow(insertedSession, "Failed to create session");
+        const characterBinding = throwIfSessionWriteError(
+          resolveCharacterBinding(tx, auth.accountId, scope.workspaceId, parsedBody.data),
+        );
+        const userBinding = throwIfSessionWriteError(
+          resolveUserBinding(tx, auth.accountId, scope.workspaceId, parsedBody.data),
+        );
+        const promptAssetBindings = throwIfSessionWriteError(
+          new SessionAssetBindingService(tx).resolveCreate(auth.accountId, scope.workspaceId, parsedBody.data),
+        );
 
-      new SessionBranchRegistryService(tx).ensure({
-        accountId: auth.accountId,
-        sessionId: createdSession.id,
-        branchId: "main",
-        createdAt: now,
-        updatedAt: now,
-      });
+        const snapshot = parseSessionCharacterSnapshot(characterBinding.characterSnapshotJson);
+        const greetingCandidates = getGreetingCandidates(snapshot);
+        const tokenCounter = new SimpleTokenCounter();
 
-      if (greetingCandidates.length > 0) {
-        const greeting = greetingCandidates[0]!;
-        const greetingTokens = tokenCounter.count(greeting);
-        const floorId = nanoid();
+        const [insertedSession] = tx
+          .insert(sessions)
+          .values({
+            id: sessionId,
+            title: parsedBody.data.title ?? null,
+            userId: userBinding.userId,
+            userSnapshotJson: userBinding.userSnapshotJson,
+            characterId: characterBinding.characterId,
+            accountId: auth.accountId,
+            workspaceId: scope.workspaceId,
+            projectId: scope.projectId,
+            characterVersionId: characterBinding.characterVersionId,
+            characterSnapshotJson: characterBinding.characterSnapshotJson,
+            characterSyncPolicy: characterBinding.characterSyncPolicy,
+            status: parsedBody.data.status ?? "active",
+            presetId: promptAssetBindings.presetId,
+            regexProfileId: promptAssetBindings.regexProfileId,
+            worldbookProfileId: promptAssetBindings.worldbookProfileId,
+            deepBinding: promptAssetBindings.deepBinding,
+            presetVersionId: promptAssetBindings.presetVersionId,
+            regexProfileVersionId: promptAssetBindings.regexProfileVersionId,
+            worldbookVersionId: promptAssetBindings.worldbookVersionId,
+            modelProvider: parsedBody.data.model_provider ?? null,
+            modelName: parsedBody.data.model_name ?? null,
+            modelParamsJson: stringifyJsonField(parsedBody.data.model_params),
+            promptMode: parsedBody.data.prompt_mode ?? null,
+            metadataJson: stringifyJsonField(parsedBody.data.metadata ?? {}),
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning()
+          .all();
 
-        tx.insert(floors).values({
-          id: floorId,
+        const createdSession = requireRow(insertedSession, "Failed to create session");
+
+        new SessionBranchRegistryService(tx).ensure({
+          accountId: auth.accountId,
           sessionId: createdSession.id,
-          floorNo: 0,
           branchId: "main",
-          parentFloorId: null,
-          metadataJson: stringifyJsonField(
-            buildFloorMetadataForUserBinding(createdSession.userId, createdSession.userSnapshotJson, now),
-          ),
-          state: "committed",
-          tokenIn: 0,
-          tokenOut: greetingTokens,
           createdAt: now,
           updatedAt: now,
-        }).run();
+        });
 
-        for (let index = 0; index < greetingCandidates.length; index += 1) {
-          const pageId = nanoid();
-          const content = greetingCandidates[index]!;
-          const isActive = index === 0;
+        if (greetingCandidates.length > 0) {
+          const greeting = greetingCandidates[0]!;
+          const greetingTokens = tokenCounter.count(greeting);
+          const floorId = nanoid();
 
-          tx.insert(messagePages).values({
-            id: pageId,
-            floorId,
-            pageNo: 0,
-            pageKind: "output",
-            isActive,
-            version: index + 1,
-            checksum: null,
+          tx.insert(floors).values({
+            id: floorId,
+            sessionId: createdSession.id,
+            floorNo: 0,
+            branchId: "main",
+            parentFloorId: null,
+            metadataJson: stringifyJsonField(
+              buildFloorMetadataForUserBinding(createdSession.userId, createdSession.userSnapshotJson, now),
+            ),
+            state: "committed",
+            tokenIn: 0,
+            tokenOut: greetingTokens,
             createdAt: now,
             updatedAt: now,
           }).run();
 
-          tx.insert(messages).values({
-            id: nanoid(),
-            pageId,
-            seq: 0,
-            role: "assistant",
-            content,
-            contentFormat: "text",
-            tokenCount: tokenCounter.count(content),
-            isHidden: false,
-            source: "greeting",
-            createdAt: now,
-          }).run();
+          for (let index = 0; index < greetingCandidates.length; index += 1) {
+            const pageId = nanoid();
+            const content = greetingCandidates[index]!;
+            const isActive = index === 0;
+
+            tx.insert(messagePages).values({
+              id: pageId,
+              floorId,
+              pageNo: 0,
+              pageKind: "output",
+              isActive,
+              version: index + 1,
+              checksum: null,
+              createdAt: now,
+              updatedAt: now,
+            }).run();
+
+            tx.insert(messages).values({
+              id: nanoid(),
+              pageId,
+              seq: 0,
+              role: "assistant",
+              content,
+              contentFormat: "text",
+              tokenCount: tokenCounter.count(content),
+              isHidden: false,
+              source: "greeting",
+              createdAt: now,
+            }).run();
+          }
         }
+
+        appendSessionOperationLog(tx, request, {
+          accountId: auth.accountId,
+          action: "create_session",
+          sessionId: createdSession.id,
+          branchId: "main",
+          afterRef: toSessionOperationRef(createdSession),
+          metadata: {
+            route: "POST /sessions",
+            request_fields: Object.keys(parsedBody.data).sort(),
+            greeting_message_count: greetingCandidates.length,
+            workspace_id: scope.workspaceId,
+            project_id: scope.projectId,
+            project_was_created: scope.projectWasCreated,
+          },
+          createdAt: now,
+        });
+
+        return createdSession;
+      });
+    } catch (error) {
+      if (
+        error instanceof SessionRouteError
+        || error instanceof WorkspaceScopeServiceError
+        || error instanceof ProjectScopeServiceError
+      ) {
+        return sendError(reply, error.statusCode, error.code, error.message);
       }
 
-      appendSessionOperationLog(tx, request, {
-        accountId: auth.accountId,
-        action: "create_session",
-        sessionId: createdSession.id,
-        branchId: "main",
-        afterRef: toSessionOperationRef(createdSession),
-        metadata: {
-          route: "POST /sessions",
-          request_fields: Object.keys(parsedBody.data).sort(),
-          greeting_message_count: greetingCandidates.length,
-        },
-        createdAt: now,
-      });
-
-      return createdSession;
-    });
+      throw error;
+    }
 
     return reply.code(201).send({ data: toSessionResponse(created) });
   });
@@ -1530,6 +1699,14 @@ export async function registerSessionRoutes(
       return;
     }
 
+    if (
+      request.body !== null
+      && typeof request.body === "object"
+      && Object.prototype.hasOwnProperty.call(request.body, "project_id")
+    ) {
+      return sendError(reply, 400, "session_project_move_not_supported", "Changing a session project is not supported");
+    }
+
     const parsedBody = parseWithSchema(updateSessionSchema, request.body, reply);
 
     if (!parsedBody.ok) {
@@ -1545,6 +1722,16 @@ export async function registerSessionRoutes(
 
     if (!existingSession) {
       return sendError(reply, 404, "not_found", "Session not found");
+    }
+
+    let sessionWorkspaceId: string;
+    try {
+      sessionWorkspaceId = existingSession.workspaceId ?? new WorkspaceScopeService(db).getDefaultWorkspace(auth.accountId).id;
+    } catch (error) {
+      if (error instanceof WorkspaceScopeServiceError) {
+        return sendError(reply, error.statusCode, error.code, error.message);
+      }
+      throw error;
     }
 
     const updates: Partial<typeof sessions.$inferInsert> = {
@@ -1582,7 +1769,7 @@ export async function registerSessionRoutes(
           : hasExplicitCharacterTarget ? undefined : existingCharacterSnapshot
       };
 
-      const characterBinding = await resolveCharacterBinding(db, auth.accountId, bindingInput);
+      const characterBinding = resolveCharacterBinding(db, auth.accountId, sessionWorkspaceId, bindingInput);
       if ("statusCode" in characterBinding) {
         return sendError(reply, characterBinding.statusCode, characterBinding.code, characterBinding.message);
       }
@@ -1594,7 +1781,7 @@ export async function registerSessionRoutes(
     }
 
     if (hasUserBindingUpdate) {
-      const userBinding = await resolveUserBinding(db, auth.accountId, {
+      const userBinding = resolveUserBinding(db, auth.accountId, sessionWorkspaceId, {
         user_id: parsedBody.data.user_id ?? existingSession.userId ?? undefined,
         user_snapshot:
           parsedBody.data.user_snapshot ?? (
@@ -1632,7 +1819,7 @@ export async function registerSessionRoutes(
       || parsedBody.data.worldbook_version_id !== undefined;
 
     if (hasPromptAssetBindingUpdate) {
-      const promptAssetBindings = sessionAssetBindingService.resolveUpdate(auth.accountId, {
+      const promptAssetBindings = sessionAssetBindingService.resolveUpdate(auth.accountId, sessionWorkspaceId, {
         presetId: existingSession.presetId,
         regexProfileId: existingSession.regexProfileId,
         worldbookProfileId: existingSession.worldbookProfileId,
@@ -1722,6 +1909,8 @@ export async function registerSessionRoutes(
             user_binding_update: hasUserBindingUpdate,
             prompt_asset_binding_update: hasPromptAssetBindingUpdate,
             floor_user_binding_replaced: shouldReplaceFloorUserBinding,
+            workspace_id: updatedRow.workspaceId,
+            project_id: updatedRow.projectId,
           },
         });
       }

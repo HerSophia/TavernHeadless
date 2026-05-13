@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import type { DbExecutor } from "../db/client";
 import type { InstanceSlot, ProviderType } from "@tavern/core";
 
@@ -20,6 +20,7 @@ import {
   type UnbindLlmProfileMutationPayload,
   type UpdateLlmProfileMutationPayload,
 } from "./config-mutation-applier.js";
+import { WorkspaceScopeService } from "./workspace-scope-service.js";
 export type { LlmBindingGenerationParams };
 
 const GLOBAL_SCOPE_ID = "global";
@@ -110,6 +111,14 @@ type BindingRow = {
   paramsJson: string | null;
 };
 
+function llmProfileWorkspaceClause(workspaceId: string) {
+  return or(eq(llmProfiles.workspaceId, workspaceId), isNull(llmProfiles.workspaceId))!;
+}
+
+function llmProfileBindingWorkspaceClause(workspaceId: string) {
+  return or(eq(llmProfileBindings.workspaceId, workspaceId), isNull(llmProfileBindings.workspaceId))!;
+}
+
 export class LlmProfileService {
   private readonly db: AppDb;
   private readonly now: () => number;
@@ -162,16 +171,22 @@ export class LlmProfileService {
 
   async listProfiles(options: { includeDeleted?: boolean; accountId?: string } = {}): Promise<LlmProfileListItem[]> {
     const accountId = this.resolveAccountId(options.accountId);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
     const whereClause = options.includeDeleted
-      ? eq(llmProfiles.accountId, accountId)
-      : and(eq(llmProfiles.accountId, accountId), ne(llmProfiles.status, "deleted"));
+      ? and(eq(llmProfiles.accountId, accountId), llmProfileWorkspaceClause(workspaceId))
+      : and(eq(llmProfiles.accountId, accountId), llmProfileWorkspaceClause(workspaceId), ne(llmProfiles.status, "deleted"));
     const rows = await this.db.select().from(llmProfiles).where(whereClause).orderBy(desc(llmProfiles.updatedAt));
     return rows.map((row) => this.toListItem(row));
   }
 
   async getProfile(id: string, accountId?: string): Promise<LlmProfileListItem | null> {
     accountId = this.resolveAccountId(accountId);
-    const row = await this.db.select().from(llmProfiles).where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId))).limit(1);
+    const workspaceId = this.resolveDefaultWorkspaceId(accountId);
+    const row = await this.db
+      .select()
+      .from(llmProfiles)
+      .where(and(eq(llmProfiles.id, id), eq(llmProfiles.accountId, accountId), llmProfileWorkspaceClause(workspaceId)))
+      .limit(1);
     const profile = row[0];
     return profile ? this.toListItem(profile) : null;
   }
@@ -322,7 +337,8 @@ export class LlmProfileService {
     const result: Partial<Record<InstanceSlot | '*', LlmProfileResolved>> = {};
 
     // 批量加载所有相关 bindings（最多 2 个 scope × 5 个 slot = 10 条）
-    const bindings = await this.loadAllBindings(sessionId, accountId);
+    const workspaceId = await this.resolveWorkspaceIdForRead(accountId, sessionId);
+    const bindings = await this.loadAllBindings(sessionId, accountId, workspaceId);
 
     for (const slot of ALL_SLOTS) {
       const resolved = this.pickBinding(bindings, sessionId, slot);
@@ -353,7 +369,8 @@ export class LlmProfileService {
     slot: string,
     accountId: string
   ): Promise<LlmProfileResolved | null> {
-    const bindings = await this.loadAllBindings(sessionId, accountId);
+    const workspaceId = await this.resolveWorkspaceIdForRead(accountId, sessionId);
+    const bindings = await this.loadAllBindings(sessionId, accountId, workspaceId);
     return this.pickBinding(bindings, sessionId, slot);
   }
 
@@ -416,7 +433,11 @@ export class LlmProfileService {
       && (error.code === "secret_invalid_format" || error.code === "secret_unavailable");
   }
 
-  private async loadAllBindings(sessionId: string | undefined, accountId: string): Promise<BindingRow[]> {
+  private async loadAllBindings(
+    sessionId: string | undefined,
+    accountId: string,
+    workspaceId: string,
+  ): Promise<BindingRow[]> {
     const scopeFilter = sessionId
       ? or(
           and(eq(llmProfileBindings.scope, 'session'), eq(llmProfileBindings.scopeId, sessionId)),
@@ -445,8 +466,28 @@ export class LlmProfileService {
           scopeFilter,
           eq(llmProfileBindings.accountId, accountId),
           eq(llmProfiles.accountId, accountId),
+          llmProfileBindingWorkspaceClause(workspaceId),
+          llmProfileWorkspaceClause(workspaceId),
         )
       );
+  }
+
+  private resolveDefaultWorkspaceId(accountId: string): string {
+    return new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId).id;
+  }
+
+  private async resolveWorkspaceIdForRead(accountId: string, sessionId?: string): Promise<string> {
+    if (!sessionId) {
+      return this.resolveDefaultWorkspaceId(accountId);
+    }
+
+    const [session] = await this.db
+      .select({ workspaceId: sessions.workspaceId })
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
+      .limit(1);
+
+    return session?.workspaceId ?? this.resolveDefaultWorkspaceId(accountId);
   }
 
   private toListItem(row: typeof llmProfiles.$inferSelect): LlmProfileListItem {

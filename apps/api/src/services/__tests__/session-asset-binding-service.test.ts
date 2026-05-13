@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { nanoid } from "nanoid";
 
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { presets, regexProfiles, worldbooks } from "../../db/schema.js";
+import { createTestWorkspace } from "../../__tests__/helpers/workspace-project.js";
 import { AssetVersionService } from "../asset-version-service.js";
 import {
   SessionAssetBindingService,
@@ -42,6 +43,8 @@ function isBindingError(
   return "statusCode" in result;
 }
 
+const TEST_WORKSPACE_ID = "ws_test";
+
 describe("SessionAssetBindingService", () => {
   let database: DatabaseConnection;
   let service: SessionAssetBindingService;
@@ -49,11 +52,20 @@ describe("SessionAssetBindingService", () => {
 
   beforeEach(() => {
     database = createDatabase(":memory:");
+    createTestWorkspace(database.db, {
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      id: TEST_WORKSPACE_ID,
+      isDefault: false,
+    });
     service = new SessionAssetBindingService(database.db);
     versionService = new AssetVersionService(database.db);
   });
 
-  function insertPreset(id = nanoid(), version = 1): string {
+  afterEach(() => {
+    database.close();
+  });
+
+  function insertPreset(id = nanoid(), version = 1, workspaceId = TEST_WORKSPACE_ID): string {
     const now = Date.now();
     database.db
       .insert(presets)
@@ -62,6 +74,7 @@ describe("SessionAssetBindingService", () => {
         name: `Preset ${id}`,
         source: "sillytavern",
         accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        workspaceId,
         dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
         version,
         createdAt: now,
@@ -71,7 +84,7 @@ describe("SessionAssetBindingService", () => {
     return id;
   }
 
-  function insertWorldbook(id = nanoid(), version = 1): string {
+  function insertWorldbook(id = nanoid(), version = 1, workspaceId = TEST_WORKSPACE_ID): string {
     const now = Date.now();
     database.db
       .insert(worldbooks)
@@ -80,6 +93,7 @@ describe("SessionAssetBindingService", () => {
         name: `Worldbook ${id}`,
         source: "sillytavern",
         accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        workspaceId,
         dataJson: JSON.stringify({}),
         version,
         createdAt: now,
@@ -89,7 +103,7 @@ describe("SessionAssetBindingService", () => {
     return id;
   }
 
-  function insertRegexProfile(id = nanoid(), version = 1): string {
+  function insertRegexProfile(id = nanoid(), version = 1, workspaceId = TEST_WORKSPACE_ID): string {
     const now = Date.now();
     database.db
       .insert(regexProfiles)
@@ -98,6 +112,7 @@ describe("SessionAssetBindingService", () => {
         name: `Regex ${id}`,
         source: "sillytavern",
         accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+        workspaceId,
         dataJson: JSON.stringify(SAMPLE_REGEX_DATA),
         version,
         createdAt: now,
@@ -116,6 +131,7 @@ describe("SessionAssetBindingService", () => {
 
     const result = service.resolveUpdate(
       DEFAULT_ADMIN_ACCOUNT_ID,
+      TEST_WORKSPACE_ID,
       {
         presetId,
         presetVersionId: presetVersion.id,
@@ -144,6 +160,7 @@ describe("SessionAssetBindingService", () => {
 
     const result = service.resolveUpdate(
       DEFAULT_ADMIN_ACCOUNT_ID,
+      TEST_WORKSPACE_ID,
       {
         presetId,
         presetVersionId: presetVersion.id,
@@ -175,6 +192,7 @@ describe("SessionAssetBindingService", () => {
 
     const result = service.resolveUpdate(
       DEFAULT_ADMIN_ACCOUNT_ID,
+      TEST_WORKSPACE_ID,
       {
         presetId: oldPresetId,
         presetVersionId: oldVersion.id,
@@ -203,6 +221,7 @@ describe("SessionAssetBindingService", () => {
 
     const result = service.resolveUpdate(
       DEFAULT_ADMIN_ACCOUNT_ID,
+      TEST_WORKSPACE_ID,
       {
         presetId,
         presetVersionId: null,
@@ -218,6 +237,48 @@ describe("SessionAssetBindingService", () => {
     expect(isBindingError(result)).toBe(true);
     if (!isBindingError(result)) return;
     expect(result.code).toBe("asset_version_not_found");
+  });
+
+  it("rejects prompt assets from another Workspace", () => {
+    const otherWorkspaceId = "ws_other_binding";
+    createTestWorkspace(database.db, {
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      id: otherWorkspaceId,
+      isDefault: false,
+    });
+
+    const presetId = insertPreset(nanoid(), 1, otherWorkspaceId);
+    const worldbookId = insertWorldbook(nanoid(), 1, otherWorkspaceId);
+    const regexProfileId = insertRegexProfile(nanoid(), 1, otherWorkspaceId);
+
+    const presetResult = service.resolveCreate(DEFAULT_ADMIN_ACCOUNT_ID, TEST_WORKSPACE_ID, { preset_id: presetId });
+    const worldbookResult = service.resolveCreate(DEFAULT_ADMIN_ACCOUNT_ID, TEST_WORKSPACE_ID, { worldbook_profile_id: worldbookId });
+    const regexResult = service.resolveCreate(DEFAULT_ADMIN_ACCOUNT_ID, TEST_WORKSPACE_ID, { regex_profile_id: regexProfileId });
+
+    expect(presetResult).toMatchObject({ code: "preset_not_found" });
+    expect(worldbookResult).toMatchObject({ code: "worldbook_not_found" });
+    expect(regexResult).toMatchObject({ code: "regex_profile_not_found" });
+  });
+
+  it("rejects prompt asset versions from another Workspace", () => {
+    const otherWorkspaceId = "ws_other_version_binding";
+    createTestWorkspace(database.db, {
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      id: otherWorkspaceId,
+      isDefault: false,
+    });
+
+    const presetId = insertPreset(nanoid(), 1, otherWorkspaceId);
+    const presetVersion = versionService.createPresetVersion(presetId, {
+      versionNo: 1,
+      data: SAMPLE_PRESET_DATA,
+    });
+
+    const result = service.resolveCreate(DEFAULT_ADMIN_ACCOUNT_ID, TEST_WORKSPACE_ID, {
+      preset_version_id: presetVersion.id,
+    });
+
+    expect(result).toMatchObject({ code: "asset_version_not_found" });
   });
 
   it("treats explicit null as version unbind for all prompt asset kinds", () => {
@@ -245,6 +306,7 @@ describe("SessionAssetBindingService", () => {
 
     const result = service.resolveUpdate(
       DEFAULT_ADMIN_ACCOUNT_ID,
+      TEST_WORKSPACE_ID,
       {
         presetId,
         presetVersionId: presetVersion.id,

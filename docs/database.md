@@ -7,7 +7,35 @@
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
 - 当前基础迁移: `0000_initial_schema.sql`
-- 当前最新迁移: `0054_unified_vc_schema_constraints.sql`
+- 当前最新迁移: `0055_add_workspaces_projects.sql`
+
+## Workspace / Project scope 规则
+
+阶段一引入 Workspace / Project，但仍保持旧 API 兼容：
+
+- 普通客户端不需要传 `workspace_id` 或 `project_id`。
+- `POST /sessions` 可选传 `project_id`。不传时，服务端使用当前账号默认 Workspace，并为该 Session 创建 `session_default` Project。
+- Session 默认响应不暴露 `workspace_id` 和 `project_id`。
+- Prompt Asset、角色、用户卡、LLM 配置、工具定义和 MCP Server Config 的旧列表接口默认只读当前账号默认 Workspace。
+- 阶段一新增的 scope 字段多为 nullable。服务层保证新写入数据有明确 Workspace / Project，旧数据中的 `NULL` 视为默认 Workspace 资源。
+
+当前新增或补齐的 scope 字段如下：
+
+| 表 | 字段 | 说明 |
+| ---- | ---- | ---- |
+| `workspace` | `account_id` | Workspace 属于账号 |
+| `project` | `account_id`, `workspace_id` | Project 属于账号和 Workspace |
+| `session` | `workspace_id`, `project_id` | Session 同时保存 Workspace 和 Project，便于查询与审计 |
+| `account_user` | `workspace_id` | 用户卡归属 Workspace |
+| `character` | `workspace_id` | 角色归属 Workspace |
+| `preset` | `workspace_id` | Preset 归属 Workspace |
+| `worldbook` | `workspace_id` | Worldbook 归属 Workspace |
+| `regex_profile` | `workspace_id` | Regex Profile 归属 Workspace |
+| `llm_profile` | `workspace_id` | LLM Profile 归属 Workspace |
+| `llm_profile_binding` | `workspace_id` | `global` scope 阶段一表示默认 Workspace 配置；`session` scope 使用 Session Workspace |
+| `llm_instance_config` | `workspace_id` | `global` scope 阶段一表示默认 Workspace 配置；`session` scope 使用 Session Workspace |
+| `tool_definition` | `workspace_id` | 自定义工具定义归属 Workspace |
+| `mcp_server_config` | `workspace_id` | MCP Server Config 归属 Workspace |
 
 ## `account`
 
@@ -28,6 +56,60 @@
 - `role`: `admin | user`
 - `status`: `active | disabled`
 
+## `workspace`
+
+工作区主表。每个账号必须有且只有一个默认 Workspace（`is_default = 1`）。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Workspace ID，格式 `ws_default_${account_id}` |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `name` | `TEXT` | `NOT NULL` | Workspace 名称 |
+| `kind` | `TEXT` | `NOT NULL`, default `default` | Workspace 类型，阶段一固定为 `default` |
+| `is_default` | `INTEGER` | `NOT NULL`, default `0` | 是否默认 Workspace（布尔） |
+| `status` | `TEXT` | `NOT NULL`, default `active` | 状态 |
+| `settings_json` | `TEXT` | `NOT NULL`, default `'{}'` | Workspace 级设置 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+枚举约束：
+
+- `status`: `active | archived`
+
+索引：
+
+- 部分唯一索引 `workspace_account_default_uq(account_id)` `WHERE is_default = 1`
+- 普通索引 `workspace_account_updated_idx(account_id, updated_at)`
+
+## `project`
+
+项目表。每个 Session 必须有一个 Project。不传 `project_id` 时系统为 Session 自动创建 `session_default` Project。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Project ID |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `workspace_id` | `TEXT` | `NOT NULL`, FK -> `workspace.id` | 所属 Workspace |
+| `name` | `TEXT` | `NOT NULL` | Project 名称 |
+| `description` | `TEXT` | `NULL` | Project 说明 |
+| `kind` | `TEXT` | `NOT NULL`, default `session_default` | Project 类型 |
+| `status` | `TEXT` | `NOT NULL`, default `active` | 状态 |
+| `settings_override_json` | `TEXT` | `NOT NULL`, default `'{}'` | Project 级设置覆盖 JSON |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+枚举约束：
+
+- `kind`: `session_default | manual`
+- `status`: `active | archived`
+
+索引：
+
+- 普通索引 `project_account_workspace_updated_idx(account_id, workspace_id, updated_at)`
+- 普通索引 `project_workspace_updated_idx(workspace_id, updated_at)`
+- 普通索引 `project_account_status_updated_idx(account_id, status, updated_at)`
+
+
 ## `account_user`
 
 账号内用户卡（第一类角色卡）主表。
@@ -39,6 +121,7 @@
 | `name` | `TEXT` | `NOT NULL` | 用户卡名称（快照中的主名称） |
 | `snapshot_json` | `TEXT` | `NOT NULL` | 用户卡快照 JSON |
 | `status` | `TEXT` | `NOT NULL`, default `active` | 用户卡状态 |
+| `workspace_id` | `TEXT` | `NULL`, FK -> `workspace.id` | Workspace ID。阶段一为 nullable，服务层保证新数据不为空。旧数据 null 视为默认 Workspace 资源 |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
 
@@ -49,6 +132,7 @@
 索引：
 
 - 普通索引 `account_user_account_updated_idx(account_id, updated_at)`
+- 普通索引 `account_user_account_workspace_updated_idx(account_id, workspace_id, updated_at)`
 - 唯一索引 `account_user_account_name_uq(account_id, name)`
 
 ## `character`
@@ -62,6 +146,7 @@
 | `source` | `TEXT` | `NOT NULL`, default `sillytavern` | 来源 |
 | `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id`, default `default-admin` | 所属账号 |
 | `status` | `TEXT` | `NOT NULL`, default `active` | 状态 |
+| `workspace_id` | `TEXT` | `NULL`, FK -> `workspace.id` | Workspace ID。阶段一为 nullable，服务层保证新数据不为空。旧数据 null 视为默认 Workspace 资源 |
 | `deleted_at` | `INTEGER` | `NULL` | 软删除时间（ms） |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
@@ -69,6 +154,7 @@
 索引：
 
 - 普通索引 `character_account_updated_idx(account_id, updated_at)`
+- 普通索引 `character_account_workspace_updated_idx(account_id, workspace_id, updated_at)`
 
 枚举约束：
 
@@ -124,6 +210,8 @@
 | `model_params_json` | `TEXT` | `NULL` | 模型参数 JSON |
 | `prompt_mode` | `TEXT` | `NULL` | Prompt 模式 |
 | `metadata_json` | `TEXT` | `NULL` | 扩展元信息 JSON |
+| `workspace_id` | `TEXT` | `NULL` | Workspace ID。阶段一为 nullable，服务层保证新数据不为空。可通过 `project_id` 推导，冗余保留用于查询 |
+| `project_id` | `TEXT` | `NULL` | Project ID。阶段一为 nullable，服务层保证新数据不为空 |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
 | `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
 
@@ -136,6 +224,9 @@
 索引：
 
 - 普通索引 `session_account_updated_idx(account_id, updated_at)`
+- 普通索引 `session_account_workspace_updated_idx(account_id, workspace_id, updated_at)`
+- 普通索引 `session_account_project_updated_idx(account_id, project_id, updated_at)`
+- 普通索引 `session_project_updated_idx(project_id, updated_at)`
 
 ## `floor`
 
@@ -204,6 +295,70 @@
 
 - `source_floor_id` / `source_branch_id` 表达非破坏性 checkout 或分支创建的来源。
 - `asset_binding_*` 字段只在分支需要固定自己的资产绑定时使用。字段全为 `NULL` 时，运行时继续使用 session 级资产绑定。
+
+## `preset`
+
+Preset 主表。保存当前预设内容，版本历史写入 `preset_version`。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Preset ID |
+| `name` | `TEXT` | `NOT NULL` | Preset 名称 |
+| `source` | `TEXT` | `NOT NULL`, default `sillytavern` | 来源 |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `workspace_id` | `TEXT` | `NULL`, FK -> `workspace.id` | Workspace ID。阶段一为 nullable，服务层保证新数据不为空。旧数据 null 视为默认 Workspace 资源 |
+| `data_json` | `TEXT` | `NOT NULL` | 当前 Preset 内容 JSON |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 当前版本号 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：
+
+- 普通索引 `preset_account_updated_idx(account_id, updated_at)`
+- 普通索引 `preset_account_workspace_updated_idx(account_id, workspace_id, updated_at)`
+
+## `worldbook`
+
+Worldbook 主表。保存当前世界书内容，条目写入 `worldbook_entry`，版本历史写入 `worldbook_version`。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Worldbook ID |
+| `name` | `TEXT` | `NOT NULL` | Worldbook 名称 |
+| `source` | `TEXT` | `NOT NULL`, default `sillytavern` | 来源 |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `workspace_id` | `TEXT` | `NULL`, FK -> `workspace.id` | Workspace ID。阶段一为 nullable，服务层保证新数据不为空。旧数据 null 视为默认 Workspace 资源 |
+| `data_json` | `TEXT` | `NOT NULL` | 当前 Worldbook 内容 JSON |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 当前版本号 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：
+
+- 普通索引 `worldbook_account_updated_idx(account_id, updated_at)`
+- 普通索引 `worldbook_account_workspace_updated_idx(account_id, workspace_id, updated_at)`
+
+## `regex_profile`
+
+Regex Profile 主表。保存当前正则配置，版本历史写入 `regex_profile_version`。
+
+| 列名 | 类型 | 约束/默认值 | 说明 |
+| ---- | ---- | ----------- | ---- |
+| `id` | `TEXT` | PK | Regex Profile ID |
+| `name` | `TEXT` | `NOT NULL` | Regex Profile 名称 |
+| `source` | `TEXT` | `NOT NULL`, default `sillytavern` | 来源 |
+| `account_id` | `TEXT` | `NOT NULL`, FK -> `account.id` | 所属账号 |
+| `workspace_id` | `TEXT` | `NULL`, FK -> `workspace.id` | Workspace ID。阶段一为 nullable，服务层保证新数据不为空。旧数据 null 视为默认 Workspace 资源 |
+| `data_json` | `TEXT` | `NOT NULL` | 当前 Regex Profile 内容 JSON |
+| `version` | `INTEGER` | `NOT NULL`, default `1` | 当前版本号 |
+| `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |
+| `updated_at` | `INTEGER` | `NOT NULL` | 更新时间戳（ms） |
+
+索引：
+
+- 普通索引 `regex_profile_account_updated_idx(account_id, updated_at)`
+- 普通索引 `regex_profile_account_workspace_updated_idx(account_id, workspace_id, updated_at)`
+
 
 ## `preset_version`
 

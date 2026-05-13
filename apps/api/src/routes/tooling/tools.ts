@@ -40,6 +40,7 @@ import {
   normalizeSessionBaseToolPermissionsRecord,
 } from '../../services/tooling/shared/permission-overlay.js';
 import { errorResponseJsonSchema, idParamsJsonSchema } from '../schemas/common.js';
+import { WorkspaceScopeServiceError } from '../../services/workspace-scope-service.js';
 
 // ══════════════════════════════════════════════════════════
 // Zod Schemas
@@ -1013,6 +1014,10 @@ export async function registerToolRoutes(
 }
 
 function sendToolServiceError(reply: Parameters<typeof sendError>[0], error: unknown) {
+  if (error instanceof WorkspaceScopeServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
+
   if (error instanceof ToolServiceError && error.code === 'tool_definition_conflict') {
     return sendError(reply, 409, error.code, error.message);
   }

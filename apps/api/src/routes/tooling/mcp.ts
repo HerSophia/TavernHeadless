@@ -30,6 +30,7 @@ import type { McpConnectionManager } from '../../services/tooling/mcp/mcp-connec
 import { McpService, McpServiceError } from '../../services/tooling/mcp/mcp-service.js';
 import type { McpConnectionStatus } from '../../services/tooling/mcp/types.js';
 import { idParamsJsonSchema, errorResponseJsonSchema } from '../schemas/common.js';
+import { WorkspaceScopeServiceError } from '../../services/workspace-scope-service.js';
 
 // ══════════════════════════════════════════════════
 // Zod Schemas
@@ -614,8 +615,7 @@ export async function registerMcpConfigRoutes(
       await syncRuntimeConfig(config.id, auth.accountId);
       return reply.code(201).send({ data: attachLiveStatus(config, mcpManager) });
     } catch (err) {
-      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
-      throw err;
+      return sendMcpServiceError(reply, err);
     }
   });
 
@@ -648,8 +648,7 @@ export async function registerMcpConfigRoutes(
       await syncRuntimeConfig(id, auth.accountId, previousStatus);
       return { data: attachLiveStatus(config, mcpManager) };
     } catch (err) {
-      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
-      throw err;
+      return sendMcpServiceError(reply, err);
     }
   });
 
@@ -797,8 +796,7 @@ export async function registerMcpRuntimeRoutes(
 
       return { data: buildStatusForConfig(config, mcpManager) };
     } catch (err) {
-      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
-      throw err;
+      return sendMcpServiceError(reply, err);
     }
   });
 
@@ -902,8 +900,7 @@ export async function registerMcpRuntimeRoutes(
 
       return { data: tools };
     } catch (err) {
-      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
-      throw err;
+      return sendMcpServiceError(reply, err);
     }
   });
 
@@ -972,13 +969,20 @@ export async function registerMcpRuntimeRoutes(
         };
       }
     } catch (err) {
-      if (err instanceof McpServiceError) return sendMcpServiceError(reply, err);
-      throw err;
+      return sendMcpServiceError(reply, err);
     }
   });
 }
 
-function sendMcpServiceError(reply: FastifyReply, error: McpServiceError) {
+function sendMcpServiceError(reply: FastifyReply, error: unknown) {
+  if (error instanceof WorkspaceScopeServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
+
+  if (!(error instanceof McpServiceError)) {
+    throw error;
+  }
+
   switch (error.code) {
     case 'name_conflict':
       return sendError(reply, 409, error.code, error.message);

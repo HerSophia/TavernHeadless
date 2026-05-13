@@ -64,6 +64,7 @@ POST /sessions
 | `character_snapshot` | object | 否 | 手动提供的角色快照。当前支持基础字段，以及 `primaryGreeting`、`alternateGreetings`、`systemPrompt`、`postHistoryInstructions`、`creatorNotes`、`characterBook` 等扩展字段 |
 | `user_id` | string | 否 | 绑定用户卡 ID |
 | `user_snapshot` | object | 否 | 手动提供的用户快照 |
+| `project_id` | string | 否 | 目标 Project ID。这是高级字段，普通客户端不需要传。省略时系统自动创建 `session_default` Project，行为与旧版一致 |
 | `preset_id` | string \| null | 否 | 绑定的 Preset ID。省略或传 `null` 表示创建时不绑定 |
 | `regex_profile_id` | string \| null | 否 | 绑定的 Regex Profile ID。省略或传 `null` 表示创建时不绑定 |
 | `worldbook_profile_id` | string \| null | 否 | 绑定的 Worldbook ID。省略或传 `null` 表示创建时不绑定 |

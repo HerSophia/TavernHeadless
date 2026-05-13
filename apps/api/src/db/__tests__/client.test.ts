@@ -361,6 +361,8 @@ describe("createDatabase", () => {
       "session_state_mutation",
       "session_state_namespace_registration",
       "session_branch",
+      "workspace",
+      "project",
     ]));
 
     expect(
@@ -369,5 +371,26 @@ describe("createDatabase", () => {
       { branch_id: "alt" },
       { branch_id: "main" },
     ]);
+
+    expect(
+      verifySqlite.prepare("SELECT id, account_id, is_default FROM workspace WHERE account_id = ?").get("default-admin")
+    ).toEqual({
+      id: "ws_default_default-admin",
+      account_id: "default-admin",
+      is_default: 1,
+    });
+    expect(
+      verifySqlite.prepare("SELECT workspace_id, project_id FROM session WHERE id = ?").get("session-drift")
+    ).toEqual({
+      workspace_id: "ws_default_default-admin",
+      project_id: "proj_session_session-drift",
+    });
+    expect(
+      verifySqlite.prepare("SELECT id, workspace_id, kind FROM project WHERE id = ?").get("proj_session_session-drift")
+    ).toEqual({
+      id: "proj_session_session-drift",
+      workspace_id: "ws_default_default-admin",
+      kind: "session_default",
+    });
   });
 });

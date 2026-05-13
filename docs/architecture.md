@@ -60,6 +60,18 @@
 
 一次完整的聊天。创建会话时会绑定预设、世界书、正则规则、模型配置等。
 
+#### Workspace / Project 阶段一归属
+
+阶段一里，每个新 Session 都会写入 `workspace_id` 和 `project_id`。这两个字段用于服务端隔离、查询和审计。
+
+为了保持旧客户端可用，普通客户端仍然不需要知道 Workspace / Project：
+
+- `POST /sessions` 不传 `project_id` 仍然成功。
+- 服务端会使用当前账号默认 Workspace，并为新 Session 创建 `session_default` Project。
+- 只有高级调用方需要把 Session 放进已有 Project 时，才传 `project_id`。
+- `GET /sessions/:id` 和列表响应默认不返回 `workspace_id`、`project_id`。
+- Prompt Asset、角色、用户卡、LLM 配置、工具定义和 MCP 配置的旧列表接口默认只读当前账号默认 Workspace。
+
 ### 楼层（Floor）
 
 一次「回合」。你发一条消息、AI 回一条消息，这就是一个楼层。
