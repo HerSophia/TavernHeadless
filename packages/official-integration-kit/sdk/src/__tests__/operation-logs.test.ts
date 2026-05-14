@@ -23,6 +23,9 @@ describe("sdk operation logs resource", () => {
           operation_group_id: null,
           request_id: "req-1",
           source_type: "http",
+          workspace_id: "ws-1",
+          project_id: "proj-1",
+          actor_account_id: "acc-1",
           action: "update_session",
           status: "succeeded",
           session_id: "session-1",
@@ -55,6 +58,9 @@ describe("sdk operation logs resource", () => {
       offset: 5,
       sortOrder: "asc",
       status: "succeeded",
+      workspaceId: "ws-1",
+      projectId: "proj-1",
+      actorAccountId: "acc-1",
       targetId: "session-1",
       targetType: "session",
     })).resolves.toEqual({
@@ -64,6 +70,7 @@ describe("sdk operation logs resource", () => {
           action: "update_session",
           actorId: "subject-1",
           actorType: "user",
+          actorAccountId: "acc-1",
           afterRef: { title: "New" },
           beforeRef: { title: "Old" },
           branchId: "main",
@@ -73,6 +80,7 @@ describe("sdk operation logs resource", () => {
           id: "op-1",
           metadata: { route: "PATCH /sessions/:id" },
           operationGroupId: null,
+          projectId: "proj-1",
           requestId: "req-1",
           runId: null,
           sessionId: "session-1",
@@ -80,6 +88,7 @@ describe("sdk operation logs resource", () => {
           status: "succeeded",
           targetId: "session-1",
           targetType: "session",
+          workspaceId: "ws-1",
         },
       ],
       meta: {
@@ -95,6 +104,9 @@ describe("sdk operation logs resource", () => {
     const [url, init] = fetchImpl.mock.calls[0]!;
     const requestUrl = new URL(String(url));
     expect(requestUrl.pathname).toBe("/operation-logs");
+    expect(requestUrl.searchParams.get("workspace_id")).toBe("ws-1");
+    expect(requestUrl.searchParams.get("project_id")).toBe("proj-1");
+    expect(requestUrl.searchParams.get("actor_account_id")).toBe("acc-1");
     expect(requestUrl.searchParams.get("target_type")).toBe("session");
     expect(requestUrl.searchParams.get("target_id")).toBe("session-1");
     expect(requestUrl.searchParams.get("status")).toBe("succeeded");

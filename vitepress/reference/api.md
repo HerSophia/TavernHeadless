@@ -119,7 +119,7 @@ WebSocket 也遵循相同边界：
 
 ## Workspace / Project 兼容与 observer 规则
 
-服务端已经在数据库和服务层为新数据补齐 Workspace / Project 归属，并在阶段二加入 Project Event 和 observer 只读访问。旧 API 仍保持兼容：
+服务端已经在数据库和服务层为新数据补齐 Workspace / Project 归属，并加入 Project Event、observer、deriver、Derived Output 和 Project Inbox。旧 API 仍保持兼容：
 
 - 普通客户端创建和使用会话时，不需要传 `workspace_id` 或 `project_id`。
 - `POST /sessions` 支持可选请求字段 `project_id`。这是高级字段，只在调用方已经知道目标 Project 时使用。
@@ -127,8 +127,10 @@ WebSocket 也遵循相同边界：
 - Session 的默认响应不新增 `workspace_id` 和 `project_id` 字段。
 - `GET /sessions/:id/scope` 用于显式读取 Session 的 `workspace_id` 和 `project_id`。
 - `GET /projects`、`GET /projects/:id`、`GET /projects/:id/sessions`、`GET /projects/:id/events` 和 `GET /projects/:id/events/stream` 用于读取当前账号可访问的 Project、Project 会话和 Project Event。
-- `GET /projects/:id/members`、`POST /projects/:id/members`、`DELETE /projects/:id/members/:account_id` 用于查看或维护阶段二 observer 成员。
-- owner 可以读写 Project 下资源；observer 只能读取，写入会返回 `403 project_access_denied`。
+- `GET /projects/:id/members`、`POST /projects/:id/members`、`DELETE /projects/:id/members/:account_id` 用于查看或维护 observer 和 deriver 成员。
+- `/projects/:id/derived-outputs` 用于保存 Project 派生结果。
+- `/projects/:id/inbox` 用于保存待 owner 决策的 Inbox 条目。接受条目不会自动合并进主 Session。
+- owner 可以读写 Project 下资源；observer 只能读取可读资源；deriver 可以写入 Derived Output、创建 Inbox 条目，但不能修改主 Session。
 - 非成员访问 Project 下资源时，服务端继续隐藏资源存在性。Project API 通常返回 `404 project_not_found`，旧资源路由通常返回 `404 not_found`。
 - 阶段一不开放 `GET /sessions?workspace_id=...`、`GET /sessions?project_id=...` 或 `include=workspace,project`。
 - 旧的 `global` 配置语义在阶段一表示“当前账号默认 Workspace 的默认配置”。
@@ -176,7 +178,9 @@ WebSocket 也遵循相同边界：
 | Client Data | 为应用或插件保存自己的结构化数据 | [Client Data](./api/client-data) |
 | Session State | 管理会话内受治理状态：注册、写入、读取和比较 | [Session State](./api/session-state) |
 | Operation Logs | 用户、LLM 和系统操作的审计日志 | [Operation Logs](./api/operation-logs) |
-| Workspace / Project | 工作区、项目、Project Event 和 observer 只读访问 | [Workspace / Project](./api/workspace-project) |
+| Workspace / Project | 工作区、项目、Project Event、observer 和 deriver | [Workspace / Project](./api/workspace-project) |
+| Project Derived Outputs | Project 派生结果 | [Project Derived Outputs](./api/projects-derived-outputs) |
+| Project Inbox | Project 收件箱与 owner 决策 | [Project Inbox](./api/projects-inbox) |
 | VC Tags | 给 Floor 和资产版本保存命名引用 | [VC Tags](./api/vc-tags) |
 
 ## 高级 API 资源
@@ -204,6 +208,8 @@ WebSocket 也遵循相同边界：
 - [Session-State Observation（内部）](./api/session-state-observation)
 - [Operation Logs](./api/operation-logs)
 - [Workspace / Project](./api/workspace-project)
+- [Project Derived Outputs](./api/projects-derived-outputs)
+- [Project Inbox](./api/projects-inbox)
 - [VC Tags](./api/vc-tags)
 
 其中 `Client Data` 是一个独立的高级系统功能。它用于：
