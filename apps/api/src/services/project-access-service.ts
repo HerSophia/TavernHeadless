@@ -10,14 +10,19 @@ import {
   sessions,
 } from "../db/schema.js";
 
-export type ProjectRole = "owner" | "observer";
+export type ProjectRole = "owner" | "observer" | "deriver";
 
 export type ProjectAction =
   | "project.read"
   | "project.observe"
   | "project.write"
   | "project.manage_members"
-  | "project.manage_settings";
+  | "project.manage_settings"
+  | "project.derived_output.read"
+  | "project.derived_output.write"
+  | "project.inbox.read"
+  | "project.inbox.write"
+  | "project.inbox.decide";
 
 export type ProjectAccessProject = {
   id: string;
@@ -84,7 +89,7 @@ export class ProjectAccessService {
       .limit(1)
       .get();
 
-    if (membership?.role === "owner" || membership?.role === "observer") {
+    if (membership?.role === "owner" || membership?.role === "observer" || membership?.role === "deriver") {
       return { project, role: membership.role };
     }
 
@@ -274,7 +279,26 @@ export function canPerformProjectAction(role: ProjectRole, action: ProjectAction
     return true;
   }
 
-  return action === "project.read" || action === "project.observe";
+  if (role === "observer") {
+    return [
+      "project.read",
+      "project.observe",
+      "project.derived_output.read",
+    ].includes(action);
+  }
+
+  if (role === "deriver") {
+    return [
+      "project.read",
+      "project.observe",
+      "project.derived_output.read",
+      "project.derived_output.write",
+      "project.inbox.read",
+      "project.inbox.write",
+    ].includes(action);
+  }
+
+  return false;
 }
 
 function requireNonEmpty(value: string, fieldName: string): string {

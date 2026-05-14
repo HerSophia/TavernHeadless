@@ -83,7 +83,7 @@ export const projectMemberships = sqliteTable(
     workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
     projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
-    role: text("role", { enum: ["owner", "observer"] }).notNull(),
+    role: text("role", { enum: ["owner", "observer", "deriver"] }).notNull(),
     status: text("status", { enum: ["active", "removed"] }).notNull().default("active"),
     createdByAccountId: text("created_by_account_id").references(() => accounts.id, { onDelete: "set null" }),
     createdAt: integer("created_at").notNull(),
@@ -694,6 +694,92 @@ export const projectEvents = sqliteTable(
     projectSequenceUnique: uniqueIndex("project_event_project_sequence_uq").on(
       table.projectId,
       table.sequence,
+    ),
+  })
+);
+
+export const derivedOutputs = sqliteTable(
+  "derived_output",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    ownerAccountId: text("owner_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    sourceSessionId: text("source_session_id").references(() => sessions.id, { onDelete: "set null" }),
+    sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
+    sourcePageId: text("source_page_id").references(() => messagePages.id, { onDelete: "set null" }),
+    domain: text("domain").notNull(),
+    valueJson: text("value_json").notNull().default("{}"),
+    status: text("status", { enum: ["draft", "published", "archived"] }).notNull().default("draft"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectCreatedIdx: index("derived_output_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+    projectDomainIdx: index("derived_output_project_domain_idx").on(
+      table.projectId,
+      table.domain,
+      table.createdAt,
+    ),
+    ownerProjectIdx: index("derived_output_owner_project_idx").on(
+      table.ownerAccountId,
+      table.projectId,
+      table.createdAt,
+    ),
+    sourceSessionIdx: index("derived_output_source_session_idx").on(
+      table.sourceSessionId,
+      table.createdAt,
+    ),
+    workspaceCreatedIdx: index("derived_output_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  })
+);
+
+export const projectInboxItems = sqliteTable(
+  "project_inbox_item",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    senderAccountId: text("sender_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    type: text("type").notNull(),
+    title: text("title"),
+    payloadJson: text("payload_json").notNull().default("{}"),
+    sourceEventId: text("source_event_id").references(() => projectEvents.id, { onDelete: "set null" }),
+    sourceSessionId: text("source_session_id").references(() => sessions.id, { onDelete: "set null" }),
+    sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
+    sourcePageId: text("source_page_id").references(() => messagePages.id, { onDelete: "set null" }),
+    status: text("status", { enum: ["pending", "accepted", "rejected", "archived"] }).notNull().default("pending"),
+    decidedByAccountId: text("decided_by_account_id").references(() => accounts.id, { onDelete: "set null" }),
+    decidedAt: integer("decided_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectStatusCreatedIdx: index("project_inbox_project_status_created_idx").on(
+      table.projectId,
+      table.status,
+      table.createdAt,
+    ),
+    projectCreatedIdx: index("project_inbox_project_created_idx").on(
+      table.projectId,
+      table.createdAt,
+    ),
+    senderProjectIdx: index("project_inbox_sender_project_idx").on(
+      table.senderAccountId,
+      table.projectId,
+      table.createdAt,
+    ),
+    workspaceCreatedIdx: index("project_inbox_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
     ),
   })
 );

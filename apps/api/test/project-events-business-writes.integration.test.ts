@@ -246,6 +246,77 @@ describe("Project events from business write routes", () => {
     expect(scopedOperations.every((operation) => operation.workspaceId === project.workspaceId)).toBe(true);
   });
 
+  it("writes and publishes phase-three derived output and inbox events without full JSON bodies", async () => {
+    const project = createTestProject(database, {
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      id: "project_route_phase_three_events",
+    });
+    const published: ProjectEventRecord[] = [];
+    const unsubscribe = projectEventLiveHub.subscribe(project.projectId, (event) => {
+      published.push(event);
+    });
+
+    const derivedResponse = await app.inject({
+      method: "POST",
+      url: `/projects/${project.projectId}/derived-outputs`,
+      payload: {
+        domain: "event.regression",
+        value: { secret: "derived-event-secret" },
+      },
+    });
+    expect(derivedResponse.statusCode, derivedResponse.body).toBe(201);
+    const derived = derivedResponse.json<{ item: { id: string } }>().item;
+
+    const inboxResponse = await app.inject({
+      method: "POST",
+      url: `/projects/${project.projectId}/inbox`,
+      payload: {
+        type: "event.regression",
+        payload: { secret: "inbox-event-secret" },
+      },
+    });
+    expect(inboxResponse.statusCode, inboxResponse.body).toBe(201);
+    const inbox = inboxResponse.json<{ item: { id: string } }>().item;
+    unsubscribe();
+
+    const events = listProjectEvents(database, project.projectId);
+    expect(events.map((event) => event.type)).toEqual([
+      "derived_output.created",
+      "project_inbox.item.created",
+    ]);
+    expect(published.map((event) => event.id)).toEqual(events.map((event) => event.id));
+    expect(events.every((event) => event.visibility === "project" && event.source === "api")).toBe(true);
+
+    expect(payloadOf(events[0]!)).toMatchObject({
+      derived_output_id: derived.id,
+      domain: "event.regression",
+      status: "draft",
+    });
+    expect(payloadOf(events[1]!)).toMatchObject({
+      inbox_item_id: inbox.id,
+      type: "event.regression",
+      status: "pending",
+    });
+    expect(JSON.stringify(events.map((event) => event.payload))).not.toContain("derived-event-secret");
+    expect(JSON.stringify(events.map((event) => event.payload))).not.toContain("inbox-event-secret");
+    expect(events.map((event) => event.operationLogId)).toEqual(expect.arrayContaining([
+      expect.any(String),
+      expect.any(String),
+    ]));
+
+    const scopedOperations = database
+      .select()
+      .from(operationLogs)
+      .where(eq(operationLogs.projectId, project.projectId))
+      .orderBy(asc(operationLogs.createdAt))
+      .all();
+    expect(scopedOperations.map((operation) => operation.action)).toEqual([
+      "derived_output.create",
+      "project_inbox_item.create",
+    ]);
+    expect(JSON.stringify(scopedOperations)).not.toContain("event-secret");
+  });
+
   it("rolls back session updates and project events when durable event append fails", async () => {
     const project = createTestProject(database, {
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,

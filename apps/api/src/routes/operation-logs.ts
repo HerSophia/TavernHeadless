@@ -18,6 +18,9 @@ import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js
 const operationLogStatusSchema = z.enum(["succeeded", "failed", "denied", "cancelled"]);
 
 const operationLogListQuerySchema = z.object({
+  workspace_id: z.string().trim().min(1).optional(),
+  project_id: z.string().trim().min(1).optional(),
+  actor_account_id: z.string().trim().min(1).optional(),
   session_id: z.string().trim().min(1).optional(),
   floor_id: z.string().trim().min(1).optional(),
   run_id: z.string().trim().min(1).optional(),
@@ -38,6 +41,9 @@ type OperationLogListQuery = z.infer<typeof operationLogListQuerySchema>;
 const operationLogListQueryJsonSchema = {
   type: "object" as const,
   properties: {
+    workspace_id: { type: "string" as const, minLength: 1 },
+    project_id: { type: "string" as const, minLength: 1 },
+    actor_account_id: { type: "string" as const, minLength: 1 },
     session_id: { type: "string" as const, minLength: 1 },
     floor_id: { type: "string" as const, minLength: 1 },
     run_id: { type: "string" as const, minLength: 1 },
@@ -79,6 +85,9 @@ const operationLogJsonSchema = {
     "operation_group_id",
     "request_id",
     "source_type",
+    "workspace_id",
+    "project_id",
+    "actor_account_id",
     "action",
     "status",
     "session_id",
@@ -101,6 +110,9 @@ const operationLogJsonSchema = {
     operation_group_id: { anyOf: [{ type: "string" as const }, { type: "null" as const }] },
     request_id: { anyOf: [{ type: "string" as const }, { type: "null" as const }] },
     source_type: { type: "string" as const },
+    workspace_id: { anyOf: [{ type: "string" as const }, { type: "null" as const }] },
+    project_id: { anyOf: [{ type: "string" as const }, { type: "null" as const }] },
+    actor_account_id: { anyOf: [{ type: "string" as const }, { type: "null" as const }] },
     action: { type: "string" as const },
     status: { type: "string" as const, enum: ["succeeded", "failed", "denied", "cancelled"] },
     session_id: { anyOf: [{ type: "string" as const }, { type: "null" as const }] },
@@ -289,6 +301,9 @@ function sendOperationLogList(
 ) {
   const result = service.list({
     accountId,
+    workspaceId: query.workspace_id,
+    projectId: query.project_id,
+    actorAccountId: query.actor_account_id,
     sessionId: query.session_id,
     floorId: query.floor_id,
     runId: query.run_id,
@@ -325,6 +340,9 @@ function toOperationLogResponse(record: OperationLogRecord) {
     operation_group_id: record.operationGroupId,
     request_id: record.requestId,
     source_type: record.sourceType,
+    workspace_id: record.workspaceId,
+    project_id: record.projectId,
+    actor_account_id: record.actorAccountId,
     action: record.action,
     status: record.status,
     session_id: record.sessionId,

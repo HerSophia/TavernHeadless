@@ -108,9 +108,10 @@ export class OperationLogService {
     const metadataProjectId = readMetadataString(input.metadata, "project_id");
     const workspaceId = normalizeNullableString(input.workspaceId) ?? metadataWorkspaceId;
     const projectId = normalizeNullableString(input.projectId) ?? metadataProjectId;
-    const actorAccountId = normalizeNullableString(input.actorAccountId)
-      ?? (input.actorType === "account" ? normalizeNullableString(input.actorId) : null)
-      ?? normalizeNullableString(input.accountId);
+    const inputActorAccountId = normalizeNullableString(input.actorAccountId);
+    const actorAccountId = input.actorType === "account"
+      ? normalizeNullableString(input.actorId) ?? inputActorAccountId ?? normalizeNullableString(input.accountId)
+      : inputActorAccountId ?? normalizeNullableString(input.accountId);
     const metadata = mergeOperationScopeMetadata(input.metadata, { workspaceId, projectId });
 
     const row = this.db

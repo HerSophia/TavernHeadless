@@ -82,6 +82,52 @@ describe("OperationLogService", () => {
     expect(created.diff).toMatchObject({ mode: "summary", total_changes: 1 });
   });
 
+  it("derives actorAccountId from account actors before falling back to accountId", () => {
+    const service = new OperationLogService(database.db);
+
+    const accountActor = service.append({
+      id: "op-account-actor",
+      accountId: "account-a",
+      actorType: "account",
+      actorId: "account-b",
+      actorAccountId: "account-a",
+      sourceType: "http",
+      action: "account_actor_write",
+      status: "succeeded",
+      targetType: "test",
+      createdAt: 100,
+    });
+    const emptyAccountActor = service.append({
+      id: "op-empty-account-actor",
+      accountId: "account-a",
+      actorType: "account",
+      actorId: "  ",
+      sourceType: "http",
+      action: "empty_account_actor_write",
+      status: "succeeded",
+      targetType: "test",
+      createdAt: 101,
+    });
+    const userActor = service.append({
+      id: "op-user-actor",
+      accountId: "account-a",
+      actorType: "user",
+      actorId: "subject-1",
+      sourceType: "http",
+      action: "user_actor_write",
+      status: "succeeded",
+      targetType: "test",
+      createdAt: 102,
+    });
+
+    expect(accountActor.actorAccountId).toBe("account-b");
+    expect(emptyAccountActor.actorAccountId).toBe("account-a");
+    expect(userActor.actorAccountId).toBe("account-a");
+
+    const byActorAccount = service.list({ accountId: "account-a", actorAccountId: "account-b" });
+    expect(byActorAccount.rows.map((row) => row.id)).toEqual(["op-account-actor"]);
+  });
+
   it("writes formal scope columns and keeps metadata scope compatible", () => {
     const scope = createTestSessionWithScope(database.db, {
       accountId: "account-a",
@@ -119,6 +165,10 @@ describe("OperationLogService", () => {
 
     const byProject = service.list({ accountId: "account-a", projectId: scope.projectId });
     expect(byProject.rows.map((row) => row.id)).toEqual(["op-scoped"]);
+    const byWorkspace = service.list({ accountId: "account-a", workspaceId: scope.workspaceId });
+    expect(byWorkspace.rows.map((row) => row.id)).toEqual(["op-scoped"]);
+    const byActorAccount = service.list({ accountId: "account-a", actorAccountId: "account-a" });
+    expect(byActorAccount.rows.map((row) => row.id)).toEqual(["op-scoped"]);
   });
 
   it("queries logs with account isolation", () => {

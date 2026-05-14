@@ -137,6 +137,8 @@ export default defineConfig({
             { text: 'Session-State Observation（内部）', link: '/reference/api/session-state-observation' },
             { text: 'Operation Logs（操作日志）', link: '/reference/api/operation-logs' },
             { text: 'Workspace / Project（工作区与项目）', link: '/reference/api/workspace-project' },
+            { text: 'Project Derived Outputs（项目派生结果）', link: '/reference/api/projects-derived-outputs' },
+            { text: 'Project Inbox（项目收件箱）', link: '/reference/api/projects-inbox' },
             { text: 'VC Tags（版本标签）', link: '/reference/api/vc-tags' },
           ],
         },

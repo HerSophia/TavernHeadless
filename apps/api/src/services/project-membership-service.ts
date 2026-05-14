@@ -5,7 +5,8 @@ import type { AppDb, DbExecutor } from "../db/client.js";
 import { accounts, projectMemberships } from "../db/schema.js";
 import { ProjectAccessService } from "./project-access-service.js";
 
-export type ProjectMembershipRole = "owner" | "observer";
+export type ProjectMembershipRole = "owner" | "observer" | "deriver";
+export type ProjectAssignableMembershipRole = "observer" | "deriver";
 export type ProjectMembershipStatus = "active" | "removed";
 
 export type ProjectMemberRecord = {
@@ -28,6 +29,7 @@ export type ProjectMembershipServiceErrorCode =
   | "project_member_not_found"
   | "project_member_role_not_supported"
   | "project_member_owner_role_conflict"
+  | "project_member_role_conflict"
   | "project_member_owner_remove_not_supported";
 
 export class ProjectMembershipServiceError extends Error {
@@ -119,7 +121,7 @@ export function ensureOwnerProjectMembership(
 }
 
 /**
- * Manages Project owner and observer membership records.
+ * Manages Project owner, observer and deriver membership records.
  */
 export class ProjectMembershipService {
   private readonly accessService: ProjectAccessService;
@@ -153,8 +155,40 @@ export class ProjectMembershipService {
     accountId: string;
     now?: number;
   }): ProjectMemberRecord {
+    return this.addMember({
+      actorAccountId: input.actorAccountId,
+      projectId: input.projectId,
+      accountId: input.accountId,
+      role: "observer",
+      now: input.now,
+    });
+  }
+
+  addDeriver(input: {
+    actorAccountId: string;
+    projectId: string;
+    accountId: string;
+    now?: number;
+  }): ProjectMemberRecord {
+    return this.addMember({
+      actorAccountId: input.actorAccountId,
+      projectId: input.projectId,
+      accountId: input.accountId,
+      role: "deriver",
+      now: input.now,
+    });
+  }
+
+  addMember(input: {
+    actorAccountId: string;
+    projectId: string;
+    accountId: string;
+    role: string;
+    now?: number;
+  }): ProjectMemberRecord {
     const now = input.now ?? Date.now();
     const targetAccountId = requireNonEmpty(input.accountId, "accountId");
+    const role = normalizeAssignableRole(input.role);
     const access = this.accessService.requireProjectAction(
       input.actorAccountId,
       input.projectId,
@@ -188,7 +222,7 @@ export class ProjectMembershipService {
       throw new ProjectMembershipServiceError(
         400,
         "project_member_owner_role_conflict",
-        "Project owner cannot be added as observer",
+        "Project owner cannot be added as project member",
       );
     }
 
@@ -207,7 +241,15 @@ export class ProjectMembershipService {
         throw new ProjectMembershipServiceError(
           400,
           "project_member_owner_role_conflict",
-          "Project owner cannot be downgraded to observer",
+          "Project owner cannot be downgraded to another project role",
+        );
+      }
+
+      if (existing.role !== role) {
+        throw new ProjectMembershipServiceError(
+          409,
+          "project_member_role_conflict",
+          `Project member already has role: ${existing.role}`,
         );
       }
 
@@ -235,7 +277,7 @@ export class ProjectMembershipService {
         workspaceId: access.project.workspaceId,
         projectId: access.project.id,
         accountId: targetAccountId,
-        role: "observer",
+        role,
         status: "active",
         createdByAccountId: input.actorAccountId,
         createdAt: now,
@@ -247,7 +289,7 @@ export class ProjectMembershipService {
     return mapProjectMemberRow(inserted);
   }
 
-  removeObserver(input: {
+  removeMember(input: {
     actorAccountId: string;
     projectId: string;
     accountId: string;
@@ -283,7 +325,7 @@ export class ProjectMembershipService {
       throw new ProjectMembershipServiceError(
         400,
         "project_member_owner_remove_not_supported",
-        "Project owner cannot be removed in phase two",
+        "Project owner cannot be removed through member routes",
       );
     }
 
@@ -298,6 +340,20 @@ export class ProjectMembershipService {
       .get();
 
     return mapProjectMemberRow(updated);
+  }
+
+  removeObserver(input: {
+    actorAccountId: string;
+    projectId: string;
+    accountId: string;
+    now?: number;
+  }): ProjectMemberRecord {
+    return this.removeMember({
+      actorAccountId: input.actorAccountId,
+      projectId: input.projectId,
+      accountId: input.accountId,
+      now: input.now,
+    });
   }
 }
 
@@ -329,6 +385,21 @@ function requireNonEmpty(value: string, fieldName: string): string {
   return trimmed;
 }
 
+function normalizeAssignableRole(role: string): ProjectAssignableMembershipRole {
+  const normalizedRole = requireNonEmpty(role, "role");
+  if (normalizedRole === "observer" || normalizedRole === "deriver") {
+    return normalizedRole;
+  }
+
+  throw new ProjectMembershipServiceError(
+    400,
+    "project_member_role_not_supported",
+    "Only observer and deriver roles can be added through member routes",
+  );
+}
+
 function roleSortRank(role: ProjectMembershipRole): number {
-  return role === "owner" ? 0 : 1;
+  if (role === "owner") return 0;
+  if (role === "observer") return 1;
+  return 2;
 }

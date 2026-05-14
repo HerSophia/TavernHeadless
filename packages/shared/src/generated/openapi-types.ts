@@ -10883,7 +10883,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    role?: "owner" | "observer";
+                    role?: "owner" | "observer" | "deriver";
                     status?: "active" | "archived";
                     limit?: number;
                     cursor?: string;
@@ -10910,7 +10910,7 @@ export interface paths {
                                 kind: "session_default" | "manual";
                                 name: string;
                                 /** @enum {string} */
-                                role: "owner" | "observer";
+                                role: "owner" | "observer" | "deriver";
                                 settings_override: unknown;
                                 /** @enum {string} */
                                 status: "active" | "archived";
@@ -10982,7 +10982,7 @@ export interface paths {
                             kind: "session_default" | "manual";
                             name: string;
                             /** @enum {string} */
-                            role: "owner" | "observer";
+                            role: "owner" | "observer" | "deriver";
                             settings_override: unknown;
                             /** @enum {string} */
                             status: "active" | "archived";
@@ -11050,6 +11050,638 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/derived-outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project derived outputs */
+        get: {
+            parameters: {
+                query?: {
+                    domain?: string;
+                    status?: "draft" | "published" | "archived";
+                    source_session_id?: string;
+                    owner_account_id?: string;
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                account_id: string;
+                                created_at: number;
+                                domain: string;
+                                id: string;
+                                owner_account_id: string;
+                                project_id: string;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "draft" | "published" | "archived";
+                                updated_at: number;
+                                value: unknown;
+                                workspace_id: string;
+                            }[];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create project derived output */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        domain: string;
+                        source_floor_id?: string;
+                        source_page_id?: string;
+                        source_session_id?: string;
+                        /** @enum {string} */
+                        status?: "draft" | "published";
+                        value?: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                domain: string;
+                                id: string;
+                                owner_account_id: string;
+                                project_id: string;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "draft" | "published" | "archived";
+                                updated_at: number;
+                                value: unknown;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/derived-outputs/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get project derived output */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    item_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                domain: string;
+                                id: string;
+                                owner_account_id: string;
+                                project_id: string;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "draft" | "published" | "archived";
+                                updated_at: number;
+                                value: unknown;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Archive project derived output */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    item_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                domain: string;
+                                id: string;
+                                owner_account_id: string;
+                                project_id: string;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "draft" | "published" | "archived";
+                                updated_at: number;
+                                value: unknown;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update project derived output */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    item_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status?: "draft" | "published" | "archived";
+                        value?: unknown;
+                    } | unknown | unknown;
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                domain: string;
+                                id: string;
+                                owner_account_id: string;
+                                project_id: string;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "draft" | "published" | "archived";
+                                updated_at: number;
+                                value: unknown;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/projects/{id}/events": {
@@ -11315,6 +11947,529 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{id}/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project inbox items */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "pending" | "accepted" | "rejected" | "archived";
+                    type?: string;
+                    sender_account_id?: string;
+                    source_session_id?: string;
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                account_id: string;
+                                created_at: number;
+                                decided_at: number | null;
+                                decided_by_account_id: string | null;
+                                id: string;
+                                payload: unknown;
+                                project_id: string;
+                                sender_account_id: string;
+                                source_event_id: string | null;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "pending" | "accepted" | "rejected" | "archived";
+                                title: string | null;
+                                type: string;
+                                updated_at: number;
+                                workspace_id: string;
+                            }[];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create project inbox item */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        payload?: unknown;
+                        source_event_id?: string;
+                        source_floor_id?: string;
+                        source_page_id?: string;
+                        source_session_id?: string;
+                        title?: string | null;
+                        type: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                decided_at: number | null;
+                                decided_by_account_id: string | null;
+                                id: string;
+                                payload: unknown;
+                                project_id: string;
+                                sender_account_id: string;
+                                source_event_id: string | null;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "pending" | "accepted" | "rejected" | "archived";
+                                title: string | null;
+                                type: string;
+                                updated_at: number;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/inbox/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get project inbox item */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    item_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                decided_at: number | null;
+                                decided_by_account_id: string | null;
+                                id: string;
+                                payload: unknown;
+                                project_id: string;
+                                sender_account_id: string;
+                                source_event_id: string | null;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "pending" | "accepted" | "rejected" | "archived";
+                                title: string | null;
+                                type: string;
+                                updated_at: number;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Decide project inbox item */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    item_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        decision: "accept" | "reject" | "archive";
+                        note?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                decided_at: number | null;
+                                decided_by_account_id: string | null;
+                                id: string;
+                                payload: unknown;
+                                project_id: string;
+                                sender_account_id: string;
+                                source_event_id: string | null;
+                                source_floor_id: string | null;
+                                source_page_id: string | null;
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "pending" | "accepted" | "rejected" | "archived";
+                                title: string | null;
+                                type: string;
+                                updated_at: number;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/projects/{id}/members": {
         parameters: {
             query?: never;
@@ -11348,7 +12503,7 @@ export interface paths {
                                 id: string;
                                 project_id: string;
                                 /** @enum {string} */
-                                role: "owner" | "observer";
+                                role: "owner" | "observer" | "deriver";
                                 /** @enum {string} */
                                 status: "active" | "removed";
                                 updated_at: number;
@@ -11444,7 +12599,7 @@ export interface paths {
                                 id: string;
                                 project_id: string;
                                 /** @enum {string} */
-                                role: "owner" | "observer";
+                                role: "owner" | "observer" | "deriver";
                                 /** @enum {string} */
                                 status: "active" | "removed";
                                 updated_at: number;
@@ -11566,7 +12721,7 @@ export interface paths {
                                 id: string;
                                 project_id: string;
                                 /** @enum {string} */
-                                role: "owner" | "observer";
+                                role: "owner" | "observer" | "deriver";
                                 /** @enum {string} */
                                 status: "active" | "removed";
                                 updated_at: number;
@@ -23466,6 +24621,9 @@ export interface operations {
     listFloorOperationLogs: {
         parameters: {
             query?: {
+                workspace_id?: string;
+                project_id?: string;
+                actor_account_id?: string;
                 session_id?: string;
                 floor_id?: string;
                 run_id?: string;
@@ -23498,6 +24656,7 @@ export interface operations {
                         data: {
                             account_id: string;
                             action: string;
+                            actor_account_id: string | null;
                             actor_id: string | null;
                             actor_type: string;
                             after_ref: unknown;
@@ -23509,6 +24668,7 @@ export interface operations {
                             id: string;
                             metadata: unknown;
                             operation_group_id: string | null;
+                            project_id: string | null;
                             request_id: string | null;
                             run_id: string | null;
                             session_id: string | null;
@@ -23517,6 +24677,7 @@ export interface operations {
                             status: "succeeded" | "failed" | "denied" | "cancelled";
                             target_id: string | null;
                             target_type: string;
+                            workspace_id: string | null;
                         }[];
                         meta: {
                             has_more: boolean;
@@ -28464,6 +29625,9 @@ export interface operations {
     listOperationLogs: {
         parameters: {
             query?: {
+                workspace_id?: string;
+                project_id?: string;
+                actor_account_id?: string;
                 session_id?: string;
                 floor_id?: string;
                 run_id?: string;
@@ -28494,6 +29658,7 @@ export interface operations {
                         data: {
                             account_id: string;
                             action: string;
+                            actor_account_id: string | null;
                             actor_id: string | null;
                             actor_type: string;
                             after_ref: unknown;
@@ -28505,6 +29670,7 @@ export interface operations {
                             id: string;
                             metadata: unknown;
                             operation_group_id: string | null;
+                            project_id: string | null;
                             request_id: string | null;
                             run_id: string | null;
                             session_id: string | null;
@@ -28513,6 +29679,7 @@ export interface operations {
                             status: "succeeded" | "failed" | "denied" | "cancelled";
                             target_id: string | null;
                             target_type: string;
+                            workspace_id: string | null;
                         }[];
                         meta: {
                             has_more: boolean;
@@ -32253,6 +33420,9 @@ export interface operations {
     listSessionOperationLogs: {
         parameters: {
             query?: {
+                workspace_id?: string;
+                project_id?: string;
+                actor_account_id?: string;
                 session_id?: string;
                 floor_id?: string;
                 run_id?: string;
@@ -32285,6 +33455,7 @@ export interface operations {
                         data: {
                             account_id: string;
                             action: string;
+                            actor_account_id: string | null;
                             actor_id: string | null;
                             actor_type: string;
                             after_ref: unknown;
@@ -32296,6 +33467,7 @@ export interface operations {
                             id: string;
                             metadata: unknown;
                             operation_group_id: string | null;
+                            project_id: string | null;
                             request_id: string | null;
                             run_id: string | null;
                             session_id: string | null;
@@ -32304,6 +33476,7 @@ export interface operations {
                             status: "succeeded" | "failed" | "denied" | "cancelled";
                             target_id: string | null;
                             target_type: string;
+                            workspace_id: string | null;
                         }[];
                         meta: {
                             has_more: boolean;
