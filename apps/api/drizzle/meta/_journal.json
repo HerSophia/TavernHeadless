@@ -400,6 +400,20 @@
                         "when":  1765600000000,
                         "tag":  "0056_project_events_observer_scope",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  57,
+                        "version":  "6",
+                        "when":  1765700000000,
+                        "tag":  "0057_operation_log_actor_account_backfill_fix",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  58,
+                        "version":  "6",
+                        "when":  1765800000000,
+                        "tag":  "0058_project_derived_output_and_inbox",
+                        "breakpoints":  true
                     }
                 ]
 }

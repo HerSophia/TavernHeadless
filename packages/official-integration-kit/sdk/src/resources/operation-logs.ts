@@ -8,6 +8,7 @@ export type OperationLogRecord = {
   action: string;
   actorId: string | null;
   actorType: string;
+  actorAccountId: string | null;
   afterRef: unknown | null;
   beforeRef: unknown | null;
   branchId: string | null;
@@ -17,6 +18,7 @@ export type OperationLogRecord = {
   id: string;
   metadata: unknown | null;
   operationGroupId: string | null;
+  projectId: string | null;
   requestId: string | null;
   runId: string | null;
   sessionId: string | null;
@@ -24,6 +26,7 @@ export type OperationLogRecord = {
   status: OperationLogStatus;
   targetId: string | null;
   targetType: string;
+  workspaceId: string | null;
 };
 
 export type OperationLogsListMeta = {
@@ -44,10 +47,12 @@ export type OperationLogsListOptions = {
   accountId?: AccountIdHint;
   action?: string;
   actorType?: string;
+  actorAccountId?: string;
   floorId?: string;
   limit?: number;
   offset?: number;
   operationGroupId?: string;
+  projectId?: string;
   requestId?: string;
   runId?: string;
   sessionId?: string;
@@ -55,6 +60,7 @@ export type OperationLogsListOptions = {
   status?: OperationLogStatus;
   targetId?: string;
   targetType?: string;
+  workspaceId?: string;
 };
 
 export type OperationLogsScopedListOptions = Omit<OperationLogsListOptions, "sessionId" | "floorId">;
@@ -96,6 +102,9 @@ async function fetchOperationLogs(
 ): Promise<OperationLogsListResult> {
   const query = buildQueryString(
     compactObject({
+      workspace_id: options.workspaceId,
+      project_id: options.projectId,
+      actor_account_id: options.actorAccountId,
       session_id: options.sessionId,
       floor_id: options.floorId,
       run_id: options.runId,
@@ -132,6 +141,7 @@ function mapOperationLog(value: unknown): OperationLogRecord | null {
     action: readString(record.action),
     actorId: readNullableString(record.actor_id),
     actorType: readString(record.actor_type),
+    actorAccountId: readNullableString(record.actor_account_id),
     afterRef: record.after_ref ?? null,
     beforeRef: record.before_ref ?? null,
     branchId: readNullableString(record.branch_id),
@@ -141,6 +151,7 @@ function mapOperationLog(value: unknown): OperationLogRecord | null {
     id: readString(record.id),
     metadata: record.metadata ?? null,
     operationGroupId: readNullableString(record.operation_group_id),
+    projectId: readNullableString(record.project_id),
     requestId: readNullableString(record.request_id),
     runId: readNullableString(record.run_id),
     sessionId: readNullableString(record.session_id),
@@ -148,6 +159,7 @@ function mapOperationLog(value: unknown): OperationLogRecord | null {
     status: readString(record.status, "succeeded") as OperationLogStatus,
     targetId: readNullableString(record.target_id),
     targetType: readString(record.target_type),
+    workspaceId: readNullableString(record.workspace_id),
   };
 }
 

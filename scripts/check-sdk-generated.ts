@@ -27,8 +27,14 @@ async function assertSameFile(targetPath: string, candidatePath: string, label: 
   ]);
 
   if (targetContent !== candidateContent) {
-    throw new Error(`[sdk:check] ${label} is out of date. Run \`pnpm sdk:generate\`.`);
+    if (normalizeNewlines(targetContent) !== normalizeNewlines(candidateContent)) {
+      throw new Error(`[sdk:check] ${label} is out of date. Run \`pnpm sdk:generate\`.`);
+    }
   }
+}
+
+function normalizeNewlines(value: string): string {
+  return value.replace(/\r\n/g, "\n");
 }
 
 main().catch((error) => {

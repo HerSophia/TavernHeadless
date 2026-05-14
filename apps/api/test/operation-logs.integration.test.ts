@@ -6,6 +6,7 @@ import { DEFAULT_ADMIN_ACCOUNT_ID } from "../src/accounts/constants.js";
 import { buildApp } from "../src/app.js";
 import type { DatabaseConnection } from "../src/db/client.js";
 import { characterVersions, floors } from "../src/db/schema.js";
+import { createTestProject } from "../src/__tests__/helpers/workspace-project.js";
 import { OperationLogService } from "../src/services/operation-log-service.js";
 
 type Data<T> = { data: T };
@@ -17,12 +18,20 @@ type OperationLogResponse = {
   actor_type: string;
   after_ref: Record<string, unknown> | null;
   before_ref: Record<string, unknown> | null;
+  actor_account_id: string | null;
   diff: { total_changes: number; changes: Array<{ path: string; redacted?: boolean }> } | null;
   metadata: Record<string, unknown> | null;
+  project_id: string | null;
   session_id: string | null;
   floor_id: string | null;
   target_id: string | null;
   target_type: string;
+  workspace_id: string | null;
+};
+
+type SessionScopeResponse = {
+  workspace_id: string;
+  project_id: string;
 };
 
 const CLIENT_DATA_CONFIG = {
@@ -115,6 +124,15 @@ describe("operation log routes", () => {
     });
     expect(patchResponse.statusCode, patchResponse.body).toBe(200);
 
+    const scopeResponse = await app.inject({
+      method: "GET",
+      url: `/sessions/${sessionId}/scope`,
+    });
+    expect(scopeResponse.statusCode, scopeResponse.body).toBe(200);
+    const scope = scopeResponse.json<SessionScopeResponse>();
+    expect(scope.workspace_id).toBeTruthy();
+    expect(scope.project_id).toBeTruthy();
+
     new OperationLogService(database).append({
       id: "foreign-log",
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
@@ -138,12 +156,37 @@ describe("operation log routes", () => {
     expect(body.data.every((log) => log.account_id === DEFAULT_ADMIN_ACCOUNT_ID)).toBe(true);
     const createLog = body.data.find((log) => log.action === "create_session");
     const updateLog = body.data.find((log) => log.action === "update_session");
+    expect(createLog).toMatchObject({
+      workspace_id: scope.workspace_id,
+      project_id: scope.project_id,
+      actor_account_id: DEFAULT_ADMIN_ACCOUNT_ID,
+    });
+    expect(updateLog).toMatchObject({
+      workspace_id: scope.workspace_id,
+      project_id: scope.project_id,
+      actor_account_id: DEFAULT_ADMIN_ACCOUNT_ID,
+    });
     expect(createLog?.after_ref?.session_id).toBe(sessionId);
     expect(updateLog?.before_ref?.session_id).toBe(sessionId);
     expect(updateLog?.diff?.total_changes).toBeGreaterThan(0);
     expect(updateLog?.metadata?.route).toBe("PATCH /sessions/:id");
     expect(JSON.stringify(body.data)).not.toContain("secret-value");
     expect(body.meta.sort_by).toBe("created_at");
+
+    const scopedListResponse = await app.inject({
+      method: "GET",
+      url: `/operation-logs?workspace_id=${scope.workspace_id}&project_id=${scope.project_id}&actor_account_id=${DEFAULT_ADMIN_ACCOUNT_ID}&target_type=session&target_id=${sessionId}&sort_order=asc`,
+    });
+    expect(scopedListResponse.statusCode, scopedListResponse.body).toBe(200);
+    const scopedBody = scopedListResponse.json<{ data: OperationLogResponse[] }>();
+    expect(scopedBody.data.map((log) => log.action).sort()).toEqual(["create_session", "update_session"]);
+
+    const mismatchedProjectResponse = await app.inject({
+      method: "GET",
+      url: `/operation-logs?project_id=proj_missing&target_type=session&target_id=${sessionId}`,
+    });
+    expect(mismatchedProjectResponse.statusCode, mismatchedProjectResponse.body).toBe(200);
+    expect(mismatchedProjectResponse.json<{ data: OperationLogResponse[] }>().data).toEqual([]);
   });
 
   it("lists logs through session and floor scoped endpoints", async () => {
@@ -720,6 +763,66 @@ describe("operation log routes", () => {
     expect(versionRows.find((row) => row.id === imported.character_version_id)?.createdByOperationId).toBe(importLog?.id);
     expect(versionRows.find((row) => row.id === createdVersion.id)?.createdByOperationId).toBe(createLog?.id);
     expect(versionRows.find((row) => row.id === rollbackVersion.id)?.createdByOperationId).toBe(rollbackLog?.id);
+  });
+
+  it("lists phase-three derived output and inbox logs without full JSON bodies", async () => {
+    const project = createTestProject(database, {
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      id: "operation-log-phase-three-project",
+    });
+
+    const derivedResponse = await app.inject({
+      method: "POST",
+      url: `/projects/${project.projectId}/derived-outputs`,
+      payload: {
+        domain: "operation.log.phase-three",
+        value: { secret: "derived-operation-log-secret" },
+      },
+    });
+    expect(derivedResponse.statusCode, derivedResponse.body).toBe(201);
+    const derived = derivedResponse.json<{ item: { id: string } }>().item;
+
+    const inboxResponse = await app.inject({
+      method: "POST",
+      url: `/projects/${project.projectId}/inbox`,
+      payload: {
+        type: "operation.log.phase-three",
+        payload: { secret: "inbox-operation-log-secret" },
+      },
+    });
+    expect(inboxResponse.statusCode, inboxResponse.body).toBe(201);
+    const inbox = inboxResponse.json<{ item: { id: string } }>().item;
+
+    const logsResponse = await app.inject({
+      method: "GET",
+      url: `/operation-logs?project_id=${project.projectId}&sort_order=asc`,
+    });
+    expect(logsResponse.statusCode, logsResponse.body).toBe(200);
+    const logs = logsResponse.json<{ data: OperationLogResponse[] }>().data;
+
+    expect(logs.map((log) => log.action).sort()).toEqual([
+      "derived_output.create",
+      "project_inbox_item.create",
+    ].sort());
+    expect(JSON.stringify(logs)).not.toContain("derived-operation-log-secret");
+    expect(JSON.stringify(logs)).not.toContain("inbox-operation-log-secret");
+
+    const derivedLog = logs.find((log) => log.target_type === "derived_output");
+    const inboxLog = logs.find((log) => log.target_type === "project_inbox_item");
+    expect(derivedLog).toMatchObject({
+      project_id: project.projectId,
+      workspace_id: project.workspaceId,
+      actor_account_id: DEFAULT_ADMIN_ACCOUNT_ID,
+      target_id: derived.id,
+    });
+    expect(inboxLog).toMatchObject({
+      project_id: project.projectId,
+      workspace_id: project.workspaceId,
+      actor_account_id: DEFAULT_ADMIN_ACCOUNT_ID,
+      target_id: inbox.id,
+    });
+    expect(derivedLog?.metadata?.value_byte_count).toEqual(expect.any(Number));
+    expect(inboxLog?.metadata?.payload_byte_count).toEqual(expect.any(Number));
   });
 
 });

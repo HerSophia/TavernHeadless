@@ -11,6 +11,7 @@ import { ProjectMembershipService } from "../project-membership-service.js";
 
 const OWNER_ACCOUNT_ID = "access-owner";
 const OBSERVER_ACCOUNT_ID = "access-observer";
+const DERIVER_ACCOUNT_ID = "access-deriver";
 const OTHER_ACCOUNT_ID = "access-other";
 
 function captureError(action: () => void): unknown {
@@ -47,6 +48,42 @@ describe("ProjectAccessService", () => {
     expect(accessService.requireProjectAction(OWNER_ACCOUNT_ID, project.projectId, "project.observe").role).toBe("owner");
     expect(accessService.requireProjectAction(OWNER_ACCOUNT_ID, project.projectId, "project.write").role).toBe("owner");
     expect(accessService.requireProjectAction(OWNER_ACCOUNT_ID, project.projectId, "project.manage_members").role).toBe("owner");
+  });
+
+  it("applies the phase-three owner observer deriver action matrix", () => {
+    const project = createTestProject(database.db, {
+      accountId: OWNER_ACCOUNT_ID,
+      id: "access-project-phase-three",
+    });
+    ensureTestAccount(database.db, OBSERVER_ACCOUNT_ID);
+    ensureTestAccount(database.db, DERIVER_ACCOUNT_ID);
+    membershipService.addObserver({
+      actorAccountId: OWNER_ACCOUNT_ID,
+      projectId: project.projectId,
+      accountId: OBSERVER_ACCOUNT_ID,
+    });
+    membershipService.addDeriver({
+      actorAccountId: OWNER_ACCOUNT_ID,
+      projectId: project.projectId,
+      accountId: DERIVER_ACCOUNT_ID,
+    });
+
+    expect(accessService.requireProjectAction(OWNER_ACCOUNT_ID, project.projectId, "project.derived_output.write").role)
+      .toBe("owner");
+    expect(accessService.requireProjectAction(OWNER_ACCOUNT_ID, project.projectId, "project.inbox.decide").role)
+      .toBe("owner");
+    expect(accessService.requireProjectAction(OBSERVER_ACCOUNT_ID, project.projectId, "project.derived_output.read").role)
+      .toBe("observer");
+    expect(captureError(() => accessService.requireProjectAction(OBSERVER_ACCOUNT_ID, project.projectId, "project.derived_output.write")))
+      .toMatchObject({ code: "project_access_denied", denyReason: "role_forbidden" });
+    expect(captureError(() => accessService.requireProjectAction(OBSERVER_ACCOUNT_ID, project.projectId, "project.inbox.read")))
+      .toMatchObject({ code: "project_access_denied", denyReason: "role_forbidden" });
+    expect(accessService.requireProjectAction(DERIVER_ACCOUNT_ID, project.projectId, "project.derived_output.write").role)
+      .toBe("deriver");
+    expect(accessService.requireProjectAction(DERIVER_ACCOUNT_ID, project.projectId, "project.inbox.read").role)
+      .toBe("deriver");
+    expect(captureError(() => accessService.requireProjectAction(DERIVER_ACCOUNT_ID, project.projectId, "project.manage_members")))
+      .toMatchObject({ code: "project_access_denied", denyReason: "role_forbidden" });
   });
 
   it("allows observer to read and observe but denies write", () => {

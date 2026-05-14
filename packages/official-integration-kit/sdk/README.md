@@ -131,9 +131,9 @@ const sessionInProject = await client.sessions.create({
 
 省略 `projectId` 时，服务端会使用当前账号默认 Workspace，并为新 Session 创建 `session_default` Project。
 
-### Projects 读取、事件和 observer 成员
+### Projects 读取、事件、成员、Derived Output 和 Inbox
 
-阶段二已经开放 Project 的读取面、Project Event 查询 / SSE，以及 observer 成员维护。
+阶段三已经开放 Project 的读取面、Project Event 查询 / SSE、observer / deriver 成员维护、Derived Output 和 Project Inbox。
 
 ```ts
 const projects = await client.projects.list({
@@ -196,11 +196,11 @@ await client.projects.streamEvents({
 - `types` 数组会映射为逗号分隔的查询参数。
 - `sessionId` 会映射为 `session_id`。
 - `lastEventId` 会在没有传 `after` 时写入 `Last-Event-ID` 请求头。
-- owner 可以读写 Project 下资源；observer 只能读取。
-- observer 写入会得到 `403 project_access_denied`。
+- owner 可以读写 Project 下资源；observer 只能读取可读资源。
+- deriver 可以写入 Derived Output、创建 Inbox 条目，但不能修改主 Session、Variable、Memory 或 Session State，也不能决定 Inbox。
 - 非成员访问 Project 下资源时，服务端会隐藏资源存在性。Project API 通常返回 `404 project_not_found`，旧资源路由通常返回 `404 not_found`。
 
-成员维护方法只支持阶段二 observer：
+成员维护方法支持 observer 和 deriver：
 
 ```ts
 const members = await client.projects.listMembers({
@@ -214,6 +214,16 @@ await client.projects.addObserver({
   observerAccountId: "account-2",
 });
 
+await client.projects.addMember(
+  "proj-1",
+  { accountId: "account-3", role: "deriver" },
+  { accountId: "account-1" },
+);
+
+await client.projects.addDeriver("proj-1", "account-3", {
+  accountId: "account-1",
+});
+
 await client.projects.removeMember({
   accountId: "account-1",
   projectId: "proj-1",
@@ -221,7 +231,73 @@ await client.projects.removeMember({
 });
 ```
 
-阶段二不开放 Project CRUD，也不支持新增非 observer 角色。
+Derived Output 用来保存 Project 范围内的派生 JSON 结果。它不会自动合并进主 Session：
+
+```ts
+const output = await client.projects.derivedOutputs.create(
+  "proj-1",
+  {
+    domain: "summary.candidate",
+    sourceSessionId: "session-1",
+    value: { summary: "候选摘要。" },
+    status: "draft",
+  },
+  { accountId: "account-3" },
+);
+
+const outputs = await client.projects.derivedOutputs.list("proj-1", {
+  accountId: "account-1",
+  domain: "summary.candidate",
+});
+
+await client.projects.derivedOutputs.update(
+  "proj-1",
+  output.id,
+  { status: "published" },
+  { accountId: "account-3" },
+);
+
+await client.projects.derivedOutputs.archive("proj-1", output.id, {
+  accountId: "account-3",
+});
+
+console.log(outputs.items[0]?.value);
+```
+
+Project Inbox 用来提交待 owner 决策的建议。接受条目只记录 Inbox 状态，不会自动修改主 Session：
+
+```ts
+const inboxItem = await client.projects.inbox.create(
+  "proj-1",
+  {
+    type: "derived_output.review",
+    title: "候选摘要待确认",
+    payload: { derivedOutputId: output.id },
+    sourceSessionId: "session-1",
+  },
+  { accountId: "account-3" },
+);
+
+const inboxPage = await client.projects.inbox.list("proj-1", {
+  accountId: "account-1",
+  status: "pending",
+});
+
+await client.projects.inbox.accept("proj-1", inboxItem.id, {
+  accountId: "account-1",
+  note: "已确认。",
+});
+
+await client.projects.inbox.archive("proj-1", inboxItem.id, {
+  accountId: "account-1",
+});
+
+console.log(inboxPage.items[0]?.type);
+```
+
+Phase 3 相关写入会产生 Project Event：`derived_output.created`、`derived_output.updated`、`derived_output.archived`、`project_inbox.item.created`、`project_inbox.item.accepted`、`project_inbox.item.rejected` 和 `project_inbox.item.archived`。事件 payload 只包含 ID、状态、类型、来源引用和小型元数据，不包含完整 `value` 或 `payload` JSON 正文。
+
+当前仍不开放 Project CRUD、Workspace 成员体系、client identity、API Key identity、插件安装或 Inbox 自动合并。
 
 
 ### Operation Logs 操作日志
@@ -233,6 +309,9 @@ const logs = await client.operationLogs.list({
   accountId: "account-1",
   targetType: "session",
   targetId: "session-1",
+  workspaceId: "ws_default_account-1",
+  projectId: "proj_session_session-1",
+  actorAccountId: "account-1",
   limit: 20,
 });
 
@@ -249,6 +328,8 @@ const floorLogs = await client.operationLogs.listForFloor({
 });
 
 console.log(logs.logs[0]?.action);
+console.log(logs.logs[0]?.workspaceId);
+console.log(logs.logs[0]?.actorAccountId);
 console.log(sessionLogs.meta.total);
 console.log(floorLogs.logs[0]?.diff);
 ```
@@ -1055,4 +1136,4 @@ console.log(capabilities.unsupported);
 
 ## 当前状态
 
-当前 `@tavern/sdk` 已经覆盖会话、内容结构、变量、记忆、Prompt Runtime 结构化 memory truth、导入、导出、核心资产备份、LLM Profiles、LLM Instances、Tools、MCP、Client Data 等主要接入域。Client Data 第二期已补齐 grant / audit 之前的核心资源调用面，grant / audit 的高层 SDK 封装将在后续阶段继续扩展。
+当前 `@tavern/sdk` 已经覆盖会话、内容结构、变量、记忆、Prompt Runtime 结构化 memory truth、导入、导出、核心资产备份、LLM Profiles、LLM Instances、Tools、MCP、Client Data、Project Event、Project Derived Output 和 Project Inbox 等主要接入域。SDK 只负责接入这些后端资源，不负责 Project 管理界面，也不负责把 Inbox 自动合并进主 Session。

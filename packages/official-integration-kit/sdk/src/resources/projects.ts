@@ -13,12 +13,15 @@ import {
   readString,
 } from "./utils.js";
 
-export type ProjectRole = "owner" | "observer";
+export type ProjectRole = "owner" | "observer" | "deriver";
 export type ProjectStatus = "active" | "archived";
 export type ProjectKind = "session_default" | "manual";
 export type ProjectMemberStatus = "active" | "removed";
 export type ProjectEventVisibility = "project" | "owner" | "internal";
 export type ProjectEventSource = "api" | "runtime_job" | "migration" | "system";
+export type DerivedOutputStatus = "draft" | "published" | "archived";
+export type ProjectInboxItemStatus = "pending" | "accepted" | "rejected" | "archived";
+export type ProjectInboxDecision = "accept" | "reject" | "archive";
 
 export type ProjectRecord = {
   id: string;
@@ -76,6 +79,44 @@ export type ProjectMember = {
   createdAt: number;
   updatedAt: number;
 };
+
+export type DerivedOutputRecord = {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  accountId: string;
+  ownerAccountId: string;
+  sourceSessionId: string | null;
+  sourceFloorId: string | null;
+  sourcePageId: string | null;
+  domain: string;
+  value: unknown;
+  status: DerivedOutputStatus;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectInboxItem = {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  accountId: string;
+  senderAccountId: string;
+  type: string;
+  title: string | null;
+  payload: unknown;
+  sourceEventId: string | null;
+  sourceSessionId: string | null;
+  sourceFloorId: string | null;
+  sourcePageId: string | null;
+  status: ProjectInboxItemStatus;
+  decidedByAccountId: string | null;
+  decidedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectAssignableMemberRole = "observer" | "deriver";
 
 export type ProjectsListOptions = {
   accountId?: AccountIdHint;
@@ -152,6 +193,99 @@ export type ProjectsRemoveMemberOptions = {
   memberAccountId: string;
 };
 
+export type ProjectsMemberMutationOptions = {
+  accountId?: AccountIdHint;
+};
+
+export type ProjectsAddMemberInput = {
+  accountId: string;
+  role: ProjectAssignableMemberRole;
+};
+
+export type ProjectsDerivedOutputsListOptions = {
+  accountId?: AccountIdHint;
+  cursor?: string;
+  domain?: string;
+  limit?: number;
+  ownerAccountId?: string;
+  sourceSessionId?: string;
+  status?: DerivedOutputStatus;
+};
+
+export type ProjectsDerivedOutputsListResult = {
+  items: DerivedOutputRecord[];
+  nextCursor: string | null;
+};
+
+export type ProjectsCreateDerivedOutputInput = {
+  domain: string;
+  sourceSessionId?: string | null;
+  sourceFloorId?: string | null;
+  sourcePageId?: string | null;
+  value?: unknown;
+  status?: Exclude<DerivedOutputStatus, "archived">;
+};
+
+export type ProjectsUpdateDerivedOutputInput = {
+  value?: unknown;
+  status?: DerivedOutputStatus;
+};
+
+export type ProjectsDerivedOutputsRequestOptions = {
+  accountId?: AccountIdHint;
+};
+
+export type ProjectsDerivedOutputsResource = {
+  list(projectId: string, options?: ProjectsDerivedOutputsListOptions): Promise<ProjectsDerivedOutputsListResult>;
+  get(projectId: string, itemId: string, options?: ProjectsDerivedOutputsRequestOptions): Promise<DerivedOutputRecord>;
+  create(projectId: string, input: ProjectsCreateDerivedOutputInput, options?: ProjectsDerivedOutputsRequestOptions): Promise<DerivedOutputRecord>;
+  update(projectId: string, itemId: string, input: ProjectsUpdateDerivedOutputInput, options?: ProjectsDerivedOutputsRequestOptions): Promise<DerivedOutputRecord>;
+  archive(projectId: string, itemId: string, options?: ProjectsDerivedOutputsRequestOptions): Promise<DerivedOutputRecord>;
+};
+
+export type ProjectsInboxListOptions = {
+  accountId?: AccountIdHint;
+  cursor?: string;
+  limit?: number;
+  senderAccountId?: string;
+  sourceSessionId?: string;
+  status?: ProjectInboxItemStatus;
+  type?: string;
+};
+
+export type ProjectsInboxListResult = {
+  items: ProjectInboxItem[];
+  nextCursor: string | null;
+};
+
+export type ProjectsCreateInboxItemInput = {
+  type: string;
+  title?: string | null;
+  payload?: unknown;
+  sourceEventId?: string | null;
+  sourceSessionId?: string | null;
+  sourceFloorId?: string | null;
+  sourcePageId?: string | null;
+};
+
+export type ProjectsInboxDecisionOptions = {
+  accountId?: AccountIdHint;
+  note?: string | null;
+};
+
+export type ProjectsInboxRequestOptions = {
+  accountId?: AccountIdHint;
+};
+
+export type ProjectsInboxResource = {
+  list(projectId: string, options?: ProjectsInboxListOptions): Promise<ProjectsInboxListResult>;
+  get(projectId: string, itemId: string, options?: ProjectsInboxRequestOptions): Promise<ProjectInboxItem>;
+  create(projectId: string, input: ProjectsCreateInboxItemInput, options?: ProjectsInboxRequestOptions): Promise<ProjectInboxItem>;
+  accept(projectId: string, itemId: string, options?: ProjectsInboxDecisionOptions): Promise<ProjectInboxItem>;
+  reject(projectId: string, itemId: string, options?: ProjectsInboxDecisionOptions): Promise<ProjectInboxItem>;
+  archive(projectId: string, itemId: string, options?: ProjectsInboxDecisionOptions): Promise<ProjectInboxItem>;
+};
+
 export type ProjectsResource = {
   list(options?: ProjectsListOptions): Promise<ProjectsListResult>;
   get(options: ProjectsGetOptions): Promise<ProjectRecord>;
@@ -159,12 +293,18 @@ export type ProjectsResource = {
   listEvents(options: ProjectsListEventsOptions): Promise<ProjectsListEventsResult>;
   streamEvents(options: ProjectsStreamEventsOptions): Promise<void>;
   listMembers(options: ProjectsListMembersOptions): Promise<ProjectMember[]>;
+  addMember(projectId: string, input: ProjectsAddMemberInput, options?: ProjectsMemberMutationOptions): Promise<ProjectMember>;
   addObserver(options: ProjectsAddObserverOptions): Promise<ProjectMember>;
+  addDeriver(projectId: string, deriverAccountId: string, options?: ProjectsMemberMutationOptions): Promise<ProjectMember>;
   removeMember(options: ProjectsRemoveMemberOptions): Promise<ProjectMember>;
+  derivedOutputs: ProjectsDerivedOutputsResource;
+  inbox: ProjectsInboxResource;
 };
 
 export function createProjectsResource(client: TransportClient): ProjectsResource {
   return {
+    derivedOutputs: createProjectsDerivedOutputsResource(client),
+    inbox: createProjectsInboxResource(client),
     async list(options: ProjectsListOptions = {}): Promise<ProjectsListResult> {
       const query = buildQueryString(
         compactObject({
@@ -280,6 +420,24 @@ export function createProjectsResource(client: TransportClient): ProjectsResourc
         .map(mapProjectMember)
         .filter((item): item is ProjectMember => item !== null);
     },
+    async addMember(projectId, input, options: ProjectsMemberMutationOptions = {}): Promise<ProjectMember> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/members`,
+        {
+          body: {
+            account_id: input.accountId,
+            role: input.role,
+          },
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const member = mapProjectMember(readRecord(response.body)?.item);
+      if (!member) {
+        throw new Error("Project member payload is missing");
+      }
+      return member;
+    },
     async addObserver(options): Promise<ProjectMember> {
       const response = await client.fetchJson<Record<string, unknown>>(
         `/projects/${encodeURIComponent(options.projectId)}/members`,
@@ -287,6 +445,24 @@ export function createProjectsResource(client: TransportClient): ProjectsResourc
           body: {
             account_id: options.observerAccountId,
             role: "observer",
+          },
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const member = mapProjectMember(readRecord(response.body)?.item);
+      if (!member) {
+        throw new Error("Project member payload is missing");
+      }
+      return member;
+    },
+    async addDeriver(projectId, deriverAccountId, options: ProjectsMemberMutationOptions = {}): Promise<ProjectMember> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/members`,
+        {
+          body: {
+            account_id: deriverAccountId,
+            role: "deriver",
           },
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
@@ -313,6 +489,199 @@ export function createProjectsResource(client: TransportClient): ProjectsResourc
       return member;
     },
   };
+}
+
+function createProjectsDerivedOutputsResource(client: TransportClient): ProjectsDerivedOutputsResource {
+  return {
+    async list(projectId, options: ProjectsDerivedOutputsListOptions = {}): Promise<ProjectsDerivedOutputsListResult> {
+      const query = buildQueryString(compactObject({
+        domain: options.domain,
+        status: options.status,
+        source_session_id: options.sourceSessionId,
+        owner_account_id: options.ownerAccountId,
+        limit: options.limit,
+        cursor: options.cursor,
+      }));
+      const pathname = query
+        ? `/projects/${encodeURIComponent(projectId)}/derived-outputs?${query}`
+        : `/projects/${encodeURIComponent(projectId)}/derived-outputs`;
+      const response = await client.fetchJson<Record<string, unknown>>(pathname, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+      const body = readRecord(response.body);
+      return {
+        items: readArray(body?.items)
+          .map(mapDerivedOutputRecord)
+          .filter((item): item is DerivedOutputRecord => item !== null),
+        nextCursor: readNullableString(body?.next_cursor),
+      };
+    },
+    async get(projectId, itemId, options: ProjectsDerivedOutputsRequestOptions = {}): Promise<DerivedOutputRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/derived-outputs/${encodeURIComponent(itemId)}`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const record = mapDerivedOutputRecord(readRecord(response.body)?.item);
+      if (!record) {
+        throw new Error("Derived output payload is missing");
+      }
+      return record;
+    },
+    async create(projectId, input, options: ProjectsDerivedOutputsRequestOptions = {}): Promise<DerivedOutputRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/derived-outputs`,
+        {
+          body: compactObject({
+            domain: input.domain,
+            source_session_id: input.sourceSessionId ?? undefined,
+            source_floor_id: input.sourceFloorId ?? undefined,
+            source_page_id: input.sourcePageId ?? undefined,
+            value: input.value,
+            status: input.status,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const record = mapDerivedOutputRecord(readRecord(response.body)?.item);
+      if (!record) {
+        throw new Error("Derived output payload is missing");
+      }
+      return record;
+    },
+    async update(projectId, itemId, input, options: ProjectsDerivedOutputsRequestOptions = {}): Promise<DerivedOutputRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/derived-outputs/${encodeURIComponent(itemId)}`,
+        {
+          body: compactObject({
+            value: input.value,
+            status: input.status,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "PATCH",
+        },
+      );
+      const record = mapDerivedOutputRecord(readRecord(response.body)?.item);
+      if (!record) {
+        throw new Error("Derived output payload is missing");
+      }
+      return record;
+    },
+    async archive(projectId, itemId, options: ProjectsDerivedOutputsRequestOptions = {}): Promise<DerivedOutputRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/derived-outputs/${encodeURIComponent(itemId)}`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "DELETE",
+        },
+      );
+      const record = mapDerivedOutputRecord(readRecord(response.body)?.item);
+      if (!record) {
+        throw new Error("Derived output payload is missing");
+      }
+      return record;
+    },
+  };
+}
+
+function createProjectsInboxResource(client: TransportClient): ProjectsInboxResource {
+  return {
+    async list(projectId, options: ProjectsInboxListOptions = {}): Promise<ProjectsInboxListResult> {
+      const query = buildQueryString(compactObject({
+        status: options.status,
+        type: options.type,
+        sender_account_id: options.senderAccountId,
+        source_session_id: options.sourceSessionId,
+        limit: options.limit,
+        cursor: options.cursor,
+      }));
+      const pathname = query
+        ? `/projects/${encodeURIComponent(projectId)}/inbox?${query}`
+        : `/projects/${encodeURIComponent(projectId)}/inbox`;
+      const response = await client.fetchJson<Record<string, unknown>>(pathname, {
+        headers: buildAccountHeaders(options.accountId),
+        method: "GET",
+      });
+      const body = readRecord(response.body);
+      return {
+        items: readArray(body?.items)
+          .map(mapProjectInboxItem)
+          .filter((item): item is ProjectInboxItem => item !== null),
+        nextCursor: readNullableString(body?.next_cursor),
+      };
+    },
+    async get(projectId, itemId, options: ProjectsInboxRequestOptions = {}): Promise<ProjectInboxItem> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/inbox/${encodeURIComponent(itemId)}`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      return readInboxItemResponse(response.body);
+    },
+    async create(projectId, input, options: ProjectsInboxRequestOptions = {}): Promise<ProjectInboxItem> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/inbox`,
+        {
+          body: compactObject({
+            type: input.type,
+            title: input.title ?? undefined,
+            payload: input.payload,
+            source_event_id: input.sourceEventId ?? undefined,
+            source_session_id: input.sourceSessionId ?? undefined,
+            source_floor_id: input.sourceFloorId ?? undefined,
+            source_page_id: input.sourcePageId ?? undefined,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      return readInboxItemResponse(response.body);
+    },
+    async accept(projectId, itemId, options: ProjectsInboxDecisionOptions = {}): Promise<ProjectInboxItem> {
+      return decideProjectInboxItem(client, projectId, itemId, "accept", options);
+    },
+    async reject(projectId, itemId, options: ProjectsInboxDecisionOptions = {}): Promise<ProjectInboxItem> {
+      return decideProjectInboxItem(client, projectId, itemId, "reject", options);
+    },
+    async archive(projectId, itemId, options: ProjectsInboxDecisionOptions = {}): Promise<ProjectInboxItem> {
+      return decideProjectInboxItem(client, projectId, itemId, "archive", options);
+    },
+  };
+}
+
+async function decideProjectInboxItem(
+  client: TransportClient,
+  projectId: string,
+  itemId: string,
+  decision: ProjectInboxDecision,
+  options: ProjectsInboxDecisionOptions,
+): Promise<ProjectInboxItem> {
+  const response = await client.fetchJson<Record<string, unknown>>(
+    `/projects/${encodeURIComponent(projectId)}/inbox/${encodeURIComponent(itemId)}`,
+    {
+      body: compactObject({
+        decision,
+        note: options.note ?? undefined,
+      }),
+      headers: buildAccountHeaders(options.accountId),
+      method: "PATCH",
+    },
+  );
+  return readInboxItemResponse(response.body);
+}
+
+function readInboxItemResponse(value: unknown): ProjectInboxItem {
+  const record = mapProjectInboxItem(readRecord(value)?.item);
+  if (!record) {
+    throw new Error("Project inbox item payload is missing");
+  }
+  return record;
 }
 
 function buildEventQuery(
@@ -456,7 +825,7 @@ function mapProjectRecord(value: unknown): ProjectRecord | null {
   const role = readString(record.role) as ProjectRole;
   const kind = readString(record.kind) as ProjectKind;
   const status = readString(record.status) as ProjectStatus;
-  if (role !== "owner" && role !== "observer") return null;
+  if (!isProjectRole(role)) return null;
   if (kind !== "session_default" && kind !== "manual") return null;
   if (status !== "active" && status !== "archived") return null;
   return {
@@ -523,7 +892,7 @@ function mapProjectMember(value: unknown): ProjectMember | null {
   const record = readRecord(value);
   if (!record) return null;
   const role = readString(record.role) as ProjectRole;
-  if (role !== "owner" && role !== "observer") return null;
+  if (!isProjectRole(role)) return null;
   const status = readString(record.status) as ProjectMemberStatus;
   if (status !== "active" && status !== "removed") return null;
   return {
@@ -537,4 +906,65 @@ function mapProjectMember(value: unknown): ProjectMember | null {
     createdAt: readNumber(record.created_at),
     updatedAt: readNumber(record.updated_at),
   };
+}
+
+
+function mapDerivedOutputRecord(value: unknown): DerivedOutputRecord | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const status = readString(record.status) as DerivedOutputStatus;
+  if (!isDerivedOutputStatus(status)) return null;
+  return {
+    id: readString(record.id),
+    workspaceId: readString(record.workspace_id),
+    projectId: readString(record.project_id),
+    accountId: readString(record.account_id),
+    ownerAccountId: readString(record.owner_account_id),
+    sourceSessionId: readNullableString(record.source_session_id),
+    sourceFloorId: readNullableString(record.source_floor_id),
+    sourcePageId: readNullableString(record.source_page_id),
+    domain: readString(record.domain),
+    value: record.value ?? null,
+    status,
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapProjectInboxItem(value: unknown): ProjectInboxItem | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const status = readString(record.status) as ProjectInboxItemStatus;
+  if (!isProjectInboxItemStatus(status)) return null;
+  return {
+    id: readString(record.id),
+    workspaceId: readString(record.workspace_id),
+    projectId: readString(record.project_id),
+    accountId: readString(record.account_id),
+    senderAccountId: readString(record.sender_account_id),
+    type: readString(record.type),
+    title: readNullableString(record.title),
+    payload: record.payload ?? null,
+    sourceEventId: readNullableString(record.source_event_id),
+    sourceSessionId: readNullableString(record.source_session_id),
+    sourceFloorId: readNullableString(record.source_floor_id),
+    sourcePageId: readNullableString(record.source_page_id),
+    status,
+    decidedByAccountId: readNullableString(record.decided_by_account_id),
+    decidedAt: readNullableNumber(record.decided_at),
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function isProjectRole(value: string): value is ProjectRole {
+  return value === "owner" || value === "observer" || value === "deriver";
+}
+
+function isDerivedOutputStatus(value: string): value is DerivedOutputStatus {
+  return value === "draft" || value === "published" || value === "archived";
+}
+
+function isProjectInboxItemStatus(value: string): value is ProjectInboxItemStatus {
+  return value === "pending" || value === "accepted" || value === "rejected" || value === "archived";
 }
