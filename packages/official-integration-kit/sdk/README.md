@@ -297,7 +297,37 @@ console.log(inboxPage.items[0]?.type);
 
 Phase 3 相关写入会产生 Project Event：`derived_output.created`、`derived_output.updated`、`derived_output.archived`、`project_inbox.item.created`、`project_inbox.item.accepted`、`project_inbox.item.rejected` 和 `project_inbox.item.archived`。事件 payload 只包含 ID、状态、类型、来源引用和小型元数据，不包含完整 `value` 或 `payload` JSON 正文。
 
-当前仍不开放 Project CRUD、Workspace 成员体系、client identity、API Key identity、插件安装或 Inbox 自动合并。
+当前仍不开放 Project CRUD、Workspace 成员体系、插件安装或 Inbox 自动合并。
+
+### Clients 与 Client API Key
+
+Client 表示同一个账号下的不同程序调用入口。`@tavern/sdk` 在 `client.clients` 暴露 Client 管理接口，明文 secret 只在创建时返回一次。
+
+```ts
+const created = await client.clients.create({
+  name: "world-simulator",
+  kind: "deriver",
+});
+
+const apiKey = await client.clients.apiKeys.create(created.id, {
+  name: "production",
+});
+console.log(apiKey.secret); // 只在创建时返回一次
+
+await client.clients.apiKeys.revoke(created.id, apiKey.apiKey.id);
+await client.clients.disable(created.id);
+```
+
+Client 加入 Project 时使用 `addMember`：
+
+```ts
+await client.projects.addMember(
+  "proj-1",
+  { subjectType: "client", subjectId: created.id, role: "deriver" },
+);
+```
+
+Client 身份只能管理同账号下的 Project。Client API Key 通过 `X-Tavern-Client-Key` 或 `Authorization: Bearer tvk_live_...` 调用任意 API；认证失败统一返回 401 `client_api_key_invalid`。
 
 
 ### Operation Logs 操作日志

@@ -267,6 +267,11 @@ async function buildChatApp(input: {
       accountId: "default-admin",
       role: "admin",
       status: "active",
+      actorType: "account",
+      actorId: "default-admin",
+      actorAccountId: "default-admin",
+      actorClientId: null,
+      authMethod: "dev",
     };
   });
 

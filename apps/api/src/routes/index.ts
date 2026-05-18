@@ -29,6 +29,7 @@ import { registerAccountRoutes } from "./accounts";
 import { registerUserRoutes } from "./users";
 import { registerExportRoutes } from "./exports";
 import { registerClientDataRoutes } from "../client-data/client-data-routes.js";
+import { registerClientRoutes } from "./clients.js";
 import { registerAssetVersionRoutes } from "./asset-versions.js";
 import { registerBranchVcRoutes } from "./branch-vc.js";
 import { registerOperationLogRoutes } from "./operation-logs.js";
@@ -61,6 +62,7 @@ export async function registerCrudRoutes(
   await registerAccountRoutes(app, connection, {
     accountMode: options.accountMode,
   });
+  await registerClientRoutes(app, connection);
   await registerSessionRoutes(app, connection, {
     clientData: options.enableClientData ? options.clientData : undefined,
     floorRun: options.floorRun,

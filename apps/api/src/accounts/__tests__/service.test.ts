@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { createDatabase, type AppDb } from "../../db/client.js";
-import { accounts, workspaces } from "../../db/schema.js";
+import { accounts, clients, workspaces } from "../../db/schema.js";
 import { ensureDefaultAdminAccount } from "../service.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID, DEFAULT_ADMIN_ACCOUNT_NAME } from "../constants.js";
 
@@ -19,6 +19,12 @@ describe("ensureDefaultAdminAccount", () => {
     // 删掉它以确保测试从干净状态开始。
     // Workspace / Project Phase 1 启动修复会为账号补默认 Workspace，
     // 因此要先删从属 Workspace，再删账号。
+    // Phase 4 启动修复会为账号补默认Client，
+    // 因此要先删从属 Client，再删 Workspace、账号。
+    db.delete(clients)
+      .where(eq(clients.accountId, DEFAULT_ADMIN_ACCOUNT_ID))
+      .run();
+
     db.delete(workspaces)
       .where(eq(workspaces.accountId, DEFAULT_ADMIN_ACCOUNT_ID))
       .run();

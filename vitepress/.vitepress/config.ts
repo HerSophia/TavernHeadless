@@ -139,6 +139,7 @@ export default defineConfig({
             { text: 'Workspace / Project（工作区与项目）', link: '/reference/api/workspace-project' },
             { text: 'Project Derived Outputs（项目派生结果）', link: '/reference/api/projects-derived-outputs' },
             { text: 'Project Inbox（项目收件箱）', link: '/reference/api/projects-inbox' },
+            { text: 'Clients（客户端身份）', link: '/reference/api/clients' },
             { text: 'VC Tags（版本标签）', link: '/reference/api/vc-tags' },
           ],
         },

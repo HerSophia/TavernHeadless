@@ -12861,6 +12861,1931 @@
         }
       }
     },
+    "/clients": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "disabled"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "enum": [
+                "basic",
+                "advanced",
+                "deriver",
+                "worker",
+                "custom"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "account_id": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "is_default": {
+                            "type": "boolean"
+                          },
+                          "kind": {
+                            "enum": [
+                              "basic",
+                              "advanced",
+                              "deriver",
+                              "worker",
+                              "custom"
+                            ],
+                            "type": "string"
+                          },
+                          "metadata": {},
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "active",
+                              "disabled"
+                            ],
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "account_id",
+                          "name",
+                          "kind",
+                          "status",
+                          "is_default",
+                          "metadata",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List clients for the current account",
+        "tags": [
+          "clients"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "basic",
+                      "advanced",
+                      "deriver",
+                      "worker",
+                      "custom"
+                    ],
+                    "type": "string"
+                  },
+                  "metadata": {},
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "is_default": {
+                          "type": "boolean"
+                        },
+                        "kind": {
+                          "enum": [
+                            "basic",
+                            "advanced",
+                            "deriver",
+                            "worker",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "metadata": {},
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "disabled"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "account_id",
+                        "name",
+                        "kind",
+                        "status",
+                        "is_default",
+                        "metadata",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "item"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create a client",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/clients/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "is_default": {
+                          "type": "boolean"
+                        },
+                        "kind": {
+                          "enum": [
+                            "basic",
+                            "advanced",
+                            "deriver",
+                            "worker",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "metadata": {},
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "disabled"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "account_id",
+                        "name",
+                        "kind",
+                        "status",
+                        "is_default",
+                        "metadata",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "item"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get client detail",
+        "tags": [
+          "clients"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "name"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "metadata"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "basic",
+                      "advanced",
+                      "deriver",
+                      "worker",
+                      "custom"
+                    ],
+                    "type": "string"
+                  },
+                  "metadata": {},
+                  "name": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "is_default": {
+                          "type": "boolean"
+                        },
+                        "kind": {
+                          "enum": [
+                            "basic",
+                            "advanced",
+                            "deriver",
+                            "worker",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "metadata": {},
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "disabled"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "account_id",
+                        "name",
+                        "kind",
+                        "status",
+                        "is_default",
+                        "metadata",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "item"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Update a client",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/clients/{id}/api-keys": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "active",
+                "revoked"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "account_id": {
+                            "type": "string"
+                          },
+                          "client_id": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "expires_at": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "key_prefix": {
+                            "type": "string"
+                          },
+                          "last_used_at": {
+                            "anyOf": [
+                              {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "active",
+                              "revoked"
+                            ],
+                            "type": "string"
+                          },
+                          "updated_at": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "account_id",
+                          "client_id",
+                          "name",
+                          "key_prefix",
+                          "status",
+                          "last_used_at",
+                          "expires_at",
+                          "created_at",
+                          "updated_at"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "next_cursor": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "next_cursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "List client API keys",
+        "tags": [
+          "clients"
+        ]
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expires_at": {
+                    "anyOf": [
+                      {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "client_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key_prefix": {
+                          "type": "string"
+                        },
+                        "last_used_at": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "revoked"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "account_id",
+                        "client_id",
+                        "name",
+                        "key_prefix",
+                        "status",
+                        "last_used_at",
+                        "expires_at",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "item",
+                    "secret"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Create a client API key",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/clients/{id}/api-keys/{key_id}/revoke": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "client_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "expires_at": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "key_prefix": {
+                          "type": "string"
+                        },
+                        "last_used_at": {
+                          "anyOf": [
+                            {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "revoked"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "account_id",
+                        "client_id",
+                        "name",
+                        "key_prefix",
+                        "status",
+                        "last_used_at",
+                        "expires_at",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "item"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Revoke a client API key",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/clients/{id}/disable": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "is_default": {
+                          "type": "boolean"
+                        },
+                        "kind": {
+                          "enum": [
+                            "basic",
+                            "advanced",
+                            "deriver",
+                            "worker",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "metadata": {},
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "disabled"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "account_id",
+                        "name",
+                        "kind",
+                        "status",
+                        "is_default",
+                        "metadata",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "item"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Disable a client",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/clients/{id}/enable": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "is_default": {
+                          "type": "boolean"
+                        },
+                        "kind": {
+                          "enum": [
+                            "basic",
+                            "advanced",
+                            "deriver",
+                            "worker",
+                            "custom"
+                          ],
+                          "type": "string"
+                        },
+                        "metadata": {},
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "disabled"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "account_id",
+                        "name",
+                        "kind",
+                        "status",
+                        "is_default",
+                        "metadata",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "item"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Enable a client",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
     "/docs-en": {
       "get": {
         "responses": {
@@ -14867,6 +16792,36 @@
           },
           {
             "in": "query",
+            "name": "actor_client_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "permission_action",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result",
+            "required": false,
+            "schema": {
+              "enum": [
+                "allowed",
+                "denied"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "session_id",
             "required": false,
             "schema": {
@@ -15031,6 +16986,16 @@
                               }
                             ]
                           },
+                          "actor_client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "actor_id": {
                             "anyOf": [
                               {
@@ -15085,7 +17050,27 @@
                               }
                             ]
                           },
+                          "permission_action": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "project_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -15098,6 +17083,20 @@
                           "request_id": {
                             "anyOf": [
                               {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "allowed",
+                                  "denied"
+                                ],
                                 "type": "string"
                               },
                               {
@@ -15172,6 +17171,10 @@
                           "workspace_id",
                           "project_id",
                           "actor_account_id",
+                          "actor_client_id",
+                          "permission_action",
+                          "result",
+                          "reason",
                           "action",
                           "status",
                           "session_id",
@@ -41138,6 +43141,36 @@
           },
           {
             "in": "query",
+            "name": "actor_client_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "permission_action",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result",
+            "required": false,
+            "schema": {
+              "enum": [
+                "allowed",
+                "denied"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "session_id",
             "required": false,
             "schema": {
@@ -41293,6 +43326,16 @@
                               }
                             ]
                           },
+                          "actor_client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "actor_id": {
                             "anyOf": [
                               {
@@ -41347,7 +43390,27 @@
                               }
                             ]
                           },
+                          "permission_action": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "project_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -41360,6 +43423,20 @@
                           "request_id": {
                             "anyOf": [
                               {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "allowed",
+                                  "denied"
+                                ],
                                 "type": "string"
                               },
                               {
@@ -41434,6 +43511,10 @@
                           "workspace_id",
                           "project_id",
                           "actor_account_id",
+                          "actor_client_id",
+                          "permission_action",
+                          "result",
+                          "reason",
                           "action",
                           "status",
                           "session_id",
@@ -47028,6 +49109,16 @@
                           "owner_account_id": {
                             "type": "string"
                           },
+                          "owner_client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "project_id": {
                             "type": "string"
                           },
@@ -47084,6 +49175,7 @@
                           "project_id",
                           "account_id",
                           "owner_account_id",
+                          "owner_client_id",
                           "source_session_id",
                           "source_floor_id",
                           "source_page_id",
@@ -47335,6 +49427,16 @@
                         "owner_account_id": {
                           "type": "string"
                         },
+                        "owner_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "project_id": {
                           "type": "string"
                         },
@@ -47391,6 +49493,7 @@
                         "project_id",
                         "account_id",
                         "owner_account_id",
+                        "owner_client_id",
                         "source_session_id",
                         "source_floor_id",
                         "source_page_id",
@@ -47632,6 +49735,16 @@
                         "owner_account_id": {
                           "type": "string"
                         },
+                        "owner_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "project_id": {
                           "type": "string"
                         },
@@ -47688,6 +49801,7 @@
                         "project_id",
                         "account_id",
                         "owner_account_id",
+                        "owner_client_id",
                         "source_session_id",
                         "source_floor_id",
                         "source_page_id",
@@ -47894,6 +50008,16 @@
                         "owner_account_id": {
                           "type": "string"
                         },
+                        "owner_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "project_id": {
                           "type": "string"
                         },
@@ -47950,6 +50074,7 @@
                         "project_id",
                         "account_id",
                         "owner_account_id",
+                        "owner_client_id",
                         "source_session_id",
                         "source_floor_id",
                         "source_page_id",
@@ -48190,6 +50315,16 @@
                         "owner_account_id": {
                           "type": "string"
                         },
+                        "owner_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "project_id": {
                           "type": "string"
                         },
@@ -48246,6 +50381,7 @@
                         "project_id",
                         "account_id",
                         "owner_account_id",
+                        "owner_client_id",
                         "source_session_id",
                         "source_floor_id",
                         "source_page_id",
@@ -48520,6 +50656,16 @@
                               }
                             ]
                           },
+                          "actor_client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "branch_id": {
                             "anyOf": [
                               {
@@ -48648,6 +50794,7 @@
                           "visibility",
                           "source",
                           "actor_account_id",
+                          "actor_client_id",
                           "session_id",
                           "branch_id",
                           "floor_id",
@@ -49168,6 +51315,16 @@
                               }
                             ]
                           },
+                          "decided_by_client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "id": {
                             "type": "string"
                           },
@@ -49177,6 +51334,16 @@
                           },
                           "sender_account_id": {
                             "type": "string"
+                          },
+                          "sender_client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "source_event_id": {
                             "anyOf": [
@@ -49254,6 +51421,7 @@
                           "project_id",
                           "account_id",
                           "sender_account_id",
+                          "sender_client_id",
                           "type",
                           "title",
                           "payload",
@@ -49263,6 +51431,7 @@
                           "source_page_id",
                           "status",
                           "decided_by_account_id",
+                          "decided_by_client_id",
                           "decided_at",
                           "created_at",
                           "updated_at"
@@ -49528,6 +51697,16 @@
                             }
                           ]
                         },
+                        "decided_by_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -49537,6 +51716,16 @@
                         },
                         "sender_account_id": {
                           "type": "string"
+                        },
+                        "sender_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "source_event_id": {
                           "anyOf": [
@@ -49614,6 +51803,7 @@
                         "project_id",
                         "account_id",
                         "sender_account_id",
+                        "sender_client_id",
                         "type",
                         "title",
                         "payload",
@@ -49623,6 +51813,7 @@
                         "source_page_id",
                         "status",
                         "decided_by_account_id",
+                        "decided_by_client_id",
                         "decided_at",
                         "created_at",
                         "updated_at"
@@ -49871,6 +52062,16 @@
                             }
                           ]
                         },
+                        "decided_by_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -49880,6 +52081,16 @@
                         },
                         "sender_account_id": {
                           "type": "string"
+                        },
+                        "sender_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "source_event_id": {
                           "anyOf": [
@@ -49957,6 +52168,7 @@
                         "project_id",
                         "account_id",
                         "sender_account_id",
+                        "sender_client_id",
                         "type",
                         "title",
                         "payload",
@@ -49966,6 +52178,7 @@
                         "source_page_id",
                         "status",
                         "decided_by_account_id",
+                        "decided_by_client_id",
                         "decided_at",
                         "created_at",
                         "updated_at"
@@ -50213,6 +52426,16 @@
                             }
                           ]
                         },
+                        "decided_by_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -50222,6 +52445,16 @@
                         },
                         "sender_account_id": {
                           "type": "string"
+                        },
+                        "sender_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "source_event_id": {
                           "anyOf": [
@@ -50299,6 +52532,7 @@
                         "project_id",
                         "account_id",
                         "sender_account_id",
+                        "sender_client_id",
                         "type",
                         "title",
                         "payload",
@@ -50308,6 +52542,7 @@
                         "source_page_id",
                         "status",
                         "decided_by_account_id",
+                        "decided_by_client_id",
                         "decided_at",
                         "created_at",
                         "updated_at"
@@ -50490,11 +52725,31 @@
                           "account_id": {
                             "type": "string"
                           },
+                          "client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "created_at": {
                             "minimum": 0,
                             "type": "integer"
                           },
                           "created_by_account_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "created_by_client_id": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -50525,6 +52780,16 @@
                             ],
                             "type": "string"
                           },
+                          "subject_id": {
+                            "type": "string"
+                          },
+                          "subject_type": {
+                            "enum": [
+                              "account",
+                              "client"
+                            ],
+                            "type": "string"
+                          },
                           "updated_at": {
                             "minimum": 0,
                             "type": "integer"
@@ -50540,7 +52805,11 @@
                           "account_id",
                           "role",
                           "status",
+                          "subject_type",
+                          "subject_id",
+                          "client_id",
                           "created_by_account_id",
+                          "created_by_client_id",
                           "created_at",
                           "updated_at"
                         ],
@@ -50680,6 +52949,19 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
+                "anyOf": [
+                  {
+                    "required": [
+                      "account_id"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "subject_type",
+                      "subject_id"
+                    ]
+                  }
+                ],
                 "properties": {
                   "account_id": {
                     "minLength": 1,
@@ -50688,10 +52970,20 @@
                   "role": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "subject_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "subject_type": {
+                    "enum": [
+                      "account",
+                      "client"
+                    ],
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "account_id",
                   "role"
                 ],
                 "type": "object"
@@ -50713,11 +53005,31 @@
                         "account_id": {
                           "type": "string"
                         },
+                        "client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
                         },
                         "created_by_account_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created_by_client_id": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -50748,6 +53060,16 @@
                           ],
                           "type": "string"
                         },
+                        "subject_id": {
+                          "type": "string"
+                        },
+                        "subject_type": {
+                          "enum": [
+                            "account",
+                            "client"
+                          ],
+                          "type": "string"
+                        },
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
@@ -50763,7 +53085,11 @@
                         "account_id",
                         "role",
                         "status",
+                        "subject_type",
+                        "subject_id",
+                        "client_id",
                         "created_by_account_id",
+                        "created_by_client_id",
                         "created_at",
                         "updated_at"
                       ],
@@ -50912,7 +53238,7 @@
             "description": "Default Response"
           }
         },
-        "summary": "Add project observer member",
+        "summary": "Add project member",
         "tags": [
           "projects"
         ]
@@ -50953,11 +53279,31 @@
                         "account_id": {
                           "type": "string"
                         },
+                        "client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "created_at": {
                           "minimum": 0,
                           "type": "integer"
                         },
                         "created_by_account_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created_by_client_id": {
                           "anyOf": [
                             {
                               "type": "string"
@@ -50988,6 +53334,16 @@
                           ],
                           "type": "string"
                         },
+                        "subject_id": {
+                          "type": "string"
+                        },
+                        "subject_type": {
+                          "enum": [
+                            "account",
+                            "client"
+                          ],
+                          "type": "string"
+                        },
                         "updated_at": {
                           "minimum": 0,
                           "type": "integer"
@@ -51003,7 +53359,11 @@
                         "account_id",
                         "role",
                         "status",
+                        "subject_type",
+                        "subject_id",
+                        "client_id",
                         "created_by_account_id",
+                        "created_by_client_id",
                         "created_at",
                         "updated_at"
                       ],
@@ -51152,7 +53512,293 @@
             "description": "Default Response"
           }
         },
-        "summary": "Remove project observer member",
+        "summary": "Remove project account member (legacy path)",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/projects/{id}/members/{subject_type}/{subject_id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subject_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "account",
+                "client"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "subject_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "account_id": {
+                          "type": "string"
+                        },
+                        "client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "created_by_account_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "created_by_client_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "project_id": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "enum": [
+                            "owner",
+                            "observer",
+                            "deriver"
+                          ],
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "active",
+                            "removed"
+                          ],
+                          "type": "string"
+                        },
+                        "subject_id": {
+                          "type": "string"
+                        },
+                        "subject_type": {
+                          "enum": [
+                            "account",
+                            "client"
+                          ],
+                          "type": "string"
+                        },
+                        "updated_at": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "workspace_id": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "workspace_id",
+                        "project_id",
+                        "account_id",
+                        "role",
+                        "status",
+                        "subject_type",
+                        "subject_id",
+                        "client_id",
+                        "created_by_account_id",
+                        "created_by_client_id",
+                        "created_at",
+                        "updated_at"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "item"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Remove project member by subject",
         "tags": [
           "projects"
         ]
@@ -58376,6 +61022,36 @@
           },
           {
             "in": "query",
+            "name": "actor_client_id",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "permission_action",
+            "required": false,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result",
+            "required": false,
+            "schema": {
+              "enum": [
+                "allowed",
+                "denied"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "session_id",
             "required": false,
             "schema": {
@@ -58540,6 +61216,16 @@
                               }
                             ]
                           },
+                          "actor_client_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "actor_id": {
                             "anyOf": [
                               {
@@ -58594,7 +61280,27 @@
                               }
                             ]
                           },
+                          "permission_action": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "project_id": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "reason": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -58607,6 +61313,20 @@
                           "request_id": {
                             "anyOf": [
                               {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "result": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "allowed",
+                                  "denied"
+                                ],
                                 "type": "string"
                               },
                               {
@@ -58681,6 +61401,10 @@
                           "workspace_id",
                           "project_id",
                           "actor_account_id",
+                          "actor_client_id",
+                          "permission_action",
+                          "result",
+                          "reason",
                           "action",
                           "status",
                           "session_id",

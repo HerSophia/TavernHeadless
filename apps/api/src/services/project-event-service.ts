@@ -16,6 +16,7 @@ export type ProjectEventRecord = {
   visibility: ProjectEventVisibility;
   source: ProjectEventSource;
   actorAccountId: string | null;
+  actorClientId: string | null;
   sessionId: string | null;
   branchId: string | null;
   floorId: string | null;
@@ -36,6 +37,7 @@ export type AppendProjectEventInput = {
   visibility?: ProjectEventVisibility;
   source?: ProjectEventSource;
   actorAccountId?: string | null;
+  actorClientId?: string | null;
   sessionId?: string | null;
   branchId?: string | null;
   floorId?: string | null;
@@ -142,6 +144,7 @@ export class ProjectEventService {
         visibility: input.visibility ?? "project",
         source: input.source ?? "api",
         actorAccountId: normalizeNullableString(input.actorAccountId),
+        actorClientId: normalizeNullableString(input.actorClientId),
         sessionId: normalizeNullableString(input.sessionId),
         branchId: normalizeNullableString(input.branchId),
         floorId: normalizeNullableString(input.floorId),
@@ -252,6 +255,7 @@ export function mapProjectEventRow(row: typeof projectEvents.$inferSelect): Proj
     visibility: row.visibility,
     source: row.source,
     actorAccountId: row.actorAccountId,
+    actorClientId: row.actorClientId,
     sessionId: row.sessionId,
     branchId: row.branchId,
     floorId: row.floorId,

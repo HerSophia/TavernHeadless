@@ -2,12 +2,18 @@ import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { accounts, projectMemberships } from "../db/schema.js";
-import { ProjectAccessService } from "./project-access-service.js";
+import { accounts, clients, projectMemberships } from "../db/schema.js";
+import { ProjectAccessService, type ProjectActorInput } from "./project-access-service.js";
 
 export type ProjectMembershipRole = "owner" | "observer" | "deriver";
 export type ProjectAssignableMembershipRole = "observer" | "deriver";
 export type ProjectMembershipStatus = "active" | "removed";
+export type ProjectMemberSubjectType = "account" | "client";
+
+export type ProjectMemberSubject = {
+  subjectType: ProjectMemberSubjectType;
+  subjectId: string;
+};
 
 export type ProjectMemberRecord = {
   id: string;
@@ -16,7 +22,11 @@ export type ProjectMemberRecord = {
   accountId: string;
   role: ProjectMembershipRole;
   status: ProjectMembershipStatus;
+  subjectType: ProjectMemberSubjectType;
+  subjectId: string;
+  clientId: string | null;
   createdByAccountId: string | null;
+  createdByClientId: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -30,14 +40,17 @@ export type ProjectMembershipServiceErrorCode =
   | "project_member_role_not_supported"
   | "project_member_owner_role_conflict"
   | "project_member_role_conflict"
-  | "project_member_owner_remove_not_supported";
+  | "project_member_owner_remove_not_supported"
+  | "project_member_subject_invalid"
+  | "project_member_client_not_found"
+  | "project_member_default_client_owner_conflict";
 
 export class ProjectMembershipServiceError extends Error {
   constructor(
     public readonly statusCode: 400 | 404 | 409,
     public readonly code: ProjectMembershipServiceErrorCode,
     message: string,
-  ) {
+ ) {
     super(message);
     this.name = "ProjectMembershipServiceError";
   }
@@ -65,12 +78,13 @@ export function ensureOwnerProjectMembership(
   db: AppDb | DbExecutor,
   input: EnsureOwnerProjectMembershipInput,
 ): ProjectMemberRecord {
-  const existing = db
+ const existing = db
     .select()
     .from(projectMemberships)
     .where(and(
       eq(projectMemberships.projectId, input.projectId),
-      eq(projectMemberships.accountId, input.accountId),
+      eq(projectMemberships.subjectType, "account"),
+      eq(projectMemberships.subjectId, input.accountId),
     ))
     .limit(1)
     .get();
@@ -80,7 +94,7 @@ export function ensureOwnerProjectMembership(
       throw new ProjectMembershipServiceError(
         409,
         "project_owner_membership_conflict",
-        `Project owner membership conflicts with an existing member: ${input.projectId}`,
+        `Project owner membershipconflicts with an existing member: ${input.projectId}`,
       );
     }
 
@@ -90,7 +104,7 @@ export function ensureOwnerProjectMembership(
 
     const updated = db
       .update(projectMemberships)
-      .set({
+ .set({
         status: "active",
         updatedAt: input.now,
       })
@@ -109,8 +123,12 @@ export function ensureOwnerProjectMembership(
       projectId: input.projectId,
       accountId: input.accountId,
       role: "owner",
-      status: "active",
+    status: "active",
+      subjectType: "account",
+      subjectId: input.accountId,
+      clientId: null,
       createdByAccountId: normalizeNullableString(input.createdByAccountId),
+      createdByClientId: null,
       createdAt: input.now,
       updatedAt: input.now,
     })
@@ -120,8 +138,30 @@ export function ensureOwnerProjectMembership(
   return mapProjectMemberRow(inserted);
 }
 
+export type AddSubjectMemberInput = {
+  actor: ProjectActorInput;
+  projectId: string;
+  subjectType: ProjectMemberSubjectType;
+  subjectId: string;
+  role: ProjectAssignableMembershipRole | string;
+  now?: number;
+};
+
+export type RemoveSubjectMemberInput = {
+  actor: ProjectActorInput;
+  projectId: string;
+  subjectType: ProjectMemberSubjectType;
+  subjectId: string;
+  now?: number;
+};
+
 /**
- * Manages Project owner, observer and deriver membership records.
+ * Manages Project owner, observerand deriver membership records.
+ *
+ * In phase 4 the service supports both account subjects and client subjects.
+ * Legacy account-only methods (`addObserver`, `addDeriver`, `addMember`,
+ * `removeMember`, `removeObserver`) keep their old signatures for backwards
+ * compatibility and route to the subject-aware path internally.
  */
 export class ProjectMembershipService {
   private readonly accessService: ProjectAccessService;
@@ -134,18 +174,17 @@ export class ProjectMembershipService {
     return ensureOwnerProjectMembership(this.db, input);
   }
 
-  listMembers(projectId: string): ProjectMemberRecord[] {
+  listMembers(projectId:string): ProjectMemberRecord[]{
     const normalizedProjectId = requireNonEmpty(projectId, "projectId");
     return this.db
       .select()
       .from(projectMemberships)
       .where(eq(projectMemberships.projectId, normalizedProjectId))
-      .orderBy(projectMemberships.role, projectMemberships.createdAt)
       .all()
       .map(mapProjectMemberRow)
-      .sort((left, right) => {
-        const roleDiff = roleSortRank(left.role) - roleSortRank(right.role);
-        return roleDiff !== 0 ? roleDiff : left.createdAt - right.createdAt;
+    .sort((left, right) => {
+        const rank = subjectSortRank(left) - subjectSortRank(right);
+        return rank !== 0 ? rank : left.createdAt - right.createdAt;
       });
   }
 
@@ -155,25 +194,27 @@ export class ProjectMembershipService {
     accountId: string;
     now?: number;
   }): ProjectMemberRecord {
-    return this.addMember({
-      actorAccountId: input.actorAccountId,
+    return this.addSubjectMember({
+      actor: legacyAccountActor(input.actorAccountId),
       projectId: input.projectId,
-      accountId: input.accountId,
+      subjectType: "account",
+      subjectId: input.accountId,
       role: "observer",
-      now: input.now,
+    now: input.now,
     });
   }
 
   addDeriver(input: {
-    actorAccountId: string;
-    projectId: string;
+   actorAccountId: string;
+    projectId:string;
     accountId: string;
     now?: number;
   }): ProjectMemberRecord {
-    return this.addMember({
-      actorAccountId: input.actorAccountId,
+    return this.addSubjectMember({
+      actor: legacyAccountActor(input.actorAccountId),
       projectId: input.projectId,
-      accountId: input.accountId,
+      subjectType: "account",
+      subjectId: input.accountId,
       role: "deriver",
       now: input.now,
     });
@@ -186,44 +227,132 @@ export class ProjectMembershipService {
     role: string;
     now?: number;
   }): ProjectMemberRecord {
+    return this.addSubjectMember({
+      actor: legacyAccountActor(input.actorAccountId),
+      projectId: input.projectId,
+      subjectType: "account",
+      subjectId: input.accountId,
+      role: input.role,
+      now: input.now,
+    });
+  }
+
+  removeMember(input: {
+    actorAccountId: string;
+    projectId: string;
+    accountId: string;
+    now?: number;
+  }): ProjectMemberRecord {
+    return this.removeSubjectMember({
+   actor: legacyAccountActor(input.actorAccountId),
+     projectId: input.projectId,
+      subjectType: "account",
+      subjectId: input.accountId,
+now: input.now,
+    });
+  }
+
+  removeObserver(input: {
+    actorAccountId: string;
+    projectId: string;
+    accountId: string;
+    now?: number;
+  }): ProjectMemberRecord {
+    return this.removeSubjectMember({
+      actor: legacyAccountActor(input.actorAccountId),
+      projectId: input.projectId,
+      subjectType: "account",
+      subjectId: input.accountId,
+      now: input.now,
+    });
+  }
+
+  addSubjectMember(input: AddSubjectMemberInput):ProjectMemberRecord {
     const now = input.now ?? Date.now();
-    const targetAccountId = requireNonEmpty(input.accountId, "accountId");
+    const subjectType = normalizeSubjectType(input.subjectType);
+    const subjectId = requireNonEmpty(input.subjectId, "subject_id");
     const role = normalizeAssignableRole(input.role);
-    const access = this.accessService.requireProjectAction(
-      input.actorAccountId,
+    const access = this.accessService.requireProjectActionForActor(
+      input.actor,
       input.projectId,
       "project.manage_members",
     );
 
-    const targetAccount = this.db
-      .select({ id: accounts.id, status: accounts.status })
-      .from(accounts)
-      .where(eq(accounts.id, targetAccountId))
-      .limit(1)
-      .get();
+    let resolvedClientId: string | null = null;
+    let resolvedAccountId: string;
 
-    if (!targetAccount) {
-      throw new ProjectMembershipServiceError(
-        404,
-        "account_not_found",
-        `Account not found: ${targetAccountId}`,
-      );
-    }
+    if (subjectType === "account") {
+      const account = this.db
+        .select({ id: accounts.id, status: accounts.status })
+        .from(accounts)
+        .where(eq(accounts.id, subjectId))
+        .limit(1)
+        .get();
 
-    if (targetAccount.status !== "active") {
-      throw new ProjectMembershipServiceError(
-        409,
-        "account_disabled",
-        `Account is disabled: ${targetAccountId}`,
-      );
-    }
+      if (!account) {
+        throw new ProjectMembershipServiceError(
+          404,
+      "account_not_found",
+          `Account not found: ${subjectId}`,
+  );
+      }
 
-    if (targetAccountId === access.project.accountId) {
-      throw new ProjectMembershipServiceError(
-        400,
-        "project_member_owner_role_conflict",
-        "Project owner cannot be added as project member",
-      );
+      if (account.status !== "active") {
+        throw new ProjectMembershipServiceError(
+          409,
+          "account_disabled",
+          `Account is disabled: ${subjectId}`,
+        );
+      }
+
+      if (subjectId === access.project.accountId) {
+        throw new ProjectMembershipServiceError(
+          400,
+          "project_member_owner_role_conflict",
+          "Project owner cannot be added as project member",
+        );
+      }
+
+      resolvedAccountId = subjectId;
+    } else {
+      const client = this.db
+        .select({
+          id: clients.id,
+      accountId: clients.accountId,
+          status: clients.status,
+     isDefault: clients.isDefault,
+        })
+        .from(clients)
+        .where(eq(clients.id, subjectId))
+        .limit(1)
+    .get();
+
+      if (!client) {
+        throw new ProjectMembershipServiceError(
+          404,
+          "project_member_client_not_found",
+          `Client not found: ${subjectId}`,
+        );
+      }
+
+      if (client.status !=="active") {
+        throw new ProjectMembershipServiceError(
+         409,
+          "project_member_client_not_found",
+          `Client is not active: ${subjectId}`,
+        );
+      }
+
+      if (client.isDefault && client.accountId === access.project.accountId) {
+        throw new ProjectMembershipServiceError(
+          400,
+     "project_member_default_client_owner_conflict",
+        "Default client of the project owner cannot be added as a project member",
+        );
+      }
+
+      resolvedAccountId = client.accountId;
+      resolvedClientId = client.id;
     }
 
     const existing = this.db
@@ -231,13 +360,14 @@ export class ProjectMembershipService {
       .from(projectMemberships)
       .where(and(
         eq(projectMemberships.projectId, access.project.id),
-        eq(projectMemberships.accountId, targetAccountId),
+        eq(projectMemberships.subjectType, subjectType),
+        eq(projectMemberships.subjectId, subjectId),
       ))
       .limit(1)
       .get();
 
     if (existing) {
-      if (existing.role === "owner") {
+if (existing.role ==="owner") {
         throw new ProjectMembershipServiceError(
           400,
           "project_member_owner_role_conflict",
@@ -246,7 +376,7 @@ export class ProjectMembershipService {
       }
 
       if (existing.role !== role) {
-        throw new ProjectMembershipServiceError(
+     throw new ProjectMembershipServiceError(
           409,
           "project_member_role_conflict",
           `Project member already has role: ${existing.role}`,
@@ -257,17 +387,17 @@ export class ProjectMembershipService {
         return mapProjectMemberRow(existing);
       }
 
-      const updated = this.db
-        .update(projectMemberships)
+      const updated =this.db
+   .update(projectMemberships)
         .set({
           status: "active",
           updatedAt: now,
         })
         .where(eq(projectMemberships.id, existing.id))
         .returning()
-        .get();
+    .get();
 
-      return mapProjectMemberRow(updated);
+   return mapProjectMemberRow(updated);
     }
 
     const inserted = this.db
@@ -276,12 +406,16 @@ export class ProjectMembershipService {
         id: `pmem_${nanoid()}`,
         workspaceId: access.project.workspaceId,
         projectId: access.project.id,
-        accountId: targetAccountId,
+        accountId: resolvedAccountId,
         role,
         status: "active",
-        createdByAccountId: input.actorAccountId,
-        createdAt: now,
-        updatedAt: now,
+        subjectType,
+        subjectId,
+        clientId: resolvedClientId,
+        createdByAccountId: input.actor.actorAccountId,
+        createdByClientId: input.actor.actorClientId ?? null,
+createdAt: now,
+   updatedAt: now,
       })
       .returning()
       .get();
@@ -289,35 +423,32 @@ export class ProjectMembershipService {
     return mapProjectMemberRow(inserted);
   }
 
-  removeMember(input: {
-    actorAccountId: string;
-    projectId: string;
-    accountId: string;
-    now?: number;
-  }): ProjectMemberRecord {
+  removeSubjectMember(input: RemoveSubjectMemberInput): ProjectMemberRecord {
     const now = input.now ?? Date.now();
-    const targetAccountId = requireNonEmpty(input.accountId, "accountId");
-    const access = this.accessService.requireProjectAction(
-      input.actorAccountId,
+    const subjectType = normalizeSubjectType(input.subjectType);
+   const subjectId = requireNonEmpty(input.subjectId,"subject_id");
+    const access = this.accessService.requireProjectActionForActor(
+      input.actor,
       input.projectId,
       "project.manage_members",
     );
 
-    const existing = this.db
+const existing = this.db
       .select()
       .from(projectMemberships)
       .where(and(
         eq(projectMemberships.projectId, access.project.id),
-        eq(projectMemberships.accountId, targetAccountId),
-      ))
+        eq(projectMemberships.subjectType, subjectType),
+        eq(projectMemberships.subjectId, subjectId),
+))
       .limit(1)
       .get();
 
     if (!existing || existing.status !== "active") {
       throw new ProjectMembershipServiceError(
-        404,
+      404,
         "project_member_not_found",
-        `Project member not found: ${targetAccountId}`,
+`Project member not found: ${subjectId}`,
       );
     }
 
@@ -325,7 +456,7 @@ export class ProjectMembershipService {
       throw new ProjectMembershipServiceError(
         400,
         "project_member_owner_remove_not_supported",
-        "Project owner cannot be removed through member routes",
+        "Project owner cannot beremoved through member routes",
       );
     }
 
@@ -341,31 +472,23 @@ export class ProjectMembershipService {
 
     return mapProjectMemberRow(updated);
   }
-
-  removeObserver(input: {
-    actorAccountId: string;
-    projectId: string;
-    accountId: string;
-    now?: number;
-  }): ProjectMemberRecord {
-    return this.removeMember({
-      actorAccountId: input.actorAccountId,
-      projectId: input.projectId,
-      accountId: input.accountId,
-      now: input.now,
-    });
-  }
 }
 
 function mapProjectMemberRow(row: typeof projectMemberships.$inferSelect): ProjectMemberRecord {
+  const subjectType = (row.subjectType ?? "account") as ProjectMemberSubjectType;
+  const subjectId = row.subjectId ?? row.accountId;
   return {
-    id: row.id,
+    id:row.id,
     workspaceId: row.workspaceId,
-    projectId: row.projectId,
+  projectId: row.projectId,
     accountId: row.accountId,
-    role: row.role,
+role: row.role,
     status: row.status,
+    subjectType,
+    subjectId,
+    clientId: row.clientId,
     createdByAccountId: row.createdByAccountId,
+    createdByClientId: row.createdByClientId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -374,11 +497,11 @@ function mapProjectMemberRow(row: typeof projectMemberships.$inferSelect): Proje
 function normalizeNullableString(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+ return trimmed.length > 0 ? trimmed : null;
 }
 
 function requireNonEmpty(value: string, fieldName: string): string {
-  const trimmed = value.trim();
+  const trimmed = typeof value === "string" ? value.trim() : "";
   if (trimmed.length === 0) {
     throw new Error(`${fieldName} must be a non-empty string`);
   }
@@ -398,8 +521,31 @@ function normalizeAssignableRole(role: string): ProjectAssignableMembershipRole 
   );
 }
 
-function roleSortRank(role: ProjectMembershipRole): number {
-  if (role === "owner") return 0;
-  if (role === "observer") return 1;
-  return 2;
+function normalizeSubjectType(value: string): ProjectMemberSubjectType {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (normalized === "account" || normalized === "client") {
+    return normalized;
+  }
+  throw new ProjectMembershipServiceError(
+    400,
+    "project_member_subject_invalid",
+    "Project member subject type must be 'account' or 'client'",
+  );
+}
+
+function subjectSortRank(member: ProjectMemberRecord): number {
+  if (member.role === "owner") return 0;
+  if (member.subjectType === "account" && member.role === "observer") return 1;
+ if (member.subjectType === "account" && member.role === "deriver") return 2;
+  if (member.subjectType === "client"&& member.role === "observer") return 3;
+  if(member.subjectType === "client" && member.role === "deriver") return 4;
+  return 5;
+}
+
+function legacyAccountActor(actorAccountId: string): ProjectActorInput {
+  return {
+    actorType: "account",
+    actorAccountId,
+    actorClientId: null,
+  };
 }

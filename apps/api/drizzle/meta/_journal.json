@@ -414,6 +414,13 @@
                         "when":  1765800000000,
                         "tag":  "0058_project_derived_output_and_inbox",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  59,
+                        "version":  "6",
+                        "when":  1765900000000,
+                        "tag":  "0059_client_identity_permission_audit",
+                        "breakpoints":  true
                     }
                 ]
 }

@@ -65,6 +65,7 @@ describe("client-helpers public exports", () => {
 describe("project event helpers", () => {
   const event: ProjectEventRecord = {
     actorAccountId: "acc-1",
+    actorClientId: null,
     branchId: "main",
     causationEventId: null,
     correlationId: "corr-1",

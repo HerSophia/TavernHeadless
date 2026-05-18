@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import * as schema from "./schema";
 import { AssetVersionService } from "../services/asset-version-service.js";
+import { ScopeIntegrityService } from "../services/scope-integrity-service.js";
 
 const DEFAULT_DATABASE_PATH = "data/tavern-headless.db";
 const DEFAULT_MIGRATIONS_PATH = fileURLToPath(new URL("../../drizzle", import.meta.url));
@@ -52,6 +53,7 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairWorkspaceProjectScopeDrift(sqlite);
   repairProjectEventsObserverScopeDrift(sqlite);
   repairProjectDerivedOutputInboxDrift(sqlite);
+  repairClientIdentityPermissionAuditDrift(sqlite);
 }
 
 function tableHasColumns(
@@ -887,6 +889,274 @@ function createProjectDerivedOutputInboxIndexes(sqlite: Database.Database): void
   createIndexIfColumnsExist(sqlite, "project_inbox_item", ["workspace_id", "created_at"], "CREATE INDEX IF NOT EXISTS `project_inbox_workspace_created_idx` ON `project_inbox_item` (`workspace_id`, `created_at`);");
 }
 
+function repairClientIdentityPermissionAuditDrift(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "account")) {
+    return;
+  }
+
+  createClientIdentityTables(sqlite);
+  addClientIdentityColumns(sqlite);
+  backfillProjectMembershipSubjects(sqlite);
+  dropLegacyProjectMembershipAccountUnique(sqlite);
+  createClientIdentityIndexes(sqlite);
+  ensureDefaultClientsForAccounts(sqlite);
+}
+
+function createClientIdentityTables(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "client")) {
+    sqlite.exec(`CREATE TABLE \`client\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`name\` text NOT NULL,
+  \`kind\` text NOT NULL DEFAULT 'custom',
+  \`status\` text NOT NULL DEFAULT 'active',
+  \`is_default\` integer NOT NULL DEFAULT 0,
+  \`metadata_json\` text NOT NULL DEFAULT '{}',
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE restrict
+);`);
+  }
+
+  if (!tableExists(sqlite, "client_api_key")) {
+    sqlite.exec(`CREATE TABLE \`client_api_key\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`client_id\` text NOT NULL,
+  \`name\` text,
+  \`key_prefix\` text NOT NULL,
+  \`key_hash\` text NOT NULL,
+  \`status\` text NOT NULL DEFAULT 'active',
+  \`last_used_at\` integer,
+  \`expires_at\` integer,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`client_id\`) REFERENCES \`client\`(\`id\`) ON DELETE cascade
+);`);
+  }
+}
+
+function addClientIdentityColumns(sqlite: Database.Database): void {
+  addColumnIfMissing(
+    sqlite,
+    "project_membership",
+    "subject_type",
+    "`subject_type` text",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "project_membership",
+    "subject_id",
+    "`subject_id` text",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "project_membership",
+    "client_id",
+    "`client_id` text REFERENCES `client`(`id`) ON DELETE set null",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "project_membership",
+    "created_by_client_id",
+    "`created_by_client_id` text REFERENCES `client`(`id`) ON DELETE set null",
+  );
+
+  addColumnIfMissing(
+    sqlite,
+    "operation_log",
+    "actor_client_id",
+    "`actor_client_id` text REFERENCES `client`(`id`) ON DELETE set null",
+  );
+  addColumnIfMissing(sqlite, "operation_log", "permission_action", "`permission_action` text");
+  addColumnIfMissing(sqlite, "operation_log", "result", "`result` text");
+  addColumnIfMissing(sqlite, "operation_log", "reason", "`reason` text");
+
+  addColumnIfMissing(
+    sqlite,
+    "project_event",
+    "actor_client_id",
+    "`actor_client_id` text REFERENCES `client`(`id`) ON DELETE set null",
+  );
+
+  addColumnIfMissing(
+    sqlite,
+    "derived_output",
+    "owner_client_id",
+    "`owner_client_id` text REFERENCES `client`(`id`) ON DELETE set null",
+  );
+
+  addColumnIfMissing(
+    sqlite,
+    "project_inbox_item",
+    "sender_client_id",
+    "`sender_client_id` text REFERENCES `client`(`id`) ON DELETE set null",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "project_inbox_item",
+    "decided_by_client_id",
+    "`decided_by_client_id` text REFERENCES `client`(`id`) ON DELETE set null",
+  );
+}
+
+function backfillProjectMembershipSubjects(sqlite: Database.Database): void {
+  if (!tableHasColumns(sqlite, "project_membership", ["account_id", "subject_type", "subject_id"])) {
+    return;
+  }
+
+  sqlite.exec(`UPDATE \`project_membership\`
+SET \`subject_type\` = 'account', \`subject_id\` = \`account_id\`
+WHERE \`subject_type\` IS NULL
+  AND \`account_id\` IS NOT NULL;`);
+}
+
+function dropLegacyProjectMembershipAccountUnique(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "project_membership")) {
+    return;
+  }
+  sqlite.exec("DROP INDEX IF EXISTS `project_membership_project_account_uq`;");
+}
+
+function createClientIdentityIndexes(sqlite: Database.Database): void {
+  createIndexIfColumnsExist(
+    sqlite,
+    "client",
+    ["account_id", "status", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `client_account_status_idx` ON `client` (`account_id`, `status`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "client",
+    ["account_id", "kind", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `client_account_kind_idx` ON `client` (`account_id`, `kind`, `created_at`);",
+  );
+  if (tableHasColumns(sqlite, "client", ["account_id", "is_default"])) {
+    sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `client_account_default_uq` ON `client` (`account_id`) WHERE `is_default` = 1;");
+  }
+
+  createIndexIfColumnsExist(
+    sqlite,
+    "client_api_key",
+    ["key_hash"],
+    "CREATE UNIQUE INDEX IF NOT EXISTS `client_api_key_hash_uq` ON `client_api_key` (`key_hash`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "client_api_key",
+    ["client_id", "status", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `client_api_key_client_status_idx` ON `client_api_key` (`client_id`, `status`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "client_api_key",
+    ["account_id", "status", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `client_api_key_account_status_idx` ON `client_api_key` (`account_id`, `status`, `created_at`);",
+  );
+
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_membership",
+    ["project_id", "subject_type", "subject_id"],
+    "CREATE UNIQUE INDEX IF NOT EXISTS `project_membership_project_subject_uq` ON `project_membership` (`project_id`, `subject_type`, `subject_id`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_membership",
+    ["project_id", "subject_type", "subject_id", "status"],
+    "CREATE INDEX IF NOT EXISTS `project_membership_project_subject_status_idx` ON `project_membership` (`project_id`, `subject_type`, `subject_id`, `status`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_membership",
+    ["client_id", "project_id", "status"],
+    "CREATE INDEX IF NOT EXISTS `project_membership_client_project_status_idx` ON `project_membership` (`client_id`, `project_id`, `status`);",
+  );
+
+  createIndexIfColumnsExist(
+    sqlite,
+    "operation_log",
+    ["actor_client_id", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `operation_log_actor_client_created_idx` ON `operation_log` (`actor_client_id`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "operation_log",
+    ["permission_action", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `operation_log_permission_action_created_idx` ON `operation_log` (`permission_action`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "operation_log",
+    ["result", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `operation_log_result_created_idx` ON `operation_log` (`result`, `created_at`);",
+  );
+
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_event",
+    ["actor_client_id", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `project_event_actor_client_idx` ON `project_event` (`actor_client_id`, `created_at`);",
+  );
+
+  createIndexIfColumnsExist(
+    sqlite,
+    "derived_output",
+    ["owner_client_id", "project_id", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `derived_output_owner_client_project_idx` ON `derived_output` (`owner_client_id`, `project_id`, `created_at`);",
+  );
+
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_inbox_item",
+    ["sender_client_id", "project_id", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `project_inbox_sender_client_project_idx` ON `project_inbox_item` (`sender_client_id`, `project_id`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_inbox_item",
+    ["decided_by_client_id", "decided_at"],
+    "CREATE INDEX IF NOT EXISTS `project_inbox_decided_client_idx` ON `project_inbox_item` (`decided_by_client_id`, `decided_at`);",
+  );
+}
+
+function ensureDefaultClientsForAccounts(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "client") || !tableExists(sqlite, "account")) {
+    return;
+  }
+
+  sqlite.exec(`INSERT OR IGNORE INTO \`client\` (
+  \`id\`,
+  \`account_id\`,
+  \`name\`,
+  \`kind\`,
+  \`status\`,
+  \`is_default\`,
+  \`metadata_json\`,
+  \`created_at\`,
+  \`updated_at\`
+)
+SELECT
+  'cli_default_' || \`account\`.\`id\`,
+  \`account\`.\`id\`,
+  '默认 Client',
+  'custom',
+  'active',
+  1,
+  '{}',
+  \`account\`.\`created_at\`,
+  \`account\`.\`updated_at\`
+FROM \`account\`
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM \`client\`
+  WHERE \`client\`.\`account_id\` = \`account\`.\`id\`
+    AND \`client\`.\`is_default\` = 1
+);`);
+}
+
+
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 
 /**
@@ -943,6 +1213,12 @@ export function createDatabase(
 
   repairKnownAdditiveSchemaDrift(sqlite);
   new AssetVersionService(db).ensureInitialVersionsForAllAccounts();
+
+  try {
+    new ScopeIntegrityService(db).repair({});
+  } catch {
+    // Scope integrity repair is best-effort. Failures must not block startup.
+  }
 
   return {
     db,

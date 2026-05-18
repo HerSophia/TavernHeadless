@@ -68,6 +68,8 @@ curl 'http://localhost:3000/projects/proj_main/events?after=0&limit=100'
 | 词 | 这里的意思 |
 | ---- | ---- |
 | Workspace | 账号下的资产管理边界。每个账号有且只有一个默认 Workspace。 |
+| Client | 同一个账号下的不同程序调用入口。Client 不是账号；权限和审计按 Client 单独记账。 |
+| 默认Client | 每个账号自动创建的内置 Client。默认 Client 可以按 owner 身份访问同账号 Project，普通 Client 不会自动获得 owner 权限。 |
 | Project | 工作区内的会话联动边界。一个 Project 下可以有多个 Session。 |
 | owner | Project 所属账号。可以读写 Project 下资源。 |
 | observer | Project 观察者。可以读取 Project、Session、Project Event 和 Derived Output，不能写入。 |
@@ -221,6 +223,11 @@ Project Inbox 的完整接口见 [Project Inbox](./projects-inbox)。
   "account_id": "acc_observer",
   "role": "observer",
   "status": "active",
+  "subject_type": "account",
+  "subject_id": "acc_observer",
+  "client_id": null,
+  "created_by_client_id": null,
+
   "created_by_account_id": "acc_1",
   "created_at": 1735689600000,
   "updated_at": 1735689600000
@@ -552,6 +559,15 @@ await client.projects.addMember(
 );
 
 await client.projects.addDeriver("proj_main", "acc_deriver");
+
+// 把一个 Client 加入 Project（阶段四新增）
+await client.projects.addMember(
+  "proj_main",
+  { subjectType: "client", subjectId: "cli_world_sim", role: "deriver" },
+);
+
+// 删除按 subject 维度精确指定
+await fetch("/projects/proj_main/members/client/cli_world_sim", { method: "DELETE" });
 
 await client.projects.removeMember({
   projectId: "proj_main",

@@ -136,6 +136,8 @@ export function createTestProject(
       projectId,
       role: "owner",
       status: "active",
+      subjectType: "account",
+      subjectId: accountId,
       createdByAccountId: null,
       createdAt: now,
       updatedAt: now,

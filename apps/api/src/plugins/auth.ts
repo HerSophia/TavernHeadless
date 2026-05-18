@@ -1,11 +1,16 @@
 import fastifyJwt from "@fastify/jwt";
 import { timingSafeEqual } from "node:crypto";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from"fastify";
 
 import { getAccountAuthState } from "../accounts/service.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "../accounts/constants.js";
 import type { AppDb } from "../db/client.js";
 import { sendError } from "../lib/http.js";
+import {
+  ClientApiKeyService,
+  ClientApiKeyServiceError,
+  type ClientApiKeyAuthResult,
+} from "../services/client-api-key-service.js";
 
 export type AuthMode = "off" | "api_key" | "jwt";
 
@@ -14,12 +19,19 @@ export type AuthConfig =
   | { mode: "api_key"; apiKeys: string[]; apiKeyAccountMap?: Record<string, string> }
   | { mode: "jwt"; jwtSecret: string; jwtAccountClaim?: string };
 
+export type AuthMethod = "dev" | "static_api_key" | "jwt" | "client_api_key";
+
 export type AuthenticatedAuthContext = {
   kind: "authenticated";
   accountId: string;
-  role: "admin" | "user";
+  role: "admin"| "user";
   status: "active" | "disabled";
   subject?: string;
+  actorType: "account" | "client";
+  actorId: string;
+  actorAccountId:string;
+  actorClientId: string | null;
+  authMethod: AuthMethod;
 };
 
 export type PublicAuthContext = {
@@ -36,11 +48,13 @@ type RegisterAuthOptions = {
 
 declare module "fastify" {
   interface FastifyRequest {
-    authContext?: AuthContext;
+   authContext?: AuthContext;
   }
 }
 
 const PUBLIC_PATHS = new Set(["/health", "/version", "/openapi.json", "/docs-en", "/docs-zh"]);
+const CLIENT_API_KEY_HEADER = "x-tavern-client-key";
+const CLIENT_API_KEY_SECRET_PREFIX = "tvk_live_";
 
 export async function registerAuth(
   app: FastifyInstance,
@@ -49,7 +63,8 @@ export async function registerAuth(
 ): Promise<void> {
   const db = options.db;
   const accountMode = options.accountMode ?? "single";
-  const defaultAccountId = options.defaultAccountId ?? DEFAULT_ADMIN_ACCOUNT_ID;
+  const defaultAccountId = options.defaultAccountId?? DEFAULT_ADMIN_ACCOUNT_ID;
+  const clientApiKeyService = new ClientApiKeyService(db);
 
   if (auth.mode === "jwt") {
     await app.register(fastifyJwt, {
@@ -65,6 +80,21 @@ export async function registerAuth(
     const pathname = getPathname(request);
     if (isPublicPath(pathname)) {
       request.authContext = { kind: "public" };
+     return;
+    }
+
+    const clientSecret =extractClientApiKeySecret(request);
+    if (clientSecret) {
+      const clientContext = await resolveClientApiKeyContext(
+        clientApiKeyService,
+        db,
+        reply,
+        clientSecret,
+      );
+      if (!clientContext) {
+        return;
+      }
+      request.authContext = clientContext;
       return;
     }
 
@@ -74,8 +104,8 @@ export async function registerAuth(
     }
 
     if (auth.mode === "api_key") {
-      const apiKey = extractApiKey(request);
-      if (!apiKey) {
+      const apiKey = extractStaticApiKey(request);
+   if (!apiKey) {
         sendError(reply, 401, "auth_required", "Authentication required");
         return;
       }
@@ -88,15 +118,15 @@ export async function registerAuth(
 
       const accountId =
         accountMode === "single"
-          ? defaultAccountId
+          ?defaultAccountId
           : auth.apiKeyAccountMap?.[matchedKey]?.trim();
 
       if (!accountId) {
-        sendError(reply, 403, "auth_account_unresolved", "API key is not bound to an account");
+        sendError(reply, 403,"auth_account_unresolved", "API key isnot boundtoan account");
         return;
       }
 
-      const accountContext = await resolveAccountContext(db, reply, accountId);
+      const accountContext = await resolveAccountContext(db, reply, accountId, "static_api_key");
       if (!accountContext) {
         return;
       }
@@ -112,17 +142,17 @@ export async function registerAuth(
 
     const accountId =
       accountMode === "single"
-        ? defaultAccountId
+    ? defaultAccountId
         : resolveJwtAccountId(payload, auth.jwtAccountClaim ?? "account_id");
 
     if (!accountId) {
-      sendError(reply, 403, "auth_account_unresolved", "JWT token does not contain a valid account id");
+sendError(reply, 403, "auth_account_unresolved", "JWT token does not contain a valid account id");
       return;
     }
 
-    const accountContext = await resolveAccountContext(db, reply, accountId);
+    const accountContext = await resolveAccountContext(db, reply, accountId, "jwt");
     if (!accountContext) {
-      return;
+  return;
     }
 
     request.authContext = {
@@ -158,7 +188,7 @@ function isPublicPath(pathname: string): boolean {
 }
 
 function getPathname(request: FastifyRequest): string {
-  return request.url.split("?")[0] ?? "/";
+return request.url.split("?")[0] ?? "/";
 }
 
 async function verifyJwt(
@@ -185,9 +215,10 @@ async function verifyJwt(
 }
 
 async function resolveAccountContext(
-  db: AppDb,
+ db: AppDb,
   reply: FastifyReply,
-  accountId: string
+  accountId: string,
+  authMethod: Exclude<AuthMethod, "client_api_key" | "dev">,
 ): Promise<AuthenticatedAuthContext | null> {
   const account = await getAccountAuthState(db, accountId);
   if (!account) {
@@ -205,6 +236,47 @@ async function resolveAccountContext(
     accountId: account.id,
     role: account.role,
     status: account.status,
+    actorType: "account",
+    actorId: account.id,
+    actorAccountId: account.id,
+    actorClientId: null,
+    authMethod,
+  };
+}
+
+async function resolveClientApiKeyContext(
+  service: ClientApiKeyService,
+  db: AppDb,
+  reply: FastifyReply,
+  secret: string,
+): Promise<AuthenticatedAuthContext | null> {
+  let auth: ClientApiKeyAuthResult;
+  try {
+auth = service.authenticate(secret);
+  } catch (error) {
+    if (error instanceof ClientApiKeyServiceError) {
+      sendError(reply, 401, "client_api_key_invalid", "Client API key is invalid");
+      return null;
+    }
+    throw error;
+  }
+
+  const account = await getAccountAuthState(db, auth.accountId);
+  if (!account || account.status !== "active") {
+    sendError(reply, 401, "client_api_key_invalid", "Client API key is invalid");
+    return null;
+  }
+
+  return {
+    kind: "authenticated",
+    accountId: account.id,
+    role: account.role,
+    status: account.status,
+    actorType: "client",
+    actorId: auth.clientId,
+    actorAccountId: account.id,
+    actorClientId: auth.clientId,
+    authMethod: "client_api_key",
   };
 }
 
@@ -214,10 +286,15 @@ function createDevelopmentAuthContext(defaultAccountId: string): AuthenticatedAu
     accountId: defaultAccountId,
     role: "admin",
     status: "active",
+    actorType: "account",
+    actorId: defaultAccountId,
+    actorAccountId: defaultAccountId,
+    actorClientId: null,
+    authMethod: "dev",
   };
 }
 
-function resolveJwtAccountId(payload: Record<string, unknown>, claimKey: string): string | null {
+function resolveJwtAccountId(payload: Record<string, unknown>, claimKey: string): string| null {
   const claim = payload[claimKey];
   if (typeof claim !== "string") {
     return null;
@@ -241,32 +318,58 @@ function timingSafeApiKeyMatch(
   return matched;
 }
 
-function extractApiKey(request: FastifyRequest): string | undefined {
-  const headerValue = request.headers["x-api-key"];
-  if (typeof headerValue === "string" && headerValue.trim().length > 0) {
-    return headerValue.trim();
+function extractClientApiKeySecret(request: FastifyRequest): string | undefined {
+  const headerValue = request.headers[CLIENT_API_KEY_HEADER];
+  const headerSecret = pickFirstString(headerValue);
+  if (headerSecret) {
+    return headerSecret;
   }
 
-  if (Array.isArray(headerValue)) {
-    const value = headerValue.find((item) => typeof item === "string" && item.trim().length > 0);
-    if (value) {
-      return value.trim();
-    }
+  const bearer = extractBearerToken(request);
+  if (bearer && bearer.startsWith(CLIENT_API_KEY_SECRET_PREFIX)) {
+    return bearer;
   }
 
+  return undefined;
+}
+
+function extractStaticApiKey(request: FastifyRequest): string | undefined {
+const headerValue = request.headers["x-api-key"];
+  const fromHeader = pickFirstString(headerValue);
+  if (fromHeader) {
+    return fromHeader;
+  }
+
+  const bearer = extractBearerToken(request);
+  if (bearer && !bearer.startsWith(CLIENT_API_KEY_SECRET_PREFIX)) {
+    return bearer;
+  }
+
+  return undefined;
+}
+
+function extractBearerToken(request: FastifyRequest): string | undefined {
   const authorization = request.headers.authorization;
   if (!authorization || typeof authorization !== "string") {
     return undefined;
   }
-
   if (!authorization.startsWith("Bearer ")) {
     return undefined;
   }
-
   const token = authorization.slice("Bearer ".length).trim();
-  if (token.length === 0) {
-    return undefined;
-  }
+  return token.length > 0 ? token : undefined;
+}
 
-  return token;
+function pickFirstString(value: string | string[] | undefined): string | undefined {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (typeof entry === "string" && entry.trim().length > 0) {
+        return entry.trim();
+      }
+    }
+  }
+  return undefined;
 }

@@ -3231,6 +3231,885 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/clients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List clients for the current account */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "active" | "disabled";
+                    kind?: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                account_id: string;
+                                created_at: number;
+                                id: string;
+                                is_default: boolean;
+                                /** @enum {string} */
+                                kind: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                                metadata: unknown;
+                                name: string;
+                                /** @enum {string} */
+                                status: "active" | "disabled";
+                                updated_at: number;
+                            }[];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create a client */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        kind?: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                        metadata?: unknown;
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                id: string;
+                                is_default: boolean;
+                                /** @enum {string} */
+                                kind: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                                metadata: unknown;
+                                name: string;
+                                /** @enum {string} */
+                                status: "active" | "disabled";
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get client detail */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                id: string;
+                                is_default: boolean;
+                                /** @enum {string} */
+                                kind: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                                metadata: unknown;
+                                name: string;
+                                /** @enum {string} */
+                                status: "active" | "disabled";
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update a client */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        kind?: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                        metadata?: unknown;
+                        name?: string;
+                    } | unknown | unknown | unknown;
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                id: string;
+                                is_default: boolean;
+                                /** @enum {string} */
+                                kind: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                                metadata: unknown;
+                                name: string;
+                                /** @enum {string} */
+                                status: "active" | "disabled";
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/clients/{id}/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List client API keys */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "active" | "revoked";
+                    limit?: number;
+                    cursor?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                account_id: string;
+                                client_id: string;
+                                created_at: number;
+                                expires_at: number | null;
+                                id: string;
+                                key_prefix: string;
+                                last_used_at: number | null;
+                                name: string | null;
+                                /** @enum {string} */
+                                status: "active" | "revoked";
+                                updated_at: number;
+                            }[];
+                            next_cursor: string | null;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create a client API key */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expires_at?: number | null;
+                        name?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                client_id: string;
+                                created_at: number;
+                                expires_at: number | null;
+                                id: string;
+                                key_prefix: string;
+                                last_used_at: number | null;
+                                name: string | null;
+                                /** @enum {string} */
+                                status: "active" | "revoked";
+                                updated_at: number;
+                            };
+                            secret: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/api-keys/{key_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a client API key */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    key_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                client_id: string;
+                                created_at: number;
+                                expires_at: number | null;
+                                id: string;
+                                key_prefix: string;
+                                last_used_at: number | null;
+                                name: string | null;
+                                /** @enum {string} */
+                                status: "active" | "revoked";
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a client */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                id: string;
+                                is_default: boolean;
+                                /** @enum {string} */
+                                kind: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                                metadata: unknown;
+                                name: string;
+                                /** @enum {string} */
+                                status: "active" | "disabled";
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable a client */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                created_at: number;
+                                id: string;
+                                is_default: boolean;
+                                /** @enum {string} */
+                                kind: "basic" | "advanced" | "deriver" | "worker" | "custom";
+                                metadata: unknown;
+                                name: string;
+                                /** @enum {string} */
+                                status: "active" | "disabled";
+                                updated_at: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/docs-en": {
         parameters: {
             query?: never;
@@ -11091,6 +11970,7 @@ export interface paths {
                                 domain: string;
                                 id: string;
                                 owner_account_id: string;
+                                owner_client_id: string | null;
                                 project_id: string;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -11213,6 +12093,7 @@ export interface paths {
                                 domain: string;
                                 id: string;
                                 owner_account_id: string;
+                                owner_client_id: string | null;
                                 project_id: string;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -11352,6 +12233,7 @@ export interface paths {
                                 domain: string;
                                 id: string;
                                 owner_account_id: string;
+                                owner_client_id: string | null;
                                 project_id: string;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -11463,6 +12345,7 @@ export interface paths {
                                 domain: string;
                                 id: string;
                                 owner_account_id: string;
+                                owner_client_id: string | null;
                                 project_id: string;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -11582,6 +12465,7 @@ export interface paths {
                                 domain: string;
                                 id: string;
                                 owner_account_id: string;
+                                owner_client_id: string | null;
                                 project_id: string;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -11718,6 +12602,7 @@ export interface paths {
                             has_more: boolean;
                             items: {
                                 actor_account_id: string | null;
+                                actor_client_id: string | null;
                                 branch_id: string | null;
                                 causation_event_id: string | null;
                                 correlation_id: string | null;
@@ -11985,10 +12870,12 @@ export interface paths {
                                 created_at: number;
                                 decided_at: number | null;
                                 decided_by_account_id: string | null;
+                                decided_by_client_id: string | null;
                                 id: string;
                                 payload: unknown;
                                 project_id: string;
                                 sender_account_id: string;
+                                sender_client_id: string | null;
                                 source_event_id: string | null;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -12111,10 +12998,12 @@ export interface paths {
                                 created_at: number;
                                 decided_at: number | null;
                                 decided_by_account_id: string | null;
+                                decided_by_client_id: string | null;
                                 id: string;
                                 payload: unknown;
                                 project_id: string;
                                 sender_account_id: string;
+                                sender_client_id: string | null;
                                 source_event_id: string | null;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -12254,10 +13143,12 @@ export interface paths {
                                 created_at: number;
                                 decided_at: number | null;
                                 decided_by_account_id: string | null;
+                                decided_by_client_id: string | null;
                                 id: string;
                                 payload: unknown;
                                 project_id: string;
                                 sender_account_id: string;
+                                sender_client_id: string | null;
                                 source_event_id: string | null;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -12380,10 +13271,12 @@ export interface paths {
                                 created_at: number;
                                 decided_at: number | null;
                                 decided_by_account_id: string | null;
+                                decided_by_client_id: string | null;
                                 id: string;
                                 payload: unknown;
                                 project_id: string;
                                 sender_account_id: string;
+                                sender_client_id: string | null;
                                 source_event_id: string | null;
                                 source_floor_id: string | null;
                                 source_page_id: string | null;
@@ -12498,14 +13391,19 @@ export interface paths {
                         "application/json": {
                             items: {
                                 account_id: string;
+                                client_id: string | null;
                                 created_at: number;
                                 created_by_account_id: string | null;
+                                created_by_client_id: string | null;
                                 id: string;
                                 project_id: string;
                                 /** @enum {string} */
                                 role: "owner" | "observer" | "deriver";
                                 /** @enum {string} */
                                 status: "active" | "removed";
+                                subject_id: string;
+                                /** @enum {string} */
+                                subject_type: "account" | "client";
                                 updated_at: number;
                                 workspace_id: string;
                             }[];
@@ -12566,7 +13464,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Add project observer member */
+        /** Add project member */
         post: {
             parameters: {
                 query?: never;
@@ -12579,9 +13477,12 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        account_id: string;
+                        account_id?: string;
                         role: string;
-                    };
+                        subject_id?: string;
+                        /** @enum {string} */
+                        subject_type?: "account" | "client";
+                    } | unknown | unknown;
                 };
             };
             responses: {
@@ -12594,14 +13495,19 @@ export interface paths {
                         "application/json": {
                             item: {
                                 account_id: string;
+                                client_id: string | null;
                                 created_at: number;
                                 created_by_account_id: string | null;
+                                created_by_client_id: string | null;
                                 id: string;
                                 project_id: string;
                                 /** @enum {string} */
                                 role: "owner" | "observer" | "deriver";
                                 /** @enum {string} */
                                 status: "active" | "removed";
+                                subject_id: string;
+                                /** @enum {string} */
+                                subject_type: "account" | "client";
                                 updated_at: number;
                                 workspace_id: string;
                             };
@@ -12694,7 +13600,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove project observer member */
+        /** Remove project account member (legacy path) */
         delete: {
             parameters: {
                 query?: never;
@@ -12716,14 +13622,146 @@ export interface paths {
                         "application/json": {
                             item: {
                                 account_id: string;
+                                client_id: string | null;
                                 created_at: number;
                                 created_by_account_id: string | null;
+                                created_by_client_id: string | null;
                                 id: string;
                                 project_id: string;
                                 /** @enum {string} */
                                 role: "owner" | "observer" | "deriver";
                                 /** @enum {string} */
                                 status: "active" | "removed";
+                                subject_id: string;
+                                /** @enum {string} */
+                                subject_type: "account" | "client";
+                                updated_at: number;
+                                workspace_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/members/{subject_type}/{subject_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove project member by subject */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    subject_type: "account" | "client";
+                    subject_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                client_id: string | null;
+                                created_at: number;
+                                created_by_account_id: string | null;
+                                created_by_client_id: string | null;
+                                id: string;
+                                project_id: string;
+                                /** @enum {string} */
+                                role: "owner" | "observer" | "deriver";
+                                /** @enum {string} */
+                                status: "active" | "removed";
+                                subject_id: string;
+                                /** @enum {string} */
+                                subject_type: "account" | "client";
                                 updated_at: number;
                                 workspace_id: string;
                             };
@@ -24624,6 +25662,9 @@ export interface operations {
                 workspace_id?: string;
                 project_id?: string;
                 actor_account_id?: string;
+                actor_client_id?: string;
+                permission_action?: string;
+                result?: "allowed" | "denied";
                 session_id?: string;
                 floor_id?: string;
                 run_id?: string;
@@ -24657,6 +25698,7 @@ export interface operations {
                             account_id: string;
                             action: string;
                             actor_account_id: string | null;
+                            actor_client_id: string | null;
                             actor_id: string | null;
                             actor_type: string;
                             after_ref: unknown;
@@ -24668,8 +25710,11 @@ export interface operations {
                             id: string;
                             metadata: unknown;
                             operation_group_id: string | null;
+                            permission_action: string | null;
                             project_id: string | null;
+                            reason: string | null;
                             request_id: string | null;
+                            result: ("allowed" | "denied") | null;
                             run_id: string | null;
                             session_id: string | null;
                             source_type: string;
@@ -29628,6 +30673,9 @@ export interface operations {
                 workspace_id?: string;
                 project_id?: string;
                 actor_account_id?: string;
+                actor_client_id?: string;
+                permission_action?: string;
+                result?: "allowed" | "denied";
                 session_id?: string;
                 floor_id?: string;
                 run_id?: string;
@@ -29659,6 +30707,7 @@ export interface operations {
                             account_id: string;
                             action: string;
                             actor_account_id: string | null;
+                            actor_client_id: string | null;
                             actor_id: string | null;
                             actor_type: string;
                             after_ref: unknown;
@@ -29670,8 +30719,11 @@ export interface operations {
                             id: string;
                             metadata: unknown;
                             operation_group_id: string | null;
+                            permission_action: string | null;
                             project_id: string | null;
+                            reason: string | null;
                             request_id: string | null;
+                            result: ("allowed" | "denied") | null;
                             run_id: string | null;
                             session_id: string | null;
                             source_type: string;
@@ -33423,6 +34475,9 @@ export interface operations {
                 workspace_id?: string;
                 project_id?: string;
                 actor_account_id?: string;
+                actor_client_id?: string;
+                permission_action?: string;
+                result?: "allowed" | "denied";
                 session_id?: string;
                 floor_id?: string;
                 run_id?: string;
@@ -33456,6 +34511,7 @@ export interface operations {
                             account_id: string;
                             action: string;
                             actor_account_id: string | null;
+                            actor_client_id: string | null;
                             actor_id: string | null;
                             actor_type: string;
                             after_ref: unknown;
@@ -33467,8 +34523,11 @@ export interface operations {
                             id: string;
                             metadata: unknown;
                             operation_group_id: string | null;
+                            permission_action: string | null;
                             project_id: string | null;
+                            reason: string | null;
                             request_id: string | null;
+                            result: ("allowed" | "denied") | null;
                             run_id: string | null;
                             session_id: string | null;
                             source_type: string;

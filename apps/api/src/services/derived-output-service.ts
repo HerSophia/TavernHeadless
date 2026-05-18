@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { derivedOutputs } from "../db/schema.js";
 import { OperationLogService } from "./operation-log-service.js";
-import { ProjectAccessService, ProjectAccessServiceError, type ProjectAccess } from "./project-access-service.js";
+import { ProjectAccessService, ProjectAccessServiceError, type ProjectAccess, type ProjectActorInput } from "./project-access-service.js";
 import type { ProjectEventLiveHub } from "./project-event-live-hub.js";
 import { ProjectEventService, type ProjectEventRecord } from "./project-event-service.js";
 import { ProjectSourceScopeError, resolveProjectSourceScope, type ProjectSourceScope } from "./project-source-scope.js";
@@ -17,6 +17,7 @@ export type DerivedOutputRecord = {
   projectId: string;
   accountId: string;
   ownerAccountId: string;
+  ownerClientId: string | null;
   sourceSessionId: string | null;
   sourceFloorId: string | null;
   sourcePageId: string | null;
@@ -65,6 +66,7 @@ type ServiceOptions = {
 
 export type CreateDerivedOutputInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   domain: string;
   value?: unknown;
@@ -79,6 +81,7 @@ export type CreateDerivedOutputInput = {
 
 export type ListDerivedOutputsInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   domain?: string | null;
   status?: DerivedOutputStatus | string | null;
@@ -90,12 +93,14 @@ export type ListDerivedOutputsInput = {
 
 export type GetDerivedOutputInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   itemId: string;
 };
 
 export type UpdateDerivedOutputInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   itemId: string;
   value?: unknown;
@@ -107,6 +112,7 @@ export type UpdateDerivedOutputInput = {
 
 export type ArchiveDerivedOutputInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   itemId: string;
   correlationId?: string | null;
@@ -138,7 +144,9 @@ export class DerivedOutputService {
 
   create(input: CreateDerivedOutputInput): DerivedOutputRecord {
     const now = input.now ?? Date.now();
-    const access = this.requireAccess(input.actorAccountId, input.projectId, "project.derived_output.write", "derived_output_write_denied");
+    const actor = this.resolveActor(input);
+    const access = this.requireAccess(actor,input.projectId, "project.derived_output.write", "derived_output_write_denied");
+    const ownerClientId = actor.actorType === "client" ? (actor.actorClientId ?? null) : null;
     const domain = normalizeDomain(input.domain);
     const status = normalizeCreateStatus(input.status);
     const serialized = serializePayload(input.value ?? {}, this.maxPayloadBytes, "derived_output");
@@ -162,6 +170,7 @@ export class DerivedOutputService {
         projectId: access.project.id,
         accountId: access.project.accountId,
         ownerAccountId: input.actorAccountId,
+        ownerClientId,
         sourceScope,
         domain,
         valueJson: serialized.json,
@@ -171,6 +180,7 @@ export class DerivedOutputService {
 
       const operationLog = new OperationLogService(tx).append({
         accountId: access.project.accountId,
+        actorClientId:ownerClientId,
         actorType: "account",
         actorId: input.actorAccountId,
         actorAccountId: input.actorAccountId,
@@ -196,6 +206,7 @@ export class DerivedOutputService {
         visibility: "project",
         source: "api",
         actorAccountId: input.actorAccountId,
+        actorClientId: ownerClientId,
         sessionId: sourceScope.sessionId,
         branchId: sourceScope.branchId,
         floorId: sourceScope.floorId,
@@ -214,7 +225,7 @@ export class DerivedOutputService {
   }
 
   list(input: ListDerivedOutputsInput): DerivedOutputListResult {
-    this.requireAccess(input.actorAccountId, input.projectId, "project.derived_output.read", "derived_output_write_denied");
+    this.requireAccess(this.resolveActor(input), input.projectId, "project.derived_output.read", "derived_output_write_denied");
 
     const projectId = requireNonEmpty(input.projectId, "projectId");
     const limit = clampInteger(input.limit ?? 50, 1, 200);
@@ -251,17 +262,18 @@ export class DerivedOutputService {
   }
 
   getById(input: GetDerivedOutputInput): DerivedOutputRecord {
-    this.requireAccess(input.actorAccountId, input.projectId, "project.derived_output.read", "derived_output_write_denied");
+    this.requireAccess(this.resolveActor(input), input.projectId, "project.derived_output.read", "derived_output_write_denied");
     const row = this.loadDerivedOutput(input.projectId, input.itemId);
     return mapDerivedOutputRow(row);
   }
 
   update(input: UpdateDerivedOutputInput): DerivedOutputRecord {
     const now = input.now ?? Date.now();
-    const access = this.requireAccess(input.actorAccountId, input.projectId, "project.derived_output.write", "derived_output_write_denied");
+    const actor = this.resolveActor(input);
+    const access = this.requireAccess(actor, input.projectId, "project.derived_output.write", "derived_output_write_denied");
     const row = this.loadDerivedOutput(access.project.id, input.itemId);
     const existing = mapDerivedOutputRow(row);
-    ensureDeriverCanMutate(access, existing, input.actorAccountId);
+    ensureDeriverCanMutate(access, existing, actor);
 
     const valueProvided = Object.prototype.hasOwnProperty.call(input, "value");
     if (existing.status === "archived" && valueProvided) {
@@ -367,6 +379,7 @@ export class DerivedOutputService {
 
   archive(input: ArchiveDerivedOutputInput): DerivedOutputRecord {
     return this.update({
+      actor: input.actor,
       actorAccountId: input.actorAccountId,
       projectId: input.projectId,
       itemId: input.itemId,
@@ -399,19 +412,26 @@ export class DerivedOutputService {
   }
 
   private requireAccess(
-    actorAccountId: string,
+    actor:ProjectActorInput,
     projectId: string,
     action: Parameters<ProjectAccessService["requireProjectAction"]>[2],
     roleDeniedCode: DerivedOutputServiceErrorCode,
   ): ProjectAccess {
     try {
-      return this.accessService.requireProjectAction(actorAccountId, projectId, action);
+      return this.accessService.requireProjectActionForActor(actor, projectId, action);
     } catch (error) {
       if (error instanceof ProjectAccessServiceError && error.code === "project_access_denied" && error.denyReason === "role_forbidden") {
         throw new DerivedOutputServiceError(403, roleDeniedCode, `Project action denied: ${action}`);
       }
       throw error;
     }
+  }
+
+  private resolveActor(input: { actor?: ProjectActorInput; actorAccountId: string }): ProjectActorInput {
+    if (input.actor) {
+      return input.actor;
+    }
+    return { actorType: "account", actorAccountId: input.actorAccountId, actorClientId: null };
   }
 
   private publishProjectEvent(event: ProjectEventRecord): void {
@@ -435,6 +455,7 @@ function insertDerivedOutput(
     projectId: string;
     accountId: string;
     ownerAccountId: string;
+    ownerClientId: string | null;
     sourceScope: ProjectSourceScope;
     domain: string;
     valueJson: string;
@@ -450,6 +471,7 @@ function insertDerivedOutput(
       projectId: input.projectId,
       accountId: input.accountId,
       ownerAccountId: input.ownerAccountId,
+      ownerClientId: input.ownerClientId,
       sourceSessionId: input.sourceScope.sessionId,
       sourceFloorId: input.sourceScope.floorId,
       sourcePageId: input.sourceScope.pageId,
@@ -472,6 +494,7 @@ function mapDerivedOutputRow(row: typeof derivedOutputs.$inferSelect): DerivedOu
     projectId: row.projectId,
     accountId: row.accountId,
     ownerAccountId: row.ownerAccountId,
+    ownerClientId: row.ownerClientId,
     sourceSessionId: row.sourceSessionId,
     sourceFloorId: row.sourceFloorId,
     sourcePageId: row.sourcePageId,
@@ -515,8 +538,17 @@ function canTransitionStatus(current: DerivedOutputStatus, next: DerivedOutputSt
   return false;
 }
 
-function ensureDeriverCanMutate(access: ProjectAccess, record: DerivedOutputRecord, actorAccountId: string): void {
-  if (access.role === "deriver" && record.ownerAccountId !== actorAccountId) {
+function ensureDeriverCanMutate(access: ProjectAccess, record: DerivedOutputRecord, actor: ProjectActorInput): void {
+  if (access.role !== "deriver") {
+    return;
+  }
+  if (actor.actorType === "client") {
+    if (!actor.actorClientId || record.ownerClientId!== actor.actorClientId) {
+      throw new DerivedOutputServiceError(403, "derived_output_forbidden_for_role", "Deriver can only update derived outputs owned by itself");
+    }
+    return;
+  }
+  if (record.ownerAccountId !== actor.actorAccountId) {
     throw new DerivedOutputServiceError(
       403,
       "derived_output_forbidden_for_role",
@@ -535,6 +567,7 @@ function buildDerivedOutputMetadata(record: DerivedOutputRecord, valueByteCount?
     source_session_id: record.sourceSessionId,
     source_floor_id: record.sourceFloorId,
     source_page_id: record.sourcePageId,
+    owner_client_id: record.ownerClientId,
   };
 }
 
@@ -544,6 +577,7 @@ function buildDerivedOutputEventPayload(record: DerivedOutputRecord): Record<str
     domain: record.domain,
     status: record.status,
     owner_account_id: record.ownerAccountId,
+    owner_client_id: record.ownerClientId,
     source_session_id: record.sourceSessionId,
     source_floor_id: record.sourceFloorId,
     source_page_id: record.sourcePageId,
