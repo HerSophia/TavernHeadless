@@ -52,6 +52,7 @@ describe("sdk project derived output resources", () => {
         domain: "analysis.summary",
         id: "dout-1",
         ownerAccountId: "acc-deriver",
+        ownerClientId: null,
         projectId: "proj-1",
         sourceFloorId: "floor-1",
         sourcePageId: "page-1",

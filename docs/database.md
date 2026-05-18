@@ -7,7 +7,7 @@
 - ORM: Drizzle ORM
 - 迁移目录: `apps/api/drizzle/`
 - 当前基础迁移: `0000_initial_schema.sql`
-- 当前最新迁移: `0058_project_derived_output_and_inbox.sql`
+- 当前最新迁移: `0059_client_identity_permission_audit.sql`
 
 ## Workspace / Project scope 规则
 
@@ -32,7 +32,10 @@
 | `workspace` | `account_id` | Workspace 属于账号 |
 | `project` | `account_id`, `workspace_id` | Project 属于账号和 Workspace |
 | `session` | `workspace_id`, `project_id` | Session 同时保存 Workspace 和 Project，便于查询与审计 |
-| `project_membership` | `workspace_id`, `project_id`, `account_id` | Project 成员关系。当前支持 owner、observer 和 deriver |
+| `project_membership` | `workspace_id`, `project_id`, `subject_type`, `subject_id` | Project 成员关系。subject 可以是 account 或 client |
+| `client` | `account_id` | 同一账号下的 Client 身份记录。默认 Client 由启动修复创建 |
+| `client_api_key` | `account_id`, `client_id` | Client API Key。明文 secret 只在创建时返回一次 |
+
 | `project_event_sequence` | `project_id` | 每个 Project 独立分配递增事件序号 |
 | `project_event` | `workspace_id`, `project_id` | Project 事件日志，按 Project sequence 递增 |
 | `derived_output` | `workspace_id`, `project_id`, `account_id`, `owner_account_id` | Project 派生结果，保存 deriver 或 owner 写入的 JSON 值 |

@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { projectEvents, projectInboxItems } from "../db/schema.js";
 import { OperationLogService } from "./operation-log-service.js";
-import { ProjectAccessService, ProjectAccessServiceError, type ProjectAccess } from "./project-access-service.js";
+import { ProjectAccessService, ProjectAccessServiceError, type ProjectAccess, type ProjectActorInput } from "./project-access-service.js";
 import type { ProjectEventLiveHub } from "./project-event-live-hub.js";
 import { ProjectEventService, type ProjectEventRecord } from "./project-event-service.js";
 import { ProjectSourceScopeError, resolveProjectSourceScope, type ProjectSourceScope } from "./project-source-scope.js";
@@ -18,6 +18,7 @@ export type ProjectInboxItemRecord = {
   projectId: string;
   accountId: string;
   senderAccountId: string;
+  senderClientId: string | null;
   type: string;
   title: string | null;
   payload: unknown;
@@ -27,6 +28,7 @@ export type ProjectInboxItemRecord = {
   sourcePageId: string | null;
   status: ProjectInboxItemStatus;
   decidedByAccountId: string | null;
+  decidedByClientId: string | null;
   decidedAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -70,6 +72,7 @@ type ServiceOptions = {
 
 export type CreateInboxItemInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   type: string;
   title?: string | null;
@@ -85,6 +88,7 @@ export type CreateInboxItemInput = {
 
 export type ListInboxItemsInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   status?: ProjectInboxItemStatus | string | null;
   type?: string | null;
@@ -96,12 +100,14 @@ export type ListInboxItemsInput = {
 
 export type GetInboxItemInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   itemId: string;
 };
 
 export type DecideInboxItemInput = {
   actorAccountId: string;
+  actor?: ProjectActorInput;
   projectId: string;
   itemId: string;
   decision: ProjectInboxDecision | string;
@@ -136,7 +142,9 @@ export class ProjectInboxService {
 
   create(input: CreateInboxItemInput): ProjectInboxItemRecord {
     const now = input.now ?? Date.now();
-    const access = this.requireAccess(input.actorAccountId, input.projectId, "project.inbox.write", "project_inbox_write_denied");
+    const actor = this.resolveActor(input);
+    const access =this.requireAccess(actor, input.projectId, "project.inbox.write", "project_inbox_write_denied");
+    const senderClientId = actor.actorType ==="client" ? (actor.actorClientId ?? null) : null;
     const type = normalizeType(input.type);
     const title = normalizeTitle(input.title);
     const serialized = serializePayload(input.payload ?? {}, this.maxPayloadBytes);
@@ -162,6 +170,7 @@ export class ProjectInboxService {
         projectId: access.project.id,
         accountId: access.project.accountId,
         senderAccountId: input.actorAccountId,
+        senderClientId,
         type,
         title,
         payloadJson: serialized.json,
@@ -175,6 +184,7 @@ export class ProjectInboxService {
         actorType: "account",
         actorId: input.actorAccountId,
         actorAccountId: input.actorAccountId,
+        actorClientId: senderClientId,
         requestId: input.requestId,
         sourceType: "api",
         action: "project_inbox_item.create",
@@ -197,6 +207,7 @@ export class ProjectInboxService {
         visibility: "project",
         source: "api",
         actorAccountId: input.actorAccountId,
+        actorClientId: senderClientId,
         sessionId: sourceScope.sessionId,
         branchId: sourceScope.branchId,
         floorId: sourceScope.floorId,
@@ -216,10 +227,11 @@ export class ProjectInboxService {
   }
 
   list(input: ListInboxItemsInput): ProjectInboxListResult {
-    const access = this.requireAccess(input.actorAccountId, input.projectId, "project.inbox.read", "project_inbox_read_denied");
+    const actor = this.resolveActor(input);
+    const access = this.requireAccess(actor, input.projectId, "project.inbox.read", "project_inbox_read_denied");
     const senderAccountId = normalizeOptionalString(input.senderAccountId);
 
-    if (access.role === "deriver" && senderAccountId && senderAccountId !== input.actorAccountId) {
+    if (access.role === "deriver" && senderAccountId && actor.actorType === "account" && senderAccountId !== input.actorAccountId) {
       return { items: [], nextCursor: null };
     }
 
@@ -235,7 +247,11 @@ export class ProjectInboxService {
     if (type) filters.push(eq(projectInboxItems.type, type));
     if (sourceSessionId) filters.push(eq(projectInboxItems.sourceSessionId, sourceSessionId));
     if (access.role === "deriver") {
-      filters.push(eq(projectInboxItems.senderAccountId, input.actorAccountId));
+      if (actor.actorType === "client" && actor.actorClientId) {
+        filters.push(eq(projectInboxItems.senderClientId, actor.actorClientId));
+      } else {
+        filters.push(eq(projectInboxItems.senderAccountId, input.actorAccountId));
+      }
     } else if (senderAccountId) {
       filters.push(eq(projectInboxItems.senderAccountId, senderAccountId));
     }
@@ -261,9 +277,13 @@ export class ProjectInboxService {
   }
 
   getById(input: GetInboxItemInput): ProjectInboxItemRecord {
-    const access = this.requireAccess(input.actorAccountId, input.projectId, "project.inbox.read", "project_inbox_read_denied");
+    const actor = this.resolveActor(input);
+    const access = this.requireAccess(actor, input.projectId, "project.inbox.read", "project_inbox_read_denied");
     const record = mapInboxItemRow(this.loadInboxItem(access.project.id, input.itemId));
-    if (access.role === "deriver" && record.senderAccountId !== input.actorAccountId) {
+    const isClientActor = actor.actorType === "client" && actor.actorClientId;
+    const ownsViaAccount = record.senderAccountId === input.actorAccountId;
+    const ownsViaClient = isClientActor ? record.senderClientId === actor.actorClientId : false;
+    if (access.role === "deriver" && !ownsViaAccount && !ownsViaClient) {
       throw new ProjectInboxServiceError(404, "project_inbox_item_not_found", `Project inbox item not found: ${input.itemId}`);
     }
     return record;
@@ -271,7 +291,9 @@ export class ProjectInboxService {
 
   decide(input: DecideInboxItemInput): ProjectInboxItemRecord {
     const now = input.now ?? Date.now();
-    const access = this.requireAccess(input.actorAccountId, input.projectId, "project.inbox.decide", "project_inbox_decide_denied");
+    const actor = this.resolveActor(input);
+    const access = this.requireAccess(actor, input.projectId, "project.inbox.decide", "project_inbox_decide_denied");
+    const decidedByClientId = actor.actorType === "client" ? (actor.actorClientId ?? null) : null;
     const decision = normalizeDecision(input.decision);
     const existing = mapInboxItemRow(this.loadInboxItem(access.project.id, input.itemId));
     const nextStatus = statusFromDecision(decision);
@@ -295,6 +317,7 @@ export class ProjectInboxService {
         .set({
           status: nextStatus,
           decidedByAccountId: input.actorAccountId,
+          decidedByClientId,
           decidedAt: now,
           updatedAt: now,
         })
@@ -308,6 +331,8 @@ export class ProjectInboxService {
         actorType: "account",
         actorId: input.actorAccountId,
         actorAccountId: input.actorAccountId,
+        actorClientId: decidedByClientId,
+
         requestId: input.requestId,
         sourceType: "api",
         action: "project_inbox_item.decide",
@@ -331,6 +356,8 @@ export class ProjectInboxService {
         projectId: access.project.id,
         type: eventTypeForDecision(decision),
         visibility: "project",
+        actorClientId: decidedByClientId,
+
         source: "api",
         actorAccountId: input.actorAccountId,
         sessionId: record.sourceSessionId,
@@ -372,13 +399,13 @@ export class ProjectInboxService {
   }
 
   private requireAccess(
-    actorAccountId: string,
+    actor: ProjectActorInput,
     projectId: string,
     action: Parameters<ProjectAccessService["requireProjectAction"]>[2],
     roleDeniedCode: ProjectInboxServiceErrorCode,
   ): ProjectAccess {
     try {
-      return this.accessService.requireProjectAction(actorAccountId, projectId, action);
+      return this.accessService.requireProjectActionForActor(actor,projectId, action);
     } catch (error) {
       if (error instanceof ProjectAccessServiceError && error.code === "project_access_denied" && error.denyReason === "role_forbidden") {
         throw new ProjectInboxServiceError(403, roleDeniedCode, `Project action denied: ${action}`);
@@ -386,6 +413,14 @@ export class ProjectInboxService {
       throw error;
     }
   }
+
+  private resolveActor(input: { actor?: ProjectActorInput; actorAccountId: string }): ProjectActorInput {
+    if (input.actor) {
+      return input.actor;
+    }
+    return { actorType: "account", actorAccountId: input.actorAccountId, actorClientId: null };
+  }
+
 
   private publishProjectEvent(event: ProjectEventRecord): void {
     if (!this.options.projectEventLiveHub) {
@@ -408,6 +443,7 @@ function insertInboxItem(
     projectId: string;
     accountId: string;
     senderAccountId: string;
+    senderClientId: string | null;
     type: string;
     title: string | null;
     payloadJson: string;
@@ -424,6 +460,7 @@ function insertInboxItem(
       projectId: input.projectId,
       accountId: input.accountId,
       senderAccountId: input.senderAccountId,
+      senderClientId: input.senderClientId,
       type: input.type,
       title: input.title,
       payloadJson: input.payloadJson,
@@ -433,6 +470,7 @@ function insertInboxItem(
       sourcePageId: input.sourceScope.pageId,
       status: "pending",
       decidedByAccountId: null,
+      decidedByClientId: null,
       decidedAt: null,
       createdAt: input.now,
       updatedAt: input.now,
@@ -450,6 +488,7 @@ function mapInboxItemRow(row: typeof projectInboxItems.$inferSelect): ProjectInb
     projectId: row.projectId,
     accountId: row.accountId,
     senderAccountId: row.senderAccountId,
+    senderClientId: row.senderClientId,
     type: row.type,
     title: row.title,
     payload: parseJsonField(row.payloadJson),
@@ -459,6 +498,7 @@ function mapInboxItemRow(row: typeof projectInboxItems.$inferSelect): ProjectInb
     sourcePageId: row.sourcePageId,
     status: row.status,
     decidedByAccountId: row.decidedByAccountId,
+    decidedByClientId: row.decidedByClientId,
     decidedAt: row.decidedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -547,6 +587,7 @@ function buildInboxMetadata(record: ProjectInboxItemRecord, payloadByteCount?: n
     status: record.status,
     payload_byte_count: payloadByteCount,
     sender_account_id: record.senderAccountId,
+    sender_client_id: record.senderClientId,
     source_event_id: record.sourceEventId,
     source_session_id: record.sourceSessionId,
     source_floor_id: record.sourceFloorId,
@@ -561,6 +602,7 @@ function buildInboxCreatedPayload(record: ProjectInboxItemRecord): Record<string
     title: record.title,
     status: record.status,
     sender_account_id: record.senderAccountId,
+    sender_client_id: record.senderClientId,
     source_event_id: record.sourceEventId,
     source_session_id: record.sourceSessionId,
     source_floor_id: record.sourceFloorId,
@@ -579,6 +621,8 @@ function buildInboxDecisionPayload(
     decision,
     sender_account_id: record.senderAccountId,
     decided_by_account_id: record.decidedByAccountId,
+    decided_by_client_id: record.decidedByClientId,
+    sender_client_id: record.senderClientId,
     source_event_id: record.sourceEventId,
     source_session_id: record.sourceSessionId,
     source_floor_id: record.sourceFloorId,

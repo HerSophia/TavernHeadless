@@ -186,7 +186,16 @@ await client.projects.addMember(
 await client.projects.addDeriver("proj-1", "account-3", {
   accountId: "account-1",
 });
+
+// 把一个 Client 加入 Project：subject_type = client
+await client.projects.addMember(
+  "proj-1",
+  { subjectType: "client", subjectId: "cli_world_sim", role: "deriver" },
+  { accountId: "account-1" },
+);
 ```
+
+`@tavern/sdk` 在 `client.clients` 暴露 Client 管理与 API Key 管理。Client API Key 通过 `X-Tavern-Client-Key` 或 `Authorization: Bearer tvk_live_...` 调用任意 API；认证失败统一返回 401 `client_api_key_invalid`，不区分原因。
 
 Derived Output 用来保存 Project 范围内的派生 JSON 结果，不会自动合并进主 Session：
 

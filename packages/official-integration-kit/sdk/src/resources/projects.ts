@@ -64,6 +64,7 @@ export type ProjectEventRecord = {
   operationLogId: string | null;
   correlationId: string | null;
   causationEventId: string | null;
+  actorClientId: string | null;
   payload: unknown;
   createdAt: number;
 };
@@ -75,7 +76,12 @@ export type ProjectMember = {
   accountId: string;
   role: ProjectRole;
   status: ProjectMemberStatus;
+  subjectType: "account" | "client";
+  subjectId: string;
+  clientId: string | null;
+
   createdByAccountId: string | null;
+  createdByClientId: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -86,6 +92,7 @@ export type DerivedOutputRecord = {
   projectId: string;
   accountId: string;
   ownerAccountId: string;
+  ownerClientId: string | null;
   sourceSessionId: string | null;
   sourceFloorId: string | null;
   sourcePageId: string | null;
@@ -102,6 +109,7 @@ export type ProjectInboxItem = {
   projectId: string;
   accountId: string;
   senderAccountId: string;
+  senderClientId: string | null;
   type: string;
   title: string | null;
   payload: unknown;
@@ -111,6 +119,7 @@ export type ProjectInboxItem = {
   sourcePageId: string | null;
   status: ProjectInboxItemStatus;
   decidedByAccountId: string | null;
+  decidedByClientId: string | null;
   decidedAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -875,6 +884,7 @@ function mapProjectEventRecord(value: unknown): ProjectEventRecord | null {
     visibility,
     source,
     actorAccountId: readNullableString(record.actor_account_id),
+    actorClientId: readNullableString(record.actor_client_id),
     sessionId: readNullableString(record.session_id),
     branchId: readNullableString(record.branch_id),
     floorId: readNullableString(record.floor_id),
@@ -902,7 +912,12 @@ function mapProjectMember(value: unknown): ProjectMember | null {
     accountId: readString(record.account_id),
     role,
     status,
+    subjectType: (readString(record.subject_type, "account") === "client" ? "client" : "account"),
+
+    subjectId: readString(record.subject_id, readString(record.account_id)),
+    clientId: readNullableString(record.client_id),
     createdByAccountId: readNullableString(record.created_by_account_id),
+    createdByClientId: readNullableString(record.created_by_client_id),
     createdAt: readNumber(record.created_at),
     updatedAt: readNumber(record.updated_at),
   };
@@ -920,6 +935,7 @@ function mapDerivedOutputRecord(value: unknown): DerivedOutputRecord | null {
     projectId: readString(record.project_id),
     accountId: readString(record.account_id),
     ownerAccountId: readString(record.owner_account_id),
+    ownerClientId: readNullableString(record.owner_client_id),
     sourceSessionId: readNullableString(record.source_session_id),
     sourceFloorId: readNullableString(record.source_floor_id),
     sourcePageId: readNullableString(record.source_page_id),
@@ -942,6 +958,7 @@ function mapProjectInboxItem(value: unknown): ProjectInboxItem | null {
     projectId: readString(record.project_id),
     accountId: readString(record.account_id),
     senderAccountId: readString(record.sender_account_id),
+    senderClientId: readNullableString(record.sender_client_id),
     type: readString(record.type),
     title: readNullableString(record.title),
     payload: record.payload ?? null,
@@ -951,6 +968,7 @@ function mapProjectInboxItem(value: unknown): ProjectInboxItem | null {
     sourcePageId: readNullableString(record.source_page_id),
     status,
     decidedByAccountId: readNullableString(record.decided_by_account_id),
+    decidedByClientId: readNullableString(record.decided_by_client_id),
     decidedAt: readNullableNumber(record.decided_at),
     createdAt: readNumber(record.created_at),
     updatedAt: readNumber(record.updated_at),

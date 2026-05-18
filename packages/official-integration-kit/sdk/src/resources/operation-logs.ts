@@ -9,6 +9,10 @@ export type OperationLogRecord = {
   actorId: string | null;
   actorType: string;
   actorAccountId: string | null;
+  actorClientId: string | null;
+  permissionAction: string | null;
+  result: "allowed" | "denied" | null;
+  reason: string | null;
   afterRef: unknown | null;
   beforeRef: unknown | null;
   branchId: string | null;
@@ -48,6 +52,9 @@ export type OperationLogsListOptions = {
   action?: string;
   actorType?: string;
   actorAccountId?: string;
+  actorClientId?: string;
+  permissionAction?: string;
+  result?: "allowed" | "denied";
   floorId?: string;
   limit?: number;
   offset?: number;
@@ -105,6 +112,9 @@ async function fetchOperationLogs(
       workspace_id: options.workspaceId,
       project_id: options.projectId,
       actor_account_id: options.actorAccountId,
+      actor_client_id: options.actorClientId,
+      permission_action: options.permissionAction,
+      result: options.result,
       session_id: options.sessionId,
       floor_id: options.floorId,
       run_id: options.runId,
@@ -142,6 +152,10 @@ function mapOperationLog(value: unknown): OperationLogRecord | null {
     actorId: readNullableString(record.actor_id),
     actorType: readString(record.actor_type),
     actorAccountId: readNullableString(record.actor_account_id),
+    actorClientId: readNullableString(record.actor_client_id),
+    permissionAction: readNullableString(record.permission_action),
+    result: (readNullableString(record.result) as "allowed" | "denied" | null) ?? null,
+    reason: readNullableString(record.reason),
     afterRef: record.after_ref ?? null,
     beforeRef: record.before_ref ?? null,
     branchId: readNullableString(record.branch_id),

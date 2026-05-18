@@ -13,6 +13,7 @@ function createEvent(projectId: string, sequence: number): ProjectEventRecord {
     visibility: "project",
     source: "api",
     actorAccountId: null,
+    actorClientId: null,
     sessionId: null,
     branchId: null,
     floorId: null,

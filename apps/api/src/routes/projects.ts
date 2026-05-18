@@ -49,6 +49,12 @@ const projectMemberParamsSchema = z.object({
   id: z.string().min(1),
   account_id: z.string().min(1),
 });
+const projectMemberSubjectParamsSchema = z.object({
+  id: z.string().min(1),
+  subject_type: z.enum(["account", "client"]),
+  subject_id: z.string().min(1),
+});
+
 
 const projectItemParamsSchema = z.object({
   id: z.string().min(1),
@@ -84,10 +90,17 @@ const projectEventsQuerySchema = z.object({
 
 const projectEventsStreamQuerySchema = projectEventsQuerySchema.omit({ limit: true });
 
-const addProjectMemberSchema = z.object({
-  account_id: z.string().trim().min(1),
-  role: z.string().trim().min(1),
-});
+const addProjectMemberSchema = z
+  .object({
+    account_id: z.string().trim().min(1).optional(),
+    subject_type: z.enum(["account", "client"]).optional(),
+    subject_id: z.string().trim().min(1).optional(),
+    role: z.string().trim().min(1),
+  })
+  .refine(
+    (value) => Boolean(value.account_id) || (Boolean(value.subject_type) && Boolean(value.subject_id)),
+    { message: "account_id or (subject_type and subject_id) must be provided" },
+  );
 
 const listDerivedOutputsQuerySchema = z.object({
   domain: z.string().trim().min(1).optional(),
@@ -218,6 +231,7 @@ const projectEventJsonSchema = {
     "visibility",
     "source",
     "actor_account_id",
+    "actor_client_id",
     "session_id",
     "branch_id",
     "floor_id",
@@ -238,6 +252,7 @@ const projectEventJsonSchema = {
     visibility: { type: "string", enum: ["project", "owner", "internal"] },
     source: { type: "string", enum: ["api", "runtime_job", "migration", "system"] },
     actor_account_id: nullableStringJsonSchema,
+    actor_client_id: nullableStringJsonSchema,
     session_id: nullableStringJsonSchema,
     branch_id: nullableStringJsonSchema,
     floor_id: nullableStringJsonSchema,
@@ -265,7 +280,21 @@ const projectEventListResponseJsonSchema = {
 
 const projectMemberJsonSchema = {
   type: "object",
-  required: ["id", "workspace_id", "project_id", "account_id", "role", "status", "created_by_account_id", "created_at", "updated_at"],
+  required: [
+    "id",
+    "workspace_id",
+    "project_id",
+    "account_id",
+    "role",
+    "status",
+    "subject_type",
+    "subject_id",
+    "client_id",
+    "created_by_account_id",
+    "created_by_client_id",
+    "created_at",
+    "updated_at",
+  ],
   properties: {
     id: { type: "string" },
     workspace_id: { type: "string" },
@@ -273,12 +302,17 @@ const projectMemberJsonSchema = {
     account_id: { type: "string" },
     role: { type: "string", enum: ["owner", "observer", "deriver"] },
     status: { type: "string", enum: ["active", "removed"] },
+    subject_type: { type: "string", enum: ["account", "client"] },
+    subject_id: { type: "string" },
+    client_id: nullableStringJsonSchema,
     created_by_account_id: nullableStringJsonSchema,
+    created_by_client_id: nullableStringJsonSchema,
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 } as const;
+
 
 const projectMemberListResponseJsonSchema = {
   type: "object",
@@ -317,6 +351,7 @@ const derivedOutputJsonSchema = {
     "project_id",
     "account_id",
     "owner_account_id",
+    "owner_client_id",
     "source_session_id",
     "source_floor_id",
     "source_page_id",
@@ -332,6 +367,7 @@ const derivedOutputJsonSchema = {
     project_id: { type: "string" },
     account_id: { type: "string" },
     owner_account_id: { type: "string" },
+    owner_client_id: nullableStringJsonSchema,
     source_session_id: nullableStringJsonSchema,
     source_floor_id: nullableStringJsonSchema,
     source_page_id: nullableStringJsonSchema,
@@ -371,6 +407,7 @@ const projectInboxItemJsonSchema = {
     "project_id",
     "account_id",
     "sender_account_id",
+    "sender_client_id",
     "type",
     "title",
     "payload",
@@ -380,6 +417,7 @@ const projectInboxItemJsonSchema = {
     "source_page_id",
     "status",
     "decided_by_account_id",
+    "decided_by_client_id",
     "decided_at",
     "created_at",
     "updated_at",
@@ -390,6 +428,7 @@ const projectInboxItemJsonSchema = {
     project_id: { type: "string" },
     account_id: { type: "string" },
     sender_account_id: { type: "string" },
+    sender_client_id: nullableStringJsonSchema,
     type: { type: "string" },
     title: nullableStringJsonSchema,
     payload: {},
@@ -399,6 +438,8 @@ const projectInboxItemJsonSchema = {
     source_page_id: nullableStringJsonSchema,
     status: { type: "string", enum: ["pending", "accepted", "rejected", "archived"] },
     decided_by_account_id: nullableStringJsonSchema,
+    decided_by_client_id: nullableStringJsonSchema,
+
     decided_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
@@ -1138,15 +1179,21 @@ export async function registerProjectRoutes(
   app.post("/projects/:id/members", {
     schema: {
       tags: ["projects"],
-      summary: "Add project observer member",
+      summary: "Add project member",
       params: idParamsJsonSchema,
       body: {
         type: "object",
-        required: ["account_id", "role"],
+        required: ["role"],
         properties: {
           account_id: { type: "string", minLength: 1 },
+          subject_type: { type: "string", enum: ["account", "client"] },
+          subject_id: { type: "string", minLength: 1 },
           role: { type: "string", minLength: 1 },
         },
+        anyOf: [
+          { required: ["account_id"] },
+          { required: ["subject_type", "subject_id"] },
+        ],
         additionalProperties: false,
       },
       response: {
@@ -1164,14 +1211,25 @@ export async function registerProjectRoutes(
     if (!parsedBody.ok) return;
 
     const auth = getRequestAuthContext(request);
+    const subjectType = parsedBody.data.subject_type ?? "account";
+    const subjectId = parsedBody.data.subject_id ?? parsedBody.data.account_id ?? "";
+    if (subjectId.length === 0) {
+      return sendError(reply, 400, "validation_error", "subject_id or account_idis required");
+    }
+
     try {
-      const member = membershipService.addMember({
-        actorAccountId: auth.accountId,
+      const member = membershipService.addSubjectMember({
+        actor: {
+          actorType: auth.actorType,
+          actorAccountId: auth.actorAccountId,
+          actorClientId: auth.actorClientId,
+        },
         projectId: parsedParams.data.id,
-        accountId: parsedBody.data.account_id,
+        subjectType,
+        subjectId,
         role: parsedBody.data.role,
       });
-      return reply.code(201).send({ item: toProjectMemberResponse(member) });
+      return reply.code(201).send({ item: toProjectMemberResponse(member)});
     } catch (error) {
       return handleProjectRouteError(error, reply);
     }
@@ -1180,7 +1238,7 @@ export async function registerProjectRoutes(
   app.delete("/projects/:id/members/:account_id", {
     schema: {
       tags: ["projects"],
-      summary: "Remove project observer member",
+      summary: "Remove project account member (legacy path)",
       params: {
         type: "object",
         required: ["id", "account_id"],
@@ -1198,22 +1256,72 @@ export async function registerProjectRoutes(
         409: errorResponseJsonSchema,
       },
     },
-  }, async (request, reply) => {
+  },async (request, reply) => {
     const parsedParams = parseWithSchema(projectMemberParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
 
     const auth = getRequestAuthContext(request);
     try {
-      const member = membershipService.removeMember({
-        actorAccountId: auth.accountId,
+      const member = membershipService.removeSubjectMember({
+        actor: {
+        actorType: auth.actorType,
+          actorAccountId: auth.actorAccountId,
+          actorClientId: auth.actorClientId,
+        },
         projectId: parsedParams.data.id,
-        accountId: parsedParams.data.account_id,
+        subjectType: "account",
+        subjectId: parsedParams.data.account_id,
       });
       return reply.send({ item: toProjectMemberResponse(member) });
     } catch (error) {
       return handleProjectRouteError(error, reply);
     }
   });
+
+  app.delete("/projects/:id/members/:subject_type/:subject_id", {
+    schema: {
+      tags: ["projects"],
+      summary: "Remove project member by subject",
+      params: {
+        type: "object",
+        required: ["id", "subject_type", "subject_id"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          subject_type: { type: "string", enum: ["account","client"] },
+          subject_id: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: projectMemberResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(projectMemberSubjectParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    const auth = getRequestAuthContext(request);
+    try {
+      const member = membershipService.removeSubjectMember({
+        actor: {
+          actorType: auth.actorType,
+          actorAccountId: auth.actorAccountId,
+     actorClientId: auth.actorClientId,
+        },
+        projectId: parsedParams.data.id,
+        subjectType: parsedParams.data.subject_type,
+        subjectId: parsedParams.data.subject_id,
+      });
+      return reply.send({ item: toProjectMemberResponse(member) });
+    } catch (error) {
+      return handleProjectRouteError(error, reply);
+    }
+  });
+
 }
 
 function parseProjectEventRequest<TSchema extends typeof projectEventsQuerySchema | typeof projectEventsStreamQuerySchema>(
@@ -1483,7 +1591,11 @@ function toProjectMemberResponse(member: ProjectMemberRecord) {
     account_id: member.accountId,
     role: member.role,
     status: member.status,
+    subject_type: member.subjectType,
+    subject_id: member.subjectId,
+    client_id: member.clientId,
     created_by_account_id: member.createdByAccountId,
+    created_by_client_id: member.createdByClientId,
     created_at: member.createdAt,
     updated_at: member.updatedAt,
   };
@@ -1496,6 +1608,7 @@ function toDerivedOutputResponse(record: DerivedOutputRecord) {
     project_id: record.projectId,
     account_id: record.accountId,
     owner_account_id: record.ownerAccountId,
+    owner_client_id: record.ownerClientId,
     source_session_id: record.sourceSessionId,
     source_floor_id: record.sourceFloorId,
     source_page_id: record.sourcePageId,
@@ -1514,6 +1627,7 @@ function toProjectInboxItemResponse(record: ProjectInboxItemRecord) {
     project_id: record.projectId,
     account_id: record.accountId,
     sender_account_id: record.senderAccountId,
+    sender_client_id: record.senderClientId,
     type: record.type,
     title: record.title,
     payload: record.payload,
@@ -1523,11 +1637,13 @@ function toProjectInboxItemResponse(record: ProjectInboxItemRecord) {
     source_page_id: record.sourcePageId,
     status: record.status,
     decided_by_account_id: record.decidedByAccountId,
+    decided_by_client_id: record.decidedByClientId,
     decided_at: record.decidedAt,
     created_at: record.createdAt,
     updated_at: record.updatedAt,
   };
 }
+
 
 function requestCorrelationId(request: FastifyRequest): string | null {
   return typeof request.id === "string" && request.id.trim().length > 0 ? request.id : null;

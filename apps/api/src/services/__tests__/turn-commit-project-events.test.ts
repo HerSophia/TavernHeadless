@@ -86,6 +86,7 @@ function listProjectEvents(database: DatabaseConnection, projectId: string): Pro
       visibility: row.visibility,
       source: row.source,
       actorAccountId: row.actorAccountId,
+      actorClientId: row.actorClientId,
       sessionId: row.sessionId,
       branchId: row.branchId,
       floorId: row.floorId,
