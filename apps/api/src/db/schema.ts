@@ -76,6 +76,66 @@ export const projectEventSequences = sqliteTable(
   }
 );
 
+export const clients = sqliteTable(
+  "client",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    kind: text("kind", { enum: ["basic", "advanced", "deriver", "worker", "custom"] }).notNull().default("custom"),
+    status: text("status", { enum: ["active", "disabled"] }).notNull().default("active"),
+    isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+    metadataJson: text("metadata_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    accountStatusIdx: index("client_account_status_idx").on(
+      table.accountId,
+      table.status,
+      table.createdAt,
+    ),
+    accountKindIdx: index("client_account_kind_idx").on(
+      table.accountId,
+      table.kind,
+      table.createdAt,
+    ),
+    accountDefaultUnique: uniqueIndex("client_account_default_uq")
+      .on(table.accountId)
+      .where(sql`${table.isDefault} = 1`),
+  })
+);
+
+export const clientApiKeys = sqliteTable(
+  "client_api_key",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+    name: text("name"),
+    keyPrefix: text("key_prefix").notNull(),
+    keyHash: text("key_hash").notNull(),
+    status: text("status", { enum: ["active", "revoked"] }).notNull().default("active"),
+    lastUsedAt: integer("last_used_at"),
+    expiresAt: integer("expires_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+(table) => ({
+    keyHashUnique: uniqueIndex("client_api_key_hash_uq").on(table.keyHash),
+    clientStatusIdx: index("client_api_key_client_status_idx").on(
+      table.clientId,
+      table.status,
+      table.createdAt,
+    ),
+    accountStatusIdx: index("client_api_key_account_status_idx").on(
+      table.accountId,
+      table.status,
+      table.createdAt,
+    ),
+  })
+);
+
 export const projectMemberships = sqliteTable(
   "project_membership",
   {
@@ -86,13 +146,18 @@ export const projectMemberships = sqliteTable(
     role: text("role", { enum: ["owner", "observer", "deriver"] }).notNull(),
     status: text("status", { enum: ["active", "removed"] }).notNull().default("active"),
     createdByAccountId: text("created_by_account_id").references(() => accounts.id, { onDelete: "set null" }),
+    subjectType: text("subject_type", { enum: ["account", "client"] }),
+    subjectId: text("subject_id"),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    createdByClientId: text("created_by_client_id").references(() => clients.id, { onDelete: "set null"}),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
   (table) => ({
-    projectAccountUnique: uniqueIndex("project_membership_project_account_uq").on(
+    projectSubjectUnique: uniqueIndex("project_membership_project_subject_uq").on(
       table.projectId,
-      table.accountId,
+      table.subjectType,
+      table.subjectId,
     ),
     accountStatusIdx: index("project_membership_account_status_idx").on(
       table.accountId,
@@ -106,6 +171,17 @@ export const projectMemberships = sqliteTable(
     workspaceAccountIdx: index("project_membership_workspace_account_idx").on(
       table.workspaceId,
       table.accountId,
+    ),
+    projectSubjectStatusIdx: index("project_membership_project_subject_status_idx").on(
+      table.projectId,
+      table.subjectType,
+      table.subjectId,
+      table.status,
+    ),
+    clientProjectStatusIdx: index("project_membership_client_project_status_idx").on(
+      table.clientId,
+      table.projectId,
+      table.status,
     ),
   })
 );
@@ -624,6 +700,10 @@ export const operationLogs = sqliteTable(
     workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
     projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
     actorAccountId: text("actor_account_id").references(() => accounts.id, { onDelete: "set null" }),
+    actorClientId: text("actor_client_id").references(() => clients.id, { onDelete: "set null" }),
+    permissionAction: text("permission_action"),
+    result: text("result"),
+    reason: text("reason"),
     metadataJson: text("metadata_json"),
     createdAt: integer("created_at").notNull(),
   },
@@ -643,6 +723,9 @@ export const operationLogs = sqliteTable(
     workspaceCreatedIdx: index("operation_log_workspace_created_idx").on(table.workspaceId, table.createdAt),
     projectCreatedIdx: index("operation_log_project_created_idx").on(table.projectId, table.createdAt),
     actorAccountCreatedIdx: index("operation_log_actor_account_created_idx").on(table.actorAccountId, table.createdAt),
+    actorClientCreatedIdx: index("operation_log_actor_client_created_idx").on(table.actorClientId, table.createdAt),
+    permissionActionCreatedIdx: index("operation_log_permission_action_created_idx").on(table.permissionAction, table.createdAt),
+    resultCreatedIdx: index("operation_log_result_created_idx").on(table.result, table.createdAt),
   })
 );
 
@@ -657,6 +740,7 @@ export const projectEvents = sqliteTable(
     visibility: text("visibility", { enum: ["project", "owner", "internal"] }).notNull().default("project"),
     source: text("source", { enum: ["api", "runtime_job", "migration", "system"] }).notNull().default("api"),
     actorAccountId: text("actor_account_id").references(() => accounts.id, { onDelete: "set null" }),
+    actorClientId: text("actor_client_id").references(() => clients.id, { onDelete: "set null" }),
     sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
     branchId: text("branch_id"),
     floorId: text("floor_id").references(() => floors.id, { onDelete: "set null" }),
@@ -695,6 +779,10 @@ export const projectEvents = sqliteTable(
       table.projectId,
       table.sequence,
     ),
+    actorClientIdx: index("project_event_actor_client_idx").on(
+      table.actorClientId,
+      table.createdAt,
+    ),
   })
 );
 
@@ -706,6 +794,7 @@ export const derivedOutputs = sqliteTable(
     projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     ownerAccountId: text("owner_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    ownerClientId: text("owner_client_id").references(() => clients.id, { onDelete: "set null" }),
     sourceSessionId: text("source_session_id").references(() => sessions.id, { onDelete: "set null" }),
     sourceFloorId: text("source_floor_id").references(() => floors.id, { onDelete: "set null" }),
     sourcePageId: text("source_page_id").references(() => messagePages.id, { onDelete: "set null" }),
@@ -738,6 +827,11 @@ export const derivedOutputs = sqliteTable(
       table.workspaceId,
       table.createdAt,
     ),
+    ownerClientProjectIdx: index("derived_output_owner_client_project_idx").on(
+      table.ownerClientId,
+      table.projectId,
+      table.createdAt,
+    ),
   })
 );
 
@@ -749,6 +843,7 @@ export const projectInboxItems = sqliteTable(
     projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     senderAccountId: text("sender_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    senderClientId: text("sender_client_id").references(() => clients.id, { onDelete: "set null" }),
     type: text("type").notNull(),
     title: text("title"),
     payloadJson: text("payload_json").notNull().default("{}"),
@@ -758,6 +853,7 @@ export const projectInboxItems = sqliteTable(
     sourcePageId: text("source_page_id").references(() => messagePages.id, { onDelete: "set null" }),
     status: text("status", { enum: ["pending", "accepted", "rejected", "archived"] }).notNull().default("pending"),
     decidedByAccountId: text("decided_by_account_id").references(() => accounts.id, { onDelete: "set null" }),
+    decidedByClientId: text("decided_by_client_id").references(() => clients.id, { onDelete: "set null" }),
     decidedAt: integer("decided_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
@@ -780,6 +876,15 @@ export const projectInboxItems = sqliteTable(
     workspaceCreatedIdx: index("project_inbox_workspace_created_idx").on(
       table.workspaceId,
       table.createdAt,
+    ),
+    senderClientProjectIdx: index("project_inbox_sender_client_project_idx").on(
+      table.senderClientId,
+      table.projectId,
+      table.createdAt,
+    ),
+    decidedClientIdx: index("project_inbox_decided_client_idx").on(
+      table.decidedByClientId,
+      table.decidedAt,
     ),
   })
 );

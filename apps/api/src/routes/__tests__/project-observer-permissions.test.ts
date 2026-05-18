@@ -417,6 +417,11 @@ async function buildChatPermissionApp(): Promise<MockedChatApp> {
       accountId: accountIdForApiKey(key),
       role: "user",
       status: "active",
+      actorType: "account",
+      actorId: accountIdForApiKey(key),
+      actorAccountId: accountIdForApiKey(key),
+      actorClientId: null,
+      authMethod: "static_api_key",
     };
   });
 

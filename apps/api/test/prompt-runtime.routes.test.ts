@@ -479,7 +479,7 @@ describe("prompt runtime routes", () => {
       delivery: { requireLastUser: true },
       visibility: { mode: "allow_all_except_hidden", hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }] },
     }, DEFAULT_ADMIN_ACCOUNT_ID, expect.objectContaining({
-      actorType: "user",
+      actorType: "account",
       actorId: DEFAULT_ADMIN_ACCOUNT_ID,
       sourceType: "http",
       route: "PATCH /sessions/:id/prompt-runtime/policy",
@@ -542,7 +542,7 @@ describe("prompt runtime routes", () => {
       structure: null,
       delivery: null,
     }, DEFAULT_ADMIN_ACCOUNT_ID, expect.objectContaining({
-      actorType: "user",
+      actorType: "account",
       actorId: DEFAULT_ADMIN_ACCOUNT_ID,
       sourceType: "http",
       route: "PATCH /sessions/:id/prompt-runtime/policy",
@@ -654,7 +654,7 @@ describe("prompt runtime routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(controlService.updateBranchPolicy).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID, { structure: { mode: "strict_alternating" }, visibility: { mode: "deny_all_except_visible", visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }] } }, DEFAULT_ADMIN_ACCOUNT_ID, expect.objectContaining({
-      actorType: "user",
+      actorType: "account",
       actorId: DEFAULT_ADMIN_ACCOUNT_ID,
       sourceType: "http",
       route: "PATCH /sessions/:id/prompt-runtime/branches/:branchId/policy",

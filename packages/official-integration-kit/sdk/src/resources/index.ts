@@ -76,6 +76,26 @@ export {
   type ChatTransferJobStatus,
 } from "./chat-transfer-jobs.js";
 export {
+  createClientsResource,
+  type ClientApiKeyRecord,
+  type ClientApiKeyStatus,
+  type ClientApiKeysCreateInput,
+  type ClientApiKeysListOptions,
+  type ClientApiKeysListResult,
+  type ClientApiKeysResource,
+  type ClientKind,
+  type ClientRecord,
+  type ClientStatus,
+  type ClientsCreateInput,
+  type ClientsListOptions,
+  type ClientsListResult,
+  type ClientsRequestOptions,
+  type ClientsResource,
+  type ClientsUpdateInput,
+  type CreatedClientApiKey,
+} from "./clients.js";
+
+export {
   createExportsResource,
   type ExportChatFormat,
   type ExportChatJob,

@@ -17,6 +17,8 @@ export type OperationLogActor = {
   actorId?: string | null;
 };
 
+export type OperationLogResult = "allowed" | "denied";
+
 export type CreateOperationLogInput = OperationLogActor & {
   id?: string;
   accountId: string;
@@ -28,6 +30,10 @@ export type CreateOperationLogInput = OperationLogActor & {
   workspaceId?: string | null;
   projectId?: string | null;
   actorAccountId?: string | null;
+  actorClientId?: string | null;
+  permissionAction?: string | null;
+  result?: OperationLogResult | null;
+  reason?: string | null;
   sessionId?: string | null;
   branchId?: string | null;
   floorId?: string | null;
@@ -54,6 +60,10 @@ export type OperationLogRecord = {
   workspaceId: string | null;
   projectId: string | null;
   actorAccountId: string | null;
+  actorClientId: string | null;
+  permissionAction: string | null;
+  result: OperationLogResult | null;
+  reason: string | null;
   sessionId: string | null;
   branchId: string | null;
   floorId: string | null;
@@ -72,6 +82,9 @@ export type OperationLogListOptions = {
   workspaceId?: string | null;
   projectId?: string | null;
   actorAccountId?: string | null;
+  actorClientId?: string | null;
+  permissionAction?: string | null;
+  result?: OperationLogResult | null;
   sessionId?: string | null;
   floorId?: string | null;
   runId?: string | null;
@@ -113,6 +126,10 @@ export class OperationLogService {
       ? normalizeNullableString(input.actorId) ?? inputActorAccountId ?? normalizeNullableString(input.accountId)
       : inputActorAccountId ?? normalizeNullableString(input.accountId);
     const metadata = mergeOperationScopeMetadata(input.metadata, { workspaceId, projectId });
+    const actorClientId = normalizeNullableString(input.actorClientId);
+    const permissionAction = normalizeNullableString(input.permissionAction);
+    const result = normalizeOperationResult(input.result);
+    const reason = normalizeNullableString(input.reason);
 
     const row = this.db
       .insert(operationLogs)
@@ -138,6 +155,10 @@ export class OperationLogService {
         workspaceId,
         projectId,
         actorAccountId,
+      actorClientId,
+        permissionAction,
+        result,
+        reason,
         metadataJson: stringifyNullableJson(metadata),
         createdAt: input.createdAt ?? Date.now(),
       })
@@ -178,8 +199,8 @@ export class OperationLogService {
 
 export function operationActorFromAuth(auth: AuthenticatedAuthContext): OperationLogActor {
   return {
-    actorType: "user",
-    actorId: auth.subject ?? auth.accountId,
+    actorType: auth.actorType,
+    actorId: auth.actorId,
   };
 }
 
@@ -196,6 +217,9 @@ function buildOperationLogWhereClause(options: OperationLogListOptions): SQL {
   pushOptionalFilter(filters, operationLogs.workspaceId, options.workspaceId);
   pushOptionalFilter(filters, operationLogs.projectId, options.projectId);
   pushOptionalFilter(filters, operationLogs.actorAccountId, options.actorAccountId);
+  pushOptionalFilter(filters, operationLogs.actorClientId, options.actorClientId);
+  pushOptionalFilter(filters, operationLogs.permissionAction, options.permissionAction);
+  pushOptionalFilter(filters, operationLogs.result, options.result);
   pushOptionalFilter(filters, operationLogs.sessionId, options.sessionId);
   pushOptionalFilter(filters, operationLogs.floorId, options.floorId);
   pushOptionalFilter(filters, operationLogs.runId, options.runId);
@@ -233,6 +257,10 @@ function mapOperationLogRow(row: OperationLogRow): OperationLogRecord {
     workspaceId: row.workspaceId,
     projectId: row.projectId,
     actorAccountId: row.actorAccountId,
+    actorClientId: row.actorClientId,
+    permissionAction: row.permissionAction,
+    result: row.result as OperationLogResult | null,
+    reason: row.reason,
     sessionId: row.sessionId,
     branchId: row.branchId,
     floorId: row.floorId,
@@ -251,6 +279,13 @@ function normalizeNullableString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeOperationResult(value: OperationLogResult | null | undefined): OperationLogResult | null {
+  if (value === "allowed" || value === "denied") {
+ return value;
+  }
+  return null;
 }
 
 function stringifyNullableJson(value: unknown): string | null {

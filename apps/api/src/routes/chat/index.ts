@@ -25,6 +25,8 @@ import { ensureOptionalObjectBody, parseWithSchema, sendError } from "../../lib/
 import {
   type ProjectAccessService,
   ProjectAccessServiceError,
+  type ProjectAction,
+  type ProjectActorInput,
 } from "../../services/project-access-service.js";
 import { getRequestAuthContext } from "../../plugins/auth.js";
 import { applyCorsHeaders } from "../../plugins/cors.js";
@@ -93,18 +95,28 @@ export async function registerChatRoutes(
   const enablePromptDryRun = options.enablePromptDryRun === true;
   const enableClientData = options.enableClientData === true;
   const cors = options.cors ?? { origins: true, credentials: false };
+  function toActorInput(auth: ReturnType<typeof getRequestAuthContext>): ProjectActorInput {
+    return {
+      actorType: auth.actorType,
+      actorAccountId: auth.actorAccountId,
+      actorClientId: auth.actorClientId,
+    };
+  }
+
+
   const projectAccessService = options.projectAccessService;
 
   function authorizeProjectWriteBySessionId(
     reply: FastifyReply,
-    actorAccountId: string,
+    auth: ReturnType<typeof getRequestAuthContext>,
     sessionId: string,
+    action: ProjectAction,
   ): boolean {
     if (!projectAccessService) {
       return true;
     }
     try {
-     projectAccessService.requireProjectActionBySessionId(actorAccountId, sessionId, "project.write");
+      projectAccessService.requireProjectActionBySessionIdForActor(toActorInput(auth), sessionId, action);
       return true;
     } catch (error) {
       if (error instanceof ProjectAccessServiceError) {
@@ -121,14 +133,15 @@ export async function registerChatRoutes(
 
   function authorizeProjectWriteByFloorId(
     reply: FastifyReply,
-    actorAccountId: string,
+    auth: ReturnType<typeof getRequestAuthContext>,
     floorId: string,
+    action: ProjectAction,
   ): boolean {
     if (!projectAccessService) {
       return true;
     }
     try {
-      projectAccessService.requireProjectActionByFloorId(actorAccountId, floorId, "project.write");
+      projectAccessService.requireProjectActionByFloorIdForActor(toActorInput(auth), floorId, action);
       return true;
     } catch (error) {
       if (error instanceof ProjectAccessServiceError) {
@@ -145,14 +158,15 @@ export async function registerChatRoutes(
 
   function authorizeProjectWriteByMessageId(
     reply: FastifyReply,
-    actorAccountId: string,
+    auth: ReturnType<typeof getRequestAuthContext>,
     messageId: string,
+    action: ProjectAction,
   ): boolean {
     if (!projectAccessService) {
       return true;
     }
     try {
-      projectAccessService.requireProjectActionByMessageId(actorAccountId, messageId, "project.write");
+      projectAccessService.requireProjectActionByMessageIdForActor(toActorInput(auth), messageId, action);
       return true;
     } catch (error) {
       if (error instanceof ProjectAccessServiceError) {
@@ -361,9 +375,10 @@ export async function registerChatRoutes(
       turnOperationLog: buildTurnOperationLogContext(request, "POST /sessions/:id/respond/stream"),
       debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
     };
-    const accountId = getRequestAuthContext(request).accountId;
+    const auth = getRequestAuthContext(request);
+    const accountId = auth.accountId;
 
-    if (!authorizeProjectWriteBySessionId(reply, accountId, parsedParams.data.id)) {
+    if (!authorizeProjectWriteBySessionId(reply, auth, parsedParams.data.id, "session.respond")) {
       return;
     }
 
@@ -482,7 +497,7 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
-    if (!authorizeProjectWriteBySessionId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+    if (!authorizeProjectWriteBySessionId(reply, getRequestAuthContext(request), parsedParams.data.id, "session.respond")) {
       return;
     }
 
@@ -558,7 +573,7 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
-    if (!authorizeProjectWriteBySessionId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+    if (!authorizeProjectWriteBySessionId(reply, getRequestAuthContext(request), parsedParams.data.id, "session.regenerate")) {
       return;
     }
 
@@ -638,7 +653,7 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(floorIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
-    if (!authorizeProjectWriteByFloorId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+    if (!authorizeProjectWriteByFloorId(reply, getRequestAuthContext(request), parsedParams.data.id, "floor.retry")) {
       return;
     }
 
@@ -713,7 +728,7 @@ export async function registerChatRoutes(
   }, async (request, reply) => {
     const parsedParams = parseWithSchema(messageIdParamsSchema, request.params, reply);
     if (!parsedParams.ok) return;
-    if (!authorizeProjectWriteByMessageId(reply, getRequestAuthContext(request).accountId, parsedParams.data.id)) {
+    if (!authorizeProjectWriteByMessageId(reply, getRequestAuthContext(request), parsedParams.data.id, "message.edit_and_regenerate")) {
       return;
     }
 

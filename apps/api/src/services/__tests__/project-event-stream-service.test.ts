@@ -73,6 +73,7 @@ describe("matchesProjectEventStreamFilters", () => {
       visibility: "project",
       source: "api",
       actorAccountId: null,
+      actorClientId: null,
       sessionId: null,
       branchId: null,
       floorId: null,

@@ -9,7 +9,7 @@ import { floors, messagePages, sessions } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
-import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
+import { ProjectAccessService, ProjectAccessServiceError, type ProjectAction, type ProjectActorInput } from "../services/project-access-service.js";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
 import {
   ConversationShapePolicyError,
@@ -371,14 +371,24 @@ export async function registerMessagePageRoutes(
   const variableStageInspectionService = new VariableStageInspectionService(db);
   const variablePromotionTraceService = new VariablePromotionTraceService(db);
   const projectAccessService = new ProjectAccessService(db);
+  function toActorInput(auth: ReturnType<typeof getRequestAuthContext>): ProjectActorInput {
+    return{
+      actorType: auth.actorType,
+      actorAccountId: auth.actorAccountId,
+      actorClientId: auth.actorClientId,
+    };
+  }
+
+
 
   function authorizeProjectWriteByFloorId(
     reply: FastifyReply,
-    actorAccountId: string,
+    auth: ReturnType<typeof getRequestAuthContext>,
     floorId: string,
+    action: ProjectAction = "project.write",
   ): { ok: true; hasProjectScope: boolean } | { ok: false } {
     try {
-      projectAccessService.requireProjectActionByFloorId(actorAccountId, floorId, "project.write");
+      projectAccessService.requireProjectActionByFloorIdForActor(toActorInput(auth), floorId, action);
       return { ok: true, hasProjectScope: true };
     } catch (error) {
       if (error instanceof ProjectAccessServiceError) {
@@ -402,11 +412,12 @@ export async function registerMessagePageRoutes(
 
   function authorizeProjectWriteByPageId(
     reply: FastifyReply,
-    actorAccountId: string,
+    auth: ReturnType<typeof getRequestAuthContext>,
     pageId: string,
+    action: ProjectAction = "project.write",
   ): { ok: true; hasProjectScope: boolean; floorId: string } | { ok: false } {
     try {
-      const access = projectAccessService.requireProjectActionByPageId(actorAccountId, pageId, "project.write");
+      const access = projectAccessService.requireProjectActionByPageIdForActor(toActorInput(auth), pageId, action);
       return { ok: true, hasProjectScope: true, floorId: access.floorId };
     } catch (error) {
       if (error instanceof ProjectAccessServiceError) {
@@ -490,7 +501,7 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const writeAuth = authorizeProjectWriteByFloorId(reply, auth.accountId, parsedBody.data.floor_id);
+    const writeAuth = authorizeProjectWriteByFloorId(reply, auth, parsedBody.data.floor_id);
     if (!writeAuth.ok) {
       return;
     }
@@ -807,7 +818,7 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const writeAuth = authorizeProjectWriteByPageId(reply, auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth, parsedParams.data.id);
     if (!writeAuth.ok) {
       return;
     }
@@ -897,7 +908,7 @@ export async function registerMessagePageRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const writeAuth = authorizeProjectWriteByPageId(reply, auth.accountId, parsedParams.data.id);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth, parsedParams.data.id);
     if (!writeAuth.ok) {
       return;
     }
@@ -965,7 +976,7 @@ export async function registerMessagePageRoutes(
     const targetId = parsedParams.data.id;
 
     const auth = getRequestAuthContext(request);
-    const writeAuth = authorizeProjectWriteByPageId(reply, auth.accountId, targetId);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth, targetId, "page.activate");
     if (!writeAuth.ok) {
       return;
     }

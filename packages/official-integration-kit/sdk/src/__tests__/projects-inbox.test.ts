@@ -65,10 +65,13 @@ describe("sdk project inbox resources", () => {
         createdAt: 10,
         decidedAt: null,
         decidedByAccountId: null,
+        decidedByClientId: null,
+
         id: "pinbox-1",
         payload: { proposal: true },
         projectId: "proj-1",
         senderAccountId: "acc-deriver",
+        senderClientId: null,
         sourceEventId: "evt-1",
         sourceFloorId: "floor-1",
         sourcePageId: "page-1",

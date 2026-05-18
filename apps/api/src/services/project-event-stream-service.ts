@@ -167,6 +167,7 @@ export function toProjectEventResponse(event: ProjectEventRecord) {
     visibility: event.visibility,
     source: event.source,
     actor_account_id: event.actorAccountId,
+    actor_client_id: event.actorClientId,
     session_id: event.sessionId,
     branch_id: event.branchId,
     floor_id: event.floorId,

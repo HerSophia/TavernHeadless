@@ -132,6 +132,7 @@ describe("sdk project resources", () => {
       hasMore: false,
       items: [{
         actorAccountId: "acc-owner",
+        actorClientId: null,
         branchId: "main",
         causationEventId: null,
         correlationId: "corr-1",
