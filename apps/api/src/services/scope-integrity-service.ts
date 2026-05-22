@@ -10,6 +10,9 @@ import {
   projectMemberships,
   projects,
   sessions,
+  agentTypes,
+  projectAgentBindings,
+  runtimeJobs,
 } from "../db/schema.js";
 
 export type ScopeIntegrityIssueSeverity = "error" | "warning";
@@ -26,7 +29,10 @@ export type ScopeIntegrityIssueCode =
   | "project_membership_subject_missing"
   | "project_membership_subject_account_missing"
   | "project_membership_client_missing"
-  | "client_api_key_account_mismatch";
+  | "client_api_key_account_mismatch"
+  | "agent_type_workspace_account_mismatch"
+  | "project_agent_binding_agent_type_workspace_mismatch"
+  | "runtime_job_agent_binding_project_mismatch";
 
 export type ScopeIntegrityIssue = {
   id: string;
@@ -97,6 +103,9 @@ export class ScopeIntegrityService {
     if (!truncated && !push(this.diagnoseProjectInbox(input))) truncated = true;
     if (!truncated && !push(this.diagnoseProjectMemberships(input))) truncated = true;
     if (!truncated && !push(this.diagnoseClientApiKeys(input))) truncated = true;
+    if (!truncated && !push(this.diagnoseAgentTypes(input))) truncated = true;
+    if (!truncated && !push(this.diagnoseProjectAgentBindings(input))) truncated = true;
+    if (!truncated && !push(this.diagnoseRuntimeJobAgents(input))) truncated = true;
 
     return { issues, truncated };
   }
@@ -465,6 +474,141 @@ export class ScopeIntegrityService {
 
     return issues;
   }
+  private diagnoseAgentTypes(input: ScopeIntegrityDiagnoseInput): ScopeIntegrityIssue[] {
+    const issues: ScopeIntegrityIssue[] = [];
+    const filters: SQL[] = [];
+    if (input.accountId) filters.push(eq(agentTypes.accountId,input.accountId));
+
+    const rows = this.db
+      .select({
+        id: agentTypes.id,
+       workspaceId: agentTypes.workspaceId,
+        accountId: agentTypes.accountId,
+      })
+      .from(agentTypes)
+      .where(filters.length > 0 ? and(...filters) : undefined)
+      .all();
+
+    for (const row of rows) {
+      const project = this.loadAgentTypeWorkspaceAccount(row.workspaceId);
+if (!project) continue;
+      if (project.accountId !== row.accountId) {
+        issues.push({
+          id: `agent_type_workspace_account_mismatch:${row.id}`,
+          severity: "error",
+          table: "agent_type",
+          recordId: row.id,
+          code: "agent_type_workspace_account_mismatch",
+          message: `Agent type account differs from its workspace owner: ${row.id}`,
+          expected: { account_id: project.accountId },
+          actual: { account_id: row.accountId },
+          repairable: false,
+        });
+      }
+    }
+
+    return issues;
+  }
+
+  private diagnoseProjectAgentBindings(input: ScopeIntegrityDiagnoseInput): ScopeIntegrityIssue[] {
+    const issues: ScopeIntegrityIssue[] = [];
+    const filters: SQL[] = [];
+    if (input.accountId) filters.push(eq(projectAgentBindings.accountId, input.accountId));
+    if (input.projectId) filters.push(eq(projectAgentBindings.projectId, input.projectId));
+
+   const rows = this.db
+      .select({
+        id: projectAgentBindings.id,
+        workspaceId:projectAgentBindings.workspaceId,
+        agentTypeId: projectAgentBindings.agentTypeId,
+   })
+      .from(projectAgentBindings)
+      .where(filters.length > 0 ? and(...filters) : undefined)
+      .all();
+
+    for (const row of rows) {
+      const agentType = this.db
+        .select({ workspaceId: agentTypes.workspaceId })
+        .from(agentTypes)
+        .where(eq(agentTypes.id, row.agentTypeId))
+        .limit(1)
+        .all()[0];
+      if (!agentType) continue;
+      if (agentType.workspaceId !== row.workspaceId) {
+        issues.push({
+          id: `project_agent_binding_agent_type_workspace_mismatch:${row.id}`,
+          severity: "error",
+          table: "project_agent_binding",
+          recordId: row.id,
+          code: "project_agent_binding_agent_type_workspace_mismatch",
+          message: `Project agent binding references an agent type from another workspace: ${row.id}`,
+          expected: { workspace_id:agentType.workspaceId },
+          actual: { workspace_id: row.workspaceId },
+          repairable: false,
+        });
+      }
+    }
+
+    return issues;
+  }
+
+  private diagnoseRuntimeJobAgents(input: ScopeIntegrityDiagnoseInput): ScopeIntegrityIssue[] {
+    const issues: ScopeIntegrityIssue[] = [];
+    const filters: SQL[] = [];
+    if (input.accountId) filters.push(eq(runtimeJobs.accountId, input.accountId));
+    if (input.projectId) filters.push(eq(runtimeJobs.projectId, input.projectId));
+
+    const rows = this.db
+      .select({
+        id: runtimeJobs.id,
+        projectId: runtimeJobs.projectId,
+        agentBindingId: runtimeJobs.agentBindingId,
+      })
+      .from(runtimeJobs)
+      .where(filters.length > 0 ? and(...filters) : undefined)
+      .all();
+
+    for (const row of rows) {
+      if (!row.agentBindingId) continue;
+      const binding = this.db
+        .select({ projectId: projectAgentBindings.projectId })
+        .from(projectAgentBindings)
+        .where(eq(projectAgentBindings.id, row.agentBindingId))
+        .limit(1)
+  .all()[0];
+      if (!binding) continue;
+      if (row.projectId && binding.projectId !== row.projectId) {
+        issues.push({
+          id: `runtime_job_agent_binding_project_mismatch:${row.id}`,
+          severity: "error",
+          table: "runtime_job",
+          recordId: row.id,
+    code: "runtime_job_agent_binding_project_mismatch",
+          message: `Runtime job project differs from itsagent binding project: ${row.id}`,
+     expected: { project_id: binding.projectId },
+          actual: { project_id: row.projectId },
+          repairable: false,
+        });
+      }
+    }
+
+    return issues;
+  }
+
+  private loadAgentTypeWorkspaceAccount(workspaceId: string): { accountId: string } | null {
+    if (!workspaceId) return null;
+    const row = this.db
+      .select({
+        accountId: projects.accountId,
+      })
+      .from(projects)
+      .where(eq(projects.workspaceId, workspaceId))
+      .limit(1)
+      .all()[0];
+    return row ?? null;
+  }
+
+
 
   private applyRepair(issue: ScopeIntegrityIssue, now: number): boolean {
     try {

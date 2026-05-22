@@ -61,6 +61,12 @@ export interface EnqueueRuntimeJobInput<TPayload = unknown> {
   progressCurrent?: number;
   progressTotal?: number | null;
   progressMessage?: string | null;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  actorClientId?: string | null;
+  sourceEventId?: string | null;
+  agentTypeId?: string | null;
+  agentBindingId?: string | null;
 }
 
 export interface EnqueueRuntimeJobResult {
