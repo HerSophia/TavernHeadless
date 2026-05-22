@@ -8,7 +8,6 @@ import { createCharactersResource, type CharactersResource } from "../resources/
 import { createChatTransferJobsResource, type ChatTransferJobsResource } from "../resources/chat-transfer-jobs.js";
 import { createClientDataResource, type ClientDataResource } from "../resources/client-data.js";
 import { createClientsResource, type ClientsResource } from "../resources/clients.js";
-
 import { createExportsResource, type ExportsResource } from "../resources/exports.js";
 import { createFloorsResource, type FloorsResource } from "../resources/floors.js";
 import { createHealthResource, type HealthResource } from "../resources/health.js";
@@ -36,6 +35,7 @@ import { createVcTagsResource, type VcTagsResource } from "../resources/vc-tags.
 import { createVariablesResource, type VariablesResource } from "../resources/variables.js";
 import { createWorldbookEntriesResource, type WorldbookEntriesResource } from "../resources/worldbook-entries.js";
 import { createWorldbooksResource, type WorldbooksResource } from "../resources/worldbooks.js";
+import { createWorkspacesResource, type WorkspacesResource } from "../resources/workspaces.js";
 import { createTransportClient, type TavernClientOptions } from "./transport.js";
 
 export type TavernClient = ApiClient & {
@@ -45,7 +45,6 @@ export type TavernClient = ApiClient & {
   backupJobs: BackupJobsResource;
   clientData: ClientDataResource;
   clients: ClientsResource;
-
   characters: CharactersResource;
   chatTransferJobs: ChatTransferJobsResource;
   exports: ExportsResource;
@@ -75,6 +74,7 @@ export type TavernClient = ApiClient & {
   variables: VariablesResource;
   worldbookEntries: WorldbookEntriesResource;
   worldbooks: WorldbooksResource;
+  workspaces: WorkspacesResource;
 };
 
 export type { TavernClientOptions } from "./transport.js";
@@ -86,7 +86,6 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     ...transport,
     clientData: createClientDataResource(transport),
     clients: createClientsResource(transport),
-
     accounts: createAccountsResource(transport),
     backup: createBackupResource(transport),
     backupJobs: createBackupJobsResource(transport),
@@ -120,5 +119,6 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     variables: createVariablesResource(transport),
     worldbookEntries: createWorldbookEntriesResource(transport),
     worldbooks: createWorldbooksResource(transport),
+    workspaces: createWorkspacesResource(transport),
   };
 }

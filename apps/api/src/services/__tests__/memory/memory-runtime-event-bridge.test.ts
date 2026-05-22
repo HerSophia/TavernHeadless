@@ -44,6 +44,13 @@ describe("buildMemoryRuntimeJobEventAugment", () => {
       lastError: null,
       lastErrorCode: null,
       lastErrorClass: null,
+      workspaceId: null,
+      projectId: null,
+      actorClientId: null,
+      sourceEventId: null,
+      agentTypeId: null,
+      agentBindingId: null,
+
       createdAt: 1,
       updatedAt: 3,
     });

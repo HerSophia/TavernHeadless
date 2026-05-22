@@ -1243,6 +1243,12 @@ export const runtimeJobs = sqliteTable(
     lastError: text("last_error"),
     lastErrorCode: text("last_error_code"),
     lastErrorClass: text("last_error_class"),
+    workspaceId: text("workspace_id"),
+    projectId: text("project_id"),
+    actorClientId: text("actor_client_id"),
+    sourceEventId: text("source_event_id"),
+    agentTypeId: text("agent_type_id"),
+    agentBindingId: text("agent_binding_id"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -1251,8 +1257,166 @@ export const runtimeJobs = sqliteTable(
     scopeIdx: index("runtime_job_scope_idx").on(table.accountId, table.scopeType, table.scopeKey, table.createdAt),
     sessionIdx: index("runtime_job_session_idx").on(table.accountId, table.sessionId, table.createdAt),
     dedupeUnique: uniqueIndex("runtime_job_account_type_dedupe_uq").on(table.accountId, table.jobType, table.dedupeKey),
+    agentTypeStatusIdx: index("runtime_job_agent_type_status_idx").on(table.agentTypeId, table.status, table.availableAt),
+    agentBindingStatusIdx: index("runtime_job_agent_binding_status_idx").on(table.agentBindingId, table.status, table.availableAt),
+    projectStatusIdx: index("runtime_job_project_status_idx").on(table.projectId, table.status, table.availableAt),
+    sourceEventIdx: index("runtime_job_source_event_idx").on(table.sourceEventId),
   })
 );
+
+export const agentTypes = sqliteTable(
+  "agent_type",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() =>workspaces.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    scopeKind: text("scope_kind", { enum: ["floor", "session", "project", "workspace"] }).notNull(),
+    status: text("status", { enum: ["active", "disabled"] }).notNull().default("active"),
+defaultLlmProfileId: text("default_llm_profile_id"),
+    defaultToolPolicyId: text("default_tool_policy_id"),
+    defaultMcpBindingJson: text("default_mcp_binding_json").notNull().default("{}"),
+    defaultEventSubscriptionsJson: text("default_event_subscriptions_json").notNull().default("[]"),
+    defaultGrantsJson: text("default_grants_json").notNull().default("{}"),
+    metadataJson: text("metadata_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    workspaceKeyUnique: uniqueIndex("agent_type_workspace_key_uq").on(table.workspaceId, table.key),
+    workspaceStatusIdx: index("agent_type_workspace_status_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+    accountStatusIdx: index("agent_type_account_status_idx").on(
+      table.accountId,
+      table.status,
+      table.createdAt,
+    ),
+  })
+);
+
+export const projectAgentBindings = sqliteTable(
+  "project_agent_binding",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() =>projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    agentTypeId: text("agent_type_id").notNull().references(() => agentTypes.id, { onDelete: "restrict" }),
+ status: text("status", { enum: ["enabled", "disabled", "error"] }).notNull().default("enabled"),
+    scopeKind: text("scope_kind", { enum: ["floor", "session", "project", "workspace"] }).notNull(),
+    llmProfileId: text("llm_profile_id"),
+    toolPolicyId: text("tool_policy_id"),
+    mcpBindingJson: text("mcp_binding_json").notNull().default("{}"),
+    eventSubscriptionsJson: text("event_subscriptions_json").notNull().default("[]"),
+    grantsJson: text("grants_json").notNull().default("{}"),
+    metadataJson: text("metadata_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectAgentUnique: uniqueIndex("project_agent_binding_project_agent_uq").on(
+      table.projectId,
+      table.agentTypeId,
+),
+    projectStatusIdx: index("project_agent_binding_project_status_idx").on(
+      table.projectId,
+      table.status,
+      table.createdAt,
+    ),
+    workspaceIdx: index("project_agent_binding_workspace_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+    agentTypeIdx: index("project_agent_binding_agent_type_idx").on(
+      table.agentTypeId,
+      table.status,
+    ),
+  })
+);
+
+export const projectLlmProfileOverrides = sqliteTable(
+  "project_llm_profile_override",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() =>projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    baseProfileId: text("base_profile_id").notNull(),
+    overrideJson: text("override_json").notNull().default("{}"),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table)=> ({
+    projectActiveUnique: uniqueIndex("project_llm_profile_override_project_uq")
+      .on(table.projectId)
+      .where(sql`${table.status} = 'active'`),
+    workspaceIdx: index("project_llm_profile_override_workspace_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+  })
+);
+
+export const projectMcpBindings = sqliteTable(
+  "project_mcp_binding",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    mcpServerId: text("mcp_server_id").notNull(),
+    status: text("status", { enum: ["enabled", "disabled"] }).notNull().default("enabled"),
+    allowedToolsJson: text("allowed_tools_json").notNull().default("[]"),
+    configOverrideJson: text("config_override_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectServerUnique: uniqueIndex("project_mcp_binding_project_server_uq").on(
+      table.projectId,
+      table.mcpServerId,
+    ),
+    workspaceIdx: index("project_mcp_binding_workspace_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+  })
+);
+
+export const projectToolPolicyOverrides = sqliteTable(
+  "project_tool_policy_override",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    basePolicyId: text("base_policy_id").notNull(),
+    overrideJson: text("override_json").notNull().default("{}"),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectBaseUnique: uniqueIndex("project_tool_policy_override_project_base_uq").on(
+      table.projectId,
+      table.basePolicyId,
+    ),
+    workspaceIdx: index("project_tool_policy_override_workspace_idx").on(
+      table.workspaceId,
+      table.status,
+      table.createdAt,
+    ),
+  })
+);
+
 
 
 

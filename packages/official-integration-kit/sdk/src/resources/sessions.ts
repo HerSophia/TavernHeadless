@@ -56,15 +56,15 @@ export type RespondGenerationParams = {
 
 export type TurnSessionStateWrite =
   | {
-    namespace: string;
-    slot: string;
-    value: unknown;
-  }
+      namespace: string;
+      slot: string;
+      value: unknown;
+    }
   | {
-    namespace: string;
-    slot: string;
-    delete: true;
-  };
+      namespace: string;
+      slot: string;
+      delete: true;
+    };
 
 export type PromptIntent = "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
 
@@ -72,7 +72,6 @@ export type SessionCharacterSyncPolicy = "pin" | "manual" | "force";
 export type SessionPromptMode = "compat_strict" | "compat_plus" | "native";
 export type SessionCharacterSnapshotInput = { name: string } & Record<string, unknown>;
 export type SessionUserSnapshotInput = { name: string } & Record<string, unknown>;
-
 
 export type SessionCharacterBinding = {
   characterId: string | null;
@@ -125,11 +124,6 @@ export type TimelineMessage = {
 
 export type TimelinePage = {
   id: string;
-  /**
-   * 该 page 当前是否为 active。TimelineFloor.pages 里同一 page_no 可能同时出现
-   * 历史非 active 版本与当前 active 版本；`isActive === true` 的子集等价于
-   * `activePages`。旧版后端未返回 is_active 时默认 true 以保持兼容。
-   */
   isActive: boolean;
   messages: TimelineMessage[];
   pageKind: string;
@@ -138,25 +132,9 @@ export type TimelinePage = {
 };
 
 export type TimelineFloor = {
-  /**
-   * Page-aware truth source。包含该 floor 下的全部 page（历史 + 当前）。
-   * 新调用方应以此为主；旧字段 `activePage` / `messages` 仅作兼容。
-   */
   pages: TimelinePage[];
-  /**
-   * `pages` 中 `isActive === true` 的子集。可能包含多条（例如同 floor 的
-   * active input page + active output page）。
-   */
   activePages: TimelinePage[];
-  /**
-   * 兼容字段：仅当 `activePages.length === 1` 时等于该 page，否则为 null。
-   * 旧接入点可以继续用它显示单 active page；多 active page 场景下请改用 `activePages`。
-   */
   activePage: TimelinePage | null;
-  /**
-   * 兼容字段：floor 级扁平化消息。多 active page 时会按 `activePages` 顺序拼接，
-   * 无法无损还原 page 结构。新调用方应改为消费 `pages` / `activePages`。
-   */
   messages: TimelineMessage[];
   createdAt: number;
   floorNo: number;
@@ -295,10 +273,6 @@ export type SessionBranchMergeResult = {
   targetBranchId: string;
 };
 
-/**
- * 会话基础工具权限。
- * 对应 `metadata_json.tool_permissions`，只表达 session 级基础权限，不是未来 run/node/step overlay 模型。
- */
 export type SessionToolPermissions = {
   allowIrreversible?: boolean;
   enabled?: boolean;
@@ -373,10 +347,6 @@ export type SessionRuntimeToolCatalogConflict = {
   toolName: string;
 };
 
-/**
- * 会话级运行时工具目录快照。
- * 它只表达当前 session 级可见目录，不直接表示未来 run/node/step overlay 的最终执行权限。
- */
 export type SessionRuntimeToolCatalog = {
   conflicts: SessionRuntimeToolCatalogConflict[];
   generatedAt: number;
@@ -396,12 +366,6 @@ export type RespondDryRunWorldbookMatchSource = PromptRuntimeWorldbookMatchSourc
 export type RespondDryRunWorldbookMatchDetail = PromptRuntimeWorldbookMatchDetail;
 export type RespondDryRunPromptSnapshot = PromptSnapshotPreview;
 
-/**
- * dry-run 对外 `assembly` 兼容层。
- *
- * 这层继续保留既有 preset / dry-run 摘要字段，供旧调用方和调试面读取。
- * 如果同一事实已经在 `runtimeTrace` 中以更结构化的形式出现，应优先消费 `runtimeTrace`。
- */
 export type PromptAssemblyCompat = {
   memorySummaryInjected: boolean;
   mode: "preset" | "fallback";
@@ -489,6 +453,55 @@ export type SessionScopeResult = {
   sessionId: string;
   workspaceId: string;
   projectId: string;
+};
+
+export type SessionsGetEffectiveConfigOptions = {
+  accountId?: AccountIdHint;
+  sessionId: string;
+};
+
+export type SessionEffectiveConfigView = {
+  projectId: string;
+  workspaceId: string;
+  llmProfile: {
+    source: "workspace" | "project" | "session";
+    profileId: string | null;
+    override: Record<string, unknown> | null;
+  };
+  toolPolicies: {
+    overrides: Array<{
+      id: string;
+      workspaceId: string;
+      projectId: string;
+      basePolicyId: string;
+      overrideJson: Record<string, unknown>;
+      status: "active" | "archived";
+      createdAt: number;
+      updatedAt: number;
+    }>;
+  };
+  mcp: {
+    source: "workspace" | "project" | "session";
+    bindings: Array<{
+      id: string;
+      workspaceId: string;
+      projectId: string;
+      mcpServerId: string;
+      status: "enabled" | "disabled";
+      allowedTools: string[];
+      configOverrideJson: Record<string, unknown>;
+      createdAt: number;
+      updatedAt: number;
+    }>;
+  };
+  sessionId: string;
+  sessionOverrides: {
+    llmProfile: {
+      source: "workspace" | "project" | "session";
+      profileId: string | null;
+      override: Record<string, unknown> | null;
+    } | null;
+  };
 };
 
 export type SessionsUpdateOptions = {
@@ -682,35 +695,15 @@ export type SessionsResource = {
   diffBranches(options: SessionsDiffBranchesOptions): Promise<SessionBranchDiff>;
   getActiveRun(options: SessionsGetActiveRunOptions): Promise<SessionActiveRunRecord>;
   getDetail(options: SessionsGetDetailOptions): Promise<SessionDetail>;
-  /**
-   * 读取会话级运行时工具目录快照。
-   * 该结果不直接包含未来 run/node/step overlay 的最终执行权限。
-   */
   getRuntimeToolCatalog(options: SessionsGetRuntimeToolCatalogOptions): Promise<SessionRuntimeToolCatalog>;
-  /**
-   * 读取 session 基础工具权限。
-   * 对应 `metadata_json.tool_permissions`。
-   */
   getToolPermissions(options: SessionsToolPermissionsOptions): Promise<SessionToolPermissions>;
-  /**
-   * 读取会话所属的 Workspace / Project 归属信息。
-   * 适用于 SDK 调用方在已知 sessionId 时反查所属 Project。
-   */
   getScope(options: SessionsGetScopeOptions): Promise<SessionScopeResult>;
-
+  getEffectiveConfig(options: SessionsGetEffectiveConfigOptions): Promise<SessionEffectiveConfigView>;
   list(options?: SessionsListOptions): Promise<SessionRecord[]>;
   listBranches(options: SessionsListBranchesOptions): Promise<SessionBranchSummary[]>;
   merge(options: SessionsMergeOptions): Promise<SessionBranchMergeResult>;
   mergePreview(options: SessionsMergePreviewOptions): Promise<SessionBranchMergePreview>;
-  /**
-   * 对 session 基础工具权限做增量更新。
-   * 这不是未来 run/node/step overlay 的写入口。
-   */
   patchToolPermissions(options: SessionsPatchToolPermissionsOptions): Promise<SessionToolPermissions>;
-  /**
-   * 整体替换 session 基础工具权限。
-   * 这不是未来 run/node/step overlay 的写入口。
-   */
   putToolPermissions(options: SessionsPutToolPermissionsOptions): Promise<SessionToolPermissions>;
   regenerate(options: SessionsRegenerateOptions): Promise<SessionRegenerateResult>;
   remove(options: SessionsRemoveOptions): Promise<boolean>;
@@ -824,6 +817,20 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
         workspaceId: readString(body?.workspace_id),
         projectId: readString(body?.project_id),
       };
+    },
+    async getEffectiveConfig(options): Promise<SessionEffectiveConfigView> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/effective-config`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const record = mapSessionEffectiveConfig(response.body);
+      if (!record) {
+        throw new Error("Session effective config payload is missing");
+      }
+      return record;
     },
 
     async getRuntimeToolCatalog(options): Promise<SessionRuntimeToolCatalog> {
@@ -1296,7 +1303,6 @@ function readAssistantPrefillStrategy(value: unknown): RespondDryRunAssembly["as
     : "none";
 }
 
-
 function readPromptMode(value: unknown): RespondDryRunPromptSnapshot["promptMode"] {
   const mode = readString(value);
   if (mode === "native" || mode === "compat_plus") {
@@ -1488,7 +1494,6 @@ function mapDryRunWorldbookMatchDetail(value: unknown): RespondDryRunWorldbookMa
     uid: readNumber(record.uid),
   };
 }
-
 
 function readRespondMemoryReceipt(value: unknown): RespondMemoryReceipt | undefined {
   const record = readRecord(value);
@@ -1775,7 +1780,6 @@ function mapSessionBranchMergeResult(value: unknown): SessionBranchMergeResult |
   };
 }
 
-
 function mapBatchStatusPayload(
   payload: Record<string, unknown> | null,
   fallbackStatus: SessionsBatchUpdateStatusResult["meta"]["status"],
@@ -1831,7 +1835,6 @@ function mapTimelineFloor(value: unknown): TimelineFloor | null {
     return null;
   }
 
-  // 优先从 page-aware 字段读取；后端向后兼容的老响应只有 active_page。
   const pagesRaw = readArray(record.pages);
   const pages: TimelinePage[] = pagesRaw
     .map((raw) => {
@@ -1848,8 +1851,6 @@ function mapTimelineFloor(value: unknown): TimelineFloor | null {
     })
     .filter((page): page is TimelinePage => page !== null);
 
-  // 从 pages 推出 activePages；当后端没有返回 active_pages（旧版）时，
-  // 以 pages.isActive 为准；当 pages 也缺失时，退回到兼容字段 active_page。
   if (activePages.length === 0 && pages.length > 0) {
     activePages = pages.filter((page) => page.isActive);
   }
@@ -1859,8 +1860,6 @@ function mapTimelineFloor(value: unknown): TimelineFloor | null {
     ? mapTimelinePage(legacyActivePage, { defaultIsActive: true })
     : null;
 
-  // 当后端没有返回任何 pages/active_pages 时，用 legacy active_page 合成一个
-  // 单条 activePages，保证上层语义稳定。
   let resolvedPages = pages;
   let resolvedActivePages = activePages;
   if (resolvedPages.length === 0 && activePageMapped) {
@@ -1868,11 +1867,9 @@ function mapTimelineFloor(value: unknown): TimelineFloor | null {
     resolvedActivePages = [activePageMapped];
   }
 
-  // 计算兼容字段 activePage：严格遵循"仅当 activePages 长度为 1 时返回该 page"。
   const resolvedActivePage =
     resolvedActivePages.length === 1 ? resolvedActivePages[0]! : null;
 
-  // 计算兼容字段 messages：优先取后端的 floor 级扁平字段；缺失时按 activePages 顺序拼接。
   const floorMessagesRaw = readArray(record.messages);
   const floorMessages: TimelineMessage[] = floorMessagesRaw.length > 0
     ? floorMessagesRaw
@@ -1916,8 +1913,6 @@ function mapTimelinePage(
 ): TimelinePage {
   return {
     id: readString(value.id),
-    // 后端可能不返回 is_active（例如 active_pages 条目里不带该字段）。
-    // 在这种上下文里默认 true；`pages` 数组里才要求后端显式提供。
     isActive: readBoolean(value.is_active, options.defaultIsActive ?? true),
     messages: readArray(value.messages)
       .map(mapTimelineMessage)
@@ -2036,7 +2031,7 @@ function mapRuntimeToolMetadataBasisDetail(
     ...(record.allowed_slots ? { allowedSlots: mapRuntimeToolMetadataBasisEntry(record.allowed_slots) } : {}),
     ...(record.parameter_schema ? { parameterSchema: mapRuntimeToolMetadataBasisEntry(record.parameter_schema) } : {}),
     ...(record.replay_safety ? { replaySafety: mapRuntimeToolMetadataBasisEntry(record.replay_safety) } : {}),
-};
+  };
 }
 
 function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEntry | null {
@@ -2082,4 +2077,80 @@ function mapStringArrayRecord(value: unknown): Record<string, string[]> | undefi
     ] as const);
 
   return entries.length > 0 ? Object.fromEntries(entries) : {};
+}
+
+function mapSessionEffectiveConfig(value: unknown): SessionEffectiveConfigView | null {
+  const record = readRecord(value);
+  if (!record) return null;
+
+  const llmProfile = readRecord(record.llmProfile);
+  const toolPolicies = readRecord(record.toolPolicies);
+  const mcp = readRecord(record.mcp);
+  const sessionOverrides = readRecord(record.sessionOverrides);
+  const sessionOverrideLlm = readRecord(sessionOverrides?.llmProfile);
+
+  const llmSource = readString(llmProfile?.source) as SessionEffectiveConfigView["llmProfile"]["source"];
+  const mcpSource = readString(mcp?.source) as SessionEffectiveConfigView["mcp"]["source"];
+  if ((llmSource !== "workspace" && llmSource !== "project" && llmSource !== "session")
+    || (mcpSource !== "workspace" && mcpSource !== "project" && mcpSource !== "session")) {
+    return null;
+  }
+
+  return {
+    projectId: readString(record.projectId),
+    workspaceId: readString(record.workspaceId),
+    llmProfile: {
+      source: llmSource,
+      profileId: readNullableString(llmProfile?.profileId),
+      override: readRecord(llmProfile?.override),
+    },
+    toolPolicies: {
+      overrides: readArray(toolPolicies?.overrides)
+        .map((entry) => {
+          const item = readRecord(entry);
+          if (!item) return null;
+          return {
+            id: readString(item.id),
+            workspaceId: readString(item.workspaceId),
+            projectId: readString(item.projectId),
+            basePolicyId: readString(item.basePolicyId),
+            overrideJson: readRecord(item.overrideJson) ?? {},
+            status: readString(item.status) as "active" | "archived",
+            createdAt: readNumber(item.createdAt),
+            updatedAt: readNumber(item.updatedAt),
+          };
+        })
+        .filter((item): item is SessionEffectiveConfigView["toolPolicies"]["overrides"][number] => item !== null),
+    },
+    mcp: {
+      source: mcpSource,
+      bindings: readArray(mcp?.bindings)
+        .map((entry) => {
+          const item = readRecord(entry);
+          if (!item) return null;
+          return {
+            id: readString(item.id),
+            workspaceId: readString(item.workspaceId),
+            projectId: readString(item.projectId),
+            mcpServerId: readString(item.mcpServerId),
+            status: readString(item.status) as "enabled" | "disabled",
+            allowedTools: readArray(item.allowedTools).map((part) => readString(part)).filter((part) => part.length > 0),
+            configOverrideJson: readRecord(item.configOverrideJson) ?? {},
+            createdAt: readNumber(item.createdAt),
+            updatedAt: readNumber(item.updatedAt),
+          };
+        })
+        .filter((item): item is SessionEffectiveConfigView["mcp"]["bindings"][number] => item !== null),
+    },
+    sessionId: readString(record.sessionId),
+    sessionOverrides: {
+      llmProfile: sessionOverrideLlm
+        ? {
+            source: readString(sessionOverrideLlm.source) as "workspace" | "project" | "session",
+            profileId: readNullableString(sessionOverrideLlm.profileId),
+            override: readRecord(sessionOverrideLlm.override),
+          }
+        : null,
+    },
+  };
 }

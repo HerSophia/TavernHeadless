@@ -8,27 +8,27 @@ TavernHeadless 后端提供 RESTful 风格的 HTTP API，返回 JSON。本节按
 
 ## 基础信息
 
-| 项目         | 值                      |
-| ------------ | ----------------------- |
-| 基础 URL     | `http://localhost:3000` |
-| OpenAPI 版本 | 3.0.3                   |
-| API 版本     | `0.2.0-beta.3`          |
-| OpenAPI JSON | `GET /openapi.json`     |
-| Swagger UI   | `GET /docs/`            |
-| 中文文档     | `GET /docs-zh`          |
-| 英文文档     | `GET /docs-en`          |
-| Health       | `GET /health`           |
-| Version      | `GET /version`          |
+| 项目 | 值 |
+| ---- | ---- |
+| 基础 URL | `http://localhost:3000` |
+| OpenAPI 版本 | 3.0.3 |
+| API 版本 | `0.2.0-beta.3` |
+| OpenAPI JSON | `GET /openapi.json` |
+| Swagger UI | `GET /docs/` |
+| 中文文档 | `GET /docs-zh` |
+| 英文文档 | `GET /docs-en` |
+| Health | `GET /health` |
+| Version | `GET /version` |
 
 ## 认证
 
 通过 `.env` 中的 `AUTH_MODE` 控制认证模式：
 
-| 模式      | 说明           | 请求头                                              |
-| --------- | -------------- | --------------------------------------------------- |
-| `off`     | 无认证（默认） | 无需携带                                            |
-| `api_key` | API Key        | `Authorization: Bearer <key>` 或 `x-api-key: <key>` |
-| `jwt`     | JWT            | `Authorization: Bearer <token>`                     |
+| 模式 | 说明 | 请求头 |
+| ---- | ---- | ---- |
+| `off` | 无认证（默认） | 无需携带 |
+| `api_key` | API Key | `Authorization: Bearer <key>` 或 `x-api-key: <key>` |
+| `jwt` | JWT | `Authorization: Bearer <token>` |
 
 `AUTH_MODE=off` 只应用于本地开发。当前服务会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动。
 
@@ -65,7 +65,7 @@ WebSocket 也遵循相同边界：
 
 ```json
 {
-  "data": { }
+  "data": {}
 }
 ```
 
@@ -73,7 +73,7 @@ WebSocket 也遵循相同边界：
 
 ```json
 {
-  "data": [ ],
+  "data": [],
   "meta": {
     "total": 42,
     "limit": 50,
@@ -100,22 +100,22 @@ WebSocket 也遵循相同边界：
 
 常见 HTTP 状态码：
 
-| 状态码 | 含义                                   |
-| ------ | -------------------------------------- |
-| `200`  | 成功                                   |
-| `201`  | 创建成功                               |
-| `204`  | 删除成功（无响应体）                   |
-| `400`  | 请求参数错误                           |
-| `401`  | 未认证，或认证后的账号不存在           |
-| `403`  | 账号被禁用，或缺少系统级能力           |
-| `404`  | 资源不存在，或资源存在但不属于当前账号 |
-| `409`  | 冲突（如账号内重名、乐观锁失败）       |
-| `410`  | 资源逻辑上已删除                       |
-| `413`  | 请求体过大                             |
-| `500`  | 服务端错误                             |
-| `502`  | 上游 LLM 服务错误                      |
-| `503`  | 服务不可用或暂时繁忙                   |
-| `504`  | 上游生成超时                           |
+| 状态码 | 含义 |
+| ---- | ---- |
+| `200` | 成功 |
+| `201` | 创建成功 |
+| `204` | 删除成功（无响应体） |
+| `400` | 请求参数错误 |
+| `401` | 未认证，或认证后的账号不存在 |
+| `403` | 账号被禁用，或缺少系统级能力 |
+| `404` | 资源不存在，或资源存在但不属于当前账号 |
+| `409` | 冲突（如账号内重名、乐观锁失败） |
+| `410` | 资源逻辑上已删除 |
+| `413` | 请求体过大 |
+| `500` | 服务端错误 |
+| `502` | 上游 LLM 服务错误 |
+| `503` | 服务不可用或暂时繁忙 |
+| `504` | 上游生成超时 |
 
 ## Workspace / Project 兼容与 observer 规则
 
@@ -135,32 +135,38 @@ WebSocket 也遵循相同边界：
 - 阶段一不开放 `GET /sessions?workspace_id=...`、`GET /sessions?project_id=...` 或 `include=workspace,project`。
 - 旧的 `global` 配置语义在阶段一表示“当前账号默认 Workspace 的默认配置”。
 
+阶段五新增：
+
+- `/workspaces/:id/agent-types*`：Workspace 级 Agent Type 管理
+- `/projects/:id/agent-bindings*`：Project 级 Agent 启用与手动 run
+- `/projects/:id/settings/*`：Project 级 LLM / MCP / Tool Policy 覆盖
+- `/projects/:id/effective-config` 与 `/sessions/:id/effective-config`：只读生效配置视图
+
 ## 分页
 
 大多数复用通用分页基类的列表接口支持以下查询参数：
 
-| 参数         | 类型    | 默认值     | 说明                      |
-| ------------ | ------- | ---------- | ------------------------- |
-| `limit`      | integer | `50`       | 每页条数，最大 `100`      |
-| `offset`     | integer | `0`        | 偏移量                    |
-| `sort_order` | string  | `desc`     | 排序方向，`asc` 或 `desc` |
-| `sort_by`    | string  | 因资源而异 | 排序字段，详见各资源文档  |
+| 参数 | 类型 | 默认值 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `limit` | integer | `50` | 每页条数，最大 `100` |
+| `offset` | integer | `0` | 偏移量 |
+| `sort_order` | string | `desc` | 排序方向，`asc` 或 `desc` |
+| `sort_by` | string | 因资源而异 | 排序字段，详见各资源文档 |
 
 ## 资源目录
 
-| 资源           | 说明                                                         | 文档                                   |
-| -------------- | ------------------------------------------------------------ | -------------------------------------- |
-| Sessions       | 会话管理、时间线、分支、分支重置与无冲突合并                 | [Sessions](./api/sessions)             |
-| Chat           | 对话生成、SSE 流、Dry-run                                    | [Chat](./api/chat)                     |
-| Floors         | 楼层管理、分支操作                                           | [Floors](./api/floors)                 |
-| Pages          | 消息页管理、激活切换                                         | [Pages](./api/pages)                   |
-| Messages       | 消息管理、批量操作                                           | [Messages](./api/messages)             |
-| Characters     | 角色卡管理、版本控制                                         | [Characters](./api/characters)         |
-| Users          | 用户卡管理                                                   | [Users](./api/users)                   |
-| Variables      | 五级变量系统                                                 | [Variables](./api/variables)           |
-| Macros         | 宏展开规则、兼容边界，以及 dry-run / preview 能看到的结果    | [Macros](./api/macros)                 |
+| 资源 | 说明 | 文档 |
+| ---- | ---- | ---- |
+| Sessions | 会话管理、时间线、分支、分支重置与无冲突合并 | [Sessions](./api/sessions) |
+| Chat | 对话生成、SSE 流、Dry-run | [Chat](./api/chat) |
+| Floors | 楼层管理、分支操作 | [Floors](./api/floors) |
+| Pages | 消息页管理、激活切换 | [Pages](./api/pages) |
+| Messages | 消息管理、批量操作 | [Messages](./api/messages) |
+| Characters | 角色卡管理、版本控制 | [Characters](./api/characters) |
+| Users | 用户卡管理 | [Users](./api/users) |
+| Variables | 五级变量系统 | [Variables](./api/variables) |
+| Macros | 宏展开规则、兼容边界，以及 dry-run / preview 能看到的结果 | [Macros](./api/macros) |
 | Prompt Runtime | 查看 Prompt Runtime 总览、mode、policy、assets、inspection 与 capabilities | [Prompt Runtime](./api/prompt-runtime) |
-
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
 | Exports | 资源导出 | [Exports](./api/exports) |
@@ -179,6 +185,10 @@ WebSocket 也遵循相同边界：
 | Session State | 管理会话内受治理状态：注册、写入、读取和比较 | [Session State](./api/session-state) |
 | Operation Logs | 用户、LLM 和系统操作的审计日志 | [Operation Logs](./api/operation-logs) |
 | Workspace / Project | 工作区、项目、Project Event、observer 和 deriver | [Workspace / Project](./api/workspace-project) |
+| Agent Types | Workspace 级 Agent 类型 | [Agent Types](./api/agent-types) |
+| Project Agent Bindings | Project 级 Agent 启用与手动触发 | [Project Agent Bindings](./api/project-agent-bindings) |
+| Project Settings | Project 级 LLM、MCP、Tool Policy 覆盖 | [Project Settings](./api/project-settings) |
+| Effective Config | Project / Session 生效配置视图 | [Effective Config](./api/effective-config) |
 | Project Derived Outputs | Project 派生结果 | [Project Derived Outputs](./api/projects-derived-outputs) |
 | Project Inbox | Project 收件箱与 owner 决策 | [Project Inbox](./api/projects-inbox) |
 | VC Tags | 给 Floor 和资产版本保存命名引用 | [VC Tags](./api/vc-tags) |
@@ -200,7 +210,6 @@ WebSocket 也遵循相同边界：
 - [Prompt Runtime Assets](./api/prompt-runtime-assets)
 - [Prompt Runtime Inspection](./api/prompt-runtime-inspection)
 - [Prompt Runtime Capabilities](./api/prompt-runtime-capabilities)
-
 - [Tools](./api/tools)
 - [MCP Servers](./api/mcp)
 - [Client Data](./api/client-data)
@@ -208,6 +217,10 @@ WebSocket 也遵循相同边界：
 - [Session-State Observation（内部）](./api/session-state-observation)
 - [Operation Logs](./api/operation-logs)
 - [Workspace / Project](./api/workspace-project)
+- [Agent Types](./api/agent-types)
+- [Project Agent Bindings](./api/project-agent-bindings)
+- [Project Settings](./api/project-settings)
+- [Effective Config](./api/effective-config)
 - [Project Derived Outputs](./api/projects-derived-outputs)
 - [Project Inbox](./api/projects-inbox)
 - [VC Tags](./api/vc-tags)
