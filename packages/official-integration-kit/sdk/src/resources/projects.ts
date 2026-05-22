@@ -22,6 +22,15 @@ export type ProjectEventSource = "api" | "runtime_job" | "migration" | "system";
 export type DerivedOutputStatus = "draft" | "published" | "archived";
 export type ProjectInboxItemStatus = "pending" | "accepted" | "rejected" | "archived";
 export type ProjectInboxDecision = "accept" | "reject" | "archive";
+export type AgentScopeKind = "floor" | "session" | "project" | "workspace";
+export type AgentBindingStatus = "enabled" | "disabled" | "error";
+export type AgentOutputTarget =
+  | "page_staged_write"
+  | "derived_output"
+  | "project_inbox"
+  | "session_state_proposal"
+  | "client_data"
+  | "plugin_data";
 
 export type ProjectRecord = {
   id: string;
@@ -79,7 +88,6 @@ export type ProjectMember = {
   subjectType: "account" | "client";
   subjectId: string;
   clientId: string | null;
-
   createdByAccountId: string | null;
   createdByClientId: string | null;
   createdAt: number;
@@ -125,7 +133,96 @@ export type ProjectInboxItem = {
   updatedAt: number;
 };
 
-export type ProjectAssignableMemberRole = "observer" | "deriver";
+export type AgentMcpBindingEntry = {
+  mcpServerId: string;
+  allowedTools: string[] | null;
+  configOverrideJson: Record<string, unknown> | null;
+};
+
+export type AgentEventSubscription = {
+  type: string;
+  filterJson: Record<string, unknown> | null;
+};
+
+export type ProjectAgentBindingRecord = {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  accountId: string;
+  agentTypeId: string;
+  status: AgentBindingStatus;
+  scopeKind: AgentScopeKind;
+  llmProfileId: string | null;
+  toolPolicyId: string | null;
+  mcpBindings: AgentMcpBindingEntry[];
+  eventSubscriptions: AgentEventSubscription[];
+  grants: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectAgentBindingRunResult = {
+  jobId: string;
+  created: boolean;
+  agentBindingId: string;
+  dedupeKey: string | null;
+};
+
+export type ProjectLlmProfileOverrideRecord = {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  baseProfileId: string;
+  overrideJson: Record<string, unknown>;
+  status: "active" | "archived";
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectMcpBindingRecord = {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  mcpServerId: string;
+  status: "enabled" | "disabled";
+  allowedTools: string[];
+  configOverrideJson: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ProjectToolPolicyOverrideRecord = {
+  id: string;
+  workspaceId: string;
+  projectId: string;
+  basePolicyId: string;
+  overrideJson: Record<string, unknown>;
+  status: "active" | "archived";
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type EffectiveLlmProfileView = {
+  source: "workspace" | "project" | "session";
+  profileId: string | null;
+  override: Record<string, unknown> | null;
+};
+
+export type EffectiveMcpBindingView = {
+  source: "workspace" | "project" | "session";
+  bindings: ProjectMcpBindingRecord[];
+};
+
+export type ProjectEffectiveConfigView = {
+  projectId: string;
+  workspaceId: string;
+  llmProfile: EffectiveLlmProfileView;
+  toolPolicies: {
+    overrides: ProjectToolPolicyOverrideRecord[];
+  };
+  mcp: EffectiveMcpBindingView;
+};
 
 export type ProjectsListOptions = {
   accountId?: AccountIdHint;
@@ -295,6 +392,81 @@ export type ProjectsInboxResource = {
   archive(projectId: string, itemId: string, options?: ProjectsInboxDecisionOptions): Promise<ProjectInboxItem>;
 };
 
+export type ProjectAssignableMemberRole = "observer" | "deriver";
+
+export type ProjectsAgentBindingsListOptions = {
+  accountId?: AccountIdHint;
+};
+
+export type ProjectsAgentBindingsRequestOptions = {
+  accountId?: AccountIdHint;
+};
+
+export type ProjectsAgentBindingsCreateInput = {
+  agentTypeId: string;
+  scopeKind?: AgentScopeKind;
+  llmProfileId?: string | null;
+  toolPolicyId?: string | null;
+  mcpBindings?: Array<{
+    mcpServerId: string;
+    allowedTools?: string[];
+    configOverrideJson?: Record<string, unknown> | null;
+  }>;
+  eventSubscriptions?: Array<{
+    type: string;
+    filterJson?: Record<string, unknown> | null;
+  }>;
+  grants?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type ProjectsAgentBindingsUpdateInput = {
+  scopeKind?: AgentScopeKind;
+  status?: AgentBindingStatus;
+  llmProfileId?: string | null;
+  toolPolicyId?: string | null;
+  mcpBindings?: Array<{
+    mcpServerId: string;
+    allowedTools?: string[];
+    configOverrideJson?: Record<string, unknown> | null;
+  }>;
+  eventSubscriptions?: Array<{
+    type: string;
+    filterJson?: Record<string, unknown> | null;
+  }>;
+  grants?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type ProjectsAgentBindingsRunInput = {
+  triggerReason?: string | null;
+  dryRun?: boolean;
+  inputJson?: Record<string, unknown>;
+};
+
+export type ProjectsAgentBindingsResource = {
+  list(projectId: string, options?: ProjectsAgentBindingsListOptions): Promise<ProjectAgentBindingRecord[]>;
+  get(projectId: string, bindingId: string, options?: ProjectsAgentBindingsRequestOptions): Promise<ProjectAgentBindingRecord>;
+  create(projectId: string, input: ProjectsAgentBindingsCreateInput, options?: ProjectsAgentBindingsRequestOptions): Promise<ProjectAgentBindingRecord>;
+  update(projectId: string, bindingId: string, input: ProjectsAgentBindingsUpdateInput, options?: ProjectsAgentBindingsRequestOptions): Promise<ProjectAgentBindingRecord>;
+  disable(projectId: string, bindingId: string, options?: ProjectsAgentBindingsRequestOptions): Promise<ProjectAgentBindingRecord>;
+  enable(projectId: string, bindingId: string, options?: ProjectsAgentBindingsRequestOptions): Promise<ProjectAgentBindingRecord>;
+  run(projectId: string, bindingId: string, input?: ProjectsAgentBindingsRunInput, options?: ProjectsAgentBindingsRequestOptions): Promise<ProjectAgentBindingRunResult>;
+};
+
+export type ProjectsSettingsRequestOptions = {
+  accountId?: AccountIdHint;
+};
+
+export type ProjectsSettingsResource = {
+  getLlm(projectId: string, options?: ProjectsSettingsRequestOptions): Promise<ProjectLlmProfileOverrideRecord | null>;
+  updateLlm(projectId: string, input: { baseProfileId: string; overrideJson?: Record<string, unknown> }, options?: ProjectsSettingsRequestOptions): Promise<ProjectLlmProfileOverrideRecord>;
+  getMcp(projectId: string, options?: ProjectsSettingsRequestOptions): Promise<ProjectMcpBindingRecord[]>;
+  updateMcp(projectId: string, input: { mcpServerId: string; allowedTools?: string[]; configOverrideJson?: Record<string, unknown>; status?: "enabled" | "disabled" }, options?: ProjectsSettingsRequestOptions): Promise<ProjectMcpBindingRecord>;
+  getToolPolicy(projectId: string, options?: ProjectsSettingsRequestOptions): Promise<ProjectToolPolicyOverrideRecord[]>;
+  updateToolPolicy(projectId: string, input: { basePolicyId: string; overrideJson?: Record<string, unknown>; status?: "active" | "archived" }, options?: ProjectsSettingsRequestOptions): Promise<ProjectToolPolicyOverrideRecord>;
+};
+
 export type ProjectsResource = {
   list(options?: ProjectsListOptions): Promise<ProjectsListResult>;
   get(options: ProjectsGetOptions): Promise<ProjectRecord>;
@@ -306,14 +478,19 @@ export type ProjectsResource = {
   addObserver(options: ProjectsAddObserverOptions): Promise<ProjectMember>;
   addDeriver(projectId: string, deriverAccountId: string, options?: ProjectsMemberMutationOptions): Promise<ProjectMember>;
   removeMember(options: ProjectsRemoveMemberOptions): Promise<ProjectMember>;
+  getEffectiveConfig(projectId: string, options?: ProjectsSettingsRequestOptions): Promise<ProjectEffectiveConfigView>;
   derivedOutputs: ProjectsDerivedOutputsResource;
   inbox: ProjectsInboxResource;
+  agentBindings: ProjectsAgentBindingsResource;
+  settings: ProjectsSettingsResource;
 };
 
 export function createProjectsResource(client: TransportClient): ProjectsResource {
   return {
+    agentBindings: createProjectsAgentBindingsResource(client),
     derivedOutputs: createProjectsDerivedOutputsResource(client),
     inbox: createProjectsInboxResource(client),
+    settings: createProjectsSettingsResource(client),
     async list(options: ProjectsListOptions = {}): Promise<ProjectsListResult> {
       const query = buildQueryString(
         compactObject({
@@ -497,6 +674,20 @@ export function createProjectsResource(client: TransportClient): ProjectsResourc
       }
       return member;
     },
+    async getEffectiveConfig(projectId, options = {}): Promise<ProjectEffectiveConfigView> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/effective-config`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const record = mapProjectEffectiveConfig(response.body);
+      if (!record) {
+        throw new Error("Project effective config payload is missing");
+      }
+      return record;
+    },
   };
 }
 
@@ -662,6 +853,213 @@ function createProjectsInboxResource(client: TransportClient): ProjectsInboxReso
       return decideProjectInboxItem(client, projectId, itemId, "archive", options);
     },
   };
+}
+
+function createProjectsAgentBindingsResource(client: TransportClient): ProjectsAgentBindingsResource {
+  return {
+    async list(projectId, options = {}): Promise<ProjectAgentBindingRecord[]> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/agent-bindings`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const body = readRecord(response.body);
+      return readArray(body?.items)
+        .map(mapProjectAgentBindingRecord)
+        .filter((item): item is ProjectAgentBindingRecord => item !== null);
+    },
+    async get(projectId, bindingId, options = {}): Promise<ProjectAgentBindingRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/agent-bindings/${encodeURIComponent(bindingId)}`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const record = mapProjectAgentBindingRecord(response.body);
+      if (!record) {
+        throw new Error("Project agent binding payload is missing");
+      }
+      return record;
+    },
+    async create(projectId, input, options = {}): Promise<ProjectAgentBindingRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/agent-bindings`,
+        {
+          body: mapProjectAgentBindingWriteInput(input),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      const record = mapProjectAgentBindingRecord(response.body);
+      if (!record) {
+        throw new Error("Project agent binding payload is missing");
+      }
+      return record;
+    },
+    async update(projectId, bindingId, input, options = {}): Promise<ProjectAgentBindingRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/agent-bindings/${encodeURIComponent(bindingId)}`,
+        {
+          body: mapProjectAgentBindingPatchInput(input),
+          headers: buildAccountHeaders(options.accountId),
+          method: "PATCH",
+        },
+      );
+      const record = mapProjectAgentBindingRecord(response.body);
+      if (!record) {
+        throw new Error("Project agent binding payload is missing");
+      }
+      return record;
+    },
+    async disable(projectId, bindingId, options = {}): Promise<ProjectAgentBindingRecord> {
+      return changeProjectAgentBindingStatus(client, projectId, bindingId, "disable", options);
+    },
+    async enable(projectId, bindingId, options = {}): Promise<ProjectAgentBindingRecord> {
+      return changeProjectAgentBindingStatus(client, projectId, bindingId, "enable", options);
+    },
+    async run(projectId, bindingId, input = {}, options = {}): Promise<ProjectAgentBindingRunResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/agent-bindings/${encodeURIComponent(bindingId)}/run`,
+        {
+          body: compactObject({
+            trigger_reason: input.triggerReason ?? undefined,
+            dry_run: input.dryRun,
+            input_json: input.inputJson,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+      return {
+        jobId: readString(readRecord(response.body)?.job_id),
+        created: readBoolean(readRecord(response.body)?.created),
+        agentBindingId: readString(readRecord(response.body)?.agent_binding_id),
+        dedupeKey: readNullableString(readRecord(response.body)?.dedupe_key),
+      };
+    },
+  };
+}
+
+function createProjectsSettingsResource(client: TransportClient): ProjectsSettingsResource {
+  return {
+    async getLlm(projectId, options = {}): Promise<ProjectLlmProfileOverrideRecord | null> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/settings/llm-profile-override`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      return mapProjectLlmProfileOverrideRecord(readRecord(response.body)?.item);
+    },
+    async updateLlm(projectId, input, options = {}): Promise<ProjectLlmProfileOverrideRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/settings/llm-profile-override`,
+        {
+          body: compactObject({
+            base_profile_id: input.baseProfileId,
+            override_json: input.overrideJson,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "PUT",
+        },
+      );
+      const record = mapProjectLlmProfileOverrideRecord(response.body);
+      if (!record) {
+        throw new Error("Project llm profile override payload is missing");
+      }
+      return record;
+    },
+    async getMcp(projectId, options = {}): Promise<ProjectMcpBindingRecord[]> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/settings/mcp-bindings`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const body = readRecord(response.body);
+      return readArray(body?.items)
+        .map(mapProjectMcpBindingRecord)
+        .filter((item): item is ProjectMcpBindingRecord => item !== null);
+    },
+    async updateMcp(projectId, input, options = {}): Promise<ProjectMcpBindingRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/settings/mcp-bindings`,
+        {
+          body: compactObject({
+            mcp_server_id: input.mcpServerId,
+            allowed_tools: input.allowedTools,
+            config_override_json: input.configOverrideJson,
+            status: input.status,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "PUT",
+        },
+      );
+      const record = mapProjectMcpBindingRecord(response.body);
+      if (!record) {
+        throw new Error("Project mcp binding payload is missing");
+      }
+      return record;
+    },
+    async getToolPolicy(projectId, options = {}): Promise<ProjectToolPolicyOverrideRecord[]> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/settings/tool-policy-overrides`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const body = readRecord(response.body);
+      return readArray(body?.items)
+        .map(mapProjectToolPolicyOverrideRecord)
+        .filter((item): item is ProjectToolPolicyOverrideRecord => item !== null);
+    },
+    async updateToolPolicy(projectId, input, options = {}): Promise<ProjectToolPolicyOverrideRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/projects/${encodeURIComponent(projectId)}/settings/tool-policy-overrides`,
+        {
+          body: compactObject({
+            base_policy_id: input.basePolicyId,
+            override_json: input.overrideJson,
+            status: input.status,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "PUT",
+        },
+      );
+      const record = mapProjectToolPolicyOverrideRecord(response.body);
+      if (!record) {
+        throw new Error("Project tool policy override payload is missing");
+      }
+      return record;
+    },
+  };
+}
+
+async function changeProjectAgentBindingStatus(
+  client: TransportClient,
+  projectId: string,
+  bindingId: string,
+  action: "enable" | "disable",
+  options: ProjectsAgentBindingsRequestOptions,
+): Promise<ProjectAgentBindingRecord> {
+  const response = await client.fetchJson<Record<string, unknown>>(
+    `/projects/${encodeURIComponent(projectId)}/agent-bindings/${encodeURIComponent(bindingId)}/${action}`,
+    {
+      headers: buildAccountHeaders(options.accountId),
+      method: "POST",
+    },
+  );
+  const record = mapProjectAgentBindingRecord(response.body);
+  if (!record) {
+    throw new Error("Project agent binding payload is missing");
+  }
+  return record;
 }
 
 async function decideProjectInboxItem(
@@ -913,7 +1311,6 @@ function mapProjectMember(value: unknown): ProjectMember | null {
     role,
     status,
     subjectType: (readString(record.subject_type, "account") === "client" ? "client" : "account"),
-
     subjectId: readString(record.subject_id, readString(record.account_id)),
     clientId: readNullableString(record.client_id),
     createdByAccountId: readNullableString(record.created_by_account_id),
@@ -922,7 +1319,6 @@ function mapProjectMember(value: unknown): ProjectMember | null {
     updatedAt: readNumber(record.updated_at),
   };
 }
-
 
 function mapDerivedOutputRecord(value: unknown): DerivedOutputRecord | null {
   const record = readRecord(value);
@@ -972,6 +1368,188 @@ function mapProjectInboxItem(value: unknown): ProjectInboxItem | null {
     decidedAt: readNullableNumber(record.decided_at),
     createdAt: readNumber(record.created_at),
     updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapProjectAgentBindingWriteInput(input: ProjectsAgentBindingsCreateInput): Record<string, unknown> {
+  return compactObject({
+    agent_type_id: input.agentTypeId,
+    scope_kind: input.scopeKind,
+    llm_profile_id: input.llmProfileId,
+    tool_policy_id: input.toolPolicyId,
+    mcp_bindings: input.mcpBindings?.map((entry) => compactObject({
+      mcp_server_id: entry.mcpServerId,
+      allowed_tools: entry.allowedTools,
+      config_override_json: entry.configOverrideJson ?? undefined,
+    })),
+    event_subscriptions: input.eventSubscriptions?.map((entry) => compactObject({
+      type: entry.type,
+      filter_json: entry.filterJson ?? undefined,
+    })),
+    grants: input.grants,
+    metadata: input.metadata,
+  });
+}
+
+function mapProjectAgentBindingPatchInput(input: ProjectsAgentBindingsUpdateInput): Record<string, unknown> {
+  return compactObject({
+    scope_kind: input.scopeKind,
+    status: input.status,
+    llm_profile_id: input.llmProfileId,
+    tool_policy_id: input.toolPolicyId,
+    mcp_bindings: input.mcpBindings?.map((entry) => compactObject({
+      mcp_server_id: entry.mcpServerId,
+      allowed_tools: entry.allowedTools,
+      config_override_json: entry.configOverrideJson ?? undefined,
+    })),
+    event_subscriptions: input.eventSubscriptions?.map((entry) => compactObject({
+      type: entry.type,
+      filter_json: entry.filterJson ?? undefined,
+    })),
+    grants: input.grants,
+    metadata: input.metadata,
+  });
+}
+
+function mapProjectAgentBindingRecord(value: unknown): ProjectAgentBindingRecord | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const scopeKind = readString(record.scope_kind) as AgentScopeKind;
+  if (scopeKind !== "floor" && scopeKind !== "session" && scopeKind !== "project" && scopeKind !== "workspace") return null;
+  const status = readString(record.status) as AgentBindingStatus;
+  if (status !== "enabled" && status !== "disabled" && status !== "error") return null;
+  return {
+    id: readString(record.id),
+    workspaceId: readString(record.workspace_id),
+    projectId: readString(record.project_id),
+    accountId: readString(record.account_id),
+    agentTypeId: readString(record.agent_type_id),
+    status,
+    scopeKind,
+    llmProfileId: readNullableString(record.llm_profile_id),
+    toolPolicyId: readNullableString(record.tool_policy_id),
+    mcpBindings: readArray(record.mcp_bindings).map(mapAgentMcpBindingEntry).filter((item): item is AgentMcpBindingEntry => item !== null),
+    eventSubscriptions: readArray(record.event_subscriptions).map(mapAgentEventSubscription).filter((item): item is AgentEventSubscription => item !== null),
+    grants: readRecord(record.grants) ?? {},
+    metadata: readRecord(record.metadata) ?? {},
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapProjectLlmProfileOverrideRecord(value: unknown): ProjectLlmProfileOverrideRecord | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const status = readString(record.status) as "active" | "archived";
+  if (status !== "active" && status !== "archived") return null;
+  return {
+    id: readString(record.id),
+    workspaceId: readString(record.workspace_id),
+    projectId: readString(record.project_id),
+    baseProfileId: readString(record.base_profile_id),
+    overrideJson: readRecord(record.override_json) ?? {},
+    status,
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapProjectMcpBindingRecord(value: unknown): ProjectMcpBindingRecord | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const status = readString(record.status) as "enabled" | "disabled";
+  if (status !== "enabled" && status !== "disabled") return null;
+  return {
+    id: readString(record.id),
+    workspaceId: readString(record.workspace_id),
+    projectId: readString(record.project_id),
+    mcpServerId: readString(record.mcp_server_id),
+    status,
+    allowedTools: readArray(record.allowed_tools).map((entry) => readString(entry)).filter((entry) => entry.length > 0),
+    configOverrideJson: readRecord(record.config_override_json) ?? {},
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapProjectToolPolicyOverrideRecord(value: unknown): ProjectToolPolicyOverrideRecord | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const status = readString(record.status) as "active" | "archived";
+  if (status !== "active" && status !== "archived") return null;
+  return {
+    id: readString(record.id),
+    workspaceId: readString(record.workspace_id),
+    projectId: readString(record.project_id),
+    basePolicyId: readString(record.base_policy_id),
+    overrideJson: readRecord(record.override_json) ?? {},
+    status,
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
+  };
+}
+
+function mapAgentMcpBindingEntry(value: unknown): AgentMcpBindingEntry | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    mcpServerId: readString(record.mcp_server_id),
+    allowedTools: readArray(record.allowed_tools)
+      .map((entry) => readString(entry))
+      .filter((entry) => entry.length > 0),
+    configOverrideJson: readRecord(record.config_override_json),
+  };
+}
+
+function mapAgentEventSubscription(value: unknown): AgentEventSubscription | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  return {
+    type: readString(record.type),
+    filterJson: readRecord(record.filter_json),
+  };
+}
+
+function mapEffectiveLlmProfileView(value: unknown): EffectiveLlmProfileView | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const source = readString(record.source) as EffectiveLlmProfileView["source"];
+  if (source !== "workspace" && source !== "project" && source !== "session") return null;
+  return {
+    source,
+    profileId: readNullableString(record.profileId),
+    override: readRecord(record.override),
+  };
+}
+
+function mapProjectEffectiveConfig(value: unknown): ProjectEffectiveConfigView | null {
+  const record = readRecord(value);
+  if (!record) return null;
+  const llmProfile = mapEffectiveLlmProfileView(record.llmProfile);
+  const toolPolicies = readRecord(record.toolPolicies);
+  const mcp = readRecord(record.mcp);
+  const mcpSource = readString(mcp?.source) as EffectiveMcpBindingView["source"];
+  if (!llmProfile) return null;
+  if (mcpSource !== "workspace" && mcpSource !== "project" && mcpSource !== "session") return null;
+  return {
+    projectId: readString(record.projectId),
+    workspaceId: readString(record.workspaceId),
+    llmProfile,
+    toolPolicies: {
+      overrides: readArray(toolPolicies?.overrides)
+        .map(mapProjectToolPolicyOverrideRecord)
+        .filter((item): item is ProjectToolPolicyOverrideRecord => item !== null),
+    },
+    mcp: {
+      source: mcpSource,
+      bindings: readArray(mcp?.bindings)
+        .map(mapProjectMcpBindingRecord)
+        .filter((item): item is ProjectMcpBindingRecord => item !== null),
+    },
   };
 }
 

@@ -36,7 +36,12 @@ export type ProjectAction =
   | "session_state.write"
   | "prompt_runtime.modify"
   | "tool_policy.modify"
-  | "mcp.modify";
+  | "mcp.modify"
+  | "project.agent.read"
+  | "project.agent.manage"
+  | "project.agent.run"
+  | "project.config.read"
+  | "project.config.write";
 
 export type ProjectAccessProject = {
   id: string;
@@ -461,6 +466,8 @@ const OBSERVER_ALLOWED_ACTIONS: ReadonlySet<ProjectAction> =new Set([
   "project.derived_output.read",
   "session.read_metadata",
   "session.read_committed_messages",
+  "project.agent.read",
+  "project.config.read",
 ]);
 
 const DERIVER_ALLOWED_ACTIONS: ReadonlySet<ProjectAction> = new Set([
@@ -472,6 +479,8 @@ const DERIVER_ALLOWED_ACTIONS: ReadonlySet<ProjectAction> = new Set([
   "project.inbox.write",
   "session.read_metadata",
   "session.read_committed_messages",
+  "project.agent.read",
+  "project.config.read",
 ]);
 
 function legacyAccountActor(actorAccountId: string): ProjectActorInput {

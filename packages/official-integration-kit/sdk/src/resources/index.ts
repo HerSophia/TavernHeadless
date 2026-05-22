@@ -94,7 +94,6 @@ export {
   type ClientsUpdateInput,
   type CreatedClientApiKey,
 } from "./clients.js";
-
 export {
   createExportsResource,
   type ExportChatFormat,
@@ -119,7 +118,6 @@ export {
   type ClientDataOwnerType,
   type ClientDataResource,
 } from "./client-data.js";
-
 export {
   createFloorsResource,
   type FloorBranchResult,
@@ -282,9 +280,19 @@ export {
 } from "./presets.js";
 export {
   createProjectsResource,
+  type AgentBindingStatus,
+  type AgentEventSubscription,
+  type AgentMcpBindingEntry,
+  type AgentOutputTarget,
+  type AgentScopeKind,
   type DerivedOutputRecord,
   type DerivedOutputStatus,
+  type EffectiveLlmProfileView,
+  type EffectiveMcpBindingView,
+  type ProjectAgentBindingRecord,
+  type ProjectAgentBindingRunResult,
   type ProjectAssignableMemberRole,
+  type ProjectEffectiveConfigView,
   type ProjectEventRecord,
   type ProjectEventSource,
   type ProjectEventVisibility,
@@ -292,14 +300,23 @@ export {
   type ProjectInboxItem,
   type ProjectInboxItemStatus,
   type ProjectKind,
+  type ProjectLlmProfileOverrideRecord,
+  type ProjectMcpBindingRecord,
   type ProjectMember,
   type ProjectMemberStatus,
   type ProjectRecord,
   type ProjectRole,
   type ProjectSessionSummary,
   type ProjectStatus,
+  type ProjectToolPolicyOverrideRecord,
   type ProjectsAddMemberInput,
   type ProjectsAddObserverOptions,
+  type ProjectsAgentBindingsCreateInput,
+  type ProjectsAgentBindingsListOptions,
+  type ProjectsAgentBindingsRequestOptions,
+  type ProjectsAgentBindingsResource,
+  type ProjectsAgentBindingsRunInput,
+  type ProjectsAgentBindingsUpdateInput,
   type ProjectsCreateDerivedOutputInput,
   type ProjectsCreateInboxItemInput,
   type ProjectsDerivedOutputsListOptions,
@@ -322,10 +339,11 @@ export {
   type ProjectsMemberMutationOptions,
   type ProjectsRemoveMemberOptions,
   type ProjectsResource,
+  type ProjectsSettingsRequestOptions,
+  type ProjectsSettingsResource,
   type ProjectsStreamEventsOptions,
   type ProjectsUpdateDerivedOutputInput,
 } from "./projects.js";
-
 export {
   createRegexProfilesResource,
   type RegexProfileDetail,
@@ -362,6 +380,7 @@ export {
   type SessionPromptMode,
   type SessionActiveRunRecord,
   type SessionActiveRunSummary,
+  type SessionEffectiveConfigView,
   type SessionRegenerateResult,
   type SessionRecord,
   type SessionRuntimeToolAvailability,
@@ -381,11 +400,12 @@ export {
   type SessionToolPermissions,
   type SessionUserBinding,
   type SessionUserSnapshotInput,
+  type SessionsGetScopeOptions,
+  type SessionsGetEffectiveConfigOptions,
   type SessionsMergeOptions,
   type SessionsMergePreviewOptions,
   type SessionsResetBranchOptions,
   type SessionsResource,
-  type SessionsGetScopeOptions,
   type SessionScopeResult,
   type TimelineFloor,
   type TimelineMessage,
@@ -546,3 +566,18 @@ export {
   type WorldbookEntryRecord,
 } from "./worldbook-entries.js";
 export { createWorldbooksResource, type WorldbookDetail, type WorldbookListItem, type WorldbooksResource } from "./worldbooks.js";
+export {
+  createWorkspacesResource,
+  type AgentEventSubscription as WorkspaceAgentEventSubscription,
+  type AgentMcpBindingEntry as WorkspaceAgentMcpBindingEntry,
+  type AgentScopeKind as WorkspaceAgentScopeKind,
+  type AgentTypeDefaults,
+  type AgentTypeRecord,
+  type AgentTypeStatus,
+  type WorkspaceAgentTypesCreateInput,
+  type WorkspaceAgentTypesListOptions,
+  type WorkspaceAgentTypesRequestOptions,
+  type WorkspaceAgentTypesResource,
+  type WorkspaceAgentTypesUpdateInput,
+  type WorkspacesResource,
+} from "./workspaces.js";
