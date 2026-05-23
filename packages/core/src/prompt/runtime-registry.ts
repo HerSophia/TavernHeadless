@@ -107,6 +107,48 @@ const PROMPT_RUNTIME_SOURCE_REGISTRY: readonly PromptRuntimeSourceDescriptor[] =
     defaultGovernanceLevel: 'soft_required',
   },
   {
+    kind: 'state_projection',
+    defaultBudgetGroup: 'section:stateProjection',
+    traceLabel: 'state_projection',
+    defaultGovernanceLevel: 'soft_required',
+  },
+  {
+    kind: 'director_hint',
+    defaultBudgetGroup: 'section:directorHint',
+    traceLabel: 'director_hint',
+    defaultGovernanceLevel: 'soft_required',
+  },
+  {
+    kind: 'agency_guard',
+    defaultBudgetGroup: 'section:agencyGuard',
+    traceLabel: 'agency_guard',
+    defaultGovernanceLevel: 'hard_required',
+  },
+  {
+    kind: 'scene_state',
+    defaultBudgetGroup: 'section:sceneState',
+    traceLabel: 'scene_state',
+    defaultGovernanceLevel: 'soft_required',
+  },
+  {
+    kind: 'worldbook_focus',
+    defaultBudgetGroup: 'section:worldbookFocus',
+    traceLabel: 'worldbook_focus',
+    defaultGovernanceLevel: 'budget_prunable',
+  },
+  {
+    kind: 'memory_selection',
+    defaultBudgetGroup: 'section:memorySelection',
+    traceLabel: 'memory_selection',
+    defaultGovernanceLevel: 'soft_required',
+  },
+  {
+    kind: 'verifier_hint',
+    defaultBudgetGroup: 'section:verifierHint',
+    traceLabel: 'verifier_hint',
+    defaultGovernanceLevel: 'budget_prunable',
+  },
+  {
     kind: 'worldbook',
     defaultBudgetGroup: 'worldbook',
     traceLabel: 'worldbook',

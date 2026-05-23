@@ -11,6 +11,7 @@ import { TurnModelService } from "../chat/turn-model-service.js";
 import { TurnSessionStateService } from "../chat/turn-session-state-service.js";
 import { FirstPartyStateContextService } from "../chat/first-party-state-context-service.js";
 import { PreparedPromptArtifactsBuilder } from "../chat/prepared-prompt-artifacts-builder.js";
+import { buildPromptRuntimeContributorViews } from "../chat/prompt-runtime-contributors.js";
 
 import { buildPromptRuntimeGovernanceView } from "./governance-view-builder.js";
 import { resolvePromptModeDetails, type SessionMetadata } from "../prompt-assembler.js";
@@ -147,6 +148,11 @@ export class PreparedTurnInspectionService {
         requestedTurnConfig: prepared.requestedTurnConfig,
         turnConfig: prepared.turnConfig,
         sessionStateWrites: mapPromptRuntimeSessionStateWritesSummary(request.sessionStateWrites),
+        contributors: buildPromptRuntimeContributorViews(prepared.contributors),
+        preparePhaseTrace: prepared.preparePhaseTrace.map((entry) => ({
+          phase: entry.phase,
+          ...(entry.detail ? { detail: entry.detail } : {}),
+        })),
       },
       governance,
     };

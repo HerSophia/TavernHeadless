@@ -30,6 +30,10 @@ import type {
   TurnSessionStateWriteRequest,
 } from "../chat/contracts.js";
 import type { PromptRuntimeHistoryNormalizationSummary } from "../chat/conversation-history-normalizer.js";
+import type {
+  PreparedPromptArtifactsPhaseTraceEntry,
+  PromptRuntimeContributorView,
+} from "../chat/types.js";
 
 export type {
   PromptRuntimeGovernanceEntry,
@@ -64,6 +68,13 @@ export interface PromptRuntimeInspectionPreparedTurn {
   requestedTurnConfig?: TurnConfig;
   turnConfig?: TurnConfig;
   sessionStateWrites: PromptRuntimeSessionStateWritesSummary;
+  contributors: PromptRuntimeContributorView[];
+  preparePhaseTrace: PromptRuntimeInspectionPreparePhaseTraceEntry[];
+}
+
+export interface PromptRuntimeInspectionPreparePhaseTraceEntry {
+  phase: PreparedPromptArtifactsPhaseTraceEntry["phase"];
+  detail?: Record<string, unknown>;
 }
 
 export interface PromptRuntimeInspectRequest {

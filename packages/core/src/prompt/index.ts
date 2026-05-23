@@ -92,6 +92,7 @@ export type { MessageBuilderOptions } from './message-builder.js';
 // ── Native Pipeline ────────────────────────────────────
 export {
   assembleNativePrompt,
+  runNativePipeline,
   TemplateNode,
   ConditionNode,
   WorldbookResolveNode,
@@ -103,10 +104,14 @@ export {
 } from './native-pipeline.js';
 export type {
   NativePromptMode,
+  NativePipelinePhase,
   NativeWorldbookEntry,
   NativePipelineInput,
   NativePipelineState,
   NativePipelineNode,
+  NativePipelineNodeOutput,
+  NativePipelineNodeStateSnapshot,
+  NativePipelineNodeTraceEntry,
   NativePipelineInputSummary,
   NativePipelineStateSummary,
   ConditionNodeOptions,

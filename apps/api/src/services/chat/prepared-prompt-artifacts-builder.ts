@@ -29,6 +29,7 @@ import type {
   FirstPartyStateContext,
   PreparedPromptArtifacts,
   PreparedPromptArtifactsMode,
+  PreparedPromptArtifactsPhaseTraceEntry,
 } from "./types.js";
 import {
   PromptPreparationService,
@@ -46,6 +47,13 @@ import {
   buildConversationInputSnapshot as buildFloorConversationInputSnapshot,
   type FloorConversationInputSnapshot,
 } from "./shared/metadata.js";
+import {
+  PromptRuntimeContributorRunner,
+} from "./prompt-runtime-contributor-runner.js";
+import {
+  buildPromptRuntimeContributorRenderablesForAssembly,
+  resolvePreparedPromptArtifactsPromptMode,
+} from "./prompt-runtime-contributors.js";
 
 interface PreparedPromptArtifactsSessionShape {
   presetId: string | null;
@@ -71,7 +79,7 @@ interface PreparedPromptArtifactsHistoryLoad {
 
 export interface PreparePromptArtifactsArgs {
   mode: PreparedPromptArtifactsMode;
-  runType: FloorRunType | "inspect";
+  runType: FloorRunType | "inspect" | "dry_run";
   sessionId: string;
   branchId?: string;
   floorId?: string;
@@ -97,6 +105,8 @@ export interface PreparePromptArtifactsArgs {
 }
 
 export class PreparedPromptArtifactsBuilder {
+  private readonly contributorRunner = new PromptRuntimeContributorRunner();
+
   constructor(
     private readonly db: AppDb,
     private readonly tokenCounter: import("@tavern/core").TokenCounter,
@@ -108,11 +118,16 @@ export class PreparedPromptArtifactsBuilder {
   ) {}
 
   async prepare(args: PreparePromptArtifactsArgs): Promise<PreparedPromptArtifacts> {
+    const preparePhaseTrace: PreparedPromptArtifactsPhaseTraceEntry[] = [];
     const sessionInfo = args.sessionInfo ?? this.modelService.buildSessionPromptInfo(
       args.session,
       args.resolvedTurnModels,
       args.firstPartyStateContext,
     );
+    const promptMode = resolvePreparedPromptArtifactsPromptMode({
+      mode: args.mode,
+      session: args.session,
+    });
 
     const userMessageState = args.preprocessedUserMessage !== undefined
       ? {
@@ -142,6 +157,15 @@ export class PreparedPromptArtifactsBuilder {
       historyLoad: args.historyLoad,
       currentUserMessage: preprocessedUserMessage,
     });
+    preparePhaseTrace.push({
+      phase: "conversation_resolve",
+      detail: {
+        historyCount: conversationState.history.length,
+        selectedTurnCount: conversationState.historyNormalization.selectedTurnCount,
+        effectiveTurnCount: conversationState.historyNormalization.effectiveTurnCount,
+      },
+    });
+
     const effectiveUserMessage = conversationState.effectiveUserMessage ?? preprocessedUserMessage;
     const conversationInputSnapshot = this.buildConversationInputSnapshot({
       conversationState,
@@ -175,6 +199,28 @@ export class PreparedPromptArtifactsBuilder {
       summaryInjected: Boolean(effectiveMemorySummary),
       memoryTrace: memoryRuntimeTrace,
     });
+    preparePhaseTrace.push({
+      phase: "source_resolve",
+      detail: {
+        memorySummaryInjected: Boolean(effectiveMemorySummary),
+        historyCount: conversationState.history.length,
+      },
+    });
+
+    const contributors = this.contributorRunner.resolve({
+      promptMode,
+      memorySummary: effectiveMemorySummary,
+      memoryTrace,
+      firstPartyStateContext: args.firstPartyStateContext,
+    }).contributors;
+    preparePhaseTrace.push({
+      phase: "pre_response",
+      detail: {
+        contributorCount: contributors.length,
+        contributorKinds: contributors.map((contributor) => contributor.kind),
+      },
+    });
+
     const maxContextTokensOverride = this.modelService.resolveMaxContextTokensOverride(
       args.request.generationParams,
       narratorParams,
@@ -209,10 +255,21 @@ export class PreparedPromptArtifactsBuilder {
         includeWorldbookMatchTrace: args.request.debugOptions?.includeWorldbookMatches === true,
         assistantPrefillStrategy,
         budget: args.executionContext.effectivePolicy?.budget,
+        contributors: buildPromptRuntimeContributorRenderablesForAssembly(
+          contributors,
+          promptMode,
+        ),
         sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
         memoryRuntimeTrace,
       },
     );
+    preparePhaseTrace.push({
+      phase: "assemble",
+      detail: {
+        messageCount: assembled.messages.length,
+        tokenEstimate: assembled.tokenUsage.total,
+      },
+    });
 
     const materialized = this.promptPreparationService.materializeTurnPromptMessages(
       assembled.messages,
@@ -221,6 +278,12 @@ export class PreparedPromptArtifactsBuilder {
       args.executionContext.effectivePolicy?.structure,
       args.executionContext.effectivePolicy?.delivery,
     );
+    preparePhaseTrace.push({
+      phase: "materialize",
+      detail: {
+        messageCount: materialized.messages.length,
+      },
+    });
 
     const inspection = await this.promptPreparationService.buildPromptRuntimeInspection({
       accountId: args.accountId,
@@ -241,6 +304,14 @@ export class PreparedPromptArtifactsBuilder {
         ...(args.extraDiagnostics ?? []),
       ],
     });
+    if (args.mode === "inspect") {
+      preparePhaseTrace.push({
+        phase: "inspect",
+        detail: {
+          diagnosticsCount: inspection.diagnostics.length,
+        },
+      });
+    }
 
     const execution = buildPromptRuntimeExecutionResult({
       tokenCounter: this.tokenCounter,
@@ -270,12 +341,16 @@ export class PreparedPromptArtifactsBuilder {
       sessionId: args.sessionId,
       branchId: args.branchId,
       accountId: args.accountId,
+      promptMode,
       userMessage: effectiveUserMessage,
       rawUserMessage: args.rawUserMessage,
       executionContext: args.executionContext,
+      conversation: conversationState,
       history: conversationState.history,
       visibilityTrace: conversationState.visibilityTrace,
       memorySummary: effectiveMemorySummary,
+      memoryTrace,
+      contributors,
       resolvedTurnModels: args.resolvedTurnModels,
       assembled,
       materialized,
@@ -291,6 +366,7 @@ export class PreparedPromptArtifactsBuilder {
       generationParams,
       requestedTurnConfig,
       turnConfig,
+      preparePhaseTrace,
     };
   }
 

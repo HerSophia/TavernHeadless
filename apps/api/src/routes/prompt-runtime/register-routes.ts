@@ -1466,6 +1466,8 @@ function mapCapabilitiesToSnakeCase(capabilities: PromptRuntimeCapabilities): Re
         supports_branch: capabilities.observability.inspect.supportsBranch,
         supports_source_floor: capabilities.observability.inspect.supportsSourceFloor,
         supports_visibility: capabilities.observability.inspect.supportsVisibility,
+        returns_contributors: capabilities.observability.inspect.returnsContributors,
+        returns_prepare_phase_trace: capabilities.observability.inspect.returnsPreparePhaseTrace,
         returns_prepared_turn: capabilities.observability.inspect.returnsPreparedTurn,
         returns_governance: capabilities.observability.inspect.returnsGovernance,
         llm_call: capabilities.observability.inspect.llmCall,

@@ -12,6 +12,7 @@ export type {
   WorldbookNode,
   ExampleDialogueNode,
   MemoryNode,
+  ContributorNode,
   ToolResultNode,
   PromptNode,
   PromptEdge,

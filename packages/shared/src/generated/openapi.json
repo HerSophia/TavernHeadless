@@ -54476,7 +54476,9 @@
                         "enabled": true,
                         "llm_call": false,
                         "mode": "prepared_turn",
+                        "returns_contributors": true,
                         "returns_governance": true,
+                        "returns_prepare_phase_trace": true,
                         "returns_prepared_turn": true,
                         "supports_branch": true,
                         "supports_source_floor": true,
@@ -54998,7 +55000,17 @@
                                   ],
                                   "type": "string"
                                 },
+                                "returns_contributors": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
                                 "returns_governance": {
+                                  "enum": [
+                                    true
+                                  ]
+                                },
+                                "returns_prepare_phase_trace": {
                                   "enum": [
                                     true
                                   ]
@@ -55040,6 +55052,8 @@
                                 "supports_branch",
                                 "supports_source_floor",
                                 "supports_visibility",
+                                "returns_contributors",
+                                "returns_prepare_phase_trace",
                                 "returns_prepared_turn",
                                 "returns_governance",
                                 "llm_call",
@@ -67584,6 +67598,20 @@
                     },
                     "prepared_turn": {
                       "available_for_reply": 1536,
+                      "contributors": [
+                        {
+                          "cache_scope": "floor",
+                          "deterministic": true,
+                          "id": "builtin:memory_projection",
+                          "kind": "memory_projection",
+                          "mode_scope": "compat_plus",
+                          "prompt_renderable": {
+                            "content": "The party recently agreed to search the northern pass.",
+                            "title": "Memory summary"
+                          },
+                          "source_kind": "memory"
+                        }
+                      ],
                       "generation_params": {
                         "max_output_tokens": 256,
                         "temperature": 0.7
@@ -67639,6 +67667,51 @@
                         {
                           "content": "Please continue the campfire scene.",
                           "role": "user"
+                        }
+                      ],
+                      "prepare_phase_trace": [
+                        {
+                          "detail": {
+                            "effective_turn_count": 2,
+                            "history_count": 2,
+                            "selected_turn_count": 2
+                          },
+                          "phase": "conversation_resolve"
+                        },
+                        {
+                          "detail": {
+                            "history_count": 2,
+                            "memory_summary_injected": true
+                          },
+                          "phase": "source_resolve"
+                        },
+                        {
+                          "detail": {
+                            "contributor_count": 1,
+                            "contributor_kinds": [
+                              "memory_projection"
+                            ]
+                          },
+                          "phase": "pre_response"
+                        },
+                        {
+                          "detail": {
+                            "message_count": 2,
+                            "token_estimate": 512
+                          },
+                          "phase": "assemble"
+                        },
+                        {
+                          "detail": {
+                            "message_count": 2
+                          },
+                          "phase": "materialize"
+                        },
+                        {
+                          "detail": {
+                            "diagnostics_count": 0
+                          },
+                          "phase": "inspect"
                         }
                       ],
                       "preprocessed_user_message": "Please continue the campfire scene.",
@@ -68588,6 +68661,74 @@
                               "minimum": 0,
                               "type": "integer"
                             },
+                            "contributors": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cache_scope": {
+                                    "enum": [
+                                      "floor",
+                                      "page",
+                                      "none"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "deterministic": {
+                                    "type": "boolean"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "mode_scope": {
+                                    "enum": [
+                                      "compat_plus",
+                                      "native"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "prompt_renderable": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "content": {
+                                            "type": "string"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "title",
+                                          "content"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "source_kind": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "source_kind",
+                                  "mode_scope",
+                                  "prompt_renderable",
+                                  "deterministic",
+                                  "cache_scope"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
                             "generation_params": {
                               "type": "object"
                             },
@@ -68898,6 +69039,41 @@
                                 "required": [
                                   "role",
                                   "content"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "prepare_phase_trace": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "detail": {
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": true,
+                                        "type": "object"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "phase": {
+                                    "enum": [
+                                      "conversation_resolve",
+                                      "source_resolve",
+                                      "pre_response",
+                                      "assemble",
+                                      "materialize",
+                                      "inspect"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "phase",
+                                  "detail"
                                 ],
                                 "type": "object"
                               },
@@ -70833,7 +71009,9 @@
                             "generation_params",
                             "requested_turn_config",
                             "turn_config",
-                            "session_state_writes"
+                            "session_state_writes",
+                            "contributors",
+                            "prepare_phase_trace"
                           ],
                           "type": "object"
                         },

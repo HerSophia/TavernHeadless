@@ -1,6 +1,5 @@
 import { assemblePrompt, buildPromptAssemblyCompat } from "../prompt-assembler.js";
 import { buildPromptRuntimeExecutionResult, resolvePromptRuntimeExecutionContext } from "../prompt-runtime-execution.js";
-import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
 import type { AppDb } from "../../db/client.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 
@@ -8,8 +7,8 @@ import type { DryRunRequest, DryRunResult } from "./contracts.js";
 import { ChatServiceError } from "./errors.js";
 import { PromptPreparationService } from "./prompt-preparation-service.js";
 import { TurnModelService } from "./turn-model-service.js";
-import { TurnMemoryService } from "./turn-memory-service.js";
 import { RegexInputService } from "./regex-input-service.js";
+import { PreparedPromptArtifactsBuilder } from "./prepared-prompt-artifacts-builder.js";
 
 export class DryRunService {
   constructor(
@@ -17,8 +16,8 @@ export class DryRunService {
     private readonly tokenCounter: import("@tavern/core").TokenCounter,
     private readonly promptPreparationService: PromptPreparationService,
     private readonly modelService: TurnModelService,
-    private readonly memoryService: TurnMemoryService,
     private readonly regexInputService: RegexInputService,
+    private readonly preparedPromptArtifactsBuilder: PreparedPromptArtifactsBuilder,
   ) {}
 
   async run(
@@ -45,25 +44,6 @@ export class DryRunService {
       request,
     });
     const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, accountId);
-    const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(undefined, resolvedTurnModels);
-    const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
-    const memoryInjection = executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
-      ? undefined
-      : await this.memoryService.retrieveMemoryInjection(sessionId, accountId, undefined, "main");
-    const effectiveMemorySummary = memoryInjection?.memorySummary;
-    const memoryRuntimeTrace = {
-      ...memoryWritePolicy,
-      ...(memoryInjection?.memoryTrace ?? {}),
-      ...(!memoryInjection ? { strategy: "none" as const } : {}),
-    };
-    const memoryTrace = buildPromptRuntimeMemoryTrace({
-      summaryInjected: Boolean(effectiveMemorySummary),
-      memoryTrace: memoryRuntimeTrace,
-    });
-    const assistantPrefillStrategy = this.modelService.resolveNarratorAssistantPrefillStrategy(resolvedTurnModels);
-    const narratorParams = this.modelService.getSlotGenerationParams(resolvedTurnModels, "narrator");
-    const maxContextTokensOverride = narratorParams?.maxContextTokens;
-    const maxOutputTokensOverride = narratorParams?.maxOutputTokens;
 
     const sessionInfo = this.modelService.buildSessionPromptInfo(session, resolvedTurnModels);
     const persistedUserMessage = await this.regexInputService.applyPersistedUserInputRegex({
@@ -93,71 +73,48 @@ export class DryRunService {
       throw new ChatServiceError("missing_effective_user_tail", "Prompt runtime dry-run requires a trailing effective user turn.");
     }
 
-    const assembled = await assemblePrompt(
-      this.db,
+    const prepared = await this.preparedPromptArtifactsBuilder.prepare({
+      mode: "dry_run",
+      runType: "dry_run",
+      sessionId,
+      branchId: "main",
       accountId,
+      session,
       sessionInfo,
-      conversationState.history,
-      conversationState.effectiveUserMessage,
-      this.tokenCounter,
-      effectiveMemorySummary,
-      {
-        includeDebug: true,
-        maxContextTokensOverride,
-        maxOutputTokensOverride,
-        variableContext: { sessionId, branchId: "main" },
-        intent: request.promptIntent,
-        runKind: this.modelService.resolvePromptRunKind("dry_run"),
-        includeWorldbookMatchTrace: request.debugOptions?.includeWorldbookMatches,
-        assistantPrefillStrategy,
-        budget: executionContext.effectivePolicy?.budget,
-        sourceSelection: executionContext.effectivePolicy?.sourceSelection,
-        memoryRuntimeTrace,
-      },
-    );
-
-    const materialized = this.promptPreparationService.materializeTurnPromptMessages(
-      assembled.messages,
-      assembled.sendDirectives,
-      assistantPrefillStrategy,
-      executionContext.effectivePolicy?.structure,
-      executionContext.effectivePolicy?.delivery,
-    );
-
-    const inspection = await this.promptPreparationService.buildPromptRuntimeInspection({
-      accountId,
-      context: executionContext,
-      phase: "dry_run",
-      history: conversationState.history,
-      visibilityTrace: conversationState.visibilityTrace,
-      memorySummary: effectiveMemorySummary,
-      assembled,
-      memoryTrace,
-      historyNormalization: conversationState.historyNormalization,
-      worldbookHitCount: assembled.runtimeTraceSeed.worldbookHits,
+      rawUserMessage: request.message,
+      regexChannel: "persist",
+      request,
+      executionContext,
+      conversationWindow: conversationState,
+      resolvedTurnModels,
+      includeRuntimeTrace: true,
+      baseRuntimeTrace: persistedUserMessage.runtimeTrace
+        ? { regex: persistedUserMessage.runtimeTrace }
+        : undefined,
     });
+
     const execution = buildPromptRuntimeExecutionResult({
       tokenCounter: this.tokenCounter,
-      userMessage: conversationState.effectiveUserMessage,
+      userMessage: prepared.userMessage,
       includeRuntimeTrace: true,
       artifacts: {
-        inspection,
-        assembled,
-        materialized,
-        visibilityTrace: conversationState.visibilityTrace,
+        inspection: prepared.inspection,
+        assembled: prepared.assembled,
+        materialized: prepared.materialized,
+        visibilityTrace: prepared.visibilityTrace,
         ...(persistedUserMessage.runtimeTrace ? { baseRuntimeTrace: { regex: persistedUserMessage.runtimeTrace } } : {}),
       },
     });
 
     return {
-      messages: materialized.messages,
+      messages: prepared.materialized.messages,
       tokenEstimate: execution.tokenEstimate!,
       availableForReply: execution.availableForReply!,
-      memorySummary: effectiveMemorySummary,
+      memorySummary: prepared.memorySummary,
       promptSnapshot: execution.promptSnapshotPreview!,
       assembly: buildPromptAssemblyCompat({
-        compatSeed: assembled.assemblyCompatSeed,
-        traceSeed: assembled.runtimeTraceSeed,
+        compatSeed: prepared.assembled.assemblyCompatSeed,
+        traceSeed: prepared.assembled.runtimeTraceSeed,
         runtimeTrace: execution.runtimeTrace,
         preprocessedUserMessage: execution.preprocessedUserMessage,
       }),

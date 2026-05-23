@@ -72,6 +72,13 @@ export interface MemoryNode extends PromptNodeBase {
   nodeType: 'memory';
 }
 
+export interface ContributorNode extends PromptNodeBase {
+  nodeType: 'contributor';
+  sourceKind: string;
+  title: string;
+  content: string;
+}
+
 export interface ToolResultNode extends PromptNodeBase {
   nodeType: 'tool_result';
   toolName: string;
@@ -87,6 +94,7 @@ export type PromptNode =
   | WorldbookNode
   | ExampleDialogueNode
   | MemoryNode
+  | ContributorNode
   | ToolResultNode;
 
 export interface PromptEdge {

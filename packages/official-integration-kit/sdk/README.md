@@ -85,6 +85,38 @@ const client = createTavernClient({
 - `AUTH_MODE=off` 只应用于本地开发；服务端会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动
 - `/health`、`/version`、`/openapi.json`、`/docs`、`/docs/*` 这些 public path 始终按匿名请求处理，不会继承管理员上下文
 
+## Prompt Runtime 资源补充
+
+Prompt Runtime 资源当前有两条需要特别区分的只读入口：
+
+- `client.promptRuntime.previewText(...)`
+- `client.promptRuntime.inspect(...)`
+
+其中：
+
+- `previewText(...)` 仍然对应 `macro_text_preview`
+- `inspect(...)` 仍然对应一次真实 prepared turn 的只读检查
+
+### inspect 的新增返回字段
+
+`client.promptRuntime.inspect(...)` 的 `preparedTurn` 现在新增：
+
+- `contributors`
+- `preparePhaseTrace`
+
+同时 `client.promptRuntime.getCapabilities()` 的 `observability.inspect` 现在也会明确返回：
+
+- `returnsContributors`
+- `returnsPreparePhaseTrace`
+
+这几项字段用来表达：
+
+- inspect 返回的是 prepared turn
+- inspect 现在还能返回 pre-response contributor 视图
+- inspect 现在还能返回准备阶段的 phase trace
+
+SDK 这里只暴露稳定视图，不暴露 contributor 的内部 raw payload。
+
 ## 阶段五新增资源
 
 阶段五新增以下 SDK 入口：

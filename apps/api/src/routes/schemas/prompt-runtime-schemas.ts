@@ -611,6 +611,28 @@ export const promptRuntimeInspectResponseExample = {
     requested_turn_config: { enableTools: false, enableDirector: false, enableVerifier: false },
     turn_config: { enableTools: false, enableDirector: false, enableVerifier: false },
     session_state_writes: { total: 1, writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }] },
+    contributors: [
+      {
+        id: "builtin:memory_projection",
+        kind: "memory_projection",
+        source_kind: "memory",
+        mode_scope: "compat_plus",
+        prompt_renderable: {
+          title: "Memory summary",
+          content: "The party recently agreed to search the northern pass.",
+        },
+        deterministic: true,
+        cache_scope: "floor",
+      },
+    ],
+    prepare_phase_trace: [
+      { phase: "conversation_resolve", detail: { history_count: 2, selected_turn_count: 2, effective_turn_count: 2 } },
+      { phase: "source_resolve", detail: { memory_summary_injected: true, history_count: 2 } },
+      { phase: "pre_response", detail: { contributor_count: 1, contributor_kinds: ["memory_projection"] } },
+      { phase: "assemble", detail: { message_count: 2, token_estimate: 512 } },
+      { phase: "materialize", detail: { message_count: 2 } },
+      { phase: "inspect", detail: { diagnostics_count: 0 } },
+    ],
   },
   governance: promptRuntimeGovernanceExample,
 } as const;
@@ -715,6 +737,8 @@ export const promptRuntimeCapabilitiesExample = {
       supports_branch: true,
       supports_source_floor: true,
       supports_visibility: true,
+      returns_contributors: true,
+      returns_prepare_phase_trace: true,
       returns_prepared_turn: true,
       returns_governance: true,
       llm_call: false,
@@ -1612,13 +1636,15 @@ export const promptRuntimeCapabilitiesJsonSchema = {
         },
         inspect: {
           type: "object",
-          required: ["enabled", "mode", "supports_branch", "supports_source_floor", "supports_visibility", "returns_prepared_turn", "returns_governance", "llm_call", "creates_floor", "writes_prompt_snapshot", "writes_explain_snapshot", "commits_side_effects"],
+          required: ["enabled", "mode", "supports_branch", "supports_source_floor", "supports_visibility", "returns_contributors", "returns_prepare_phase_trace", "returns_prepared_turn", "returns_governance", "llm_call", "creates_floor", "writes_prompt_snapshot", "writes_explain_snapshot", "commits_side_effects"],
           properties: {
             enabled: { type: "boolean" },
             mode: { type: "string", enum: ["prepared_turn"] },
             supports_branch: { const: true },
             supports_source_floor: { const: true },
             supports_visibility: { const: true },
+            returns_contributors: { const: true },
+            returns_prepare_phase_trace: { const: true },
             returns_prepared_turn: { const: true },
             returns_governance: { const: true },
             llm_call: { const: false },
@@ -1835,7 +1861,7 @@ export const promptRuntimeInspectResponseJsonSchema = {
         limitations: { type: "array", items: { type: "string" } },
         prepared_turn: {
           type: "object",
-          required: ["messages", "token_estimate", "available_for_reply", "preprocessed_user_message", "prompt_snapshot", "runtime_trace", "memory_summary", "generation_params", "requested_turn_config", "turn_config", "session_state_writes"],
+          required: ["messages", "token_estimate", "available_for_reply", "preprocessed_user_message", "prompt_snapshot", "runtime_trace", "memory_summary", "generation_params", "requested_turn_config", "turn_config", "session_state_writes", "contributors", "prepare_phase_trace"],
           properties: {
             messages: { type: "array", items: { type: "object", required: ["role", "content"], properties: { role: { type: "string", enum: ["system", "user", "assistant"] }, content: { type: "string" } }, additionalProperties: false } },
             token_estimate: { type: "integer", minimum: 0 },
@@ -1856,6 +1882,59 @@ export const promptRuntimeInspectResponseJsonSchema = {
                 writes: { type: "array", items: { type: "object", required: ["namespace", "slot", "operation"], properties: { namespace: { type: "string" }, slot: { type: "string" }, operation: { type: "string", enum: ["set", "delete"] } }, additionalProperties: false } },
               },
               additionalProperties: false,
+            },
+            contributors: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "kind", "source_kind", "mode_scope", "prompt_renderable", "deterministic", "cache_scope"],
+                properties: {
+                  id: { type: "string" },
+                  kind: { type: "string" },
+                  source_kind: { type: "string" },
+                  mode_scope: { type: "string", enum: ["compat_plus", "native"] },
+                  prompt_renderable: {
+                    anyOf: [
+                      {
+                        type: "object",
+                        required: ["title", "content"],
+                        properties: {
+                          title: { type: "string" },
+                          content: { type: "string" },
+                        },
+                        additionalProperties: false,
+                      },
+                      { type: "null" },
+                    ],
+                  },
+                  deterministic: { type: "boolean" },
+                  cache_scope: { type: "string", enum: ["floor", "page", "none"] },
+                },
+                additionalProperties: false,
+              },
+            },
+            prepare_phase_trace: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["phase", "detail"],
+                properties: {
+                  phase: {
+                    type: "string",
+                    enum: ["conversation_resolve", "source_resolve", "pre_response", "assemble", "materialize", "inspect"],
+                  },
+                  detail: {
+                    anyOf: [
+                      {
+                        type: "object",
+                        additionalProperties: true,
+                      },
+                      { type: "null" },
+                    ],
+                  },
+                },
+                additionalProperties: false,
+              },
             },
           },
           additionalProperties: false,

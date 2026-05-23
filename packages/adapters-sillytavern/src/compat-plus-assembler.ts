@@ -1,8 +1,18 @@
 import type { PromptIR, IRSection } from '@tavern/core';
 import type { MemoryInjectionResult } from '@tavern/core';
-import { PROMPT_MEMORY_MESSAGE_SOURCE, PROMPT_MEMORY_SECTION_NAME } from '@tavern/core';
+import {
+  PROMPT_MEMORY_MESSAGE_SOURCE,
+  PROMPT_MEMORY_SECTION_NAME,
+  resolvePromptRuntimeGovernancePolicy,
+} from '@tavern/core';
 import { assembleCompat } from './compat-assembler.js';
 import type { CompatAssemblerInput } from './compat-assembler.js';
+
+export interface CompatPlusRenderableInjection {
+  sourceKind: string;
+  title: string;
+  content: string;
+}
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -18,6 +28,7 @@ export interface CompatPlusAssemblerInput extends CompatAssemblerInput {
    * - `'before_jailbreak'`：在 jailbreak section 之前
    */
   memoryPosition?: 'before_chat' | 'after_worldinfo' | 'before_jailbreak';
+  renderableInjections?: CompatPlusRenderableInjection[];
 }
 
 // ── 内部工具 ──────────────────────────────────────────
@@ -62,6 +73,45 @@ function calculateMemoryOrder(
 
 // ── 主函数 ────────────────────────────────────────────
 
+function sanitizeRenderableInjectionContent(
+  injection: CompatPlusRenderableInjection,
+): string {
+  const content = injection.content.trim();
+  if (!content) {
+    return '';
+  }
+  return [`[${injection.title}]`, content].join('\n');
+}
+
+function createRenderableSections(
+  sections: IRSection[],
+  injections: CompatPlusRenderableInjection[],
+): IRSection[] {
+  const firstChatOrder = sections.find((section) => section.name === 'chatHistory')?.order ?? sections.length + 1;
+
+  const nextSections: IRSection[] = [];
+  for (const [index, injection] of injections.entries()) {
+      const content = sanitizeRenderableInjectionContent(injection);
+      if (!content) {
+        continue;
+      }
+
+      const governance = resolvePromptRuntimeGovernancePolicy({
+        sourceKind: injection.sourceKind,
+        fallback: { budgetGroup: `section:${injection.title}`, pinned: false, prunable: false },
+      });
+      nextSections.push({
+        name: injection.sourceKind === 'state_projection' ? 'stateProjection' : `contributor:${injection.sourceKind}:${index + 1}`,
+        order: firstChatOrder - 0.25 + index * 0.01,
+        budgetGroup: governance.budgetGroup,
+        pinned: governance.pinned,
+        messages: [{ role: 'system', content, source: injection.sourceKind, prunable: governance.prunable }],
+      });
+  }
+
+  return nextSections;
+}
+
 /**
  * compat_plus 编排器
  *
@@ -88,19 +138,18 @@ export function assembleCompatPlus(input: CompatPlusAssemblerInput): PromptIR {
   const {
     memoryInjection,
     memoryPosition = 'before_chat',
+    renderableInjections = [],
     ...compatInput
   } = input;
 
   // 1. 获取基础 IR
   const baseIR = assembleCompat(compatInput);
+  const contributorSections = createRenderableSections(baseIR.sections, renderableInjections);
 
-  // 2. 如果没有记忆注入或注入内容为空，直接返回
-  if (
-    !memoryInjection ||
-    memoryInjection.items.length === 0 ||
-    !memoryInjection.formattedText
-  ) {
-    return baseIR;
+  if (!memoryInjection || memoryInjection.items.length === 0 || !memoryInjection.formattedText) {
+    return contributorSections.length > 0
+      ? { ...baseIR, sections: [...baseIR.sections, ...contributorSections] }
+      : baseIR;
   }
 
   // 3. 创建 memory section
@@ -122,10 +171,11 @@ export function assembleCompatPlus(input: CompatPlusAssemblerInput): PromptIR {
       prunable: false,
     }],
   };
+  const sections = [...baseIR.sections, ...contributorSections, memorySection];
 
   // 4. 插入到 sections 中
   return {
     ...baseIR,
-    sections: [...baseIR.sections, memorySection],
+    sections,
   };
 }

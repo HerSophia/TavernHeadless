@@ -31,11 +31,13 @@ import {
   assembleCompat,
   assembleCompatPlus,
   buildImportedPresetPromptGraph,
+  buildNativeContributorNodes,
   parseWorldBook,
   type ActivationTrace,
   type TriggerContext,
   type TriggerFirstMatch,
   type TriggerMatchSourceKind,
+  type CompatPlusRenderableInjection,
   type TriggerResult,
   triggerWorldBook,
   REGEX_PLACEMENT,
@@ -629,6 +631,7 @@ export interface AssemblePromptOptions {
   budget?: PromptBudgetPolicyV5;
   sourceSelection?: PromptSourceSelectionPolicy;
   memoryRuntimeTrace?: Omit<CorePromptRuntimeMemoryTrace, "summaryInjected">;
+  contributors?: Array<{ sourceKind: string; title: string; content: string }>;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -867,6 +870,13 @@ export async function assemblePrompt(
     : "none";
 
   if (presetData) {
+    const contributorRenderableInjections = (options.contributors ?? [])
+      .map((contributor) => ({
+        sourceKind: contributor.sourceKind,
+        title: contributor.title.trim(),
+        content: contributor.content.trim(),
+      }))
+      .filter((contributor) => contributor.title.length > 0 && contributor.content.length > 0);
     const runtimeWorldbooks = collectPromptWorldbooks(promptSnapshot.worldbook, promptSnapshot.character, {
       characterId: promptSnapshot.characterId,
       characterVersionId: promptSnapshot.characterVersionId,
@@ -937,11 +947,16 @@ export async function assemblePrompt(
 
     const promptIR = useNativePipeline
       ? compilePromptGraph(
-          buildImportedPresetPromptGraph(presetData, {
-            artifactId: promptSnapshot.presetId ?? undefined,
-            depthLevels: collectWorldbookDepthLevels(worldBookResults),
-            outletNames: collectWorldbookOutletNames(worldBookResults),
-          }),
+          appendNativeContributorNodes(
+            buildImportedPresetPromptGraph(presetData, {
+              artifactId: promptSnapshot.presetId ?? undefined,
+              depthLevels: collectWorldbookDepthLevels(worldBookResults),
+              outletNames: collectWorldbookOutletNames(worldBookResults),
+            }),
+            buildNativeContributorNodes(
+              contributorRenderableInjections.map((contributor, index) => ({ ...contributor, order: 27.5 + index * 0.01 }))
+            )
+          ),
           {
             intent: promptIntent,
             variables: promptVariables,
@@ -970,6 +985,7 @@ export async function assemblePrompt(
             ...compatInput,
             chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }>,
             memoryInjection: compatPlusMemoryInjection,
+            renderableInjections: contributorRenderableInjections as CompatPlusRenderableInjection[],
           })
         : assembleCompat({ ...compatInput, chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }> });
 
@@ -1362,6 +1378,26 @@ function createCompatPlusMemoryInjection(
     items: [],
     formattedText: memorySummary,
     tokenCount: tokenCounter.count(memorySummary),
+  };
+}
+
+function appendNativeContributorNodes(
+  document: import("@tavern/core").PromptGraphDocument,
+  contributorNodes: import("@tavern/core").PromptNode[],
+): import("@tavern/core").PromptGraphDocument {
+  if (contributorNodes.length === 0) {
+    return document;
+  }
+
+  return {
+    ...document,
+    groups: document.groups.map((group) => group.id === document.rootGroupId
+      ? {
+          ...group,
+          nodes: [...group.nodes, ...contributorNodes]
+            .sort((left, right) => left.placement.order - right.placement.order),
+        }
+      : group),
   };
 }
 

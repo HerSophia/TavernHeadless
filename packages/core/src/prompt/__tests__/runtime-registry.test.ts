@@ -18,6 +18,12 @@ describe('prompt runtime registry', () => {
       exclusionSource: 'history',
     });
 
+    expect(resolvePromptRuntimeSourceDescriptor('state_projection')).toMatchObject({
+      kind: 'state_projection',
+      defaultBudgetGroup: 'section:stateProjection',
+      traceLabel: 'state_projection',
+    });
+
     expect(resolvePromptRuntimeSourceDescriptor('section:main')).toMatchObject({
       kind: 'section:*',
       defaultBudgetGroup: 'section:*',
@@ -51,6 +57,7 @@ describe('prompt runtime registry', () => {
   it('keeps trace labels stable for registered and fallback groups', () => {
     expect(resolvePromptRuntimeBudgetGroupTraceLabel('worldbook')).toBe('worldbook');
     expect(resolvePromptRuntimeBudgetGroupTraceLabel('section:main')).toBe('section:main');
+    expect(resolvePromptRuntimeBudgetGroupTraceLabel('section:stateProjection')).toBe('state_projection');
     expect(resolvePromptRuntimeBudgetGroupTraceLabel('custom')).toBe('custom');
   });
 
