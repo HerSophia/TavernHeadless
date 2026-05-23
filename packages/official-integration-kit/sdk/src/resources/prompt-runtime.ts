@@ -357,7 +357,9 @@ export type PromptRuntimeCapabilities = {
       enabled: boolean;
       llmCall: boolean;
       mode: "prepared_turn";
+      returnsContributors: boolean;
       returnsGovernance: boolean;
+      returnsPreparePhaseTrace: boolean;
       returnsPreparedTurn: boolean;
       supportsBranch: boolean;
       supportsSourceFloor: boolean;
@@ -518,6 +520,28 @@ export type PromptRuntimeInspectPreparedTurnMessage = {
   content: string;
 };
 
+export type PromptRuntimeContributorRenderable = {
+  title: string;
+  content: string;
+};
+
+export type PromptRuntimeContributorView = {
+  id: string;
+  kind: string;
+  sourceKind: string;
+  modeScope: "compat_plus" | "native";
+  promptRenderable: PromptRuntimeContributorRenderable | null;
+  deterministic: boolean;
+  cacheScope: "floor" | "page" | "none";
+};
+
+export type PromptRuntimePreparePhase = "conversation_resolve" | "source_resolve" | "pre_response" | "assemble" | "materialize" | "inspect";
+
+export type PromptRuntimeInspectPreparePhaseTraceEntry = {
+  phase: PromptRuntimePreparePhase;
+  detail?: Record<string, unknown> | null;
+};
+
 export type PromptRuntimeHistoricalExplain = {
   assets: PromptRuntimeAssetsView | null;
   memory: PromptRuntimeMemoryTrace | null;
@@ -549,6 +573,8 @@ export type PromptRuntimeInspectPreparedTurn = {
   requestedTurnConfig: PromptRuntimeInspectTurnConfig | null;
   turnConfig: PromptRuntimeInspectTurnConfig | null;
   sessionStateWrites: PromptRuntimeSessionStateWritesSummary;
+  contributors: PromptRuntimeContributorView[];
+  preparePhaseTrace: PromptRuntimeInspectPreparePhaseTraceEntry[];
 };
 
 export type PromptRuntimeInspectOptions = PromptRuntimeGetSessionOptions & {
@@ -1121,7 +1147,9 @@ function mapPromptRuntimeCapabilities(value: unknown): PromptRuntimeCapabilities
         enabled: readBoolean(inspect.enabled),
         llmCall: readBoolean(inspect.llm_call),
         mode: "prepared_turn",
+        returnsContributors: readBoolean(inspect.returns_contributors, true),
         returnsGovernance: readBoolean(inspect.returns_governance, true),
+        returnsPreparePhaseTrace: readBoolean(inspect.returns_prepare_phase_trace, true),
         returnsPreparedTurn: readBoolean(inspect.returns_prepared_turn, true),
         supportsBranch: readBoolean(inspect.supports_branch, true),
         supportsSourceFloor: readBoolean(inspect.supports_source_floor, true),
@@ -1626,6 +1654,47 @@ function mapPromptRuntimeInspectPreparedTurn(value: unknown): PromptRuntimeInspe
     requestedTurnConfig: record.requested_turn_config === null ? null : mapPromptRuntimeInspectTurnConfig(record.requested_turn_config),
     turnConfig: record.turn_config === null ? null : mapPromptRuntimeInspectTurnConfig(record.turn_config),
     sessionStateWrites,
+    contributors: readArray(record.contributors)
+      .map((item) => mapPromptRuntimeContributorView(item))
+      .filter((item): item is PromptRuntimeContributorView => item !== null),
+    preparePhaseTrace: readArray(record.prepare_phase_trace)
+      .map((item) => mapPromptRuntimeInspectPreparePhaseTraceEntry(item))
+      .filter((item): item is PromptRuntimeInspectPreparePhaseTraceEntry => item !== null),
+  };
+}
+
+function mapPromptRuntimeContributorView(value: unknown): PromptRuntimeContributorView | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const renderable = readRecord(record.prompt_renderable);
+  return {
+    id: readString(record.id),
+    kind: readString(record.kind),
+    sourceKind: readString(record.source_kind),
+    modeScope: readString(record.mode_scope) === "native" ? "native" : "compat_plus",
+    promptRenderable: renderable
+      ? {
+          title: readString(renderable.title),
+          content: readString(renderable.content),
+        }
+      : null,
+    deterministic: readBoolean(record.deterministic),
+    cacheScope: readPromptRuntimeContributorCacheScope(record.cache_scope),
+  };
+}
+
+function mapPromptRuntimeInspectPreparePhaseTraceEntry(value: unknown): PromptRuntimeInspectPreparePhaseTraceEntry | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    phase: readPromptRuntimePreparePhase(record.phase),
+    ...(record.detail !== undefined ? { detail: readRecord(record.detail) ?? null } : {}),
   };
 }
 
@@ -2177,6 +2246,25 @@ function readPromptRuntimeMacroDiagnosticsSurface(
   return readString(value, "unified_observability") === "unified_observability"
     ? "unified_observability"
     : "unified_observability";
+}
+
+function readPromptRuntimeContributorCacheScope(value: unknown): PromptRuntimeContributorView["cacheScope"] {
+  const parsed = readString(value, "floor");
+  return parsed === "page" || parsed === "none" ? parsed : "floor";
+}
+
+function readPromptRuntimePreparePhase(value: unknown): PromptRuntimePreparePhase {
+  const parsed = readString(value, "assemble");
+  switch (parsed) {
+    case "conversation_resolve":
+    case "source_resolve":
+    case "pre_response":
+    case "materialize":
+    case "inspect":
+      return parsed;
+    default:
+      return "assemble";
+  }
 }
 
 function isPromptRuntimeStructureMode(value: string | undefined): value is PromptRuntimeStructureMode {

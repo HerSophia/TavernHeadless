@@ -299,7 +299,8 @@ export type PromptRuntimeSourceKind =
   | 'memory'
   | 'worldbook'
   | 'examples'
-  | 'authors_note';
+  | 'authors_note'
+  | 'state_projection';
 
 export type PromptSourceExclusionReasonCode =
   | 'disabled_by_policy'

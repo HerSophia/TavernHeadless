@@ -33781,7 +33781,9 @@ export interface operations {
                      *             "enabled": true,
                      *             "llm_call": false,
                      *             "mode": "prepared_turn",
+                     *             "returns_contributors": true,
                      *             "returns_governance": true,
+                     *             "returns_prepare_phase_trace": true,
                      *             "returns_prepared_turn": true,
                      *             "supports_branch": true,
                      *             "supports_source_floor": true,
@@ -34010,7 +34012,11 @@ export interface operations {
                                     /** @enum {string} */
                                     mode: "prepared_turn";
                                     /** @enum {unknown} */
+                                    returns_contributors: true;
+                                    /** @enum {unknown} */
                                     returns_governance: true;
+                                    /** @enum {unknown} */
+                                    returns_prepare_phase_trace: true;
                                     /** @enum {unknown} */
                                     returns_prepared_turn: true;
                                     /** @enum {unknown} */
@@ -37400,6 +37406,20 @@ export interface operations {
                      *         },
                      *         "prepared_turn": {
                      *           "available_for_reply": 1536,
+                     *           "contributors": [
+                     *             {
+                     *               "cache_scope": "floor",
+                     *               "deterministic": true,
+                     *               "id": "builtin:memory_projection",
+                     *               "kind": "memory_projection",
+                     *               "mode_scope": "compat_plus",
+                     *               "prompt_renderable": {
+                     *                 "content": "The party recently agreed to search the northern pass.",
+                     *                 "title": "Memory summary"
+                     *               },
+                     *               "source_kind": "memory"
+                     *             }
+                     *           ],
                      *           "generation_params": {
                      *             "max_output_tokens": 256,
                      *             "temperature": 0.7
@@ -37455,6 +37475,51 @@ export interface operations {
                      *             {
                      *               "content": "Please continue the campfire scene.",
                      *               "role": "user"
+                     *             }
+                     *           ],
+                     *           "prepare_phase_trace": [
+                     *             {
+                     *               "detail": {
+                     *                 "effective_turn_count": 2,
+                     *                 "history_count": 2,
+                     *                 "selected_turn_count": 2
+                     *               },
+                     *               "phase": "conversation_resolve"
+                     *             },
+                     *             {
+                     *               "detail": {
+                     *                 "history_count": 2,
+                     *                 "memory_summary_injected": true
+                     *               },
+                     *               "phase": "source_resolve"
+                     *             },
+                     *             {
+                     *               "detail": {
+                     *                 "contributor_count": 1,
+                     *                 "contributor_kinds": [
+                     *                   "memory_projection"
+                     *                 ]
+                     *               },
+                     *               "phase": "pre_response"
+                     *             },
+                     *             {
+                     *               "detail": {
+                     *                 "message_count": 2,
+                     *                 "token_estimate": 512
+                     *               },
+                     *               "phase": "assemble"
+                     *             },
+                     *             {
+                     *               "detail": {
+                     *                 "message_count": 2
+                     *               },
+                     *               "phase": "materialize"
+                     *             },
+                     *             {
+                     *               "detail": {
+                     *                 "diagnostics_count": 0
+                     *               },
+                     *               "phase": "inspect"
                      *             }
                      *           ],
                      *           "preprocessed_user_message": "Please continue the campfire scene.",
@@ -37869,6 +37934,20 @@ export interface operations {
                             };
                             prepared_turn: {
                                 available_for_reply: number;
+                                contributors: {
+                                    /** @enum {string} */
+                                    cache_scope: "floor" | "page" | "none";
+                                    deterministic: boolean;
+                                    id: string;
+                                    kind: string;
+                                    /** @enum {string} */
+                                    mode_scope: "compat_plus" | "native";
+                                    prompt_renderable: {
+                                        content: string;
+                                        title: string;
+                                    } | null;
+                                    source_kind: string;
+                                }[];
                                 generation_params: Record<string, never>;
                                 memory?: {
                                     effective_write?: boolean;
@@ -37922,6 +38001,13 @@ export interface operations {
                                     content: string;
                                     /** @enum {string} */
                                     role: "system" | "user" | "assistant";
+                                }[];
+                                prepare_phase_trace: {
+                                    detail: {
+                                        [key: string]: unknown;
+                                    } | null;
+                                    /** @enum {string} */
+                                    phase: "conversation_resolve" | "source_resolve" | "pre_response" | "assemble" | "materialize" | "inspect";
                                 }[];
                                 preprocessed_user_message: string | null;
                                 prompt_snapshot: {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { SimpleTokenCounter } from '../token-budget.js';
 import {
   assembleNativePrompt,
+  runNativePipeline,
   TemplateNode,
   ConditionNode,
   WorldbookResolveNode,
@@ -10,10 +11,43 @@ import {
   TokenBudgetNode,
   PackMessagesNode,
   NativePipelineError,
+  type NativePipelineNodeOutput,
   type NativePipelineNode,
 } from '../native-pipeline.js';
 
+function expectNodeOutput(
+  output: NativePipelineNodeOutput | undefined,
+  expected: Partial<NativePipelineNodeOutput>,
+): void {
+  expect(output).toBeDefined();
+  expect(output).toMatchObject(expected);
+}
+
 describe('assembleNativePrompt', () => {
+  it('records phase-aware node trace and outputs for the default pipeline run', () => {
+    const state = runNativePipeline({
+      systemPrompt: 'You are {{char}} helping {{user}}.',
+      chatHistory: [{ role: 'user', content: 'Hello {{char}}' }],
+      variables: { char: 'Luna', user: 'Ari' },
+      memorySummary: '- Remembers the northern pass.',
+      maxTokens: 2048,
+      reservedForReply: 256,
+      tokenCounter: new SimpleTokenCounter(),
+    });
+
+    expect(state.trace.map((entry) => `${entry.phase}:${entry.nodeName}`)).toEqual([
+      'assemble:template',
+      'assemble:worldbook_resolve',
+      'pre_response:memory_inject',
+      'materialize:token_budget',
+      'materialize:pack_messages',
+    ]);
+    expectNodeOutput(state.outputs.template, { phase: 'assemble', producedSectionNames: ['nativeSystem', 'chatHistory'] });
+    expectNodeOutput(state.outputs.memory_inject, { phase: 'pre_response', producedSectionNames: ['memory'] });
+    expectNodeOutput(state.outputs.pack_messages, { phase: 'materialize', outputReady: true });
+    expect(state.output?.sections.map((section) => section.name)).toEqual(['nativeSystem', 'memory', 'chatHistory']);
+  });
+
   it('renders templates and keeps chat history as prunable messages', () => {
     const ir = assembleNativePrompt({
       systemPrompt: 'You are {{char}} helping {{user}}.',
@@ -185,6 +219,54 @@ describe('assembleNativePrompt', () => {
     expect(ir.metadata.tokenizer).toBe('simple');
   });
 
+  it('keeps downstream nodes aware of phase trace and outputs', () => {
+    const inspectNode: NativePipelineNode = {
+      name: 'inspect_artifacts',
+      phase: 'materialize',
+      run(state) {
+        expect(state.trace.map((entry) => entry.nodeName)).toEqual(['template']);
+        expectNodeOutput(state.outputs.template, {
+          nodeName: 'template',
+          phase: 'assemble',
+          producedSectionNames: ['nativeSystem', 'chatHistory'],
+        });
+        return state;
+      },
+    };
+
+    const state = runNativePipeline(
+      {
+        systemPrompt: 'Hello',
+        chatHistory: [{ role: 'user', content: 'Hi' }],
+        maxTokens: 100,
+        reservedForReply: 10,
+      },
+      [new TemplateNode(), inspectNode, new PackMessagesNode()]
+    );
+
+    expect(state.output?.sections.map((section) => section.name)).toEqual(['nativeSystem', 'chatHistory']);
+    expect(state.trace.at(-1)?.nodeName).toBe('pack_messages');
+  });
+
+  it('lets condition node publish its own phase while preserving nested branch outputs', () => {
+    const branchA: NativePipelineNode = {
+      name: 'branch_a',
+      phase: 'pre_response',
+      run(state) {
+        return {
+          ...state,
+          sections: [...state.sections, { name: 'branchA', order: 1.5, pinned: true, budgetGroup: 'section:branchA', messages: [{ role: 'system', content: 'A', prunable: false }] }],
+        };
+      },
+    };
+
+    const state = runNativePipeline({ systemPrompt: 'Hello', chatHistory: [], variables: { mode: 'a' }, maxTokens: 100, reservedForReply: 10 }, [new TemplateNode(), new ConditionNode({ phase: 'pre_response', when: (input) => input.input.variables?.mode === 'a', thenNodes: [branchA] }), new PackMessagesNode()]);
+
+    expectNodeOutput(state.outputs.branch_a, { phase: 'pre_response', producedSectionNames: ['branchA'] });
+    expectNodeOutput(state.outputs.condition, { phase: 'pre_response', producedSectionNames: ['branchA'] });
+    expect(state.trace.find((entry) => entry.nodeName === 'condition')?.phase).toBe('pre_response');
+  });
+
   it('tracks executed nodes and exposes them to downstream nodes', () => {
     const inspectNode: NativePipelineNode = {
       name: 'inspect_artifacts',
@@ -210,6 +292,7 @@ describe('assembleNativePrompt', () => {
   it('supports condition branching (runs nested nodes and records executedNodes)', () => {
     const branchA: NativePipelineNode = {
       name: 'branch_a',
+      phase: 'pre_response',
       run(state) {
         return {
           ...state,
@@ -234,6 +317,7 @@ describe('assembleNativePrompt', () => {
 
     const branchB: NativePipelineNode = {
       name: 'branch_b',
+      phase: 'pre_response',
       run(state) {
         return {
           ...state,
@@ -258,6 +342,7 @@ describe('assembleNativePrompt', () => {
 
     const inspect: NativePipelineNode = {
       name: 'inspect',
+      phase: 'materialize',
       run(state) {
         expect(state.artifacts?.executedNodes).toEqual(['template', 'branch_a', 'condition']);
         return state;

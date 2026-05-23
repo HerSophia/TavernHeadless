@@ -70,8 +70,9 @@ export type {
 export { assembleCompat } from './compat-assembler.js';
 export type { CompatAssemblerInput } from './compat-assembler.js';
 export { assembleCompatPlus } from './compat-plus-assembler.js';
-export type { CompatPlusAssemblerInput } from './compat-plus-assembler.js';
+export type { CompatPlusAssemblerInput, CompatPlusRenderableInjection } from './compat-plus-assembler.js';
 
 // ── Native Imported Group ─────────────────────────────
 export { buildImportedPresetPromptGraph } from './preset-to-native-group.js';
-export type { BuildImportedPresetPromptGraphOptions } from './preset-to-native-group.js';
+export { buildNativeContributorNodes } from './preset-to-native-group.js';
+export type { BuildImportedPresetPromptGraphOptions, BuildNativeContributorNodeInput } from './preset-to-native-group.js';

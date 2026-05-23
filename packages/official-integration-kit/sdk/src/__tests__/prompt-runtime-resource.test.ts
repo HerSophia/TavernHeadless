@@ -337,7 +337,9 @@ describe("sdk prompt runtime resource", () => {
                 supports_source_floor: true,
                 supports_visibility: true,
                 returns_prepared_turn: true,
+                returns_contributors: true,
                 returns_governance: true,
+                returns_prepare_phase_trace: true,
                 llm_call: false,
                 creates_floor: false,
                 writes_prompt_snapshot: false,
@@ -646,7 +648,9 @@ describe("sdk prompt runtime resource", () => {
           supportsSourceFloor: true,
           supportsVisibility: true,
           returnsPreparedTurn: true,
+          returnsContributors: true,
           returnsGovernance: true,
+          returnsPreparePhaseTrace: true,
           llmCall: false,
           createsFloor: false,
           writesPromptSnapshot: false,
@@ -1128,6 +1132,34 @@ describe("sdk prompt runtime resource", () => {
                 { namespace: "quest_flags", slot: "companion", operation: "set" },
               ],
             },
+            contributors: [
+              {
+                id: "state_projection.primary",
+                kind: "state_projection",
+                source_kind: "state_projection",
+                mode_scope: "native",
+                prompt_renderable: {
+                  title: "State Projection",
+                  content: "Companion loyalty is stable.",
+                },
+                deterministic: true,
+                cache_scope: "floor",
+              },
+            ],
+            prepare_phase_trace: [
+              { phase: "conversation_resolve", detail: { historyCount: 2 } },
+              { phase: "source_resolve", detail: { memorySummaryInjected: true } },
+              {
+                phase: "pre_response",
+                detail: {
+                  contributorCount: 1,
+                  contributorKinds: ["state_projection"],
+                },
+              },
+              { phase: "assemble", detail: { messageCount: 2, tokenEstimate: 320 } },
+              { phase: "materialize", detail: { messageCount: 2 } },
+              { phase: "inspect", detail: { diagnosticsCount: 1 } },
+            ],
           },
           governance: {
             entries: [
@@ -1194,6 +1226,34 @@ describe("sdk prompt runtime resource", () => {
         requestedTurnConfig: { enableTools: true, toolMode: "both" },
         turnConfig: { enableTools: true, toolMode: "both" },
         sessionStateWrites: { total: 1, writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }] },
+        contributors: [
+          {
+            id: "state_projection.primary",
+            kind: "state_projection",
+            sourceKind: "state_projection",
+            modeScope: "native",
+            promptRenderable: {
+              title: "State Projection",
+              content: "Companion loyalty is stable.",
+            },
+            deterministic: true,
+            cacheScope: "floor",
+          },
+        ],
+        preparePhaseTrace: [
+          { phase: "conversation_resolve", detail: { historyCount: 2 } },
+          { phase: "source_resolve", detail: { memorySummaryInjected: true } },
+          {
+            phase: "pre_response",
+            detail: {
+              contributorCount: 1,
+              contributorKinds: ["state_projection"],
+            },
+          },
+          { phase: "assemble", detail: { messageCount: 2, tokenEstimate: 320 } },
+          { phase: "materialize", detail: { messageCount: 2 } },
+          { phase: "inspect", detail: { diagnosticsCount: 1 } },
+        ],
       },
       governance: {
         entries: [{ sourceKind: "memory", declaredLevel: "soft_required", registered: true, effectiveRetention: "soft_required", pinned: false, prunable: false, budgetGroups: ["memory"], sectionNames: ["memory"], tokenCount: 64, retainedTokenCount: 64, prunedTokenCount: 0 }],
