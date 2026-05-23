@@ -15,6 +15,7 @@ GET /prompt-runtime/capabilities
 - 想知道 Prompt Runtime 当前公开了哪些稳定能力。
 - 想知道默认 mode、公开 mode 目录和各个 mode 的定位。
 - 想查看哪些 policy 字段支持持久化或请求期 override。
+- 想确认 `preview` 和 `inspect` 的能力边界。
 
 ## 本轮新增字段
 
@@ -47,6 +48,34 @@ GET /prompt-runtime/capabilities
 | `none` | 不承载 Agentic / NodeGraph 行为演进 |
 | `limited` | 只允许轻量增强 |
 | `primary` | 未来 richer NodeGraph / Agentic 演进的主要入口 |
+
+## `observability.preview` 的固定边界
+
+`preview` 现在继续固定为：
+
+- `mode = "macro_text_preview"`
+- `returns_assembly_truth = false`
+
+这表示它仍然只是单段文本宏预演。
+
+它不会扩展成完整 prepared turn preview。
+
+## `observability.inspect` 的固定边界
+
+`inspect` 现在继续固定为：
+
+- `mode = "prepared_turn"`
+- `returns_prepared_turn = true`
+- `returns_governance = true`
+- `returns_contributors = true`
+- `returns_prepare_phase_trace = true`
+
+这表示它是一次真实 prepared turn 的只读视图，并且当前会返回：
+
+- prepared turn 本体
+- governance
+- contributor 视图
+- prepare phase trace
 
 ## 其余能力目录仍然保留
 

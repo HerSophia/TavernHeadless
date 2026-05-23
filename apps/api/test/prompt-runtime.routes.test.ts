@@ -1132,6 +1132,24 @@ describe("prompt runtime routes", () => {
             total: 1,
             writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }],
           },
+          contributors: [
+            {
+              id: "state_projection.primary",
+              kind: "state_projection",
+              sourceKind: "state_projection",
+              modeScope: "native",
+              promptRenderable: {
+                title: "State Projection",
+                content: "Companion loyalty is stable.",
+              },
+              deterministic: true,
+              cacheScope: "floor",
+            },
+          ],
+          preparePhaseTrace: [
+            { phase: "conversation_resolve", detail: { historyCount: 2 } },
+            { phase: "inspect", detail: { diagnosticsCount: 1 } },
+          ],
         },
         governance: {
           entries: [{ sourceKind: "memory", declaredLevel: "soft_required", registered: true, effectiveRetention: "soft_required", pinned: false, prunable: false, budgetGroups: ["memory"], sectionNames: ["memory"], tokenCount: 64, retainedTokenCount: 64, prunedTokenCount: 0 }],
@@ -1184,6 +1202,24 @@ describe("prompt runtime routes", () => {
     });
     expect(body.data.prepared_turn.messages).toEqual([{ role: "system", content: "System prompt" }, { role: "user", content: "Hello there" }]);
     expect(body.data.prepared_turn.session_state_writes).toEqual({ total: 1, writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }] });
+    expect(body.data.prepared_turn.contributors).toEqual([
+      {
+        id: "state_projection.primary",
+        kind: "state_projection",
+        source_kind: "state_projection",
+        mode_scope: "native",
+        prompt_renderable: {
+          title: "State Projection",
+          content: "Companion loyalty is stable.",
+        },
+        deterministic: true,
+        cache_scope: "floor",
+      },
+    ]);
+    expect(body.data.prepared_turn.prepare_phase_trace).toEqual([
+      { phase: "conversation_resolve", detail: { history_count: 2 } },
+      { phase: "inspect", detail: { diagnostics_count: 1 } },
+    ]);
     expect(body.data.governance.entries).toEqual([{ source_kind: "memory", declared_level: "soft_required", registered: true, effective_retention: "soft_required", pinned: false, prunable: false, budget_groups: ["memory"], section_names: ["memory"], token_count: 64, retained_token_count: 64, pruned_token_count: 0 }]);
     expect(body.data.trim_reasons).toEqual([{ group: "history", reason: "group_limit_exceeded", pruned_token_count: 32 }]);
     expect(body.data.excluded_sources).toEqual([{ source: "history", reason: "visibility_filtered", detail: "Visibility filtered 2 floor(s) from the available history window." }]);
@@ -1546,7 +1582,9 @@ describe("prompt runtime routes", () => {
             supportsSourceFloor: true,
             supportsVisibility: true,
             returnsPreparedTurn: true,
+            returnsContributors: true,
             returnsGovernance: true,
+            returnsPreparePhaseTrace: true,
             llmCall: false,
             createsFloor: false,
             writesPromptSnapshot: false,
@@ -1705,7 +1743,9 @@ describe("prompt runtime routes", () => {
             supports_source_floor: true,
             supports_visibility: true,
             returns_prepared_turn: true,
+            returns_contributors: true,
             returns_governance: true,
+            returns_prepare_phase_trace: true,
             llm_call: false,
             creates_floor: false,
             writes_prompt_snapshot: false,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SimpleTokenCounter } from '../../prompt/token-budget.js';
 import { compilePromptGraph } from '../compiler.js';
-import type { PromptGraphDocument } from '../types.js';
+import type { ContributorNode, PromptGraphDocument } from '../types.js';
 
 describe('compilePromptGraph', () => {
   it('compiles static text and chat history into PromptIR', () => {
@@ -317,5 +317,33 @@ describe('compilePromptGraph', () => {
       insertion: { kind: 'in_chat', depth: 0, order: 3 },
     });
     expect(ir.sections[1]?.messages[0]?.content).toBe('Knight: Continue speaking');
+  });
+
+  it('compiles contributor nodes into governed IR sections', () => {
+    const contributorNode: ContributorNode = {
+      id: 'state-projection-1',
+      name: 'State Projection',
+      nodeType: 'contributor',
+      enabled: true,
+      role: 'system',
+      placement: { kind: 'relative', order: 5 },
+      sourceKind: 'state_projection',
+      title: 'Managed state projection',
+      content: 'Scene source: latest',
+    };
+
+    const ir = compilePromptGraph({
+      version: 1,
+      rootGroupId: 'root',
+      policies: {},
+      groups: [{ id: 'root', name: 'Root', edges: [], nodes: [contributorNode] }],
+    }, {
+      maxTokens: 256,
+      reservedForReply: 32,
+    });
+
+    expect(ir.sections).toHaveLength(1);
+    expect(ir.sections[0]).toMatchObject({ name: 'stateProjection', budgetGroup: 'section:stateProjection', pinned: false });
+    expect(ir.sections[0]?.messages[0]).toMatchObject({ source: 'state_projection', prunable: false, content: '[Managed state projection]\nScene source: latest' });
   });
 });

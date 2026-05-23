@@ -1637,6 +1637,8 @@ describe("PromptRuntimeControlService", () => {
           supportsBranch: true,
           supportsSourceFloor: true,
           supportsVisibility: true,
+          returnsContributors: true,
+          returnsPreparePhaseTrace: true,
           returnsPreparedTurn: true,
           returnsGovernance: true,
           llmCall: false,

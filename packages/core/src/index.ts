@@ -172,10 +172,14 @@ export {
 } from './prompt/index.js';
 export type {
   NativePromptMode,
+  NativePipelinePhase,
   NativeWorldbookEntry,
   NativePipelineInput,
   NativePipelineState,
   NativePipelineNode,
+  NativePipelineNodeOutput,
+  NativePipelineNodeStateSnapshot,
+  NativePipelineNodeTraceEntry,
   NativePipelineInputSummary,
   NativePipelineStateSummary,
   ConditionNodeOptions,
@@ -184,6 +188,7 @@ export type {
 } from './prompt/index.js';
 export {
   assembleNativePrompt,
+  runNativePipeline,
   TemplateNode,
   ConditionNode,
   WorldbookResolveNode,
@@ -229,6 +234,7 @@ export type {
   WorldbookNode,
   ExampleDialogueNode,
   MemoryNode,
+  ContributorNode,
   ToolResultNode,
   PromptNode,
   PromptEdge,

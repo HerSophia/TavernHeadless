@@ -168,6 +168,50 @@ describe('assembleCompatPlus', () => {
       expect(ir.metadata.maxTokens).toBe(4096);
       expect(ir.metadata.reservedForReply).toBe(300);
     });
+
+    it('injects compat_plus contributor renderables as governed sections before chat history', () => {
+      const ir = assembleCompatPlus(baseInput({
+        renderableInjections: [{
+          sourceKind: 'state_projection',
+          title: 'Managed state projection',
+          content: 'Scene source: latest',
+        }],
+      }));
+
+      const stateSection = ir.sections.find((section) => section.name === 'stateProjection');
+      expect(stateSection).toBeDefined();
+      expect(stateSection).toMatchObject({
+        budgetGroup: 'section:stateProjection',
+        pinned: false,
+      });
+      expect(stateSection?.messages[0]).toMatchObject({
+        source: 'state_projection',
+        prunable: false,
+        content: '[Managed state projection]\nScene source: latest',
+      });
+      const order = getSectionOrder(ir);
+      expect(order.indexOf('stateProjection')).toBeLessThan(order.indexOf('chatHistory'));
+    });
+
+    it('skips empty compat_plus contributor renderables', () => {
+      const ir = assembleCompatPlus(baseInput({
+        renderableInjections: [{
+          sourceKind: 'state_projection',
+          title: 'Managed state projection',
+          content: '   ',
+        }],
+      }));
+
+      expect(ir.sections.find((section) => section.name === 'stateProjection')).toBeUndefined();
+    });
+
+    it('keeps contributor sections when memory injection is absent', () => {
+      const ir = assembleCompatPlus(baseInput({
+        renderableInjections: [{ sourceKind: 'state_projection', title: 'Managed state projection', content: 'Scene source: latest' }],
+      }));
+
+      expect(ir.sections.find((section) => section.name === 'stateProjection')).toBeDefined();
+    });
   });
 
   describe('memory position', () => {

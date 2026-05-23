@@ -26,6 +26,16 @@ describe('PromptRuntime source governance level registry', () => {
     expect(resolvePromptRuntimeSourceGovernanceLevel('native_system')).toBe('hard_required');
   });
 
+  it('对 agentic-ready source families 预注册治理级别', () => {
+    expect(resolvePromptRuntimeSourceGovernanceLevel('state_projection')).toBe('soft_required');
+    expect(resolvePromptRuntimeSourceGovernanceLevel('director_hint')).toBe('soft_required');
+    expect(resolvePromptRuntimeSourceGovernanceLevel('agency_guard')).toBe('hard_required');
+    expect(resolvePromptRuntimeSourceGovernanceLevel('scene_state')).toBe('soft_required');
+    expect(resolvePromptRuntimeSourceGovernanceLevel('worldbook_focus')).toBe('budget_prunable');
+    expect(resolvePromptRuntimeSourceGovernanceLevel('memory_selection')).toBe('soft_required');
+    expect(resolvePromptRuntimeSourceGovernanceLevel('verifier_hint')).toBe('budget_prunable');
+  });
+
   it('未知来源返回 undefined，不假定治理意图', () => {
     expect(resolvePromptRuntimeSourceGovernanceLevel('unknown')).toBeUndefined();
     expect(resolvePromptRuntimeSourceGovernanceLevel('')).toBeUndefined();
@@ -38,6 +48,13 @@ describe('PromptRuntime source governance level registry', () => {
       { kind: 'worldbook', expected: 'budget_prunable' },
       { kind: 'examples', expected: 'budget_prunable' },
       { kind: 'native_system', expected: 'hard_required' },
+      { kind: 'state_projection', expected: 'soft_required' },
+      { kind: 'director_hint', expected: 'soft_required' },
+      { kind: 'agency_guard', expected: 'hard_required' },
+      { kind: 'scene_state', expected: 'soft_required' },
+      { kind: 'worldbook_focus', expected: 'budget_prunable' },
+      { kind: 'memory_selection', expected: 'soft_required' },
+      { kind: 'verifier_hint', expected: 'budget_prunable' },
     ];
 
     for (const entry of kinds) {

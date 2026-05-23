@@ -239,8 +239,8 @@ export class ChatService {
       tokenCounter,
       this.promptPreparationService,
       this.modelService,
-      this.memoryService,
       this.regexInputService,
+      this.preparedPromptArtifactsBuilder,
     );
     this.promptRuntimePreviewService = new PromptRuntimePreviewService(
       db,

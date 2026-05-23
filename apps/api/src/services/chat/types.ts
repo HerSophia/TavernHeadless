@@ -19,6 +19,7 @@ import type { ResolvedTurnModels } from "./contracts.js";
 import type { SessionBranchAssetBindingState } from "../variables/host/session-branch-registry-service.js";
 import type { PromptRuntimeHistoryNormalizationSummary } from "./conversation-history-normalizer.js";
 import type { FloorConversationInputSnapshot } from "./shared/metadata.js";
+import type { PromptMode } from "../prompt-assembler.js";
 
 export type ChatWorkflowMode =
   | "respond"
@@ -29,7 +30,66 @@ export type ChatWorkflowMode =
 
 export type PreparedPromptArtifactsMode =
   | ChatWorkflowMode
+  | "dry_run"
   | "inspect";
+
+export type TurnRuntimePhase =
+  | "floor_prepare"
+  | "pre_response"
+  | "response"
+  | "post_response"
+  | "commit";
+
+export type PromptRuntimePreparePhase =
+  | "conversation_resolve"
+  | "source_resolve"
+  | "pre_response"
+  | "assemble"
+  | "materialize"
+  | "inspect";
+
+export type PromptRuntimeContributorKind =
+  | "memory_projection"
+  | "state_projection"
+  | "director_hint"
+  | "agency_guard"
+  | "scene_state"
+  | "worldbook_focus"
+  | "memory_selection"
+  | "verifier_hint";
+
+export interface PromptRuntimeContributorRenderable {
+  title: string;
+  content: string;
+}
+
+export interface PromptRuntimeContributorOutput {
+  id: string;
+  kind: PromptRuntimeContributorKind;
+  sourceKind: string;
+  modeScope: "compat_plus" | "native";
+  payload: unknown;
+  promptRenderable?: PromptRuntimeContributorRenderable;
+  trace: {
+    deterministic: boolean;
+    cacheScope: "floor" | "page" | "none";
+  };
+}
+
+export interface PromptRuntimeContributorView {
+  id: string;
+  kind: PromptRuntimeContributorKind;
+  sourceKind: string;
+  modeScope: "compat_plus" | "native";
+  promptRenderable?: PromptRuntimeContributorRenderable;
+  deterministic: boolean;
+  cacheScope: "floor" | "page" | "none";
+}
+
+export interface PreparedPromptArtifactsPhaseTraceEntry {
+  phase: PromptRuntimePreparePhase;
+  detail?: Record<string, unknown>;
+}
 
 export type ChatServiceErrorFactory = (
   code: string,
@@ -89,16 +149,20 @@ export interface PreparedTurnPromptDebugArtifacts {
 
 export interface PreparedPromptArtifacts {
   mode: PreparedPromptArtifactsMode;
-  runType: FloorRunType | "inspect";
+  runType: FloorRunType | "inspect" | "dry_run";
   sessionId: string;
   branchId?: string;
   accountId: string;
+  promptMode: PromptMode;
   userMessage: string;
   rawUserMessage: string;
   executionContext: PromptRuntimeResolvedContext;
+  conversation: import("./prompt-preparation-service.js").PromptRuntimeConversationWindow;
   history: ChatMessage[];
   visibilityTrace?: PromptVisibilityTrace;
   memorySummary?: string;
+  memoryTrace?: PromptRuntimeTrace["memory"];
+  contributors: PromptRuntimeContributorOutput[];
   resolvedTurnModels: ResolvedTurnModels;
   assembled: AssembleResult;
   materialized: MaterializePromptRuntimeMessagesResult;
@@ -114,6 +178,7 @@ export interface PreparedPromptArtifacts {
   generationParams: GenerationParams;
   requestedTurnConfig?: TurnConfig;
   turnConfig?: TurnConfig;
+  preparePhaseTrace: PreparedPromptArtifactsPhaseTraceEntry[];
 }
 
 export interface PreparedTurnContext {

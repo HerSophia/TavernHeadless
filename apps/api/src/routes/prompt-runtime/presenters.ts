@@ -74,6 +74,34 @@ function mapExcludedSourceToSnakeCase(source: PromptRuntimeInspectResult["exclud
   };
 }
 
+function mapContributorToSnakeCase(
+  contributor: PromptRuntimeInspectResult["preparedTurn"]["contributors"][number],
+): Record<string, unknown> {
+  return {
+    id: contributor.id,
+    kind: contributor.kind,
+    source_kind: contributor.sourceKind,
+    mode_scope: contributor.modeScope,
+    prompt_renderable: contributor.promptRenderable
+      ? {
+          title: contributor.promptRenderable.title,
+          content: contributor.promptRenderable.content,
+        }
+      : null,
+    deterministic: contributor.deterministic,
+    cache_scope: contributor.cacheScope,
+  };
+}
+
+function mapPreparePhaseTraceEntryToSnakeCase(
+  entry: PromptRuntimeInspectResult["preparedTurn"]["preparePhaseTrace"][number],
+): Record<string, unknown> {
+  return {
+    phase: entry.phase,
+    detail: entry.detail ? mapUnknownKeysToSnakeCase(entry.detail) : null,
+  };
+}
+
 function mapPreparedTurnToSnakeCase(result: PromptRuntimeInspectResult["preparedTurn"]): Record<string, unknown> {
   return {
     messages: result.messages,
@@ -95,6 +123,8 @@ function mapPreparedTurnToSnakeCase(result: PromptRuntimeInspectResult["prepared
         operation: write.operation,
       })),
     },
+    contributors: result.contributors.map((contributor) => mapContributorToSnakeCase(contributor)),
+    prepare_phase_trace: result.preparePhaseTrace.map((entry) => mapPreparePhaseTraceEntryToSnakeCase(entry)),
   };
 }
 

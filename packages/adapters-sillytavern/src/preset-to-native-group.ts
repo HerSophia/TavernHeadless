@@ -253,6 +253,58 @@ function hasNode(nodes: PromptNode[], predicate: (node: PromptNode) => boolean):
   return nodes.some(predicate);
 }
 
+function createContributorNode(args: {
+  id: string;
+  name: string;
+  sourceKind: string;
+  title: string;
+  content: string;
+  order: number;
+}): PromptNode {
+  return {
+    id: args.id,
+    name: args.name,
+    nodeType: 'contributor',
+    enabled: true,
+    role: 'system',
+    placement: { kind: 'relative', order: args.order },
+    sourceKind: args.sourceKind,
+    title: args.title,
+    content: args.content,
+    metadata: { source: 'agentic-ready' },
+  };
+}
+
+export interface BuildNativeContributorNodeInput {
+  sourceKind: string;
+  title: string;
+  content: string;
+  order: number;
+}
+
+export function buildNativeContributorNodes(
+  inputs: BuildNativeContributorNodeInput[],
+): PromptNode[] {
+  return inputs
+    .map((input, index) => {
+      const title = input.title.trim();
+      const content = input.content.trim();
+      if (!title || !content) {
+        return null;
+      }
+
+      return createContributorNode({
+        id: `native:contributor:${input.sourceKind}:${index + 1}`,
+        name: input.sourceKind === 'state_projection' ? 'State Projection' : `Contributor ${input.sourceKind}`,
+        sourceKind: input.sourceKind,
+        title,
+        content,
+        order: input.order,
+      });
+    })
+    .filter((node): node is PromptNode => node !== null);
+}
+
 function buildExecutionPolicies(preset: STPreset): PromptExecutionPolicy {
   const namesBehavior = preset.namesBehavior === 1 ? 'always' : 'off';
   return {

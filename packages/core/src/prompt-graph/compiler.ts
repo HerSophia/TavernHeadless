@@ -5,6 +5,7 @@ import { PROMPT_ASSET_CHARACTER_BUDGET_GROUP, PROMPT_ASSET_CHARACTER_SOURCE_KIND
 import type {
   CharacterNode,
   ChatHistoryNode,
+  ContributorNode,
   ExampleDialogueNode,
   MarkerNode,
   MemoryNode,
@@ -68,6 +69,27 @@ function findMarkerNode(group: PromptNodeGroup, anchorId: string): MarkerNode | 
   );
 
   return marker ?? null;
+}
+
+function buildContributorSectionName(node: ContributorNode): string {
+  if (node.sourceKind === 'state_projection') {
+    return 'stateProjection';
+  }
+
+  return `contributor:${node.sourceKind}`;
+}
+
+function buildContributorContent(node: ContributorNode): string {
+  const title = node.title.trim();
+  const content = node.content.trim();
+  if (!title) {
+    return content;
+  }
+  if (!content) {
+    return `[${title}]`;
+  }
+
+  return `[${title}]\n${content}`;
 }
 
 function findAnchorOrder(group: PromptNodeGroup, placement: Extract<PromptPlacement, { kind: 'anchor' }>): number | null {
@@ -454,6 +476,33 @@ function compileToolResultNode(
   });
 }
 
+function compileContributorNode(
+  group: PromptNodeGroup,
+  node: ContributorNode,
+  templateEngine: TemplateEngine,
+  input: PromptGraphCompilerInput,
+  policies: PromptExecutionPolicy,
+): IRSection | null {
+  const content = resolveTemplate(templateEngine, buildContributorContent(node), input.variables ?? {});
+  if (!content.trim()) {
+    return null;
+  }
+
+  const governance = resolvePromptRuntimeGovernancePolicy({
+    sourceKind: node.sourceKind,
+    fallback: { budgetGroup: `section:${node.sourceKind}`, pinned: false, prunable: false },
+  });
+  return createSection(buildContributorSectionName(node), resolvePlacementOrder(group, node.placement), [{
+    role: node.role,
+    content: applyNamesBehavior(content, node.role, input, policies.namesBehavior, node.placement.kind === 'in_chat'),
+    source: node.sourceKind,
+    prunable: governance.prunable,
+  }], governance.pinned, {
+    insertion: toSectionInsertion(node.placement),
+    budgetGroup: governance.budgetGroup,
+  });
+}
+
 function compileNode(
   group: PromptNodeGroup,
   node: PromptNode,
@@ -481,6 +530,8 @@ function compileNode(
       return compileMemoryNode(group, node, templateEngine, input, policies);
     case 'tool_result':
       return compileToolResultNode(group, node, templateEngine, input, policies);
+    case 'contributor':
+      return compileContributorNode(group, node, templateEngine, input, policies);
   }
 }
 

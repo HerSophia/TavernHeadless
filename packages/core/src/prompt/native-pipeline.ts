@@ -4,6 +4,7 @@ import { TemplateEngine } from './template-engine.js';
 import { PROMPT_MEMORY_MESSAGE_SOURCE, PROMPT_MEMORY_SECTION_NAME } from './runtime-registry.js';
 
 export type NativePromptMode = 'compat_strict' | 'native';
+export type NativePipelinePhase = 'pre_response' | 'assemble' | 'materialize';
 
 export interface NativeWorldbookEntry {
   id: string;
@@ -28,17 +29,48 @@ export interface NativePipelineState {
   input: NativePipelineInput;
   sections: IRSection[];
   output?: PromptIR;
+  trace: NativePipelineNodeTraceEntry[];
+  outputs: Record<string, NativePipelineNodeOutput>;
   artifacts?: Record<string, unknown>;
+}
+
+export interface NativePipelineNodeStateSnapshot {
+  sectionCount: number;
+  sectionNames: string[];
+  messageCount: number;
+  executedNodes: string[];
+  outputReady: boolean;
+}
+
+export interface NativePipelineNodeOutput {
+  nodeName: string;
+  phase: NativePipelinePhase;
+  sectionCount: number;
+  sectionNames: string[];
+  messageCount: number;
+  producedSectionNames: string[];
+  outputReady: boolean;
+  artifactKeys: string[];
+}
+
+export interface NativePipelineNodeTraceEntry {
+  nodeName: string;
+  phase: NativePipelinePhase;
+  inputSummary: NativePipelineNodeStateSnapshot;
+  outputSummary: NativePipelineNodeOutput;
 }
 
 export interface NativePipelineNode {
   readonly name: string;
+  readonly phase?: NativePipelinePhase;
   run(state: NativePipelineState): NativePipelineState;
 }
 
 export type ConditionNodeOptions = {
   /** Override node name used for executedNodes/debugging (default: 'condition') */
   name?: string;
+  /** Override node phase used for trace/output modeling (default: 'assemble') */
+  phase?: NativePipelinePhase;
   /** Predicate that selects which branch to run */
   when: (state: NativePipelineState) => boolean;
   /** Nodes to run when predicate returns true */
@@ -65,6 +97,8 @@ export type TransformRule = {
 export type TransformNodeOptions = {
   /** Override node name used for executedNodes/debugging (default: 'transform') */
   name?: string;
+  /** Override node phase used for trace/output modeling (default: 'assemble') */
+  phase?: NativePipelinePhase;
   rules: TransformRule[];
 };
 
@@ -83,6 +117,9 @@ export interface NativePipelineStateSummary {
   sectionNames: string[];
   messageCount: number;
   executedNodes: string[];
+  outputReady: boolean;
+  traceCount: number;
+  outputNodes: string[];
 }
 
 export class NativePipelineError extends Error {
@@ -132,6 +169,44 @@ function summarizeState(state: NativePipelineState): NativePipelineStateSummary 
     sectionNames: state.sections.map((section) => section.name),
     messageCount: state.sections.reduce((sum, section) => sum + section.messages.length, 0),
     executedNodes: getExecutedNodes(state.artifacts),
+    outputReady: state.output !== undefined,
+    traceCount: state.trace.length,
+    outputNodes: Object.keys(state.outputs).sort((left, right) => left.localeCompare(right)),
+  };
+}
+
+function resolveNodePhase(node: NativePipelineNode): NativePipelinePhase {
+  return node.phase ?? 'assemble';
+}
+
+function summarizeNodeState(state: NativePipelineState): NativePipelineNodeStateSnapshot {
+  return {
+    sectionCount: state.sections.length,
+    sectionNames: state.sections.map((section) => section.name),
+    messageCount: state.sections.reduce((sum, section) => sum + section.messages.length, 0),
+    executedNodes: getExecutedNodes(state.artifacts),
+    outputReady: state.output !== undefined,
+  };
+}
+
+function buildNodeOutput(
+  state: NativePipelineState,
+  nextState: NativePipelineState,
+  node: NativePipelineNode,
+): NativePipelineNodeOutput {
+  const previousSectionNames = new Set(state.sections.map((section) => section.name));
+
+  return {
+    nodeName: node.name,
+    phase: resolveNodePhase(node),
+    sectionCount: nextState.sections.length,
+    sectionNames: nextState.sections.map((section) => section.name),
+    messageCount: nextState.sections.reduce((sum, section) => sum + section.messages.length, 0),
+    producedSectionNames: nextState.sections
+      .map((section) => section.name)
+      .filter((name) => !previousSectionNames.has(name)),
+    outputReady: nextState.output !== undefined,
+    artifactKeys: Object.keys(nextState.artifacts ?? {}).sort((left, right) => left.localeCompare(right)),
   };
 }
 
@@ -155,9 +230,19 @@ function runNodeSequence(
         ...previousExecutedNodes,
         ...nextExecutedNodes.filter((name) => !previousExecutedNodes.includes(name)),
       ];
+      const outputSummary = buildNodeOutput(state, nextState, node);
+      const baseTrace = nextState.trace.length >= state.trace.length
+        ? nextState.trace
+        : state.trace;
+      const baseOutputs = {
+        ...state.outputs,
+        ...nextState.outputs,
+      };
 
       state = {
         ...nextState,
+        trace: [...baseTrace, { nodeName: node.name, phase: resolveNodePhase(node), inputSummary: summarizeNodeState(state), outputSummary }],
+        outputs: { ...baseOutputs, [node.name]: outputSummary },
         artifacts: {
           ...(nextState.artifacts ?? {}),
           executedNodes: [...mergedExecutedNodes, node.name],
@@ -190,6 +275,7 @@ function renderWithVariables(
 
 export class TemplateNode implements NativePipelineNode {
   readonly name = 'template';
+  readonly phase = 'assemble' as const;
 
   run(state: NativePipelineState): NativePipelineState {
     const templateEngine = new TemplateEngine();
@@ -259,6 +345,7 @@ export class TemplateNode implements NativePipelineNode {
 
 export class ConditionNode implements NativePipelineNode {
   readonly name: string;
+  readonly phase: NativePipelinePhase;
 
   private readonly when: (state: NativePipelineState) => boolean;
   private readonly thenNodes: NativePipelineNode[];
@@ -267,6 +354,7 @@ export class ConditionNode implements NativePipelineNode {
 
   constructor(options: ConditionNodeOptions) {
     this.name = options.name ?? 'condition';
+    this.phase = options.phase ?? 'assemble';
     this.when = options.when;
     this.thenNodes = options.thenNodes ?? [];
     this.elseNodes = options.elseNodes ?? [];
@@ -290,6 +378,7 @@ export class ConditionNode implements NativePipelineNode {
 
 export class WorldbookResolveNode implements NativePipelineNode {
   readonly name = 'worldbook_resolve';
+  readonly phase = 'assemble' as const;
 
   run(state: NativePipelineState): NativePipelineState {
     const entries = state.input.worldbookEntries ?? [];
@@ -437,10 +526,12 @@ type CompiledTransformRule = TransformRule & {
 
 export class TransformNode implements NativePipelineNode {
   readonly name: string;
+  readonly phase: NativePipelinePhase;
   private readonly rules: CompiledTransformRule[];
 
   constructor(options: TransformNodeOptions) {
     this.name = options.name ?? 'transform';
+    this.phase = options.phase ?? 'assemble';
     this.rules = (options.rules ?? []).map((rule) => ({
       ...rule,
       regex: new RegExp(rule.pattern, rule.flags ?? 'g'),
@@ -494,6 +585,7 @@ export class TransformNode implements NativePipelineNode {
 
 export class TokenBudgetNode implements NativePipelineNode {
   readonly name = 'token_budget';
+  readonly phase = 'materialize' as const;
 
   run(state: NativePipelineState): NativePipelineState {
     const counter = state.input.tokenCounter;
@@ -516,6 +608,7 @@ export class TokenBudgetNode implements NativePipelineNode {
 
 export class MemoryInjectNode implements NativePipelineNode {
   readonly name = 'memory_inject';
+  readonly phase = 'pre_response' as const;
 
   run(state: NativePipelineState): NativePipelineState {
     const summary = state.input.memorySummary?.trim();
@@ -558,6 +651,27 @@ export class MemoryInjectNode implements NativePipelineNode {
   }
 }
 
+export function runNativePipeline(
+  input: NativePipelineInput,
+  nodes: NativePipelineNode[] = [
+    new TemplateNode(),
+    new WorldbookResolveNode(),
+    new MemoryInjectNode(),
+    new TokenBudgetNode(),
+    new PackMessagesNode(),
+  ]
+): NativePipelineState {
+  const state = runNodeSequence({
+    input,
+    sections: [],
+    trace: [],
+    outputs: {},
+    artifacts: {},
+  }, nodes);
+
+  return state.output ? state : { ...state, output: finalizePrompt(input, state.sections) };
+}
+
 export function assembleNativePrompt(
   input: NativePipelineInput,
   nodes: NativePipelineNode[] = [
@@ -568,56 +682,11 @@ export function assembleNativePrompt(
     new PackMessagesNode(),
   ]
 ): PromptIR {
-  let state: NativePipelineState = {
-    input,
-    sections: [],
-    artifacts: {},
-  };
-
-  for (const node of nodes) {
-    try {
-      const nextState = node.run(state);
-
-      if (!nextState || !nextState.input || !Array.isArray(nextState.sections)) {
-        throw new Error('Node returned an invalid pipeline state');
-      }
-
-      const previousExecutedNodes = getExecutedNodes(state.artifacts);
-      const nextExecutedNodes = getExecutedNodes(nextState.artifacts);
-      const mergedExecutedNodes = [
-        ...previousExecutedNodes,
-        ...nextExecutedNodes.filter((name) => !previousExecutedNodes.includes(name)),
-      ];
-
-      state = {
-        ...nextState,
-        artifacts: {
-          ...(nextState.artifacts ?? {}),
-          executedNodes: [...mergedExecutedNodes, node.name],
-        },
-      };
-    } catch (error) {
-      if (error instanceof NativePipelineError) {
-        throw error;
-      }
-
-      throw new NativePipelineError({
-        nodeName: node.name,
-        inputSummary: summarizeInput(state.input),
-        stateSummary: summarizeState(state),
-        cause: error,
-      });
-    }
-  }
-
-  if (state.output) {
-    return state.output;
-  }
-
-  return finalizePrompt(input, state.sections);
+  return runNativePipeline(input, nodes).output ?? finalizePrompt(input, []);
 }
 export class PackMessagesNode implements NativePipelineNode {
   readonly name = 'pack_messages';
+  readonly phase = 'materialize' as const;
 
   run(state: NativePipelineState): NativePipelineState {
     const sections = [...state.sections]
