@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   ChatMessage,
   CoreEventBus,
   FloorRunSnapshot,
@@ -16,6 +16,7 @@ import type {
   ToolRegistry,
 } from "@tavern/core";
 
+import type { EffectiveToolPolicyResolution } from "../tooling/shared/tool-policy-resolution.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
 import type {
   PromptAssemblyCompat,
@@ -47,6 +48,7 @@ import type {
   GenerationGuardService,
 } from "../generation-guard-service.js";
 import type { SessionToolRegistryService } from "../session-tool-registry-service.js";
+import type { ToolRuntimeJobBridge } from "../tool-runtime-job-bridge.js";
 import type { AccountContextOptions } from "../../accounts/account-context.js";
 import type { FirstPartyGameStateService } from "../../session-state/first-party-game-state-service.js";
 import type { SessionStateNamespace } from "../../session-state/session-state-types.js";
@@ -268,7 +270,12 @@ export interface ChatServiceOptions {
   floorRunService?: FloorRunService;
   toolRegistry?: ToolRegistry;
   sessionToolRegistryService?: SessionToolRegistryService;
+  toolRuntimeJobBridge?: ToolRuntimeJobBridge;
   resolveToolPermissions?: (sessionId: string, accountId: string) => Promise<ToolPermissions | null>;
+  resolveEffectiveToolPolicy?: (
+    sessionId: string,
+    accountId: string,
+  ) => Promise<EffectiveToolPolicyResolution | null>;
   generationGuard?: GenerationGuardService;
   generationCoordinator?: GenerationCoordinator;
   eventBus?: CoreEventBus;
@@ -278,3 +285,4 @@ export interface ChatServiceOptions {
   defaultAccountId?: string;
   projectEventLiveHub?: ProjectEventLiveHub;
 }
+

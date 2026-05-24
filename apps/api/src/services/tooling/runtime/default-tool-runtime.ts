@@ -43,6 +43,7 @@ export function createDefaultToolRuntimeComponents(
   });
   const bridge = createToolRuntimeJobBridge(db, {
     eventBus: options.eventBus,
+    toolRuntimePolicy: policy,
   });
   const handlerRegistry = createDefaultToolAsyncHandlerRegistry({
     handlers: options.deferredHandlers,

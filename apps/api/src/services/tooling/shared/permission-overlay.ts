@@ -268,16 +268,16 @@ export function mergeSessionBaseToolPermissionsPatch(
   return normalizeSessionBaseToolPermissionsRecord(merged) ?? {};
 }
 
-export function mapSessionBaseToolPermissionsRecordToCorePermissions(
+export function mapSessionBaseToolPermissionsRecordToOverlay(
   value: unknown,
-): ToolPermissions | undefined {
+): ToolPermissionOverlay | undefined {
   const normalized = normalizeSessionBaseToolPermissionsRecord(value);
-  if (normalized === undefined || normalized.enabled === undefined) {
+  if (normalized === undefined) {
     return undefined;
   }
 
   return {
-    enabled: normalized.enabled,
+    ...(normalized.enabled !== undefined ? { enabled: normalized.enabled } : {}),
     ...(normalized.max_calls_per_turn !== undefined
       ? { maxCallsPerTurn: normalized.max_calls_per_turn }
       : {}),
@@ -287,12 +287,30 @@ export function mapSessionBaseToolPermissionsRecordToCorePermissions(
     ...(normalized.allow_irreversible !== undefined
       ? { allowIrreversible: normalized.allow_irreversible }
       : {}),
-    ...(normalized.slot_allow_list !== undefined
-      ? { slotAllowList: cloneSlotRecord(normalized.slot_allow_list) }
+    ...(normalized.slot_allow_list !== undefined ? { slotAllowList: cloneSlotRecord(normalized.slot_allow_list) } : {}),
+    ...(normalized.slot_deny_list !== undefined ? { slotDenyList: cloneSlotRecord(normalized.slot_deny_list) } : {}),
+  };
+}
+
+export function mapSessionBaseToolPermissionsRecordToCorePermissions(
+  value: unknown,
+): ToolPermissions | undefined {
+  const overlay = mapSessionBaseToolPermissionsRecordToOverlay(value);
+  if (!overlay || overlay.enabled === undefined) {
+    return undefined;
+  }
+
+  return {
+    enabled: overlay.enabled,
+    ...(overlay.maxCallsPerTurn !== undefined ? { maxCallsPerTurn: overlay.maxCallsPerTurn } : {}),
+    ...(overlay.maxStepsPerGeneration !== undefined
+      ? { maxStepsPerGeneration: overlay.maxStepsPerGeneration }
       : {}),
-    ...(normalized.slot_deny_list !== undefined
-      ? { slotDenyList: cloneSlotRecord(normalized.slot_deny_list) }
+    ...(overlay.allowIrreversible !== undefined
+      ? { allowIrreversible: overlay.allowIrreversible }
       : {}),
+    ...(overlay.slotAllowList !== undefined ? { slotAllowList: cloneSlotRecord(overlay.slotAllowList) } : {}),
+    ...(overlay.slotDenyList !== undefined ? { slotDenyList: cloneSlotRecord(overlay.slotDenyList) } : {}),
   };
 }
 

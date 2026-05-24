@@ -186,9 +186,93 @@ describe("sdk core resources", () => {
         source: "builtin",
         sideEffectLevelBasis: null,
         allowedSlotsBasis: null,
+        exposure: null,
         parameterSchemaBasis: null,
         replaySafetyBasis: null,
         metadataBasisDetail: null,
+      }],
+    });
+  });
+
+  it("maps runtime tool catalog metadata detail and MCP exposure fields", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          session_id: "session-2",
+          generated_at: 1710000000100,
+          tools: [
+            {
+              name: "github_create_issue",
+              provider_id: "mcp:mcp-1",
+              provider_type: "mcp",
+              source: "mcp",
+              side_effect_level: "irreversible",
+              allowed_slots: ["narrator"],
+              availability: "available",
+              availability_reason: null,
+              async_capability: "deferred_ok",
+              default_delivery_mode: "async_job",
+              catalog_source: "cached",
+              exposure: {
+                scope: "project_binding",
+                server_state: "enabled",
+                allowed_tools_mode: "allow_list",
+                allowed_tools: ["github_create_issue"],
+              },
+              replay_safety: "never_auto_replay",
+              result_visibility: "deferred_receipt",
+              side_effect_level_basis: "server_default",
+              allowed_slots_basis: "platform_default",
+              parameter_schema_basis: "shallow_schema_projection",
+              replay_safety_basis: "inferred_from_execution_policy",
+              metadata_basis_detail: {
+                side_effect_level: { basis: "server_default", scope: "server" },
+                allowed_slots: { basis: "platform_default", scope: "platform" },
+                parameter_schema: { basis: "shallow_schema_projection", scope: "projection" },
+                replay_safety: { basis: "inferred_from_execution_policy", scope: "inference" },
+              },
+            },
+          ],
+          conflicts: [],
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.sessions.getRuntimeToolCatalog({ accountId: "acc-1", sessionId: "session-1" })).resolves.toEqual({
+      conflicts: [],
+      generatedAt: 1710000000100,
+      sessionId: "session-2",
+      tools: [{
+        exposure: {
+          scope: "project_binding",
+          serverState: "enabled",
+          allowedToolsMode: "allow_list",
+          allowedTools: ["github_create_issue"],
+        },
+        allowedSlots: ["narrator"],
+        availability: "available",
+        availabilityReason: null,
+        catalogSource: "cached",
+        asyncCapability: "deferred_ok",
+        defaultDeliveryMode: "async_job",
+        name: "github_create_issue",
+        providerId: "mcp:mcp-1",
+        providerType: "mcp",
+        replaySafety: "never_auto_replay",
+        resultVisibility: "deferred_receipt",
+        sideEffectLevel: "irreversible",
+        source: "mcp",
+        sideEffectLevelBasis: "server_default",
+        allowedSlotsBasis: "platform_default",
+        parameterSchemaBasis: "shallow_schema_projection",
+        replaySafetyBasis: "inferred_from_execution_policy",
+        metadataBasisDetail: {
+          sideEffectLevel: { basis: "server_default", scope: "server" },
+          allowedSlots: { basis: "platform_default", scope: "platform" },
+          parameterSchema: { basis: "shallow_schema_projection", scope: "projection" },
+          replaySafety: { basis: "inferred_from_execution_policy", scope: "inference" },
+        },
       }],
     });
   });

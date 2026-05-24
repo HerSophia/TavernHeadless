@@ -155,4 +155,40 @@ describe("ProjectAgentBindingService", () => {
     expect(effective.effective.allowedOutputTargets).toEqual(["derived_output"]);
     expect(effective.effective.eventSubscriptions[0]?.type).toBe("floor.committed");
   });
+
+  it("keeps binding-local toolPolicyId and mcpBindings for explicit selector and narrowing", () => {
+    const project = createTestProject(database.db, { accountId: ACCOUNT_ID, id: "proj-bind-4" });
+    const agentType = agentTypeService.create({
+      workspaceId: project.workspaceId,
+      accountId: ACCOUNT_ID,
+      key: "agent.selector",
+      name: "Selector",
+      scopeKind: "project",
+      defaults: {
+        llmProfileId: "llm_default",
+        toolPolicyId: null,
+        grants: { allowed_output_targets: ["derived_output"] },
+        mcpBindings: [{ mcpServerId: "mcp_a", allowedTools: ["search", "fetch"] }],
+        eventSubscriptions: [{ type: "floor.committed" }],
+        metadata: {},
+      },
+    });
+
+    const binding = bindingService.create({
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+      accountId: ACCOUNT_ID,
+      agentTypeId: agentType.id,
+      scopeKind: "project",
+      toolPolicyId: "policy_project_alpha",
+      mcpBindings: [{ mcpServerId: "mcp_a", allowedTools: ["search"] }],
+      metadata: {},
+    });
+
+    const effective = bindingService.resolveEffective({ id: binding.id, accountId: ACCOUNT_ID });
+    expect(effective.effective.toolPolicyId).toBe("policy_project_alpha");
+    expect(effective.effective.mcpBindings).toEqual([
+      { mcpServerId: "mcp_a", allowedTools: ["search"], configOverrideJson: null },
+    ]);
+  });
 });

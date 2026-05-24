@@ -132,6 +132,24 @@ const sessionEffective = await client.sessions.getEffectiveConfig({
 });
 ```
 
+### Tools 与会话运行时目录
+
+```ts
+const catalog = await client.sessions.getRuntimeToolCatalog({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+});
+
+const executions = await client.tools.listExecutions({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+  status: "uncertain",
+});
+```
+
+- `getRuntimeToolCatalog(...)` 返回会话级工具目录，并保留 `catalogSource`、`metadataBasisDetail`、`exposure` 等字段。
+- `listExecutions(...)` 返回原执行记录字段，并附带 `executionId`、`replaySafety`、`runtimeJob`、`policy`、`provenance`、`roundtrip` 等 trace 字段。
+
 ## 阶段五边界说明
 
 需要特别注意：

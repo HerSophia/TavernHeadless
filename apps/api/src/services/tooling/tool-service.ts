@@ -13,6 +13,7 @@ import type {
   ToolExecutionLifecycleState,
   ToolExecutionProviderType,
   ToolExecutionStatus,
+  ToolReplaySafety,
 } from "@tavern/core";
 import {
   DrizzleToolExecutionRepository,
@@ -26,6 +27,7 @@ import type {
 } from "../../adapters/drizzle-tool-repository.js";
 import type { AppDb } from "../../db/client.js";
 import { parseJsonField, stringifyJsonField } from "../../lib/http.js";
+import { ToolRoundtripTraceService, type ToolRoundtripTrace } from "./tool-roundtrip-trace-service.js";
 import { WorkspaceScopeService } from "../workspace-scope-service.js";
 
 // ── Types ───────────────────────────────────────────
@@ -85,6 +87,34 @@ export interface ToolCallRecordResponse {
 }
 
 export interface ToolExecutionRecordResponse {
+  execution_id: string;
+  id: string;
+  run_id: string;
+  floor_id: string;
+  page_id: string | null;
+  args: unknown;
+  result: unknown;
+  side_effect_level: string | null;
+  error_message: string | null;
+  duration_ms: number;
+  caller_slot: string;
+  provider_id: string;
+  provider_type: ToolExecutionProviderType;
+  tool_name: string;
+  status: ToolExecutionStatus;
+  lifecycle_state: ToolExecutionLifecycleState;
+  commit_outcome: ToolExecutionCommitOutcome;
+  delivery_mode: "inline" | "async_job";
+  started_at: number;
+  finished_at: number | null;
+  runtime_job_id: string | null;
+  attempt_no: number;
+  replay_parent_execution_id: string | null;
+  created_at: number;
+}
+
+export interface ToolRoundtripTraceResponse {
+  execution_id: string;
   id: string;
   run_id: string;
   floor_id: string;
@@ -95,19 +125,25 @@ export interface ToolExecutionRecordResponse {
   tool_name: string;
   args: unknown;
   result: unknown;
+  delivery_mode: "inline" | "async_job";
   status: ToolExecutionStatus;
   lifecycle_state: ToolExecutionLifecycleState;
   commit_outcome: ToolExecutionCommitOutcome;
   side_effect_level: string | null;
   error_message: string | null;
   duration_ms: number;
-  delivery_mode: "inline" | "async_job";
   started_at: number;
   finished_at: number | null;
-  runtime_job_id: string | null;
   attempt_no: number;
+  runtime_job_id: string | null;
   replay_parent_execution_id: string | null;
   created_at: number;
+  replay_safety: ToolReplaySafety;
+  replay_reason: string;
+  runtime_job: Record<string, unknown>;
+  policy: Record<string, unknown> | null;
+  provenance: Record<string, unknown>;
+  roundtrip: Record<string, boolean>;
 }
 
 export class ToolServiceError extends Error {
@@ -150,11 +186,13 @@ export class ToolService {
   private repo: DrizzleToolRepository;
   private executionRepo: DrizzleToolExecutionRepository;
   private builtinProvider: BuiltinToolProvider;
+  private traceService: ToolRoundtripTraceService;
 
   constructor(private readonly db: AppDb) {
     this.repo = new DrizzleToolRepository(this.db);
     this.executionRepo = new DrizzleToolExecutionRepository(this.db);
     this.builtinProvider = new BuiltinToolProvider();
+    this.traceService = new ToolRoundtripTraceService(this.db);
   }
 
   // ── Builtin ───────────────────────────────────────
@@ -333,6 +371,7 @@ export class ToolService {
     const result = await this.executionRepo.query(query);
     return {
       records: result.records.map((record) => ({
+        execution_id: record.id,
         id: record.id,
         run_id: record.runId,
         floor_id: record.floorId,
@@ -358,6 +397,79 @@ export class ToolService {
         created_at: record.createdAt,
       })),
       total: result.total,
+    };
+  }
+
+  async queryRoundtripTraces(query: ToolExecutionRecordQuery): Promise<{
+    traces: ToolRoundtripTraceResponse[];
+    total: number;
+  }> {
+    const result = await this.traceService.list(query);
+    return {
+      traces: result.traces.map((trace) => this.toRoundtripTraceResponse(trace)),
+      total: result.total,
+    };
+  }
+
+  private toRoundtripTraceResponse(trace: ToolRoundtripTrace): ToolRoundtripTraceResponse {
+    return {
+      execution_id: trace.executionId,
+      id: trace.executionId,
+      run_id: trace.runId,
+      floor_id: trace.floorId,
+      page_id: trace.pageId,
+      caller_slot: trace.callerSlot,
+      provider_id: trace.providerId,
+      provider_type: trace.providerType,
+      tool_name: trace.toolName,
+      args: trace.args,
+      result: trace.result,
+      delivery_mode: trace.deliveryMode,
+      status: trace.status,
+      lifecycle_state: trace.lifecycleState,
+      commit_outcome: trace.commitOutcome,
+      side_effect_level: trace.sideEffectLevel,
+      error_message: trace.errorMessage,
+      duration_ms: trace.durationMs,
+      started_at: trace.startedAt,
+      finished_at: trace.finishedAt,
+      attempt_no: trace.attemptNo,
+      runtime_job_id: trace.runtimeJobId,
+      replay_parent_execution_id: trace.replayParentExecutionId,
+      created_at: trace.createdAt,
+      replay_safety: trace.replaySafety,
+      replay_reason: trace.replayReason,
+      runtime_job: {
+        id: trace.runtimeJob.id,
+        job_type: trace.runtimeJob.jobType,
+        status: trace.runtimeJob.status,
+        phase: trace.runtimeJob.phase,
+        attempt_count: trace.runtimeJob.attemptCount,
+        max_attempts: trace.runtimeJob.maxAttempts,
+        available_at: trace.runtimeJob.availableAt,
+        started_at: trace.runtimeJob.startedAt,
+        finished_at: trace.runtimeJob.finishedAt,
+        last_error: trace.runtimeJob.lastError,
+      },
+      policy: trace.policy
+        ? {
+            enable_deferred_irreversible_tools: trace.policy.enableDeferredIrreversibleTools,
+            deferred_tool_allowlist: trace.policy.deferredToolAllowlist,
+            timeout_ms: trace.policy.timeoutMs,
+            max_attempts: trace.policy.maxAttempts,
+            retryable_statuses: trace.policy.retryableStatuses,
+            max_deferred_jobs_per_run: trace.policy.maxDeferredJobsPerRun,
+            max_irreversible_calls_per_run: trace.policy.maxIrreversibleCallsPerRun,
+          }
+        : null,
+      provenance: {
+        trigger_scope: trace.provenance.triggerScope,
+        step_id: trace.provenance.stepId ?? null,
+        parent_run_job_id: trace.provenance.parentRunJobId ?? null,
+        agent_binding_id: trace.provenance.agentBindingId ?? null,
+        source_event_id: trace.provenance.sourceEventId ?? null,
+      },
+      roundtrip: { ...trace.roundtrip },
     };
   }
 

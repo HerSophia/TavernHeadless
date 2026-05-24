@@ -64,6 +64,7 @@ export type ToolCallRecord = {
 };
 
 export type ToolExecutionRecord = {
+  executionId: string;
   args: unknown;
   attemptNo: number;
   callerSlot: string;
@@ -82,11 +83,58 @@ export type ToolExecutionRecord = {
   replayParentExecutionId: string | null;
   result: unknown;
   runId: string;
+  replaySafety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+  replayReason?: string;
+  runtimeJob?: ToolRoundtripRuntimeJob;
+  policy?: ToolExecutionPolicySnapshot | null;
   sideEffectLevel: ToolSideEffectLevel | null;
   startedAt: number;
   status: ToolExecutionStatus;
   runtimeJobId: string | null;
   toolName: string;
+  provenance?: ToolExecutionProvenance;
+  roundtrip?: ToolExecutionRoundtrip;
+};
+
+export type ToolRuntimeJobStatus = "pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled";
+
+export type ToolRoundtripRuntimeJob = {
+  id: string | null;
+  jobType: string | null;
+  status: ToolRuntimeJobStatus | null;
+  phase: string | null;
+  attemptCount: number | null;
+  maxAttempts: number | null;
+  availableAt: number | null;
+  startedAt: number | null;
+  finishedAt: number | null;
+  lastError: string | null;
+};
+
+export type ToolExecutionPolicySnapshot = {
+  enableDeferredIrreversibleTools: boolean;
+  deferredToolAllowlist: string[];
+  timeoutMs: number | null;
+  maxAttempts: number | null;
+  retryableStatuses: ToolExecutionStatus[];
+  maxDeferredJobsPerRun: number | null;
+  maxIrreversibleCallsPerRun: number | null;
+};
+
+export type ToolExecutionProvenance = {
+  triggerScope: "chat_turn" | "manual" | "unknown" | "agent_step";
+  stepId: string | null;
+  parentRunJobId: string | null;
+  agentBindingId: string | null;
+  sourceEventId: string | null;
+};
+
+export type ToolExecutionRoundtrip = {
+  wasAccepted: boolean;
+  wasEnqueued: boolean;
+  wasStarted: boolean;
+  wasCompleted: boolean;
+  wasUncertain: boolean;
 };
 
 export type ToolsListMeta = {
@@ -325,7 +373,17 @@ export function createToolsResource(client: TransportClient): ToolsResource {
       return {
         meta: mapListMeta(readRecord(response.body)?.meta),
         records: readArray(readRecord(response.body)?.data)
-          .map(mapToolExecutionRecord)
+          .map((item) => {
+            const record = mapToolExecutionRecord(item);
+            if (!record) {
+              return null;
+            }
+
+            const source = readRecord(item);
+            return source
+              ? { ...record, replaySafety: readNullableString(source.replay_safety) as ToolExecutionRecord["replaySafety"], replayReason: readNullableString(source.replay_reason), runtimeJob: mapToolRoundtripRuntimeJob(source.runtime_job), policy: mapToolExecutionPolicySnapshot(source.policy), provenance: mapToolExecutionProvenance(source.provenance), roundtrip: mapToolExecutionRoundtrip(source.roundtrip) }
+              : record;
+          })
           .filter((item): item is ToolExecutionRecord => item !== null),
       };
     },
@@ -481,6 +539,7 @@ function mapToolExecutionRecord(value: unknown): ToolExecutionRecord | null {
   }
 
   return {
+    executionId: readString(record.execution_id, readString(record.id)),
     args: record.args,
     attemptNo: readNumber(record.attempt_no),
     callerSlot: readString(record.caller_slot),
@@ -507,6 +566,39 @@ function mapToolExecutionRecord(value: unknown): ToolExecutionRecord | null {
   };
 }
 
+function mapToolRoundtripRuntimeJob(value: unknown): ToolRoundtripRuntimeJob {
+  const record = readRecord(value);
+  return {
+    id: readNullableString(record?.id),
+    jobType: readNullableString(record?.job_type),
+    status: readNullableString(record?.status) as ToolRoundtripRuntimeJob["status"],
+    phase: readNullableString(record?.phase),
+    attemptCount: typeof record?.attempt_count === "number" ? record.attempt_count : null,
+    maxAttempts: typeof record?.max_attempts === "number" ? record.max_attempts : null,
+    availableAt: typeof record?.available_at === "number" ? record.available_at : null,
+    startedAt: typeof record?.started_at === "number" ? record.started_at : null,
+    finishedAt: typeof record?.finished_at === "number" ? record.finished_at : null,
+    lastError: readNullableString(record?.last_error),
+  };
+}
+
+function mapToolExecutionPolicySnapshot(value: unknown): ToolExecutionPolicySnapshot | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    enableDeferredIrreversibleTools: readBoolean(record.enable_deferred_irreversible_tools),
+    deferredToolAllowlist: readStringArray(record.deferred_tool_allowlist),
+    timeoutMs: typeof record.timeout_ms === "number" ? record.timeout_ms : null,
+    maxAttempts: typeof record.max_attempts === "number" ? record.max_attempts : null,
+    retryableStatuses: readStringArray(record.retryable_statuses) as ToolExecutionStatus[],
+    maxDeferredJobsPerRun: typeof record.max_deferred_jobs_per_run === "number" ? record.max_deferred_jobs_per_run : null,
+    maxIrreversibleCallsPerRun: typeof record.max_irreversible_calls_per_run === "number" ? record.max_irreversible_calls_per_run : null,
+  };
+}
+
 function mapListMeta(value: unknown): ToolsListMeta {
   const record = readRecord(value);
 
@@ -517,6 +609,28 @@ function mapListMeta(value: unknown): ToolsListMeta {
     sortBy: readString(record?.sort_by),
     sortOrder: readString(record?.sort_order, "desc") as "asc" | "desc",
     total: readNumber(record?.total),
+  };
+}
+
+function mapToolExecutionProvenance(value: unknown): ToolExecutionProvenance {
+  const record = readRecord(value);
+  return {
+    triggerScope: readString(record?.trigger_scope, "unknown") as ToolExecutionProvenance["triggerScope"],
+    stepId: readNullableString(record?.step_id),
+    parentRunJobId: readNullableString(record?.parent_run_job_id),
+    agentBindingId: readNullableString(record?.agent_binding_id),
+    sourceEventId: readNullableString(record?.source_event_id),
+  };
+}
+
+function mapToolExecutionRoundtrip(value: unknown): ToolExecutionRoundtrip {
+  const record = readRecord(value);
+  return {
+    wasAccepted: readBoolean(record?.wasAccepted),
+    wasEnqueued: readBoolean(record?.wasEnqueued),
+    wasStarted: readBoolean(record?.wasStarted),
+    wasCompleted: readBoolean(record?.wasCompleted),
+    wasUncertain: readBoolean(record?.wasUncertain),
   };
 }
 

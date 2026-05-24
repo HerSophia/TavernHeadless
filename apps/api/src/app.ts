@@ -73,6 +73,7 @@ import {
 
 import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
 import { ToolWorker } from "./services/tooling/runtime/tool-worker.js";
+import { SessionEffectiveToolPolicyProvider } from "./services/tooling/shared/session-effective-tool-policy-provider.js";
 import {
   FirstPartyGameStateService,
   SessionStateCustomNamespaceService,
@@ -823,6 +824,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
         },
         floorRunService: floorRunService!,
         sessionToolRegistryService,
+        resolveEffectiveToolPolicy: async (sessionId: string, accountId: string) => {
+          return await new SessionEffectiveToolPolicyProvider(database.db).resolve({
+            sessionId,
+            accountId,
+          });
+        },
+        toolRuntimeJobBridge: toolRuntimeComponents?.bridge,
         generationCoordinator: effectiveGenerationCoordinator,
         eventBus: orchestrationContext.eventBus,
         executionPolicy: {

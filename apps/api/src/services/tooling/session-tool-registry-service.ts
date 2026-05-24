@@ -15,6 +15,8 @@ import {
 
 import type { AppDb } from "../../db/client.js";
 import { sessions, toolDefinitions } from "../../db/schema.js";
+import type { ProjectMcpBindingRecord } from "../project-mcp-binding-service.js";
+import { ProjectMcpBindingService } from "../project-mcp-binding-service.js";
 import { parseJsonField } from "../../lib/http.js";
 import type { McpToolCatalogSource } from "./mcp/mcp-tool-provider.js";
 import type { McpConnectionManager } from "./mcp/mcp-connection-manager.js";
@@ -54,6 +56,15 @@ export type SessionRuntimeToolSource =
 export type SessionRuntimeToolReplaySafety = ToolReplaySafety;
 
 export type SessionRuntimeToolCatalogSource = McpToolCatalogSource;
+export type SessionRuntimeMcpExposureScope = "legacy" | "project_binding";
+export type SessionRuntimeMcpServerState = "enabled" | "disabled";
+
+export interface SessionRuntimeMcpExposure {
+  scope: SessionRuntimeMcpExposureScope;
+  serverState: SessionRuntimeMcpServerState;
+  allowedToolsMode: "all" | "allow_list";
+  allowedTools: string[];
+}
 
 export interface SessionRuntimeToolCatalogEntry {
   name: string;
@@ -74,6 +85,7 @@ export interface SessionRuntimeToolCatalogEntry {
   parameterSchemaBasis?: RuntimeMetadataBasis;
   replaySafetyBasis?: RuntimeMetadataBasis;
   metadataBasisDetail?: RuntimeMetadataBasisDetail;
+  exposure?: SessionRuntimeMcpExposure;
 }
 
 export interface SessionRuntimeToolCatalogConflict {
@@ -135,6 +147,7 @@ interface RuntimeToolCandidate {
   replaySafety?: SessionRuntimeToolReplaySafety;
   replaySafetyBasis?: RuntimeMetadataBasis;
   metadataBasisDetail?: RuntimeMetadataBasisDetail;
+  exposure?: SessionRuntimeMcpExposure;
 }
 
 interface DefinitionProviderDescriptor {
@@ -142,6 +155,11 @@ interface DefinitionProviderDescriptor {
   providerType: ToolProviderType;
   source: "custom" | "preset" | "character";
   tools: PresetToolInput[];
+}
+
+interface SessionRuntimeMcpBindingFilter {
+  mode: "legacy" | "project_binding";
+  serverBindings: Map<string, ProjectMcpBindingRecord>;
 }
 
 class FilteredToolProvider implements ToolProvider {
@@ -258,6 +276,14 @@ function buildCatalogEntry(
     ...(candidate.parameterSchemaBasis ? { parameterSchemaBasis: candidate.parameterSchemaBasis } : {}),
     ...(candidate.replaySafetyBasis ? { replaySafetyBasis: candidate.replaySafetyBasis } : {}),
     ...(candidate.metadataBasisDetail ? { metadataBasisDetail: candidate.metadataBasisDetail } : {}),
+    ...(candidate.exposure ? {
+      exposure: {
+        scope: candidate.exposure.scope,
+        serverState: candidate.exposure.serverState,
+        allowedToolsMode: candidate.exposure.allowedToolsMode,
+        allowedTools: [...candidate.exposure.allowedTools],
+      },
+    } : {}),
   };
 }
 
@@ -325,8 +351,34 @@ function toolDefinitionWorkspaceClause(workspaceId: string) {
   return or(eq(toolDefinitions.workspaceId, workspaceId), isNull(toolDefinitions.workspaceId))!;
 }
 
+function normalizeAllowedToolsList(allowedTools: string[]): string[] {
+  return Array.from(new Set(
+    allowedTools
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  )).sort();
+}
+
+function buildMcpBindingFilter(
+  bindings: ProjectMcpBindingRecord[],
+  mode: SessionRuntimeMcpBindingFilter["mode"],
+): SessionRuntimeMcpBindingFilter {
+  if (mode === "legacy") {
+    return {
+      mode,
+      serverBindings: new Map(),
+    };
+  }
+
+  return {
+    mode,
+    serverBindings: new Map(bindings.map((binding) => [binding.mcpServerId, binding] as const)),
+  };
+}
+
 export class SessionToolRegistryService {
   private readonly mcpService?: McpService;
+  private readonly projectMcpBindingService: ProjectMcpBindingService;
   private readonly mcpSnapshotStore?: McpToolCatalogSnapshotStore;
   private readonly mcpToolProviderFactory?: McpToolProviderFactory;
 
@@ -335,6 +387,7 @@ export class SessionToolRegistryService {
     private readonly options: SessionToolRegistryServiceOptions,
   ) {
     this.mcpService = options.mcpManager ? new McpService(db) : undefined;
+    this.projectMcpBindingService = new ProjectMcpBindingService(db);
     this.mcpSnapshotStore = options.mcpManager
       ? options.mcpSnapshotStore ?? new InMemoryMcpToolCatalogSnapshotStore()
       : undefined;
@@ -404,7 +457,14 @@ export class SessionToolRegistryService {
         snapshot.tools.push(buildCatalogEntry(candidate, "unavailable", SCRIPT_HANDLER_UNAVAILABLE_REASON));
       }
 
-      await this.appendMcpProviders(registry, snapshot, callableOwners, accountId, workspaceId);
+      await this.appendMcpProviders(
+        registry,
+        snapshot,
+        callableOwners,
+        accountId,
+        workspaceId,
+        this.buildSessionMcpBindingFilter(session, accountId),
+      );
       sortSnapshot(snapshot);
       return {
         registry,
@@ -474,7 +534,14 @@ export class SessionToolRegistryService {
       }));
     }
 
-    await this.appendMcpProviders(registry, snapshot, callableOwners, accountId, workspaceId);
+    await this.appendMcpProviders(
+      registry,
+      snapshot,
+      callableOwners,
+      accountId,
+      workspaceId,
+      this.buildSessionMcpBindingFilter(session, accountId),
+    );
 
     sortSnapshot(snapshot);
 
@@ -499,12 +566,30 @@ export class SessionToolRegistryService {
         presetId: sessions.presetId,
         characterId: sessions.characterId,
         workspaceId: sessions.workspaceId,
+        projectId: sessions.projectId,
       })
       .from(sessions)
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
       .limit(1);
 
     return session ?? null;
+  }
+
+  private buildSessionMcpBindingFilter(
+    session: { projectId: string | null },
+    accountId: string,
+  ): SessionRuntimeMcpBindingFilter {
+    if (!session.projectId) {
+      return buildMcpBindingFilter([], "legacy");
+    }
+
+    return buildMcpBindingFilter(
+      this.projectMcpBindingService.listByProject({
+        projectId: session.projectId,
+        accountId,
+      }),
+      "project_binding",
+    );
   }
 
   private async appendBaseProviders(
@@ -619,6 +704,7 @@ export class SessionToolRegistryService {
     callableOwners: Map<string, RuntimeToolCandidate>,
     accountId: string,
     workspaceId: string,
+    bindingFilter: SessionRuntimeMcpBindingFilter,
   ): Promise<void> {
     if (!this.options.mcpManager || !this.mcpService) {
       return;
@@ -632,6 +718,7 @@ export class SessionToolRegistryService {
     const providerToolCandidates = new Map<string, {
       provider: ToolProvider;
       tools: RuntimeToolCandidate[];
+      forceWrap: boolean;
     }>();
     const mcpCandidatesByName = new Map<string, RuntimeToolCandidate[]>();
 
@@ -646,30 +733,53 @@ export class SessionToolRegistryService {
       });
 
     for (const config of configs) {
+      const binding = bindingFilter.serverBindings.get(config.id) ?? null;
+      if (bindingFilter.mode === "project_binding" && !binding) {
+        continue;
+      }
+      if (binding?.status === "disabled") {
+        continue;
+      }
+
+      const exposureScope: SessionRuntimeMcpExposureScope = binding ? "project_binding" : "legacy";
+      const allowedTools = binding ? normalizeAllowedToolsList(binding.allowedTools) : [];
+      const allowedToolsMode: SessionRuntimeMcpExposure["allowedToolsMode"] = allowedTools.length > 0
+        ? "allow_list"
+        : "all";
+
       const provider = factory.create(config);
       const catalog = await provider.listToolsWithMetadata();
-      const candidates = catalog.tools.map<RuntimeToolCandidate>((entry) => ({
-        name: entry.tool.name,
-        catalogSource: catalog.source,
-        providerId: provider.id,
-        providerType: provider.type,
-        source: "mcp",
-        sideEffectLevel: entry.tool.sideEffectLevel,
-        allowedSlots: [...entry.tool.allowedSlots],
-        asyncCapability: entry.tool.asyncCapability ?? "inline_only",
-        defaultDeliveryMode: entry.tool.defaultDeliveryMode ?? "inline",
-        resultVisibility: entry.tool.resultVisibility ?? "immediate",
-        sideEffectLevelBasis: entry.sideEffectLevelBasis,
-        allowedSlotsBasis: entry.allowedSlotsBasis,
-        parameterSchemaBasis: entry.parameterSchemaBasis,
-        replaySafety: entry.replaySafety,
-        replaySafetyBasis: entry.replaySafetyBasis,
-        metadataBasisDetail: entry.metadataBasisDetail,
-      }));
+      const candidates = catalog.tools
+        .filter((entry) => allowedTools.length === 0 || allowedTools.includes(entry.tool.name))
+        .map<RuntimeToolCandidate>((entry) => ({
+          name: entry.tool.name,
+          catalogSource: catalog.source,
+          providerId: provider.id,
+          providerType: provider.type,
+          source: "mcp",
+          sideEffectLevel: entry.tool.sideEffectLevel,
+          allowedSlots: [...entry.tool.allowedSlots],
+          asyncCapability: entry.tool.asyncCapability ?? "inline_only",
+          defaultDeliveryMode: entry.tool.defaultDeliveryMode ?? "inline",
+          resultVisibility: entry.tool.resultVisibility ?? "immediate",
+          sideEffectLevelBasis: entry.sideEffectLevelBasis,
+          allowedSlotsBasis: entry.allowedSlotsBasis,
+          parameterSchemaBasis: entry.parameterSchemaBasis,
+          replaySafety: entry.replaySafety,
+          replaySafetyBasis: entry.replaySafetyBasis,
+          metadataBasisDetail: entry.metadataBasisDetail,
+          exposure: {
+            scope: exposureScope,
+            serverState: binding?.status === "disabled" ? "disabled" : "enabled",
+            allowedToolsMode,
+            allowedTools,
+          },
+        }));
 
       providerToolCandidates.set(provider.id, {
         provider,
         tools: candidates,
+        forceWrap: allowedToolsMode === "allow_list",
       });
 
       for (const candidate of candidates) {
@@ -702,7 +812,7 @@ export class SessionToolRegistryService {
       }
     }
 
-    for (const { provider, tools } of providerToolCandidates.values()) {
+    for (const { provider, tools, forceWrap } of providerToolCandidates.values()) {
       const allowedToolNames = tools
         .filter((tool) => !mcpConflictNames.has(tool.name))
         .map((tool) => tool.name);
@@ -721,7 +831,7 @@ export class SessionToolRegistryService {
       }
 
       const allowedToolNameSet = new Set(allowedToolNames);
-      const shouldWrap = allowedToolNames.length !== tools.length;
+      const shouldWrap = forceWrap || allowedToolNames.length !== tools.length;
       registry.register(shouldWrap
         ? new FilteredToolProvider(provider, allowedToolNameSet)
         : provider);

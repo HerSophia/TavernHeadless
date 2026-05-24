@@ -88,6 +88,19 @@ const runtimeToolJsonSchema = {
     default_delivery_mode: { type: "string", enum: ["inline", "async_job"] },
     replay_safety: { type: "string", enum: ["safe", "confirm_on_replay", "never_auto_replay", "uncertain"] },
     catalog_source: { anyOf: [{ type: "string", enum: ["live", "cached", "unavailable"] }, { type: "null" }] },
+    exposure: {
+      anyOf: [{
+        type: "object",
+        properties: {
+          scope: { type: "string", enum: ["legacy", "project_binding"] },
+          server_state: { type: "string", enum: ["enabled", "disabled"] },
+          allowed_tools_mode: { type: "string", enum: ["all", "allow_list"] },
+          allowed_tools: { type: "array", items: { type: "string" } },
+        },
+        required: ["scope", "server_state", "allowed_tools_mode", "allowed_tools"],
+        additionalProperties: false,
+      }, { type: "null" }],
+    },
     result_visibility: { type: "string", enum: ["immediate", "deferred_receipt"] },
     side_effect_level_basis: runtimeMetadataBasisSchema,
     allowed_slots_basis: runtimeMetadataBasisSchema,
@@ -152,6 +165,14 @@ function formatCatalog(snapshot: SessionRuntimeToolCatalogSnapshot) {
       availability_reason: tool.availabilityReason ?? null,
       default_delivery_mode: tool.defaultDeliveryMode,
       catalog_source: tool.catalogSource ?? null,
+      exposure: tool.exposure
+        ? {
+            scope: tool.exposure.scope,
+            server_state: tool.exposure.serverState,
+            allowed_tools_mode: tool.exposure.allowedToolsMode,
+            allowed_tools: tool.exposure.allowedTools,
+          }
+        : null,
       replay_safety: tool.replaySafety,
       result_visibility: tool.resultVisibility,
       side_effect_level_basis: tool.sideEffectLevelBasis ?? null,
