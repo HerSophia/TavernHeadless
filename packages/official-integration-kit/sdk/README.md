@@ -129,6 +129,26 @@ SDK 这里只暴露稳定视图，不暴露 contributor 的内部 raw payload。
 
 这些资源对应的是 Agentic readiness 的准备面，不代表 Agent 已经有真实执行能力。
 
+### Tools 与会话运行时目录
+
+```ts
+const catalog = await client.sessions.getRuntimeToolCatalog({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+});
+
+const executions = await client.tools.listExecutions({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+  status: "uncertain",
+});
+```
+
+其中：
+
+- `getRuntimeToolCatalog(...)` 返回会话级工具目录，并保留 `catalogSource`、`metadataBasisDetail`、`exposure` 等字段。
+- `listExecutions(...)` 返回原执行记录字段，并附带 `executionId`、`replaySafety`、`runtimeJob`、`policy`、`provenance`、`roundtrip` 等 trace 字段。
+
 ### Workspace Agent Types
 
 ```ts

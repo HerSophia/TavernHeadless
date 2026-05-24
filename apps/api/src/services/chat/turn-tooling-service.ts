@@ -5,8 +5,13 @@ import type { AppDb } from "../../db/client.js";
 import { sessions } from "../../db/schema.js";
 import {
   mapSessionBaseToolPermissionsRecordToCorePermissions,
-  resolveEffectiveToolPermissions,
+  normalizeSessionBaseToolPermissionsRecord,
 } from "../tooling/shared/permission-overlay.js";
+import {
+  resolveEffectiveToolPolicy,
+  type EffectiveToolPolicyResolution,
+} from "../tooling/shared/tool-policy-resolution.js";
+import { SessionEffectiveToolPolicyProvider } from "../tooling/shared/session-effective-tool-policy-provider.js";
 import {
   SessionToolRegistryService,
   SessionToolRegistryServiceError,
@@ -22,8 +27,63 @@ export class TurnToolingService {
       toolRegistry?: ToolRegistry;
       sessionToolRegistryService?: SessionToolRegistryService;
       resolveToolPermissions?: (sessionId: string, accountId: string) => Promise<ToolPermissions | null>;
+      resolveEffectiveToolPolicy?: (
+        sessionId: string,
+        accountId: string,
+      ) => Promise<EffectiveToolPolicyResolution | null>;
     } = {},
   ) {}
+
+  async resolveEffectiveToolPolicy(
+    sessionId: string,
+    accountId: string,
+  ): Promise<EffectiveToolPolicyResolution | null> {
+    if (this.options.resolveEffectiveToolPolicy) {
+      const resolution = await this.options.resolveEffectiveToolPolicy(sessionId, accountId);
+      if (resolution) {
+        return resolution;
+      }
+    }
+
+    try {
+      const [session] = await this.db
+        .select({ metadataJson: sessions.metadataJson })
+        .from(sessions)
+        .where(and(
+          eq(sessions.id, sessionId),
+          eq(sessions.accountId, accountId),
+        ))
+        .limit(1);
+
+      const sessionBase = session?.metadataJson
+        ? normalizeSessionBaseToolPermissionsRecord(
+            (JSON.parse(session.metadataJson) as Record<string, unknown>).tool_permissions,
+          )
+        : undefined;
+
+      const projectAware = await new SessionEffectiveToolPolicyProvider(this.db).resolve({
+        sessionId,
+        accountId,
+      });
+
+      if (projectAware) {
+        if (!projectAware.sessionBase && sessionBase) {
+          return {
+            ...projectAware,
+            sessionBase: projectAware.sessionBase ?? null,
+            effectivePermissions: projectAware.effectivePermissions
+              ?? resolveEffectiveToolPolicy({ sessionBase }).effectivePermissions,
+          };
+        }
+
+        return projectAware;
+      }
+
+      return resolveEffectiveToolPolicy({ sessionBase });
+    } catch {
+      return resolveEffectiveToolPolicy({});
+    }
+  }
 
   async resolveToolPermissionsForSession(
     sessionId: string,
@@ -36,8 +96,13 @@ export class TurnToolingService {
     if (this.options.resolveToolPermissions) {
       const permissions = await this.options.resolveToolPermissions(sessionId, accountId);
       if (permissions) {
-        return resolveEffectiveToolPermissions(permissions);
+        return permissions;
       }
+    }
+
+    const effectivePolicy = await this.resolveEffectiveToolPolicy(sessionId, accountId);
+    if (effectivePolicy?.effectivePermissions) {
+      return effectivePolicy.effectivePermissions;
     }
 
     try {
@@ -56,7 +121,7 @@ export class TurnToolingService {
           metadata.tool_permissions,
         );
         if (sessionBasePermissions) {
-          return resolveEffectiveToolPermissions(sessionBasePermissions);
+          return sessionBasePermissions;
         }
       }
     } catch {
@@ -106,3 +171,7 @@ export class TurnToolingService {
     };
   }
 }
+
+export {
+  resolveEffectiveToolPolicy,
+};

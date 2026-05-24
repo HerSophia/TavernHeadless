@@ -4,6 +4,10 @@ import { z } from "zod";
 import { RuntimeJobCatalog } from "./runtime-job-catalog.js";
 import type { RuntimeJobDefinition } from "./runtime-job-types.js";
 import { AGENT_SCOPE_KIND_VALUES } from "./agent-scope-types.js";
+import {
+  AGENT_STEP_STATE_STATUS_VALUES,
+  TOOL_EXECUTION_TRIGGER_SCOPE_VALUES,
+} from "./agent-step-state-types.js";
 
 export const AGENT_RUNTIME_SCOPE_TYPE = "agent";
 
@@ -31,6 +35,15 @@ const resolvedConfigSchema = z.object({
   allowedOutputTargets: z.array(z.string()).default([]),
 });
 
+const agentStepStateSchema = z.object({
+  stepId: z.string().min(1),
+  status: z.enum(AGENT_STEP_STATE_STATUS_VALUES),
+  triggerScope: z.enum(TOOL_EXECUTION_TRIGGER_SCOPE_VALUES),
+  parentRunJobId: z.string().nullable().optional(),
+  resumeToken: z.string().nullable().optional(),
+  toolExecutionIds: z.array(z.string()).default([]),
+});
+
 export const agentRunJobPayloadSchema = z.object({
   accountId: z.string().min(1),
   workspaceId: z.string().min(1),
@@ -45,6 +58,8 @@ export const agentRunJobPayloadSchema = z.object({
   resolvedConfig: resolvedConfigSchema,
   dryRun: z.boolean().default(true),
   inputJson: recordSchema.default({}),
+  stepState: agentStepStateSchema.optional(),
+  provenance: z.object({ triggerScope: z.enum(TOOL_EXECUTION_TRIGGER_SCOPE_VALUES) }).optional(),
 });
 
 export type AgentRunJobPayload = z.infer<typeof agentRunJobPayloadSchema>;

@@ -2,10 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   mapSessionBaseToolPermissionsRecordToCorePermissions,
+  mapSessionBaseToolPermissionsRecordToOverlay,
   mergeSessionBaseToolPermissionsPatch,
   normalizeSessionBaseToolPermissionsRecord,
   resolveEffectiveToolPermissions,
 } from "../tooling/shared/permission-overlay.js";
+import {
+  collectUnknownToolPolicyOverrideFields,
+  resolveEffectiveToolPolicy,
+} from "../tooling/shared/tool-policy-resolution.js";
 
 describe("permission-overlay", () => {
   it("normalizes session base permission records and preserves explicit empty slot arrays", () => {
@@ -53,6 +58,16 @@ describe("permission-overlay", () => {
       slotDenyList: {
         memory: ["delete"],
       },
+    });
+  });
+
+  it("maps session base snake_case permissions to overlay shape even when enabled is absent", () => {
+    expect(mapSessionBaseToolPermissionsRecordToOverlay({
+      max_calls_per_turn: 4,
+      allow_irreversible: false,
+    })).toEqual({
+      maxCallsPerTurn: 4,
+      allowIrreversible: false,
     });
   });
 
@@ -126,6 +141,108 @@ describe("permission-overlay", () => {
       slotDenyList: {
         narrator: ["delete", "archive"],
       },
+    });
+  });
+
+  it("collects unknown project tool policy override fields without dropping the known subset", () => {
+    expect(collectUnknownToolPolicyOverrideFields({
+      enabled: true,
+      timeout_ms: 1500,
+      unknown_flag: true,
+      slot_allow_list: {
+        narrator: ["search"],
+      },
+    })).toEqual(["timeout_ms", "unknown_flag"]);
+  });
+
+  it("does not auto-apply project tool policy without an explicit selector", () => {
+    const resolution = resolveEffectiveToolPolicy({
+      sessionBase: {
+        enabled: true,
+        max_calls_per_turn: 8,
+      },
+      projectOverrides: [
+        {
+          id: "pto_1",
+          workspaceId: "ws_1",
+          projectId: "proj_1",
+          accountId: "acc_1",
+          basePolicyId: "policy_alpha",
+          overrideJson: {
+            max_calls_per_turn: 2,
+          },
+          status: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    expect(resolution.effectivePermissions).toEqual({
+      enabled: true,
+      maxCallsPerTurn: 8,
+    });
+    expect(resolution.layers[1]).toMatchObject({
+      kind: "project_policy_overlay",
+      applied: false,
+      reason: "selector_missing",
+    });
+  });
+
+  it("applies only the selected active project tool policy overlay", () => {
+    const resolution = resolveEffectiveToolPolicy({
+      sessionBase: {
+        enabled: true,
+        max_calls_per_turn: 8,
+        allow_irreversible: true,
+      },
+      selector: {
+        source: "agent_binding",
+        policyId: "policy_alpha",
+      },
+      projectOverrides: [
+        {
+          id: "pto_1",
+          workspaceId: "ws_1",
+          projectId: "proj_1",
+          accountId: "acc_1",
+          basePolicyId: "policy_alpha",
+          overrideJson: {
+            max_calls_per_turn: 2,
+            allow_irreversible: false,
+            future_flag: true,
+          },
+          status: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: "pto_2",
+          workspaceId: "ws_1",
+          projectId: "proj_1",
+          accountId: "acc_1",
+          basePolicyId: "policy_beta",
+          overrideJson: {
+            max_calls_per_turn: 1,
+          },
+          status: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    expect(resolution.effectivePermissions).toEqual({
+      enabled: true,
+      maxCallsPerTurn: 2,
+      allowIrreversible: false,
+    });
+    expect(resolution.layers[1]).toMatchObject({
+      kind: "project_policy_overlay",
+      policyId: "policy_alpha",
+      applied: true,
+      reason: "applied",
+      unknownFields: ["future_flag"],
     });
   });
 });

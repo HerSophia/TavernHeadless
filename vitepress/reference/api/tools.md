@@ -419,12 +419,19 @@ GET /tool-executions
 
 这个端点返回当前公开的主执行 journal。和旧的 `call-records` 相比，它会保留更多运行时字段，例如：
 
+- `execution_id`
 - `lifecycle_state`
 - `commit_outcome`
 - `delivery_mode`
 - `runtime_job_id`
 - `attempt_no`
 - `replay_parent_execution_id`
+- `runtime_job`
+- `policy`
+- `provenance`
+- `roundtrip`
+
+它继续保留原执行记录字段，并在此基础上增加 trace 字段。因此，对既有读取方来说，这是加法扩展，不是新的独立资源。
 
 `GET /tool-executions` 至少需要提供 `session_id`、`floor_id`、`run_id` 三者之一。
 
@@ -452,29 +459,67 @@ GET /tool-executions
 {
   "data": [
     {
+      "execution_id": "texec_001",
       "id": "texec_001",
       "run_id": "floorrun_001",
       "floor_id": "floor_001",
       "page_id": null,
       "caller_slot": "narrator",
-      "provider_id": "builtin",
-      "provider_type": "builtin",
-      "tool_name": "roll_dice",
-      "args": { "sides": 20, "count": 1 },
-      "result": { "data": { "results": [17], "total": 17 } },
-      "status": "queued",
-      "lifecycle_state": "opened",
-      "commit_outcome": "pending",
-      "side_effect_level": "none",
+      "provider_id": "mcp:mcp_1",
+      "provider_type": "mcp",
+      "tool_name": "github_create_issue",
+      "args": { "title": "Need help" },
+      "result": { "accepted": true, "status": "queued" },
+      "status": "uncertain",
+      "lifecycle_state": "finished",
+      "commit_outcome": "committed",
+      "side_effect_level": "irreversible",
       "error_message": null,
-      "duration_ms": 0,
-      "started_at": 1735689600000,
-      "finished_at": null,
+      "duration_ms": 50,
       "delivery_mode": "async_job",
+      "started_at": 1735689600000,
+      "finished_at": 1735689600050,
       "attempt_no": 1,
       "runtime_job_id": "runtime_job_001",
       "replay_parent_execution_id": null,
-      "created_at": 1735689600000
+      "created_at": 1735689600000,
+      "replay_safety": "uncertain",
+      "replay_reason": "uncertain_execution_outcome",
+      "runtime_job": {
+        "id": "runtime_job_001",
+        "job_type": "tool.execute",
+        "status": "succeeded",
+        "phase": "uncertain",
+        "attempt_count": 1,
+        "max_attempts": 7,
+        "available_at": 1735689600000,
+        "started_at": 1735689600005,
+        "finished_at": 1735689600050,
+        "last_error": null
+      },
+      "policy": {
+        "enable_deferred_irreversible_tools": true,
+        "deferred_tool_allowlist": ["mcp:mcp_1/github_create_issue"],
+        "timeout_ms": 1500,
+        "max_attempts": 7,
+        "retryable_statuses": ["timeout", "uncertain"],
+        "max_deferred_jobs_per_run": 2,
+        "max_irreversible_calls_per_run": 1
+      },
+      "provenance": {
+        "trigger_scope": "chat_turn",
+        "step_id": null,
+        "parent_run_job_id": null,
+        "agent_binding_id": null,
+        "source_event_id": null
+      },
+      "roundtrip": {
+        "wasAccepted": true,
+        "wasEnqueued": true,
+        "wasStarted": true,
+        "wasCompleted": true,
+        "wasUncertain": true
+      }
     }
   ],
   "meta": {
@@ -487,6 +532,25 @@ GET /tool-executions
   }
 }
 ```
+
+#### 新增 trace 字段
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `execution_id` | string | 与 `id` 相同，作为 trace 主键名保留 |
+| `replay_safety` | string | replay 安全级别：`safe` / `confirm_on_replay` / `never_auto_replay` / `uncertain` |
+| `replay_reason` | string | replay 判断原因 |
+| `runtime_job` | object | 关联后台 `runtime_job` 摘要；inline 执行时各字段为 `null` |
+| `policy` | object \| null | deferred job payload 中携带的运行时策略快照 |
+| `provenance` | object | 触发来源与 future step 引用位 |
+| `roundtrip` | object | 聚合读面给出的 roundtrip 状态摘要 |
+
+#### 说明
+
+- `id` 仍然保留，对应原执行记录 ID。
+- `execution_id` 是同一值的加法别名，便于 trace 语义表达。
+- `runtime_job`、`policy`、`provenance`、`roundtrip` 都是聚合读字段，不表示新增持久化表。
+- inline 执行仍会返回这些字段，但 `runtime_job` 会是全 `null` 结构，`policy` 通常为 `null`。
 
 ### 查询单个楼层的执行 journal
 
@@ -506,7 +570,7 @@ GET /floors/:id/tool-executions
 
 支持以下过滤字段：`run_id`、`caller_slot`、`tool_name`、`status`、`lifecycle_state`、`commit_outcome`、`provider_type`、`sort_by`、`sort_order`、`limit`、`offset`。
 
-返回结构与 `GET /tool-executions` 相同。
+返回结构与 `GET /tool-executions` 相同，包括原执行字段和新增 trace 字段。
 
 ## 调用记录（legacy-compatible projection）
 
@@ -583,6 +647,25 @@ GET /tools/call-records
 它只表示 **session 级基础权限**。
 它不是未来 run / node / step overlay 的最终权限模型。
 本轮也没有新增 overlay 公开 API。
+
+## SDK 对应方法
+
+如果你使用 `@tavern/sdk`，可直接使用：
+
+```ts
+const catalog = await client.sessions.getRuntimeToolCatalog({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+});
+
+const executions = await client.tools.listExecutions({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+  status: "uncertain",
+});
+```
+
+`listExecutions()` 现在会同时返回原执行字段和新增 trace 字段，例如 `executionId`、`replaySafety`、`runtimeJob`、`policy`、`provenance`、`roundtrip`。
 
 ### 字段说明
 

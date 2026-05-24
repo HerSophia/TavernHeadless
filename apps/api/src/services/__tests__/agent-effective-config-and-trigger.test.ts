@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+﻿import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import {
@@ -292,5 +292,51 @@ describe("AgentJobTriggerService", () => {
       projectId: project.projectId,
       agentBindingId: binding.id,
     }))).toThrow(/forbidden/);
+  });
+
+  it("keeps explicit toolPolicyId in runtime job payload for later selectors", async () => {
+    const project = createTestProject(database.db, { accountId: ACCOUNT_ID, id: "proj-trigger-3" });
+    const agentType = agentTypeService.create({
+      workspaceId: project.workspaceId,
+      accountId: ACCOUNT_ID,
+      key: "policy.agent",
+      name: "Policy Agent",
+      scopeKind: "project",
+      defaults: {
+        toolPolicyId: "policy_default",
+        grants: { allowed_output_targets: ["derived_output"] },
+        mcpBindings: [],
+        eventSubscriptions: [],
+        metadata: {},
+      },
+    });
+
+    const binding = bindingService.create({
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+      accountId: ACCOUNT_ID,
+      agentTypeId: agentType.id,
+      scopeKind: "project",
+      toolPolicyId: "policy_project_alpha",
+      metadata: {},
+    });
+
+    const { AgentJobTriggerService } = await import("../agent-job-trigger-service.js");
+    const triggerService = new AgentJobTriggerService(database.db, { bindingService, agentTypeService });
+
+    database.db.transaction((tx) => {
+      triggerService.enqueueManual(tx, {
+        accountId: ACCOUNT_ID,
+        workspaceId: project.workspaceId,
+        projectId: project.projectId,
+        agentBindingId: binding.id,
+      });
+    });
+
+    const row = database.db.select().from((await import("../../db/schema.js")).runtimeJobs).all()[0]!;
+    const payload = JSON.parse(row.payloadJson);
+
+    expect(payload.resolvedConfig.toolPolicyId).toBe("policy_project_alpha");
+    expect(row.agentBindingId).toBe(binding.id);
   });
 });

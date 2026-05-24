@@ -57,6 +57,121 @@ const toolExecutionLifecycleStateSchema = z.enum(['opened', 'finished']);
 const toolExecutionCommitOutcomeSchema = z.enum(['pending', 'committed', 'discarded', 'replay_blocked', 'uncertain']);
 const toolExecutionProviderTypeSchema = z.enum(['builtin', 'preset', 'mcp', 'unknown']);
 
+const listMetaJsonSchema = {
+  type: 'object',
+  required: ['total', 'limit', 'offset', 'has_more', 'sort_by', 'sort_order'],
+  properties: {
+    total: { type: 'integer', minimum: 0 },
+    limit: { type: 'integer', minimum: 1 },
+    offset: { type: 'integer', minimum: 0 },
+    has_more: { type: 'boolean' },
+    sort_by: { type: 'string' },
+    sort_order: { type: 'string', enum: ['asc', 'desc'] },
+  },
+  additionalProperties: false,
+} as const;
+
+const toolRoundtripTraceJsonSchema = {
+  type: 'object',
+  required: ['execution_id', 'id', 'run_id', 'floor_id', 'page_id', 'caller_slot', 'provider_id', 'provider_type', 'tool_name', 'args', 'result', 'delivery_mode', 'status', 'lifecycle_state', 'commit_outcome', 'side_effect_level', 'error_message', 'duration_ms', 'started_at', 'finished_at', 'attempt_no', 'runtime_job_id', 'replay_parent_execution_id', 'created_at', 'replay_safety', 'replay_reason', 'runtime_job', 'policy', 'provenance', 'roundtrip'],
+  properties: {
+    execution_id: { type: 'string' },
+    id: { type: 'string' },
+    run_id: { type: 'string' },
+    floor_id: { type: 'string' },
+    page_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    caller_slot: { type: 'string', enum: ['narrator', 'director', 'verifier', 'memory'] },
+    provider_id: { type: 'string' },
+    provider_type: { type: 'string', enum: ['builtin', 'preset', 'mcp', 'unknown'] },
+    tool_name: { type: 'string' },
+    args: {},
+    result: {},
+    delivery_mode: { type: 'string', enum: ['inline', 'async_job'] },
+    status: { type: 'string', enum: ['running', 'queued', 'success', 'error', 'denied', 'timeout', 'uncertain', 'blocked'] },
+    lifecycle_state: { type: 'string', enum: ['opened', 'finished'] },
+    commit_outcome: { type: 'string', enum: ['pending', 'committed', 'discarded', 'replay_blocked', 'uncertain'] },
+    side_effect_level: { anyOf: [{ type: 'string', enum: ['none', 'sandbox', 'irreversible'] }, { type: 'null' }] },
+    error_message: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    duration_ms: { type: 'integer', minimum: 0 },
+    started_at: { type: 'integer', minimum: 0 },
+    finished_at: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+    attempt_no: { type: 'integer', minimum: 1 },
+    runtime_job_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    replay_parent_execution_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+    created_at: { type: 'integer', minimum: 0 },
+    replay_safety: { type: 'string', enum: ['safe', 'confirm_on_replay', 'never_auto_replay', 'uncertain'] },
+    replay_reason: { type: 'string' },
+    runtime_job: {
+      type: 'object',
+      required: ['id', 'job_type', 'status', 'phase', 'attempt_count', 'max_attempts', 'available_at', 'started_at', 'finished_at', 'last_error'],
+      properties: {
+        id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        job_type: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        status: { anyOf: [{ type: 'string', enum: ['pending', 'leased', 'running', 'retry_waiting', 'succeeded', 'dead_letter', 'cancelled'] }, { type: 'null' }] },
+        phase: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        attempt_count: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+        max_attempts: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+        available_at: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+        started_at: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+        finished_at: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+        last_error: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+      additionalProperties: false,
+    },
+    policy: {
+      anyOf: [{
+        type: 'object',
+        required: ['enable_deferred_irreversible_tools', 'deferred_tool_allowlist', 'timeout_ms', 'max_attempts', 'retryable_statuses', 'max_deferred_jobs_per_run', 'max_irreversible_calls_per_run'],
+        properties: {
+          enable_deferred_irreversible_tools: { type: 'boolean' },
+          deferred_tool_allowlist: { type: 'array', items: { type: 'string' } },
+          timeout_ms: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+          max_attempts: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+          retryable_statuses: { type: 'array', items: { type: 'string', enum: ['running', 'queued', 'success', 'error', 'denied', 'timeout', 'uncertain', 'blocked'] } },
+          max_deferred_jobs_per_run: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+          max_irreversible_calls_per_run: { anyOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
+        },
+        additionalProperties: false,
+      }, { type: 'null' }],
+    },
+    provenance: {
+      type: 'object',
+      required: ['trigger_scope', 'step_id', 'parent_run_job_id', 'agent_binding_id', 'source_event_id'],
+      properties: {
+        trigger_scope: { type: 'string', enum: ['chat_turn', 'manual', 'unknown', 'agent_step'] },
+        step_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        parent_run_job_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        agent_binding_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        source_event_id: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+      additionalProperties: false,
+    },
+    roundtrip: {
+      type: 'object',
+      required: ['wasAccepted', 'wasEnqueued', 'wasStarted', 'wasCompleted', 'wasUncertain'],
+      properties: {
+        wasAccepted: { type: 'boolean' },
+        wasEnqueued: { type: 'boolean' },
+        wasStarted: { type: 'boolean' },
+        wasCompleted: { type: 'boolean' },
+        wasUncertain: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const toolRoundtripTraceListResponseJsonSchema = {
+  type: 'object',
+  required: ['data', 'meta'],
+  properties: {
+    data: { type: 'array', items: toolRoundtripTraceJsonSchema },
+    meta: listMetaJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
 const definitionParamsSchema = z.object({ id: z.string().min(1) });
 
 const listDefinitionsQuerySchema = listQuerySchemaBase.extend({
@@ -147,20 +262,6 @@ const toolPermissionsPatchSchema = toolPermissionsSchema;
 // ══════════════════════════════════════════════════════════
 // JSON Schemas (OpenAPI)
 // ══════════════════════════════════════════════════════════
-
-const listMetaJsonSchema = {
-  type: 'object',
-  required: ['total', 'limit', 'offset', 'has_more', 'sort_by', 'sort_order'],
-  properties: {
-    total: { type: 'integer', minimum: 0 },
-    limit: { type: 'integer', minimum: 1 },
-    offset: { type: 'integer', minimum: 0 },
-    has_more: { type: 'boolean' },
-    sort_by: { type: 'string' },
-    sort_order: { type: 'string', enum: ['asc', 'desc'] },
-  },
-  additionalProperties: false,
-} as const;
 
 const builtinToolJsonSchema = {
   type: 'object',
@@ -357,7 +458,7 @@ const toolExecutionListResponseJsonSchema = {
   type: 'object',
   required: ['data', 'meta'],
   properties: {
-    data: { type: 'array', items: toolExecutionJsonSchema },
+    data: { type: 'array', items: toolRoundtripTraceJsonSchema },
     meta: listMetaJsonSchema,
   },
   additionalProperties: false,
@@ -757,7 +858,7 @@ export async function registerToolRoutes(
       operationId: 'queryToolExecutionRecords',
       querystring: toolExecutionsQueryJsonSchema,
       response: {
-        200: toolExecutionListResponseJsonSchema,
+        200: toolRoundtripTraceListResponseJsonSchema,
         400: errorResponseJsonSchema,
       },
     },
@@ -766,7 +867,7 @@ export async function registerToolRoutes(
     if (!parsedQuery.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const { records, total } = await toolService.queryExecutionRecords({
+    const { traces, total } = await toolService.queryRoundtripTraces({
       accountId: auth.accountId,
       sessionId: parsedQuery.data.session_id,
       floorId: parsedQuery.data.floor_id,
@@ -784,7 +885,7 @@ export async function registerToolRoutes(
     });
 
     return reply.send({
-      data: records,
+      data: traces,
       meta: buildListMeta({
         total,
         limit: parsedQuery.data.limit,
@@ -817,7 +918,7 @@ export async function registerToolRoutes(
     if (!parsedQuery.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const { records, total } = await toolService.queryExecutionRecords({
+    const { traces, total } = await toolService.queryRoundtripTraces({
       accountId: auth.accountId,
       floorId: parsedParams.data.id,
       runId: parsedQuery.data.run_id,
@@ -834,7 +935,7 @@ export async function registerToolRoutes(
     });
 
     return reply.send({
-      data: records,
+      data: traces,
       meta: buildListMeta({
         total,
         limit: parsedQuery.data.limit,

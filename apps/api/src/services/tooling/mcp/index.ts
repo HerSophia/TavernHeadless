@@ -5,4 +5,5 @@ export * from "./mcp-tool-catalog-snapshot-store.js";
 export * from "./mcp-tool-provider-factory.js";
 export * from "./mcp-tool-provider.js";
 export * from "./mcp-deferred-tool-handler.js";
+export * from "./mcp-capability-snapshot-service.js";
 export * from "./mcp-service.js";
