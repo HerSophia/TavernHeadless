@@ -175,6 +175,7 @@ describe("Tool execution journal routes", () => {
     expect(body.meta.total).toBe(1);
     expect(body.data).toEqual([
       expect.objectContaining({
+        execution_id: "exec-2",
         id: "exec-2",
         run_id: "run-1",
         provider_type: "mcp",
@@ -182,6 +183,19 @@ describe("Tool execution journal routes", () => {
         lifecycle_state: "finished",
         commit_outcome: "discarded",
         side_effect_level: "irreversible",
+        replay_safety: "uncertain",
+        replay_reason: expect.any(String),
+        runtime_job: expect.objectContaining({
+          id: null,
+          status: null,
+        }),
+        policy: null,
+        provenance: expect.objectContaining({
+          trigger_scope: "unknown",
+        }),
+        roundtrip: expect.objectContaining({
+          wasUncertain: true,
+        }),
       }),
     ]);
   });
@@ -225,9 +239,21 @@ describe("Tool execution journal routes", () => {
     const body = res.json<ListResponse>();
     expect(body.meta.total).toBe(1);
     expect(body.data[0]).toEqual(expect.objectContaining({
+      execution_id: "exec-queued",
       id: "exec-queued",
       status: "queued",
       lifecycle_state: "opened",
+      runtime_job_id: "tool-job:exec-queued",
+      roundtrip: expect.objectContaining({
+        wasEnqueued: true,
+      }),
+      runtime_job: expect.objectContaining({
+        id: null,
+        status: null,
+      }),
+      provenance: expect.objectContaining({
+        trigger_scope: "unknown",
+      }),
     }));
   });
 
@@ -245,9 +271,11 @@ describe("Tool execution journal routes", () => {
     expect(body.data.map((row) => row.id)).toEqual(["exec-2", "exec-1"]);
     expect(body.data[0]).toEqual(
       expect.objectContaining({
+        execution_id: "exec-2",
         id: "exec-2",
         provider_id: "mcp:github",
         attempt_no: 2,
+        roundtrip: expect.objectContaining({ wasUncertain: true }),
       }),
     );
   });

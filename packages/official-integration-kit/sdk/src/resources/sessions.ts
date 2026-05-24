@@ -313,6 +313,17 @@ export type SessionRuntimeToolMetadataBasisEntry = {
   scope: SessionRuntimeToolMetadataScope;
 };
 
+export type SessionRuntimeToolExposureScope = "legacy" | "project_binding";
+export type SessionRuntimeToolExposureServerState = "enabled" | "disabled";
+export type SessionRuntimeToolExposureAllowedToolsMode = "all" | "allow_list";
+
+export type SessionRuntimeToolExposure = {
+  scope: SessionRuntimeToolExposureScope;
+  serverState: SessionRuntimeToolExposureServerState;
+  allowedToolsMode: SessionRuntimeToolExposureAllowedToolsMode;
+  allowedTools: string[];
+};
+
 export type SessionRuntimeToolMetadataBasisDetail = {
   sideEffectLevel?: SessionRuntimeToolMetadataBasisEntry;
   allowedSlots?: SessionRuntimeToolMetadataBasisEntry;
@@ -338,6 +349,7 @@ export type SessionRuntimeToolCatalogEntry = {
   allowedSlotsBasis: SessionRuntimeToolMetadataBasis | null;
   parameterSchemaBasis: SessionRuntimeToolMetadataBasis | null;
   replaySafetyBasis: SessionRuntimeToolMetadataBasis | null;
+  exposure: SessionRuntimeToolExposure | null;
   metadataBasisDetail: SessionRuntimeToolMetadataBasisDetail | null;
 };
 
@@ -2034,6 +2046,20 @@ function mapRuntimeToolMetadataBasisDetail(
   };
 }
 
+function mapRuntimeToolExposure(value: unknown): SessionRuntimeToolExposure | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    scope: readString(record.scope, "legacy") as SessionRuntimeToolExposure["scope"],
+    serverState: readString(record.server_state, "enabled") as SessionRuntimeToolExposure["serverState"],
+    allowedToolsMode: readString(record.allowed_tools_mode, "all") as SessionRuntimeToolExposure["allowedToolsMode"],
+    allowedTools: mapStringArray(record.allowed_tools),
+  };
+}
+
 function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEntry | null {
   const record = readRecord(value);
   if (!record) {
@@ -2058,6 +2084,7 @@ function mapRuntimeToolCatalogEntry(value: unknown): SessionRuntimeToolCatalogEn
     allowedSlotsBasis: readNullableString(record.allowed_slots_basis) as SessionRuntimeToolCatalogEntry["allowedSlotsBasis"],
     parameterSchemaBasis: readNullableString(record.parameter_schema_basis) as SessionRuntimeToolCatalogEntry["parameterSchemaBasis"],
     replaySafetyBasis: readNullableString(record.replay_safety_basis) as SessionRuntimeToolCatalogEntry["replaySafetyBasis"],
+    exposure: mapRuntimeToolExposure(record.exposure),
     metadataBasisDetail: mapRuntimeToolMetadataBasisDetail(record.metadata_basis_detail),
   };
 }

@@ -27270,18 +27270,58 @@ export interface operations {
                             delivery_mode: "inline" | "async_job";
                             duration_ms: number;
                             error_message: string | null;
+                            execution_id: string;
                             finished_at: number | null;
                             floor_id: string;
                             id: string;
                             /** @enum {string} */
                             lifecycle_state: "opened" | "finished";
                             page_id: string | null;
+                            policy: {
+                                deferred_tool_allowlist: string[];
+                                enable_deferred_irreversible_tools: boolean;
+                                max_attempts: number | null;
+                                max_deferred_jobs_per_run: number | null;
+                                max_irreversible_calls_per_run: number | null;
+                                retryable_statuses: ("running" | "queued" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked")[];
+                                timeout_ms: number | null;
+                            } | null;
+                            provenance: {
+                                agent_binding_id: string | null;
+                                parent_run_job_id: string | null;
+                                source_event_id: string | null;
+                                step_id: string | null;
+                                /** @enum {string} */
+                                trigger_scope: "chat_turn" | "manual" | "unknown" | "agent_step";
+                            };
                             provider_id: string;
                             /** @enum {string} */
                             provider_type: "builtin" | "preset" | "mcp" | "unknown";
                             replay_parent_execution_id: string | null;
+                            replay_reason: string;
+                            /** @enum {string} */
+                            replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
                             result: unknown;
+                            roundtrip: {
+                                wasAccepted: boolean;
+                                wasCompleted: boolean;
+                                wasEnqueued: boolean;
+                                wasStarted: boolean;
+                                wasUncertain: boolean;
+                            };
                             run_id: string;
+                            runtime_job: {
+                                attempt_count: number | null;
+                                available_at: number | null;
+                                finished_at: number | null;
+                                id: string | null;
+                                job_type: string | null;
+                                last_error: string | null;
+                                max_attempts: number | null;
+                                phase: string | null;
+                                started_at: number | null;
+                                status: ("pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled") | null;
+                            };
                             runtime_job_id: string | null;
                             side_effect_level: ("none" | "sandbox" | "irreversible") | null;
                             started_at: number;
@@ -40641,6 +40681,15 @@ export interface operations {
                                 catalog_source?: ("live" | "cached" | "unavailable") | null;
                                 /** @enum {string} */
                                 default_delivery_mode: "inline" | "async_job";
+                                exposure?: {
+                                    allowed_tools: string[];
+                                    /** @enum {string} */
+                                    allowed_tools_mode: "all" | "allow_list";
+                                    /** @enum {string} */
+                                    scope: "legacy" | "project_binding";
+                                    /** @enum {string} */
+                                    server_state: "enabled" | "disabled";
+                                } | null;
                                 metadata_basis_detail?: {
                                     allowed_slots?: {
                                         /** @enum {string} */
@@ -42268,18 +42317,58 @@ export interface operations {
                             delivery_mode: "inline" | "async_job";
                             duration_ms: number;
                             error_message: string | null;
+                            execution_id: string;
                             finished_at: number | null;
                             floor_id: string;
                             id: string;
                             /** @enum {string} */
                             lifecycle_state: "opened" | "finished";
                             page_id: string | null;
+                            policy: {
+                                deferred_tool_allowlist: string[];
+                                enable_deferred_irreversible_tools: boolean;
+                                max_attempts: number | null;
+                                max_deferred_jobs_per_run: number | null;
+                                max_irreversible_calls_per_run: number | null;
+                                retryable_statuses: ("running" | "queued" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked")[];
+                                timeout_ms: number | null;
+                            } | null;
+                            provenance: {
+                                agent_binding_id: string | null;
+                                parent_run_job_id: string | null;
+                                source_event_id: string | null;
+                                step_id: string | null;
+                                /** @enum {string} */
+                                trigger_scope: "chat_turn" | "manual" | "unknown" | "agent_step";
+                            };
                             provider_id: string;
                             /** @enum {string} */
                             provider_type: "builtin" | "preset" | "mcp" | "unknown";
                             replay_parent_execution_id: string | null;
+                            replay_reason: string;
+                            /** @enum {string} */
+                            replay_safety: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
                             result: unknown;
+                            roundtrip: {
+                                wasAccepted: boolean;
+                                wasCompleted: boolean;
+                                wasEnqueued: boolean;
+                                wasStarted: boolean;
+                                wasUncertain: boolean;
+                            };
                             run_id: string;
+                            runtime_job: {
+                                attempt_count: number | null;
+                                available_at: number | null;
+                                finished_at: number | null;
+                                id: string | null;
+                                job_type: string | null;
+                                last_error: string | null;
+                                max_attempts: number | null;
+                                phase: string | null;
+                                started_at: number | null;
+                                status: ("pending" | "leased" | "running" | "retry_waiting" | "succeeded" | "dead_letter" | "cancelled") | null;
+                            };
                             runtime_job_id: string | null;
                             side_effect_level: ("none" | "sandbox" | "irreversible") | null;
                             started_at: number;

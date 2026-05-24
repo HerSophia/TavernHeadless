@@ -23986,6 +23986,9 @@
                               }
                             ]
                           },
+                          "execution_id": {
+                            "type": "string"
+                          },
                           "finished_at": {
                             "anyOf": [
                               {
@@ -24020,6 +24023,159 @@
                               }
                             ]
                           },
+                          "policy": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "deferred_tool_allowlist": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "enable_deferred_irreversible_tools": {
+                                    "type": "boolean"
+                                  },
+                                  "max_attempts": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "max_deferred_jobs_per_run": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "max_irreversible_calls_per_run": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "retryable_statuses": {
+                                    "items": {
+                                      "enum": [
+                                        "running",
+                                        "queued",
+                                        "success",
+                                        "error",
+                                        "denied",
+                                        "timeout",
+                                        "uncertain",
+                                        "blocked"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "timeout_ms": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "enable_deferred_irreversible_tools",
+                                  "deferred_tool_allowlist",
+                                  "timeout_ms",
+                                  "max_attempts",
+                                  "retryable_statuses",
+                                  "max_deferred_jobs_per_run",
+                                  "max_irreversible_calls_per_run"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provenance": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "agent_binding_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "parent_run_job_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "source_event_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "step_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "trigger_scope": {
+                                "enum": [
+                                  "chat_turn",
+                                  "manual",
+                                  "unknown",
+                                  "agent_step"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "trigger_scope",
+                              "step_id",
+                              "parent_run_job_id",
+                              "agent_binding_id",
+                              "source_event_id"
+                            ],
+                            "type": "object"
+                          },
                           "provider_id": {
                             "type": "string"
                           },
@@ -24042,9 +24198,181 @@
                               }
                             ]
                           },
+                          "replay_reason": {
+                            "type": "string"
+                          },
+                          "replay_safety": {
+                            "enum": [
+                              "safe",
+                              "confirm_on_replay",
+                              "never_auto_replay",
+                              "uncertain"
+                            ],
+                            "type": "string"
+                          },
                           "result": {},
+                          "roundtrip": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "wasAccepted": {
+                                "type": "boolean"
+                              },
+                              "wasCompleted": {
+                                "type": "boolean"
+                              },
+                              "wasEnqueued": {
+                                "type": "boolean"
+                              },
+                              "wasStarted": {
+                                "type": "boolean"
+                              },
+                              "wasUncertain": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "wasAccepted",
+                              "wasEnqueued",
+                              "wasStarted",
+                              "wasCompleted",
+                              "wasUncertain"
+                            ],
+                            "type": "object"
+                          },
                           "run_id": {
                             "type": "string"
+                          },
+                          "runtime_job": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "attempt_count": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "available_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "finished_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "job_type": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "last_error": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "max_attempts": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 1,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "phase": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "started_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "pending",
+                                      "leased",
+                                      "running",
+                                      "retry_waiting",
+                                      "succeeded",
+                                      "dead_letter",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "job_type",
+                              "status",
+                              "phase",
+                              "attempt_count",
+                              "max_attempts",
+                              "available_at",
+                              "started_at",
+                              "finished_at",
+                              "last_error"
+                            ],
+                            "type": "object"
                           },
                           "runtime_job_id": {
                             "anyOf": [
@@ -24093,6 +24421,7 @@
                           }
                         },
                         "required": [
+                          "execution_id",
                           "id",
                           "run_id",
                           "floor_id",
@@ -24103,6 +24432,7 @@
                           "tool_name",
                           "args",
                           "result",
+                          "delivery_mode",
                           "status",
                           "lifecycle_state",
                           "commit_outcome",
@@ -24111,11 +24441,16 @@
                           "duration_ms",
                           "started_at",
                           "finished_at",
-                          "delivery_mode",
                           "attempt_no",
                           "runtime_job_id",
                           "replay_parent_execution_id",
-                          "created_at"
+                          "created_at",
+                          "replay_safety",
+                          "replay_reason",
+                          "runtime_job",
+                          "policy",
+                          "provenance",
+                          "roundtrip"
                         ],
                         "type": "object"
                       },
@@ -88129,6 +88464,52 @@
                                 ],
                                 "type": "string"
                               },
+                              "exposure": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "allowed_tools": {
+                                        "items": {
+                                          "type": "string"
+                                        },
+                                        "type": "array"
+                                      },
+                                      "allowed_tools_mode": {
+                                        "enum": [
+                                          "all",
+                                          "allow_list"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "legacy",
+                                          "project_binding"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "server_state": {
+                                        "enum": [
+                                          "enabled",
+                                          "disabled"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "scope",
+                                      "server_state",
+                                      "allowed_tools_mode",
+                                      "allowed_tools"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "metadata_basis_detail": {
                                 "anyOf": [
                                   {
@@ -92299,6 +92680,9 @@
                               }
                             ]
                           },
+                          "execution_id": {
+                            "type": "string"
+                          },
                           "finished_at": {
                             "anyOf": [
                               {
@@ -92333,6 +92717,159 @@
                               }
                             ]
                           },
+                          "policy": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "deferred_tool_allowlist": {
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "enable_deferred_irreversible_tools": {
+                                    "type": "boolean"
+                                  },
+                                  "max_attempts": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "max_deferred_jobs_per_run": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "max_irreversible_calls_per_run": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "retryable_statuses": {
+                                    "items": {
+                                      "enum": [
+                                        "running",
+                                        "queued",
+                                        "success",
+                                        "error",
+                                        "denied",
+                                        "timeout",
+                                        "uncertain",
+                                        "blocked"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "type": "array"
+                                  },
+                                  "timeout_ms": {
+                                    "anyOf": [
+                                      {
+                                        "minimum": 1,
+                                        "type": "integer"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "enable_deferred_irreversible_tools",
+                                  "deferred_tool_allowlist",
+                                  "timeout_ms",
+                                  "max_attempts",
+                                  "retryable_statuses",
+                                  "max_deferred_jobs_per_run",
+                                  "max_irreversible_calls_per_run"
+                                ],
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provenance": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "agent_binding_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "parent_run_job_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "source_event_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "step_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "trigger_scope": {
+                                "enum": [
+                                  "chat_turn",
+                                  "manual",
+                                  "unknown",
+                                  "agent_step"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "trigger_scope",
+                              "step_id",
+                              "parent_run_job_id",
+                              "agent_binding_id",
+                              "source_event_id"
+                            ],
+                            "type": "object"
+                          },
                           "provider_id": {
                             "type": "string"
                           },
@@ -92355,9 +92892,181 @@
                               }
                             ]
                           },
+                          "replay_reason": {
+                            "type": "string"
+                          },
+                          "replay_safety": {
+                            "enum": [
+                              "safe",
+                              "confirm_on_replay",
+                              "never_auto_replay",
+                              "uncertain"
+                            ],
+                            "type": "string"
+                          },
                           "result": {},
+                          "roundtrip": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "wasAccepted": {
+                                "type": "boolean"
+                              },
+                              "wasCompleted": {
+                                "type": "boolean"
+                              },
+                              "wasEnqueued": {
+                                "type": "boolean"
+                              },
+                              "wasStarted": {
+                                "type": "boolean"
+                              },
+                              "wasUncertain": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "wasAccepted",
+                              "wasEnqueued",
+                              "wasStarted",
+                              "wasCompleted",
+                              "wasUncertain"
+                            ],
+                            "type": "object"
+                          },
                           "run_id": {
                             "type": "string"
+                          },
+                          "runtime_job": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "attempt_count": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "available_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "finished_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "job_type": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "last_error": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "max_attempts": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 1,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "phase": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "started_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "pending",
+                                      "leased",
+                                      "running",
+                                      "retry_waiting",
+                                      "succeeded",
+                                      "dead_letter",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "job_type",
+                              "status",
+                              "phase",
+                              "attempt_count",
+                              "max_attempts",
+                              "available_at",
+                              "started_at",
+                              "finished_at",
+                              "last_error"
+                            ],
+                            "type": "object"
                           },
                           "runtime_job_id": {
                             "anyOf": [
@@ -92406,6 +93115,7 @@
                           }
                         },
                         "required": [
+                          "execution_id",
                           "id",
                           "run_id",
                           "floor_id",
@@ -92416,6 +93126,7 @@
                           "tool_name",
                           "args",
                           "result",
+                          "delivery_mode",
                           "status",
                           "lifecycle_state",
                           "commit_outcome",
@@ -92424,11 +93135,16 @@
                           "duration_ms",
                           "started_at",
                           "finished_at",
-                          "delivery_mode",
                           "attempt_no",
                           "runtime_job_id",
                           "replay_parent_execution_id",
-                          "created_at"
+                          "created_at",
+                          "replay_safety",
+                          "replay_reason",
+                          "runtime_job",
+                          "policy",
+                          "provenance",
+                          "roundtrip"
                         ],
                         "type": "object"
                       },

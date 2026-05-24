@@ -167,6 +167,7 @@ export class ChatService {
         defaultAccountId: options.defaultAccountId,
         sessionStateService: options.sessionStateService,
         projectEventLiveHub: options.projectEventLiveHub,
+        toolRuntimeJobBridge: options.toolRuntimeJobBridge,
       });
     this.generationCoordinator = options.generationCoordinator
       ?? options.generationGuard
@@ -204,6 +205,7 @@ export class ChatService {
       toolRegistry: options.toolRegistry,
       sessionToolRegistryService: options.sessionToolRegistryService,
       resolveToolPermissions: options.resolveToolPermissions,
+      resolveEffectiveToolPolicy: options.resolveEffectiveToolPolicy,
     });
     this.memoryService = new TurnMemoryService({
       memoryStore: options.memoryStore,

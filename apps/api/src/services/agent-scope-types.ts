@@ -5,6 +5,13 @@ export const AGENT_SCOPE_KIND_VALUES = [
   "workspace",
 ] as const;
 
+export const TOOL_EXECUTION_TRIGGER_SCOPE_VALUES = [
+  "chat_turn",
+  "manual",
+  "unknown",
+  "agent_step",
+] as const;
+
 export type AgentScopeKind = (typeof AGENT_SCOPE_KIND_VALUES)[number];
 
 export const AGENT_TYPE_STATUS_VALUES = ["active", "disabled"] as const;
@@ -16,6 +23,15 @@ export const PROJECT_AGENT_BINDING_STATUS_VALUES = [
   "error",
 ] as const;
 export type ProjectAgentBindingStatus = (typeof PROJECT_AGENT_BINDING_STATUS_VALUES)[number];
+
+export const AGENT_STEP_STATE_STATUS_VALUES = [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+  "uncertain",
+] as const;
 
 export interface AgentEventSubscription {
   type: string;

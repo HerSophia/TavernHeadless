@@ -518,14 +518,59 @@ describe("sdk integration and operations resources", () => {
       replay_parent_execution_id: null,
       created_at: 400,
     };
+    const tracePayload = {
+      execution_id: "exec-1",
+      ...executionPayload,
+      replay_safety: "confirm_on_replay",
+      replay_reason: "sandbox_side_effect",
+      runtime_job: {
+        id: null,
+        job_type: null,
+        status: null,
+        phase: null,
+        attempt_count: null,
+        max_attempts: null,
+        available_at: null,
+        started_at: null,
+        finished_at: null,
+        last_error: null,
+      },
+      policy: null,
+      provenance: {
+        trigger_scope: "unknown",
+        step_id: null,
+        parent_run_job_id: null,
+        agent_binding_id: null,
+        source_event_id: null,
+      },
+      roundtrip: {
+        wasAccepted: true,
+        wasEnqueued: false,
+        wasStarted: true,
+        wasCompleted: true,
+        wasUncertain: false,
+      },
+    };
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({
-        data: [executionPayload],
+        data: [tracePayload],
         meta: { has_more: false, limit: 10, offset: 0, sort_by: "started_at", sort_order: "desc", total: 1 },
       }))
       .mockResolvedValueOnce(jsonResponse({
-        data: [{ ...executionPayload, id: "exec-2", provider_id: "mcp:demo", provider_type: "mcp", status: "uncertain", commit_outcome: "discarded" }],
+        data: [{
+          ...tracePayload,
+          execution_id: "exec-2",
+          id: "exec-2",
+          provider_id: "mcp:demo",
+          provider_type: "mcp",
+          status: "uncertain",
+          commit_outcome: "discarded",
+          runtime_job_id: "runtime-job-2",
+          replay_safety: "uncertain",
+          replay_reason: "uncertain_execution_outcome",
+          roundtrip: { ...tracePayload.roundtrip, wasEnqueued: true, wasUncertain: true },
+        }],
         meta: { has_more: false, limit: 5, offset: 1, sort_by: "started_at", sort_order: "desc", total: 1 },
       }));
     const transport = createTransportClient({ baseUrl, fetchImpl });
@@ -534,24 +579,54 @@ describe("sdk integration and operations resources", () => {
     await expect(tools.listExecutions({ accountId: "acc-1", floorId: "floor-1", sortBy: "started_at", sortOrder: "desc" })).resolves.toEqual({
       meta: { hasMore: false, limit: 10, offset: 0, sortBy: "started_at", sortOrder: "desc", total: 1 },
       records: [{
+        executionId: "exec-1",
         args: { key: "mood" },
         attemptNo: 1,
         callerSlot: "narrator",
         commitOutcome: "committed",
         createdAt: 400,
-        durationMs: 7,
-        errorMessage: null,
         finishedAt: 407,
         floorId: "floor-1",
         id: "exec-1",
         deliveryMode: "inline",
         lifecycleState: "finished",
+        errorMessage: null,
+        durationMs: 7,
+        replaySafety: "confirm_on_replay",
+        replayReason: "sandbox_side_effect",
         pageId: null,
+        policy: null,
         providerId: "builtin",
         providerType: "builtin",
+        provenance: {
+          triggerScope: "unknown",
+          stepId: null,
+          parentRunJobId: null,
+          agentBindingId: null,
+          sourceEventId: null,
+        },
+        roundtrip: {
+          wasAccepted: true,
+          wasEnqueued: false,
+          wasStarted: true,
+          wasCompleted: true,
+          wasUncertain: false,
+        },
         replayParentExecutionId: null,
         result: { ok: true },
         runId: "run-1",
+        runtimeJob: {
+          id: null,
+          jobType: null,
+          status: null,
+          phase: null,
+          attemptCount: null,
+          maxAttempts: null,
+          availableAt: null,
+          startedAt: null,
+          finishedAt: null,
+          lastError: null,
+        },
         sideEffectLevel: "sandbox",
         startedAt: 400,
         status: "success",
@@ -560,7 +635,9 @@ describe("sdk integration and operations resources", () => {
       }],
     });
 
-    await expect(tools.listExecutions({ accountId: "acc-1", sessionId: "session-1", status: "uncertain", sortBy: "started_at", sortOrder: "desc", limit: 5, offset: 1 })).resolves.toMatchObject({ records: [expect.objectContaining({ id: "exec-2", providerType: "mcp", status: "uncertain" })] });
+    await expect(tools.listExecutions({ accountId: "acc-1", sessionId: "session-1", status: "uncertain", sortBy: "started_at", sortOrder: "desc", limit: 5, offset: 1 })).resolves.toMatchObject({
+      records: [expect.objectContaining({ id: "exec-2", executionId: "exec-2", providerType: "mcp", status: "uncertain", runtimeJobId: "runtime-job-2", replaySafety: "uncertain", roundtrip: expect.objectContaining({ wasEnqueued: true, wasUncertain: true }) })],
+    });
     expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/floors/floor-1/tool-executions?sort_by=started_at&sort_order=desc");
     expect(String(fetchImpl.mock.calls[1]![0])).toBe("http://localhost:3000/tool-executions?limit=5&offset=1&session_id=session-1&sort_by=started_at&sort_order=desc&status=uncertain");
   });

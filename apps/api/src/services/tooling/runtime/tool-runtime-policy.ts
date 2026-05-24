@@ -1,11 +1,42 @@
-import type { ToolDefinition } from "@tavern/core";
+import type {
+  ToolDefinition,
+  ToolExecutionStatus,
+} from "@tavern/core";
 
 import type { RuntimeToolDescriptor } from "./deferred-tool-provider-handler.js";
+
+export interface ToolRuntimeExecutionPolicySnapshot {
+  enableDeferredIrreversibleTools: boolean;
+  deferredToolAllowlist: string[];
+  timeoutMs: number | null;
+  maxAttempts: number | null;
+  retryableStatuses: ToolExecutionStatus[];
+  maxDeferredJobsPerRun: number | null;
+  maxIrreversibleCallsPerRun: number | null;
+}
 
 export interface ToolRuntimePolicyOptions {
   enableDeferredIrreversibleTools?: boolean;
   deferredToolAllowlist?: string[];
+  timeoutMs?: number | null;
+  maxAttempts?: number | null;
+  retryableStatuses?: ToolExecutionStatus[];
+  maxDeferredJobsPerRun?: number | null;
+  maxIrreversibleCallsPerRun?: number | null;
 }
+
+const TOOL_EXECUTION_STATUSES = new Set<ToolExecutionStatus>([
+  "running",
+  "queued",
+  "success",
+  "error",
+  "denied",
+  "timeout",
+  "uncertain",
+  "blocked",
+]);
+
+const DEFAULT_RETRYABLE_STATUSES: ToolExecutionStatus[] = [];
 
 const DEFERRED_TOOL_RECEIPT_NOTE = "This tool uses deferred execution. When called, it returns only an acceptance receipt with accepted=true, execution_id, job_id, and status='queued'. The final provider result is not available in the same turn.";
 
@@ -89,6 +120,11 @@ function appendDeferredReceiptNote(description: string): string {
 export class ToolRuntimePolicy {
   private readonly deferredToolAllowlist: ReadonlySet<string>;
   private readonly enableDeferredIrreversibleTools: boolean;
+  private readonly timeoutMs: number | null;
+  private readonly maxAttempts: number | null;
+  private readonly retryableStatuses: readonly ToolExecutionStatus[];
+  private readonly maxDeferredJobsPerRun: number | null;
+  private readonly maxIrreversibleCallsPerRun: number | null;
 
   constructor(options: ToolRuntimePolicyOptions = {}) {
     this.enableDeferredIrreversibleTools = options.enableDeferredIrreversibleTools === true;
@@ -97,6 +133,43 @@ export class ToolRuntimePolicy {
         .map(normalizeAllowlistEntry)
         .filter((entry): entry is string => entry !== null),
     );
+    this.timeoutMs = normalizeOptionalPositiveInt(options.timeoutMs);
+    this.maxAttempts = normalizeOptionalPositiveInt(options.maxAttempts);
+    this.retryableStatuses = normalizeRetryableStatuses(options.retryableStatuses);
+    this.maxDeferredJobsPerRun = normalizeOptionalPositiveInt(options.maxDeferredJobsPerRun);
+    this.maxIrreversibleCallsPerRun = normalizeOptionalPositiveInt(options.maxIrreversibleCallsPerRun);
+  }
+
+  getExecutionPolicySnapshot(): ToolRuntimeExecutionPolicySnapshot {
+    return {
+      enableDeferredIrreversibleTools: this.enableDeferredIrreversibleTools,
+      deferredToolAllowlist: Array.from(this.deferredToolAllowlist).sort(),
+      timeoutMs: this.timeoutMs,
+      maxAttempts: this.maxAttempts,
+      retryableStatuses: [...this.retryableStatuses],
+      maxDeferredJobsPerRun: this.maxDeferredJobsPerRun,
+      maxIrreversibleCallsPerRun: this.maxIrreversibleCallsPerRun,
+    };
+  }
+
+  getTimeoutMs(): number | null {
+    return this.timeoutMs;
+  }
+
+  getMaxAttempts(): number | null {
+    return this.maxAttempts;
+  }
+
+  getRetryableStatuses(): readonly ToolExecutionStatus[] {
+    return this.retryableStatuses;
+  }
+
+  getMaxDeferredJobsPerRun(): number | null {
+    return this.maxDeferredJobsPerRun;
+  }
+
+  getMaxIrreversibleCallsPerRun(): number | null {
+    return this.maxIrreversibleCallsPerRun;
   }
 
   isDeferredIrreversibleToolsEnabled(): boolean {
@@ -130,4 +203,24 @@ export class ToolRuntimePolicy {
         : tool.description,
     };
   }
+}
+
+function normalizeOptionalPositiveInt(value: number | null | undefined): number | null {
+  return Number.isInteger(value) && Number(value) > 0
+    ? Number(value)
+    : null;
+}
+
+function normalizeRetryableStatuses(
+  value: readonly ToolExecutionStatus[] | null | undefined,
+): ToolExecutionStatus[] {
+  const normalized = Array.from(new Set(
+    (value ?? [])
+      .filter((entry): entry is ToolExecutionStatus => TOOL_EXECUTION_STATUSES.has(entry))
+      .map((entry) => entry.trim() as ToolExecutionStatus),
+  ));
+
+  return normalized.length > 0
+    ? normalized.sort()
+    : [...DEFAULT_RETRYABLE_STATUSES];
 }
