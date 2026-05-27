@@ -75,6 +75,7 @@ export class PromptRuntimePreviewService {
       ? undefined
       : await this.memoryService.retrieveMemoryInjection(sessionId, accountId, undefined, branchId);
     const effectivePreviewMemorySummary = memoryInjection?.memorySummary;
+    const structuredMemoryInjection = memoryInjection?.injection;
     const memoryRuntimeTrace = {
       ...memoryWritePolicy,
       ...(memoryInjection?.memoryTrace ?? {}),
@@ -158,6 +159,7 @@ export class PromptRuntimePreviewService {
       diagnostics: inspection.diagnostics,
       limitations: [...inspection.limitations, ...PROMPT_RUNTIME_PREVIEW_LIMITATIONS],
       text: preview.text,
+      ...(structuredMemoryInjection ? { memoryInjection: structuredMemoryInjection } : {}),
       memory: inspection.memory,
       runtimeTrace,
     };

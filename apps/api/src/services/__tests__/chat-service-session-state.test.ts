@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { SimpleTokenCounter, type TurnExecutionResult, type TurnInput, type TurnOrchestrator } from "@tavern/core";
 import { nanoid } from "nanoid";
 
@@ -149,10 +149,8 @@ describe("ChatService session-state replay gate", () => {
     const commitInput = turnCommitMock.mock.calls[0]?.[0];
     expect(commitInput?.variableCommit).toMatchObject({
       pageId: sourcePageId,
-      pageDecision: {
-        status: "rejected",
-        decisionReason: "page_commit_gate_source_page_missing",
-      },
+      actorClientId: null,
+      rerouteToSessionState: false,
     });
   });
 
@@ -191,10 +189,8 @@ describe("ChatService session-state replay gate", () => {
     const commitInput = turnCommitMock.mock.calls[0]?.[0];
     expect(commitInput?.variableCommit).toMatchObject({
       pageId: sourcePageId,
-      pageDecision: {
-        status: "discarded",
-        decisionReason: "page_not_active_at_commit",
-      },
+      actorClientId: null,
+      rerouteToSessionState: false,
     });
   });
 

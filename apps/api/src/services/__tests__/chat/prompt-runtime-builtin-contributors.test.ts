@@ -1,9 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import {
-  buildMemoryProjectionContributor,
-  buildStateProjectionContributor,
-} from "../../chat/prompt-runtime-builtin-contributors.js";
+import { buildMemoryProjectionContributor, buildStateProjectionContributor } from "../../chat/prompt-runtime-builtin-contributors.js";
 
 describe("prompt-runtime-builtin-contributors", () => {
   it("builds memory projection contributor from memory summary and trace", () => {
@@ -42,6 +39,63 @@ describe("prompt-runtime-builtin-contributors", () => {
     });
 
     expect(result.contributor).toBeUndefined();
+  });
+
+  it("still builds memory projection contributor when only structured memory items exist", () => {
+    const result = buildMemoryProjectionContributor({
+      promptMode: "native",
+      memorySummary: undefined,
+      memoryTrace: {
+        summaryInjected: false,
+        strategy: "direct_items",
+        selectedItems: [
+          {
+            memoryId: "memory-1",
+            scope: "branch",
+            scopeId: "memscope:session-1:main",
+            branchId: "main",
+            kind: "fact",
+            source: "store",
+            score: 0.8,
+            tokenCount: 12,
+            selectedReason: null,
+          },
+        ],
+      },
+    });
+
+    expect(result.contributor).toMatchObject({
+      id: "builtin:memory_projection",
+      kind: "memory_projection",
+      sourceKind: "memory",
+      modeScope: "native",
+      promptRenderable: {
+        title: "Memory selection",
+        content: JSON.stringify({
+          selected_items: [
+            {
+              memory_id: "memory-1",
+              scope: "branch",
+              scope_id: "memscope:session-1:main",
+              branch_id: "main",
+              kind: "fact",
+              source: "store",
+              score: 0.8,
+              token_count: 12,
+            },
+          ],
+        }, null, 2),
+      },
+    });
+    expect(result.contributor?.payload).toMatchObject({
+      summary: null,
+      memoryTrace: {
+        strategy: "direct_items",
+        selectedItems: [
+          expect.objectContaining({ memoryId: "memory-1", kind: "fact" }),
+        ],
+      },
+    });
   });
 
   it("builds state projection contributor from managed scene and world context", () => {

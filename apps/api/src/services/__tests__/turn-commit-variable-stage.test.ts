@@ -10,11 +10,14 @@ import {
   messagePages,
   pageStagedVariableWrites,
   sessions,
+  sessionStateMutations,
   variablePromotionTraces,
   variables,
 } from "../../db/schema.js";
 import { ChatMessagePersistence } from "../chat-message-persistence.js";
 import { TurnCommitService } from "../turn-commit-service.js";
+import { SessionStateService } from "../../session-state/session-state-service.js";
+import { SessionStateCustomNamespaceService } from "../../session-state/session-state-custom-namespace-service.js";
 
 const ACCOUNT_ID = "default-admin";
 
@@ -73,14 +76,31 @@ describe("TurnCommitService variable stage chain", () => {
   let database: DatabaseConnection;
   let eventBus: ReturnType<typeof createEventBus>;
   let service: TurnCommitService;
+  let sessionStateService: SessionStateService;
+  let customNamespaceService: SessionStateCustomNamespaceService;
 
   beforeEach(() => {
     database = createDatabase(":memory:");
     eventBus = createEventBus();
+    customNamespaceService = new SessionStateCustomNamespaceService(database.db, { clientData: { domainPurgeGracePeriodMs: 604_800_000, defaultMaxItemSizeBytes: 1_048_576, defaultQuotaMaxEntries: 10_000, defaultQuotaMaxBytes: 10_485_760, maxDomainsPerAccount: 64, maxTotalEntriesPerAccount: 100_000, maxTotalBytesPerAccount: 104_857_600 } });
     service = new TurnCommitService(
       database.db,
       new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
       eventBus,
+      {
+        sessionStateService: (sessionStateService = new SessionStateService(database.db, {
+          clientData: {
+            defaultMaxItemSizeBytes: 1_048_576,
+            defaultQuotaMaxEntries: 10_000,
+            defaultQuotaMaxBytes: 10_485_760,
+            maxDomainsPerAccount: 64,
+            maxTotalEntriesPerAccount: 100_000,
+            maxTotalBytesPerAccount: 104_857_600,
+            domainPurgeGracePeriodMs: 604_800_000,
+          },
+          customNamespaceService,
+        })),
+      },
     );
   });
 
@@ -131,7 +151,7 @@ describe("TurnCommitService variable stage chain", () => {
       ],
     };
 
-    await service.commit({
+    const commitResult = await service.commit({
       accountId: ACCOUNT_ID,
       floorId,
       sessionId,
@@ -139,13 +159,17 @@ describe("TurnCommitService variable stage chain", () => {
       committedAt,
       variableCommit: { pageId },
     });
+    const outputPageId = commitResult.outputPageId;
 
-    const [stagedWrite] = await database.db.select().from(pageStagedVariableWrites).where(eq(pageStagedVariableWrites.pageId, pageId));
+    const [stagedWrite] = await database.db.select().from(pageStagedVariableWrites).where(eq(pageStagedVariableWrites.pageId, outputPageId));
     expect(stagedWrite).toMatchObject({
-      pageId,
+      pageId: outputPageId,
       floorId,
       sessionId,
       branchId: "main",
+      sourceKind: "tool",
+      actorClientId: null,
+      decisionCode: "promotion_allowed",
       key: "mood",
       intent: "promote_to_floor_on_accept",
       conflictPolicy: "replace",
@@ -158,7 +182,7 @@ describe("TurnCommitService variable stage chain", () => {
 
     const [pageVariable] = await database.db.select().from(variables).where(and(
       eq(variables.scope, "page"),
-      eq(variables.scopeId, pageId),
+      eq(variables.scopeId, outputPageId),
       eq(variables.key, "mood"),
     ));
     expect(pageVariable && JSON.parse(pageVariable.valueJson)).toBe("steady");
@@ -170,18 +194,24 @@ describe("TurnCommitService variable stage chain", () => {
     ));
     expect(floorVariable && JSON.parse(floorVariable.valueJson)).toBe("steady");
 
-    const [trace] = await database.db.select().from(variablePromotionTraces).where(eq(variablePromotionTraces.pageId, pageId));
+    const [trace] = await database.db.select().from(variablePromotionTraces).where(eq(variablePromotionTraces.pageId, outputPageId));
     expect(trace).toMatchObject({
-      pageId,
+      pageId: outputPageId,
       floorId,
       sessionId,
       branchId: "main",
       stagedWriteId: stagedWrite?.id,
       key: "mood",
       fromScope: "page",
-      fromScopeId: pageId,
+      fromScopeId: outputPageId,
       toScope: "floor",
       toScopeId: floorId,
+      sourceKind: "tool",
+      actorClientId: null,
+      sourceJson: JSON.stringify({ toolName: "set_variable", providerId: "builtin", nodeId: "node-1" }),
+      evidenceJson: expect.any(String),
+      decisionCode: "promotion_allowed",
+      decisionReason: null,
       conflictPolicy: "replace",
       createdAt: committedAt,
     });
@@ -189,7 +219,7 @@ describe("TurnCommitService variable stage chain", () => {
     expect(variableSetHandler).toHaveBeenCalledWith(expect.objectContaining({
       sessionId,
       branchId: "main",
-      entry: expect.objectContaining({ scope: "page", scopeId: pageId, key: "mood", value: "steady" }),
+      entry: expect.objectContaining({ scope: "page", scopeId: outputPageId, key: "mood", value: "steady" }),
       isNew: true,
     }));
     expect(variablePromotedHandler).toHaveBeenCalledWith(expect.objectContaining({
@@ -241,7 +271,7 @@ describe("TurnCommitService variable stage chain", () => {
       ],
     };
 
-    await service.commit({
+    const commitResult = await service.commit({
       accountId: ACCOUNT_ID,
       floorId,
       sessionId,
@@ -249,13 +279,14 @@ describe("TurnCommitService variable stage chain", () => {
       committedAt,
       variableCommit: { pageId },
     });
+    const outputPageId = commitResult.outputPageId;
 
-    const [stagedWrite] = await database.db.select().from(pageStagedVariableWrites).where(eq(pageStagedVariableWrites.pageId, pageId));
-    expect(stagedWrite).toMatchObject({ key: "hp", status: "accepted_page_only" });
+    const [stagedWrite] = await database.db.select().from(pageStagedVariableWrites).where(eq(pageStagedVariableWrites.pageId, outputPageId));
+    expect(stagedWrite).toMatchObject({ key: "hp", status: "accepted_page_only", decisionCode: "promotion_allowed" });
 
     const pageRows = await database.db.select().from(variables).where(and(
       eq(variables.scope, "page"),
-      eq(variables.scopeId, pageId),
+      eq(variables.scopeId, outputPageId),
     ));
     expect(pageRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([["hp", 95]]);
 
@@ -315,7 +346,7 @@ describe("TurnCommitService variable stage chain", () => {
         ],
       };
 
-      await service.commit({
+      const commitResult = await service.commit({
         accountId: ACCOUNT_ID,
         floorId,
         sessionId,
@@ -323,22 +354,24 @@ describe("TurnCommitService variable stage chain", () => {
         committedAt,
         variableCommit: {
           pageId,
-          pageDecision: { status },
+          pageDecision: { status, decisionReason },
         },
       });
+      const outputPageId = commitResult.outputPageId;
 
-      const [stagedWrite] = await database.db.select().from(pageStagedVariableWrites).where(eq(pageStagedVariableWrites.pageId, pageId));
+      const stagedWrites = await database.db.select().from(pageStagedVariableWrites).where(eq(pageStagedVariableWrites.pageId, outputPageId));
       const pageRows = await database.db.select().from(variables).where(and(
         eq(variables.scope, "page"),
-        eq(variables.scopeId, pageId),
+        eq(variables.scopeId, outputPageId),
       ));
       const floorRows = await database.db.select().from(variables).where(and(
         eq(variables.scope, "floor"),
         eq(variables.scopeId, floorId),
       ));
-      const traces = await database.db.select().from(variablePromotionTraces).where(eq(variablePromotionTraces.pageId, pageId));
+      const traces = await database.db.select().from(variablePromotionTraces).where(eq(variablePromotionTraces.pageId, outputPageId));
+      const expectedDecisionCode = status === "rerouted_to_session_state" ? "rerouted_to_session_state" : "policy_forbidden";
 
-      expect(stagedWrite).toMatchObject({ key: "threat", status, decisionReason, resolvedAt: committedAt });
+      expect(stagedWrites).toContainEqual(expect.objectContaining({ key: "threat", status, decisionReason, decisionCode: expectedDecisionCode, resolvedAt: committedAt }));
       expect(pageRows).toEqual([]);
       expect(floorRows).toEqual([]);
       expect(traces).toEqual([]);
@@ -346,4 +379,98 @@ describe("TurnCommitService variable stage chain", () => {
       expect(variablePromotedHandler).not.toHaveBeenCalled();
     },
   );
+
+  it("reroutes session-state candidate variable writes during turn commit and records page/session-state inspection links", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const now = 1_735_700_330_000;
+    const committedAt = now + 100;
+
+    await seedAccount(database, now);
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, sessionId, floorId, now);
+    await seedInputPage(database, floorId, pageId, now);
+
+    customNamespaceService.registerNamespace({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      namespace: "custom.world",
+      logicalOwnerType: "test",
+      logicalOwnerId: "turn-commit-variable-stage-test",
+    });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Rerouted write.",
+      rawText: "Rerouted write.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 5,
+        completionTokens: 7,
+        totalTokens: 12,
+      },
+      bufferedVariableMutations: [
+        {
+          runId: "run-reroute-commit",
+          generationAttemptNo: 1,
+          scope: "page",
+          scopeId: pageId,
+          key: "scene_state",
+          value: { weather: "rain" },
+          intent: "promote_to_floor_on_accept",
+          source: {
+            toolName: "set_variable",
+            providerId: "builtin",
+            targetSurface: "session_state",
+            sessionStateNamespace: "custom.world",
+            sessionStateSlot: "scene",
+          },
+          bufferedAt: now + 10,
+        },
+      ],
+    };
+
+    const commitResult = await service.commit({
+      accountId: ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      variableCommit: {
+        pageId,
+        rerouteToSessionState: true,
+      },
+    });
+    const outputPageId = commitResult.outputPageId;
+
+    const outputPage = await database.db.select().from(messagePages).where(and(eq(messagePages.floorId, floorId), eq(messagePages.pageKind, "output"))).all()[0];
+    const [stagedWrite] = await database.db.select().from(pageStagedVariableWrites).where(eq(pageStagedVariableWrites.pageId, outputPage?.id ?? ""));
+    const [trace] = await database.db.select().from(variablePromotionTraces).where(eq(variablePromotionTraces.pageId, outputPage?.id ?? ""));
+    const [mutation] = await database.db.select().from(sessionStateMutations).where(eq(sessionStateMutations.sourcePageId, outputPageId));
+    const floorRows = await database.db.select().from(variables).where(and(
+      eq(variables.scope, "floor"),
+      eq(variables.scopeId, floorId),
+    ));
+
+    expect(floorRows).toEqual([]);
+    expect(stagedWrite).toBeDefined();
+    expect(stagedWrite).toMatchObject({
+      status: "rerouted_to_session_state",
+      decisionCode: "rerouted_to_session_state",
+      linkedSessionStateMutationId: mutation?.id,
+    });
+    expect(trace).toMatchObject({
+      key: "scene_state",
+      toScope: "session_state",
+      toScopeId: "session_state:custom.world:scene",
+      linkedSessionStateMutationId: mutation?.id,
+    });
+    expect(mutation).toMatchObject({
+      commitMode: "variable_reroute",
+      linkedVariableStageId: stagedWrite?.id,
+      sourcePageId: outputPageId,
+    });
+  });
 });

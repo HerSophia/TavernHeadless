@@ -11491,6 +11491,57 @@ export interface paths {
         patch: operations["activatePage"];
         trace?: never;
     };
+    "/pages/{id}/memory/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List decided memory promotions for a page */
+        get: operations["listPageMemoryPromotions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/memory/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List staged memory proposals for a page */
+        get: operations["listPageMemoryProposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/pages/{id}/session-state/mutations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List turn-bound session-state mutations for a page */
+        get: operations["listPageSessionStateMutations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pages/{id}/variables/promotions": {
         parameters: {
             query?: never;
@@ -19660,6 +19711,58 @@ export interface paths {
                          *           ]
                          *         },
                          *         "available_for_reply": 1536,
+                         *         "memory": {
+                         *           "effective_write": false,
+                         *           "requested_write": false,
+                         *           "runtime_mode": "async_primary",
+                         *           "scope_resolution": {
+                         *             "fallback_reason": null,
+                         *             "mode": "branch_aware",
+                         *             "requested_branch_id": "main",
+                         *             "requested_scopes": [
+                         *               "global",
+                         *               "branch"
+                         *             ],
+                         *             "resolved_branch_id": "main",
+                         *             "resolved_scopes": [
+                         *               "global",
+                         *               "branch"
+                         *             ]
+                         *           },
+                         *           "selected_items": [
+                         *             {
+                         *               "branch_id": "main",
+                         *               "kind": "macro_summary",
+                         *               "memory_id": "memory-branch-summary-2",
+                         *               "scope": "branch",
+                         *               "scope_id": "memscope:session-1:main",
+                         *               "score": 0.71,
+                         *               "source": "summary",
+                         *               "token_count": 22
+                         *             },
+                         *             {
+                         *               "branch_id": "main",
+                         *               "kind": "open_loop",
+                         *               "memory_id": "memory-branch-loop-1",
+                         *               "scope": "branch",
+                         *               "scope_id": "memscope:session-1:main",
+                         *               "score": 0.55,
+                         *               "source": "open_loop",
+                         *               "token_count": 26
+                         *             }
+                         *           ],
+                         *           "strategy": "dual_summary",
+                         *           "summary_injected": true,
+                         *           "summary_text": "[Memory]\n- The party recently agreed to search the northern pass.",
+                         *           "summary_text_hash": "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+                         *           "token_stats": {
+                         *             "budget": 500,
+                         *             "direct_items": 26,
+                         *             "macro_summary": 22,
+                         *             "micro_summary": 0,
+                         *             "used": 48
+                         *           }
+                         *         },
                          *         "memory_summary": "The party recently agreed to search the northern pass.",
                          *         "messages": [
                          *           {
@@ -20060,6 +20163,58 @@ export interface paths {
                              *         ]
                              *       },
                              *       "available_for_reply": 1536,
+                             *       "memory": {
+                             *         "effective_write": false,
+                             *         "requested_write": false,
+                             *         "runtime_mode": "async_primary",
+                             *         "scope_resolution": {
+                             *           "fallback_reason": null,
+                             *           "mode": "branch_aware",
+                             *           "requested_branch_id": "main",
+                             *           "requested_scopes": [
+                             *             "global",
+                             *             "branch"
+                             *           ],
+                             *           "resolved_branch_id": "main",
+                             *           "resolved_scopes": [
+                             *             "global",
+                             *             "branch"
+                             *           ]
+                             *         },
+                             *         "selected_items": [
+                             *           {
+                             *             "branch_id": "main",
+                             *             "kind": "macro_summary",
+                             *             "memory_id": "memory-branch-summary-2",
+                             *             "scope": "branch",
+                             *             "scope_id": "memscope:session-1:main",
+                             *             "score": 0.71,
+                             *             "source": "summary",
+                             *             "token_count": 22
+                             *           },
+                             *           {
+                             *             "branch_id": "main",
+                             *             "kind": "open_loop",
+                             *             "memory_id": "memory-branch-loop-1",
+                             *             "scope": "branch",
+                             *             "scope_id": "memscope:session-1:main",
+                             *             "score": 0.55,
+                             *             "source": "open_loop",
+                             *             "token_count": 26
+                             *           }
+                             *         ],
+                             *         "strategy": "dual_summary",
+                             *         "summary_injected": true,
+                             *         "summary_text": "[Memory]\n- The party recently agreed to search the northern pass.",
+                             *         "summary_text_hash": "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+                             *         "token_stats": {
+                             *           "budget": 500,
+                             *           "direct_items": 26,
+                             *           "macro_summary": 22,
+                             *           "micro_summary": 0,
+                             *           "used": 48
+                             *         }
+                             *       },
                              *       "memory_summary": "The party recently agreed to search the northern pass.",
                              *       "messages": [
                              *         {
@@ -20460,6 +20615,53 @@ export interface paths {
                                     }[];
                                 };
                                 available_for_reply: number;
+                                memory: {
+                                    effective_write?: boolean;
+                                    page_id?: string;
+                                    /** @enum {string} */
+                                    promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                    proposal_batch_id?: string;
+                                    /** @enum {string} */
+                                    proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                    requested_write?: boolean;
+                                    /** @enum {string} */
+                                    runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                    scope_resolution?: {
+                                        fallback_reason: string | null;
+                                        mode: string;
+                                        requested_branch_id: string | null;
+                                        requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                        resolved_branch_id: string | null;
+                                        resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                        strict?: boolean;
+                                    };
+                                    selected_items?: {
+                                        branch_id?: string | null;
+                                        /** @enum {string} */
+                                        kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                        memory_id: string;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "branch" | "floor";
+                                        scope_id: string;
+                                        score?: number | null;
+                                        selected_reason?: string | null;
+                                        /** @enum {string} */
+                                        source?: "store" | "summary" | "open_loop" | "fallback";
+                                        token_count?: number | null;
+                                    }[];
+                                    /** @enum {string} */
+                                    strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
+                                    summary_injected: boolean;
+                                    summary_text?: string;
+                                    summary_text_hash?: string | null;
+                                    token_stats?: {
+                                        budget: number | null;
+                                        direct_items: number;
+                                        macro_summary: number;
+                                        micro_summary: number;
+                                        used: number;
+                                    };
+                                };
                                 memory_summary: string | null;
                                 messages: {
                                     content: string;
@@ -26791,21 +26993,16 @@ export interface operations {
                                 code: string;
                                 field_path?: string;
                                 message: string;
-                                /** @enum {string} */
-                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                phase?: string;
                                 /** @enum {string} */
                                 severity: "info" | "warning" | "error";
-                                /** @enum {string} */
-                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                                source?: string;
                             }[];
                             excluded_sources: {
                                 detail?: string;
                                 /** @enum {string} */
                                 reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
-                                /**
-                                 * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
-                                 * @enum {string}
-                                 */
+                                /** @enum {string} */
                                 source: "history" | "memory" | "worldbook" | "examples";
                             }[] | null;
                             floor: {
@@ -26822,9 +27019,8 @@ export interface operations {
                             governance: {
                                 entries: {
                                     budget_groups: string[];
-                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
-                                    /** @enum {string} */
-                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    declared_level: string | null;
+                                    effective_retention: string;
                                     pinned: boolean | null;
                                     prunable: boolean | null;
                                     pruned_token_count: number;
@@ -26837,11 +27033,9 @@ export interface operations {
                                 limitations: string[];
                                 mismatches: {
                                     budget_groups: string[];
-                                    /** @enum {string} */
-                                    code: "declared_budget_prunable_but_effectively_fixed" | "declared_soft_required_but_effectively_budget_prunable" | "unregistered_governed_source" | "mixed_effective_retention";
-                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
-                                    /** @enum {string} */
-                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    code: string;
+                                    declared_level: string | null;
+                                    effective_retention: string;
                                     message: string;
                                     source_kind: string;
                                 }[];
@@ -27037,8 +27231,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -27085,11 +27278,10 @@ export interface operations {
                                 /** @enum {string} */
                                 history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 session_id: string;
-                                source_floor_id?: string | null;
+                                source_floor_id: string | null;
                                 target_branch_id: string;
                             };
                             section_stats: {
-                                /** @description Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`. */
                                 section_name: string;
                                 token_count: number;
                             }[] | null;
@@ -27101,14 +27293,6 @@ export interface operations {
                                     /** @enum {string} */
                                     reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
-                                debug?: {
-                                    /** @enum {string} */
-                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                };
                                 delivery?: {
                                     /** @enum {string} */
                                     allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
@@ -27118,9 +27302,9 @@ export interface operations {
                                     require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                                 history?: {
-                                    source_branch_id?: string;
+                                    source_branch_id: string;
                                     /** @enum {string} */
-                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                    source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 };
                                 source_selection?: {
                                     examples?: {
@@ -27165,7 +27349,6 @@ export interface operations {
                             };
                             trim_reasons: {
                                 detail?: string;
-                                /** @description Budget group label. This may include concrete section groups such as `section:main`. */
                                 group: string;
                                 pruned_token_count?: number;
                                 /** @enum {string} */
@@ -31896,6 +32079,322 @@ export interface operations {
             };
         };
     };
+    listPageMemoryPromotions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            floor_id: string;
+                            items: {
+                                actor_client_id: string | null;
+                                created_at: number;
+                                decided_at: number | null;
+                                decision_code: ("source_page_missing" | "source_page_not_output" | "source_page_not_active" | "source_page_superseded" | "source_page_scope_mismatch" | "rerouted_to_session_state" | "policy_forbidden" | "promotion_allowed") | null;
+                                decision_reason: string | null;
+                                evidence_json: {
+                                    [key: string]: unknown;
+                                };
+                                id: string;
+                                items: {
+                                    created_at: number;
+                                    evidence_json: {
+                                        [key: string]: unknown;
+                                    };
+                                    id: string;
+                                    importance: number | null;
+                                    /** @enum {string} */
+                                    memory_kind: "fact" | "summary" | "open_loop";
+                                    /** @enum {string} */
+                                    operation_kind: "add_fact" | "update_fact" | "deprecate_fact" | "add_open_loop" | "resolve_open_loop" | "refresh_summary";
+                                    payload: {
+                                        [key: string]: unknown;
+                                    };
+                                    reason: string | null;
+                                    /** @enum {string} */
+                                    status: "proposed" | "promoted" | "rejected" | "superseded";
+                                    /** @enum {string} */
+                                    target_scope: "global" | "chat" | "branch" | "floor";
+                                    updated_at: number;
+                                }[];
+                                promotion_status: ("promoted" | "rejected" | "superseded") | null;
+                                proposal_batch_id: string;
+                                /** @enum {string} */
+                                proposal_status: "proposed" | "promoted" | "rejected" | "superseded";
+                                /** @enum {string} */
+                                runtime_mode: "legacy_sync" | "async_primary";
+                                scope_resolution: {
+                                    fallback_reason: string | null;
+                                    mode: string;
+                                    requested_branch_id: string | null;
+                                    requested_scopes: string[];
+                                    resolved_branch_id: string | null;
+                                    resolved_scopes: string[];
+                                    strict?: boolean;
+                                } | null;
+                                source_json: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                source_kind: "unknown" | "macro" | "tool" | "agent" | "memory_runtime";
+                                strategy?: ("none" | "single_summary" | "dual_summary" | "direct_items") | null;
+                                summary_text_hash: string | null;
+                                token_stats: {
+                                    budget: number | null;
+                                    direct_items: number;
+                                    macro_summary: number;
+                                    micro_summary: number;
+                                    used: number;
+                                } | null;
+                                updated_at: number;
+                            }[];
+                            page_id: string;
+                            session_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listPageMemoryProposals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            floor_id: string;
+                            items: {
+                                actor_client_id: string | null;
+                                created_at: number;
+                                decided_at: number | null;
+                                decision_code: ("source_page_missing" | "source_page_not_output" | "source_page_not_active" | "source_page_superseded" | "source_page_scope_mismatch" | "rerouted_to_session_state" | "policy_forbidden" | "promotion_allowed") | null;
+                                decision_reason: string | null;
+                                evidence_json: {
+                                    [key: string]: unknown;
+                                };
+                                id: string;
+                                items: {
+                                    created_at: number;
+                                    evidence_json: {
+                                        [key: string]: unknown;
+                                    };
+                                    id: string;
+                                    importance: number | null;
+                                    /** @enum {string} */
+                                    memory_kind: "fact" | "summary" | "open_loop";
+                                    /** @enum {string} */
+                                    operation_kind: "add_fact" | "update_fact" | "deprecate_fact" | "add_open_loop" | "resolve_open_loop" | "refresh_summary";
+                                    payload: {
+                                        [key: string]: unknown;
+                                    };
+                                    reason: string | null;
+                                    /** @enum {string} */
+                                    status: "proposed" | "promoted" | "rejected" | "superseded";
+                                    /** @enum {string} */
+                                    target_scope: "global" | "chat" | "branch" | "floor";
+                                    updated_at: number;
+                                }[];
+                                promotion_status: ("promoted" | "rejected" | "superseded") | null;
+                                proposal_batch_id: string;
+                                /** @enum {string} */
+                                proposal_status: "proposed" | "promoted" | "rejected" | "superseded";
+                                /** @enum {string} */
+                                runtime_mode: "legacy_sync" | "async_primary";
+                                scope_resolution: {
+                                    fallback_reason: string | null;
+                                    mode: string;
+                                    requested_branch_id: string | null;
+                                    requested_scopes: string[];
+                                    resolved_branch_id: string | null;
+                                    resolved_scopes: string[];
+                                    strict?: boolean;
+                                } | null;
+                                source_json: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                source_kind: "unknown" | "macro" | "tool" | "agent" | "memory_runtime";
+                                strategy?: ("none" | "single_summary" | "dual_summary" | "direct_items") | null;
+                                summary_text_hash: string | null;
+                                token_stats: {
+                                    budget: number | null;
+                                    direct_items: number;
+                                    macro_summary: number;
+                                    micro_summary: number;
+                                    used: number;
+                                } | null;
+                                updated_at: number;
+                            }[];
+                            page_id: string;
+                            session_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listPageSessionStateMutations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            floor_id: string;
+                            items: {
+                                actor_client_id: string | null;
+                                applied_at: number | null;
+                                blocked_reason?: string | null;
+                                branch_id: string;
+                                /** @enum {string} */
+                                commit_mode: "direct_public" | "turn_bound" | "variable_reroute";
+                                created_at: number;
+                                decision_code: string | null;
+                                decision_reason: string | null;
+                                /** @enum {string} */
+                                decision_status: "accepted" | "discarded" | "blocked" | "rerouted_to_session_state";
+                                discard_reason?: string | null;
+                                floor_id: string;
+                                id: string;
+                                linked_variable_stage_id: string | null;
+                                live_head_key?: string | null;
+                                page_id: string;
+                                payload_present?: boolean;
+                                payload_preview?: string;
+                                payload_size_bytes?: number;
+                                /** @enum {string} */
+                                replay_safety?: "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
+                                request_id?: string | null;
+                                run_id?: string | null;
+                                source_branch_id?: string | null;
+                                source_floor_id?: string | null;
+                                source_kind: string | null;
+                                source_page_id?: string | null;
+                                state_namespace: string;
+                                /** @enum {string} */
+                                status: "staged" | "applied" | "discarded" | "blocked" | "uncertain";
+                                target_slot: string;
+                                updated_at: number;
+                                /** @enum {string} */
+                                write_mode?: "direct" | "commit_bound";
+                            }[];
+                            page_id: string;
+                            session_id: string;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     listPageVariablePromotions: {
         parameters: {
             query?: never;
@@ -31918,19 +32417,40 @@ export interface operations {
                             branch_id: string;
                             floor_id: string;
                             items: {
+                                actor_client_id: string | null;
                                 /** @enum {string} */
                                 conflict_policy: "replace" | "if_absent";
                                 created_at: number;
+                                decision_code?: ("source_page_missing" | "source_page_not_output" | "source_page_not_active" | "source_page_superseded" | "source_page_scope_mismatch" | "rerouted_to_session_state" | "policy_forbidden" | "promotion_allowed") | null;
+                                decision_reason?: string | null;
+                                evidence: {
+                                    [key: string]: unknown;
+                                };
+                                evidence_json: {
+                                    [key: string]: unknown;
+                                };
                                 /** @enum {string} */
                                 from_scope: "page" | "floor" | "branch" | "chat";
                                 from_scope_id: string;
                                 id: string;
                                 key: string;
+                                linked_session_state_mutation_id?: string | null;
+                                rerouted_target?: {
+                                    [key: string]: unknown;
+                                } | null;
+                                source: {
+                                    [key: string]: unknown;
+                                };
+                                source_json: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                source_kind: "unknown" | "macro" | "tool" | "agent" | "memory_runtime";
                                 source_variable_id?: string | null;
                                 staged_write_id: string | null;
                                 target_variable_id?: string | null;
                                 /** @enum {string} */
-                                to_scope: "floor" | "branch" | "chat" | "global";
+                                to_scope: "floor" | "branch" | "chat" | "global" | "session_state";
                                 to_scope_id: string;
                                 value: unknown;
                             }[];
@@ -31981,24 +32501,38 @@ export interface operations {
                             branch_id: string;
                             floor_id: string;
                             items: {
+                                actor_client_id: string | null;
                                 /** @enum {string} */
                                 conflict_policy: "replace" | "if_absent";
                                 created_at: number;
+                                decision_code?: ("source_page_missing" | "source_page_not_output" | "source_page_not_active" | "source_page_superseded" | "source_page_scope_mismatch" | "rerouted_to_session_state" | "policy_forbidden" | "promotion_allowed") | null;
                                 decision_reason?: string | null;
                                 evidence: {
+                                    [key: string]: unknown;
+                                };
+                                evidence_json: {
                                     [key: string]: unknown;
                                 };
                                 id: string;
                                 /** @enum {string} */
                                 intent: "page_only" | "promote_to_floor_on_accept";
                                 key: string;
+                                linked_session_state_mutation_id?: string | null;
                                 /** @enum {string} */
                                 op: "set" | "delete";
                                 reason: string;
+                                rerouted_target?: {
+                                    [key: string]: unknown;
+                                } | null;
                                 resolved_at: number | null;
                                 source: {
                                     [key: string]: unknown;
                                 };
+                                source_json: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                source_kind: "unknown" | "macro" | "tool" | "agent" | "memory_runtime";
                                 /** @enum {string} */
                                 status: "staged" | "accepted_page_only" | "promoted" | "rejected" | "discarded" | "rerouted_to_session_state";
                                 value: unknown;
@@ -33943,26 +34477,17 @@ export interface operations {
                     "application/json": {
                         data: {
                             budget: {
-                                defaults: {
-                                    max_input_tokens?: number;
-                                    reserved_completion_tokens?: number;
-                                };
-                                /** @enum {unknown} */
-                                persistent_patch_supported: true;
-                                /** @enum {unknown} */
-                                request_override_supported: true;
-                                supported_fields: ("maxInputTokens" | "reservedCompletionTokens")[];
+                                defaults: Record<string, never>;
+                                persistent_patch_supported: boolean;
+                                request_override_supported: boolean;
+                                supported_fields: string[];
                                 trim_reason_codes: ("budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled")[];
                             };
                             compare: {
-                                /** @enum {unknown} */
-                                committed_floors_only: true;
-                                /** @enum {unknown} */
-                                enabled: true;
-                                /** @enum {unknown} */
-                                limitations_instead_of_recompute: true;
-                                /** @enum {unknown} */
-                                mixed_preview_supported: false;
+                                committed_floors_only: boolean;
+                                enabled: boolean;
+                                limitations_instead_of_recompute: boolean;
+                                mixed_preview_supported: boolean;
                             };
                             /** @enum {string} */
                             default_prompt_mode: "compat_strict" | "compat_plus" | "native";
@@ -33975,148 +34500,94 @@ export interface operations {
                             };
                             governance: {
                                 branch: {
-                                    /** @enum {unknown} */
-                                    envelope_metadata: true;
-                                    /** @enum {unknown} */
-                                    materialized_branches_only: true;
-                                    /** @enum {unknown} */
-                                    null_clears_field: true;
+                                    envelope_metadata: boolean;
+                                    materialized_branches_only: boolean;
+                                    null_clears_field: boolean;
                                     /** @enum {string} */
                                     object_patch: "deep_merge";
                                     supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection" | "visibility")[];
                                 };
                                 session: {
-                                    /** @enum {unknown} */
-                                    envelope_metadata: true;
-                                    /** @enum {unknown} */
-                                    null_clears_field: true;
+                                    envelope_metadata: boolean;
+                                    null_clears_field: boolean;
                                     /** @enum {string} */
                                     object_patch: "deep_merge";
                                     supported_fields: ("structure" | "delivery" | "budget" | "sourceSelection" | "visibility")[];
                                 };
                             };
                             macro: {
-                                /** @enum {unknown} */
-                                built_in_read_only_values_persistable: false;
-                                /** @enum {unknown} */
-                                dedicated_macros_route: false;
-                                /** @enum {string} */
-                                diagnostics_surface: "unified_observability";
-                                /** @enum {unknown} */
-                                recent_message_respects_visibility: true;
-                                /** @enum {unknown} */
-                                run_kind_persistable: false;
-                                /** @enum {unknown} */
-                                st_compatibility_snapshots_persistable: false;
+                                built_in_read_only_values_persistable: boolean;
+                                dedicated_macros_route: boolean;
+                                diagnostics_surface: string;
+                                recent_message_respects_visibility: boolean;
+                                run_kind_persistable: boolean;
+                                st_compatibility_snapshots_persistable: boolean;
                             };
                             observability: {
                                 dry_run: {
                                     enabled: boolean;
-                                    /** @enum {unknown} */
-                                    include_worldbook_matches: true;
-                                    /** @enum {unknown} */
-                                    returns_assembly: true;
-                                    /** @enum {unknown} */
-                                    returns_runtime_trace: true;
-                                    /** @enum {unknown} */
-                                    supports_visibility: true;
+                                    include_worldbook_matches: boolean;
+                                    returns_assembly: boolean;
+                                    returns_runtime_trace: boolean;
+                                    supports_visibility: boolean;
                                 };
                                 explain: {
-                                    /** @enum {unknown} */
-                                    enabled: true;
-                                    /** @enum {unknown} */
-                                    legacy_floor_fallback: true;
-                                    /** @enum {unknown} */
-                                    persisted_truth_only: true;
-                                    /** @enum {unknown} */
-                                    read_only: true;
-                                    /** @enum {unknown} */
-                                    recompute: false;
-                                    /** @enum {unknown} */
-                                    requires_committed_floor: true;
-                                    /** @enum {unknown} */
-                                    returns_governance: true;
-                                    /** @enum {string} */
-                                    snapshot_availability_field: "snapshot_available";
-                                    /** @enum {unknown} */
-                                    snapshot_supported: true;
+                                    enabled: boolean;
+                                    legacy_floor_fallback: boolean;
+                                    persisted_truth_only: boolean;
+                                    read_only: boolean;
+                                    recompute: boolean;
+                                    requires_committed_floor: boolean;
+                                    returns_governance: boolean;
+                                    snapshot_availability_field: string;
+                                    snapshot_supported: boolean;
                                 };
                                 inspect: {
-                                    /** @enum {unknown} */
-                                    commits_side_effects: false;
-                                    /** @enum {unknown} */
-                                    creates_floor: false;
+                                    commits_side_effects: boolean;
+                                    creates_floor: boolean;
                                     enabled: boolean;
-                                    /** @enum {unknown} */
-                                    llm_call: false;
+                                    llm_call: boolean;
                                     /** @enum {string} */
                                     mode: "prepared_turn";
-                                    /** @enum {unknown} */
-                                    returns_contributors: true;
-                                    /** @enum {unknown} */
-                                    returns_governance: true;
-                                    /** @enum {unknown} */
-                                    returns_prepare_phase_trace: true;
-                                    /** @enum {unknown} */
-                                    returns_prepared_turn: true;
-                                    /** @enum {unknown} */
-                                    supports_branch: true;
-                                    /** @enum {unknown} */
-                                    supports_source_floor: true;
-                                    /** @enum {unknown} */
-                                    supports_visibility: true;
-                                    /** @enum {unknown} */
-                                    writes_explain_snapshot: false;
-                                    /** @enum {unknown} */
-                                    writes_prompt_snapshot: false;
+                                    returns_contributors: boolean;
+                                    returns_governance: boolean;
+                                    returns_prepare_phase_trace: boolean;
+                                    returns_prepared_turn: boolean;
+                                    supports_branch: boolean;
+                                    supports_source_floor: boolean;
+                                    supports_visibility: boolean;
+                                    writes_explain_snapshot: boolean;
+                                    writes_prompt_snapshot: boolean;
                                 };
                                 live: {
-                                    /** @enum {unknown} */
-                                    default_off: true;
+                                    default_off: boolean;
                                     enabled: boolean;
-                                    /** @enum {unknown} */
-                                    include_prompt_snapshot: true;
-                                    /** @enum {unknown} */
-                                    include_runtime_trace: true;
-                                    /** @enum {unknown} */
-                                    include_worldbook_matches: true;
-                                    /** @enum {unknown} */
-                                    request_scoped_only: true;
-                                    /** @enum {unknown} */
-                                    visibility_request_supported: false;
-                                    /** @enum {unknown} */
-                                    worldbook_matches_requires_opt_in: true;
-                                    /** @enum {unknown} */
-                                    worldbook_matches_requires_runtime_trace: true;
+                                    include_prompt_snapshot: boolean;
+                                    include_runtime_trace: boolean;
+                                    include_worldbook_matches: boolean;
+                                    request_scoped_only: boolean;
+                                    visibility_request_supported: boolean;
+                                    worldbook_matches_requires_opt_in: boolean;
+                                    worldbook_matches_requires_runtime_trace: boolean;
                                 };
                                 preview: {
-                                    /** @enum {unknown} */
-                                    commits_side_effects: false;
-                                    /** @enum {unknown} */
-                                    creates_floor: false;
+                                    commits_side_effects: boolean;
+                                    creates_floor: boolean;
                                     enabled: boolean;
-                                    /** @enum {unknown} */
-                                    llm_call: false;
+                                    llm_call: boolean;
                                     /** @enum {string} */
                                     mode: "macro_text_preview";
-                                    /** @enum {unknown} */
-                                    returns_assembly_truth: false;
-                                    /** @enum {unknown} */
-                                    returns_runtime_trace: true;
-                                    /** @enum {unknown} */
-                                    single_text_only: true;
-                                    /** @enum {unknown} */
-                                    supports_visibility: true;
-                                    trace_subset: ("macro" | "source_selection" | "visibility" | "history_normalization")[];
-                                    /** @enum {unknown} */
-                                    writes_prompt_snapshot: false;
+                                    returns_assembly_truth: boolean;
+                                    returns_runtime_trace: boolean;
+                                    single_text_only: boolean;
+                                    supports_visibility: boolean;
+                                    trace_subset: string[];
+                                    writes_prompt_snapshot: boolean;
                                 };
                                 stream: {
                                     enabled: boolean;
-                                    /** @enum {unknown} */
-                                    new_sse_event_family: false;
-                                    /** @enum {string} */
-                                    prompt_debug_payload: "done_only" | "unsupported";
+                                    new_sse_event_family: boolean;
+                                    prompt_debug_payload: string;
                                 };
                             };
                             prompt_modes: {
@@ -34132,7 +34603,6 @@ export interface operations {
                                         enabled: boolean;
                                     };
                                     history: {
-                                        max_messages?: number;
                                         /** @enum {string} */
                                         mode: "full" | "windowed";
                                     };
@@ -34145,17 +34615,12 @@ export interface operations {
                                 };
                                 exclusion_reason_codes: ("disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered")[];
                                 history_modes: ("full" | "windowed")[];
-                                /** @enum {unknown} */
-                                persistent_patch_supported: true;
-                                /** @enum {unknown} */
-                                request_override_supported: true;
-                                /** @description Public source kinds only. Internal budget groups such as `section:*` do not appear here. */
+                                persistent_patch_supported: boolean;
+                                request_override_supported: boolean;
                                 supported_sources: ("history" | "memory" | "worldbook" | "examples")[];
                             };
                             structure: {
                                 defaults: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -35312,29 +35777,165 @@ export interface operations {
                      *             "version_no": 5
                      *           }
                      *         },
-                     *         "branch_persistent_policy": {
+                     *         "capabilities": {
+                     *           "budget": {
+                     *             "defaults": {},
+                     *             "persistent_patch_supported": true,
+                     *             "request_override_supported": true,
+                     *             "supported_fields": [
+                     *               "maxInputTokens",
+                     *               "reservedCompletionTokens"
+                     *             ],
+                     *             "trim_reason_codes": [
+                     *               "budget_exceeded",
+                     *               "group_limit_exceeded",
+                     *               "provider_constraint",
+                     *               "policy_disabled"
+                     *             ]
+                     *           },
+                     *           "compare": {
+                     *             "committed_floors_only": true,
+                     *             "enabled": true,
+                     *             "limitations_instead_of_recompute": true,
+                     *             "mixed_preview_supported": false
+                     *           },
+                     *           "default_prompt_mode": "compat_strict",
                      *           "delivery": {
-                     *             "no_assistant": true
-                     *           }
-                     *         },
-                     *         "branch_persistent_policy_envelope": {
-                     *           "updated_at": 1710000004500,
-                     *           "updated_by": "user-1",
-                     *           "value": {
-                     *             "budget": {
-                     *               "max_input_tokens": 4096,
-                     *               "reserved_completion_tokens": 1024
+                     *             "defaults": {
+                     *               "allow_assistant_prefill": true,
+                     *               "no_assistant": false,
+                     *               "require_last_user": false
+                     *             }
+                     *           },
+                     *           "governance": {
+                     *             "branch": {
+                     *               "envelope_metadata": true,
+                     *               "materialized_branches_only": true,
+                     *               "null_clears_field": true,
+                     *               "object_patch": "deep_merge",
+                     *               "supported_fields": [
+                     *                 "structure",
+                     *                 "delivery",
+                     *                 "budget",
+                     *                 "sourceSelection",
+                     *                 "visibility"
+                     *               ]
                      *             },
-                     *             "delivery": {
-                     *               "no_assistant": true
+                     *             "session": {
+                     *               "envelope_metadata": true,
+                     *               "null_clears_field": true,
+                     *               "object_patch": "deep_merge",
+                     *               "supported_fields": [
+                     *                 "structure",
+                     *                 "delivery",
+                     *                 "budget",
+                     *                 "sourceSelection",
+                     *                 "visibility"
+                     *               ]
+                     *             }
+                     *           },
+                     *           "macro": {
+                     *             "built_in_read_only_values_persistable": false,
+                     *             "dedicated_macros_route": false,
+                     *             "diagnostics_surface": "unified_observability",
+                     *             "recent_message_respects_visibility": true,
+                     *             "run_kind_persistable": false,
+                     *             "st_compatibility_snapshots_persistable": false
+                     *           },
+                     *           "observability": {
+                     *             "dry_run": {
+                     *               "enabled": true,
+                     *               "include_worldbook_matches": true,
+                     *               "returns_assembly": true,
+                     *               "returns_runtime_trace": true,
+                     *               "supports_visibility": true
                      *             },
-                     *             "source_selection": {
+                     *             "explain": {
+                     *               "enabled": true,
+                     *               "legacy_floor_fallback": true,
+                     *               "persisted_truth_only": true,
+                     *               "read_only": true,
+                     *               "recompute": false,
+                     *               "requires_committed_floor": true,
+                     *               "returns_governance": true,
+                     *               "snapshot_availability_field": "snapshot_available",
+                     *               "snapshot_supported": true
+                     *             },
+                     *             "inspect": {
+                     *               "commits_side_effects": false,
+                     *               "creates_floor": false,
+                     *               "enabled": true,
+                     *               "llm_call": false,
+                     *               "mode": "prepared_turn",
+                     *               "returns_contributors": true,
+                     *               "returns_governance": true,
+                     *               "returns_prepare_phase_trace": true,
+                     *               "returns_prepared_turn": true,
+                     *               "supports_branch": true,
+                     *               "supports_source_floor": true,
+                     *               "supports_visibility": true,
+                     *               "writes_explain_snapshot": false,
+                     *               "writes_prompt_snapshot": false
+                     *             },
+                     *             "live": {
+                     *               "default_off": true,
+                     *               "enabled": true,
+                     *               "include_prompt_snapshot": true,
+                     *               "include_runtime_trace": true,
+                     *               "include_worldbook_matches": true,
+                     *               "request_scoped_only": true,
+                     *               "visibility_request_supported": false,
+                     *               "worldbook_matches_requires_opt_in": true,
+                     *               "worldbook_matches_requires_runtime_trace": true
+                     *             },
+                     *             "preview": {
+                     *               "commits_side_effects": false,
+                     *               "creates_floor": false,
+                     *               "enabled": true,
+                     *               "llm_call": false,
+                     *               "mode": "macro_text_preview",
+                     *               "returns_assembly_truth": false,
+                     *               "returns_runtime_trace": true,
+                     *               "single_text_only": true,
+                     *               "supports_visibility": true,
+                     *               "trace_subset": [
+                     *                 "macro",
+                     *                 "source_selection",
+                     *                 "visibility",
+                     *                 "history_normalization"
+                     *               ],
+                     *               "writes_prompt_snapshot": false
+                     *             },
+                     *             "stream": {
+                     *               "enabled": true,
+                     *               "new_sse_event_family": false,
+                     *               "prompt_debug_payload": "done_only"
+                     *             }
+                     *           },
+                     *           "prompt_modes": [
+                     *             {
+                     *               "agentic_scope": "none",
+                     *               "description": "Strict SillyTavern-compatible prompt assembly. No Agentic or NodeGraph behavior should leak into this mode.",
+                     *               "name": "compat_strict"
+                     *             },
+                     *             {
+                     *               "agentic_scope": "limited",
+                     *               "description": "Compatibility-first prompt assembly with light augmentation only.",
+                     *               "name": "compat_plus"
+                     *             },
+                     *             {
+                     *               "agentic_scope": "primary",
+                     *               "description": "Native prompt pipeline entry for richer NodeGraph and Agentic evolution.",
+                     *               "name": "native"
+                     *             }
+                     *           ],
+                     *           "source_selection": {
+                     *             "defaults": {
                      *               "examples": {
-                     *                 "enabled": false
+                     *                 "enabled": true
                      *               },
                      *               "history": {
-                     *                 "max_messages": 24,
-                     *                 "mode": "windowed"
+                     *                 "mode": "full"
                      *               },
                      *               "memory": {
                      *                 "enabled": true
@@ -35343,27 +35944,46 @@ export interface operations {
                      *                 "enabled": true
                      *               }
                      *             },
-                     *             "visibility": {
-                     *               "hidden_floor_ranges": [
-                     *                 {
-                     *                   "end_floor_no": 2,
-                     *                   "start_floor_no": 1
-                     *                 }
-                     *               ],
-                     *               "mode": "allow_all_except_hidden"
-                     *             }
+                     *             "exclusion_reason_codes": [
+                     *               "disabled_by_policy",
+                     *               "budget_trimmed",
+                     *               "provider_constraint",
+                     *               "visibility_filtered",
+                     *               "not_triggered"
+                     *             ],
+                     *             "history_modes": [
+                     *               "full",
+                     *               "windowed"
+                     *             ],
+                     *             "persistent_patch_supported": true,
+                     *             "request_override_supported": true,
+                     *             "supported_sources": [
+                     *               "history",
+                     *               "memory",
+                     *               "worldbook",
+                     *               "examples"
+                     *             ]
                      *           },
-                     *           "version": 2
+                     *           "structure": {
+                     *             "defaults": {
+                     *               "merge_adjacent_same_role": false,
+                     *               "mode": "default",
+                     *               "preserve_system_messages": true
+                     *             },
+                     *             "modes": [
+                     *               "default",
+                     *               "strict_alternating",
+                     *               "no_assistant",
+                     *               "flattened"
+                     *             ]
+                     *           },
+                     *           "unsupported": [
+                     *             "/sessions/:id/prompt-runtime/run",
+                     *             "/sessions/:id/prompt-runtime/macros",
+                     *             "/floors/:id/prompt-runtime",
+                     *             "/messages/:id/prompt-runtime"
+                     *           ]
                      *         },
-                     *         "diagnostics": [
-                     *           {
-                     *             "code": "derived_no_assistant_structure",
-                     *             "field_path": "policy.structure.mode",
-                     *             "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
-                     *             "severity": "warning",
-                     *             "source": "policy"
-                     *           }
-                     *         ],
                      *         "limitations": [
                      *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
@@ -35376,37 +35996,7 @@ export interface operations {
                      *           "session_prompt_mode": null,
                      *           "source": "legacy_metadata"
                      *         },
-                     *         "persistent_policy": {
-                     *           "delivery": {
-                     *             "require_last_user": true
-                     *           },
-                     *           "structure": {
-                     *             "mode": "strict_alternating"
-                     *           }
-                     *         },
-                     *         "persistent_policy_envelope": {
-                     *           "updated_at": 1710000004200,
-                     *           "updated_by": "user-1",
-                     *           "value": {
-                     *             "delivery": {
-                     *               "require_last_user": true
-                     *             },
-                     *             "structure": {
-                     *               "mode": "strict_alternating"
-                     *             },
-                     *             "visibility": {
-                     *               "hidden_floor_ranges": [
-                     *                 {
-                     *                   "end_floor_no": 2,
-                     *                   "start_floor_no": 1
-                     *                 }
-                     *               ],
-                     *               "mode": "allow_all_except_hidden"
-                     *             }
-                     *           },
-                     *           "version": 1
-                     *         },
-                     *         "policy": {
+                     *         "resolved_policy": {
                      *           "budget": {
                      *             "max_input_tokens": 4096,
                      *             "reserved_completion_tokens": 1024
@@ -35499,10 +36089,7 @@ export interface operations {
                      *             "hidden_floor_ranges": "request_override",
                      *             "mode": "request_override"
                      *           }
-                     *         },
-                     *         "warnings": [
-                     *           "delivery.noAssistant forced the resolved structure.mode to no_assistant."
-                     *         ]
+                     *         }
                      *       }
                      *     }
                      */
@@ -35569,20 +36156,9 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
-                                /**
-                                 * @example {
-                                 *       "hidden_floor_ranges": [
-                                 *         {
-                                 *           "end_floor_no": 2,
-                                 *           "start_floor_no": 1
-                                 *         }
-                                 *       ],
-                                 *       "mode": "allow_all_except_hidden"
-                                 *     }
-                                 */
                                 visibility?: {
                                     hidden_floor_ids?: string[];
                                     hidden_floor_ranges?: {
@@ -35631,20 +36207,9 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
                                     };
-                                    /**
-                                     * @example {
-                                     *       "hidden_floor_ranges": [
-                                     *         {
-                                     *           "end_floor_no": 2,
-                                     *           "start_floor_no": 1
-                                     *         }
-                                     *       ],
-                                     *       "mode": "allow_all_except_hidden"
-                                     *     }
-                                     */
                                     visibility?: {
                                         hidden_floor_ids?: string[];
                                         hidden_floor_ranges?: {
@@ -35665,24 +36230,12 @@ export interface operations {
                                 code: string;
                                 field_path?: string;
                                 message: string;
-                                /** @enum {string} */
-                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                phase?: string;
                                 /** @enum {string} */
                                 severity: "info" | "warning" | "error";
-                                /** @enum {string} */
-                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                                source?: string;
                             }[];
                             limitations: string[];
-                            /**
-                             * @example {
-                             *       "default_prompt_mode": "compat_strict",
-                             *       "effective_prompt_mode": "native",
-                             *       "legacy_fallback": true,
-                             *       "prompt_mode": "native",
-                             *       "session_prompt_mode": null,
-                             *       "source": "legacy_metadata"
-                             *     }
-                             */
                             mode: {
                                 /** @enum {string} */
                                 default_prompt_mode: "compat_strict" | "compat_plus" | "native";
@@ -35726,20 +36279,9 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
-                                /**
-                                 * @example {
-                                 *       "hidden_floor_ranges": [
-                                 *         {
-                                 *           "end_floor_no": 2,
-                                 *           "start_floor_no": 1
-                                 *         }
-                                 *       ],
-                                 *       "mode": "allow_all_except_hidden"
-                                 *     }
-                                 */
                                 visibility?: {
                                     hidden_floor_ids?: string[];
                                     hidden_floor_ranges?: {
@@ -35788,20 +36330,9 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
                                     };
-                                    /**
-                                     * @example {
-                                     *       "hidden_floor_ranges": [
-                                     *         {
-                                     *           "end_floor_no": 2,
-                                     *           "start_floor_no": 1
-                                     *         }
-                                     *       ],
-                                     *       "mode": "allow_all_except_hidden"
-                                     *     }
-                                     */
                                     visibility?: {
                                         hidden_floor_ids?: string[];
                                         hidden_floor_ranges?: {
@@ -35850,8 +36381,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -35877,7 +36407,7 @@ export interface operations {
                                 /** @enum {string} */
                                 history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 session_id: string;
-                                source_floor_id?: string | null;
+                                source_floor_id: string | null;
                                 target_branch_id: string;
                             };
                             source_map?: {
@@ -35886,14 +36416,6 @@ export interface operations {
                                     max_input_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
                                     reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                };
-                                debug?: {
-                                    /** @enum {string} */
-                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                                 delivery?: {
                                     /** @enum {string} */
@@ -35904,9 +36426,9 @@ export interface operations {
                                     require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                                 history?: {
-                                    source_branch_id?: string;
+                                    source_branch_id: string;
                                     /** @enum {string} */
-                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                    source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 };
                                 source_selection?: {
                                     examples?: {
@@ -36130,25 +36652,75 @@ export interface operations {
                      * @example {
                      *       "data": {
                      *         "persistent_policy": {
-                     *           "delivery": {
-                     *             "require_last_user": true
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
                      *           },
-                     *           "structure": {
-                     *             "mode": "strict_alternating"
+                     *           "delivery": {
+                     *             "no_assistant": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "persistent_policy_envelope": {
-                     *           "updated_at": 1710000004300,
+                     *           "updated_at": 1710000004500,
                      *           "updated_by": "user-1",
                      *           "value": {
-                     *             "delivery": {
-                     *               "require_last_user": true
+                     *             "budget": {
+                     *               "max_input_tokens": 4096,
+                     *               "reserved_completion_tokens": 1024
                      *             },
-                     *             "structure": {
-                     *               "mode": "strict_alternating"
+                     *             "delivery": {
+                     *               "no_assistant": true
+                     *             },
+                     *             "source_selection": {
+                     *               "examples": {
+                     *                 "enabled": false
+                     *               },
+                     *               "history": {
+                     *                 "max_messages": 24,
+                     *                 "mode": "windowed"
+                     *               },
+                     *               "memory": {
+                     *                 "enabled": true
+                     *               },
+                     *               "worldbook": {
+                     *                 "enabled": true
+                     *               }
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
                      *             }
                      *           },
-                     *           "version": 1
+                     *           "version": 2
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -36233,20 +36805,9 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
-                                /**
-                                 * @example {
-                                 *       "hidden_floor_ranges": [
-                                 *         {
-                                 *           "end_floor_no": 2,
-                                 *           "start_floor_no": 1
-                                 *         }
-                                 *       ],
-                                 *       "mode": "allow_all_except_hidden"
-                                 *     }
-                                 */
                                 visibility?: {
                                     hidden_floor_ids?: string[];
                                     hidden_floor_ranges?: {
@@ -36295,20 +36856,9 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
                                     };
-                                    /**
-                                     * @example {
-                                     *       "hidden_floor_ranges": [
-                                     *         {
-                                     *           "end_floor_no": 2,
-                                     *           "start_floor_no": 1
-                                     *         }
-                                     *       ],
-                                     *       "mode": "allow_all_except_hidden"
-                                     *     }
-                                     */
                                     visibility?: {
                                         hidden_floor_ids?: string[];
                                         hidden_floor_ranges?: {
@@ -36357,8 +36907,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -36473,7 +37022,7 @@ export interface operations {
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     } | null;
                     visibility?: {
@@ -36489,7 +37038,7 @@ export interface operations {
                             start_floor_no: number;
                         }[];
                     } | null;
-                } | unknown | unknown | unknown | unknown | unknown;
+                };
             };
         };
         responses: {
@@ -36503,25 +37052,75 @@ export interface operations {
                      * @example {
                      *       "data": {
                      *         "persistent_policy": {
-                     *           "delivery": {
-                     *             "require_last_user": true
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
                      *           },
-                     *           "structure": {
-                     *             "mode": "strict_alternating"
+                     *           "delivery": {
+                     *             "no_assistant": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "persistent_policy_envelope": {
-                     *           "updated_at": 1710000004300,
+                     *           "updated_at": 1710000004500,
                      *           "updated_by": "user-1",
                      *           "value": {
-                     *             "delivery": {
-                     *               "require_last_user": true
+                     *             "budget": {
+                     *               "max_input_tokens": 4096,
+                     *               "reserved_completion_tokens": 1024
                      *             },
-                     *             "structure": {
-                     *               "mode": "strict_alternating"
+                     *             "delivery": {
+                     *               "no_assistant": true
+                     *             },
+                     *             "source_selection": {
+                     *               "examples": {
+                     *                 "enabled": false
+                     *               },
+                     *               "history": {
+                     *                 "max_messages": 24,
+                     *                 "mode": "windowed"
+                     *               },
+                     *               "memory": {
+                     *                 "enabled": true
+                     *               },
+                     *               "worldbook": {
+                     *                 "enabled": true
+                     *               }
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
                      *             }
                      *           },
-                     *           "version": 1
+                     *           "version": 2
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -36606,20 +37205,9 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
-                                /**
-                                 * @example {
-                                 *       "hidden_floor_ranges": [
-                                 *         {
-                                 *           "end_floor_no": 2,
-                                 *           "start_floor_no": 1
-                                 *         }
-                                 *       ],
-                                 *       "mode": "allow_all_except_hidden"
-                                 *     }
-                                 */
                                 visibility?: {
                                     hidden_floor_ids?: string[];
                                     hidden_floor_ranges?: {
@@ -36668,20 +37256,9 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
                                     };
-                                    /**
-                                     * @example {
-                                     *       "hidden_floor_ranges": [
-                                     *         {
-                                     *           "end_floor_no": 2,
-                                     *           "start_floor_no": 1
-                                     *         }
-                                     *       ],
-                                     *       "mode": "allow_all_except_hidden"
-                                     *     }
-                                     */
                                     visibility?: {
                                         hidden_floor_ids?: string[];
                                         hidden_floor_ranges?: {
@@ -36730,8 +37307,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -36896,32 +37472,23 @@ export interface operations {
                      *         ],
                      *         "governance_changes": [],
                      *         "left": {
-                     *           "floor_id": "floor-left",
+                     *           "floor_id": "floor-11",
                      *           "snapshot_available": true
                      *         },
-                     *         "limitations": [],
+                     *         "limitations": [
+                     *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
+                     *           "Variable commit remains page -> floor. Branch promotion is not automatic."
+                     *         ],
                      *         "policy_changes": [
                      *           {
                      *             "change_type": "changed",
-                     *             "left": 4096,
-                     *             "path": "policy.resolved_policy.budget.max_input_tokens",
-                     *             "right": 2048
-                     *           },
-                     *           {
-                     *             "change_type": "changed",
-                     *             "left": "allow_all_except_hidden",
-                     *             "path": "policy.resolved_policy.visibility.mode",
-                     *             "right": "deny_all_except_visible"
-                     *           },
-                     *           {
-                     *             "change_type": "changed",
-                     *             "left": "session_policy",
-                     *             "path": "policy.source_map.visibility.mode",
-                     *             "right": "request_override"
+                     *             "left": false,
+                     *             "path": "policy.resolved_policy.delivery.no_assistant",
+                     *             "right": true
                      *           }
                      *         ],
                      *         "right": {
-                     *           "floor_id": "floor-right",
+                     *           "floor_id": "floor-12",
                      *           "snapshot_available": true
                      *         },
                      *         "scope_changes": [],
@@ -37277,7 +37844,7 @@ export interface operations {
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     };
                     visibility?: {
@@ -37506,6 +38073,60 @@ export interface operations {
                      *               "used": 64
                      *             }
                      *           },
+                     *           "memory_injection": {
+                     *             "formatted_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                     *             "items": [
+                     *               {
+                     *                 "confidence": 1,
+                     *                 "content": "Bob still holds the vault key.",
+                     *                 "created_at": 1710000000100,
+                     *                 "fact_key": "vault_key_owner",
+                     *                 "id": "memory-branch-fact-1",
+                     *                 "importance": 0.82,
+                     *                 "scope": "branch",
+                     *                 "scope_id": "memscope:session-1:main",
+                     *                 "source_floor_id": null,
+                     *                 "source_message_id": null,
+                     *                 "status": "active",
+                     *                 "summary_tier": null,
+                     *                 "token_count_estimate": 18,
+                     *                 "type": "fact",
+                     *                 "updated_at": 1710000000200
+                     *               },
+                     *               {
+                     *                 "confidence": 1,
+                     *                 "content": "Alice had started to distrust Bob.",
+                     *                 "created_at": 1710000000300,
+                     *                 "fact_key": null,
+                     *                 "id": "memory-branch-summary-1",
+                     *                 "importance": 0.64,
+                     *                 "scope": "branch",
+                     *                 "scope_id": "memscope:session-1:main",
+                     *                 "source_floor_id": null,
+                     *                 "source_message_id": null,
+                     *                 "status": "active",
+                     *                 "summary_tier": "micro",
+                     *                 "token_count_estimate": 14,
+                     *                 "type": "summary",
+                     *                 "updated_at": 1710000000400
+                     *               }
+                     *             ],
+                     *             "scope_resolution": {
+                     *               "mode": "visible_refs",
+                     *               "scope_refs": [
+                     *                 {
+                     *                   "scope": "global",
+                     *                   "scopeId": "default-admin"
+                     *                 },
+                     *                 {
+                     *                   "scope": "branch",
+                     *                   "scopeId": "memscope:session-1:main"
+                     *                 }
+                     *               ],
+                     *               "strict": false
+                     *             },
+                     *             "token_count": 64
+                     *           },
                      *           "memory_summary": "The party recently agreed to search the northern pass.",
                      *           "messages": [
                      *             {
@@ -37625,9 +38246,9 @@ export interface operations {
                      *             "worldbook_version_id": "worldbook-ver-5"
                      *           },
                      *           "requested_turn_config": {
-                     *             "enableDirector": false,
-                     *             "enableTools": false,
-                     *             "enableVerifier": false
+                     *             "enable_director": false,
+                     *             "enable_tools": false,
+                     *             "enable_verifier": false
                      *           },
                      *           "runtime_trace": {
                      *             "history_normalization": {
@@ -37657,10 +38278,10 @@ export interface operations {
                      *             "macro": {
                      *               "mutation_preview": [
                      *                 {
-                     *                   "key": "资产",
+                     *                   "key": "资产.金币",
                      *                   "kind": "set",
                      *                   "scope": "branch",
-                     *                   "value": "{\"金币\":3}"
+                     *                   "value": "3"
                      *                 }
                      *               ],
                      *               "staged_mutations": [],
@@ -37684,20 +38305,14 @@ export interface operations {
                      *                 "setvar",
                      *                 "getvar"
                      *               ],
-                     *               "warnings": [
-                     *                 {
-                     *                   "code": "macro_preview_side_effect_suppressed",
-                     *                   "macro_name": "setvar",
-                     *                   "message": "Macro setvar side effect was previewed but not committed."
-                     *                 }
-                     *               ]
+                     *               "warnings": []
                      *             },
                      *             "source_selection": {
                      *               "excluded_sources": [
                      *                 {
-                     *                   "detail": "Visibility filtered 2 floor(s) from the available history window.",
-                     *                   "reason": "visibility_filtered",
-                     *                   "source": "history"
+                     *                   "detail": "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+                     *                   "reason": "disabled_by_policy",
+                     *                   "source": "examples"
                      *                 }
                      *               ]
                      *             },
@@ -37726,9 +38341,9 @@ export interface operations {
                      *           },
                      *           "token_estimate": 512,
                      *           "turn_config": {
-                     *             "enableDirector": false,
-                     *             "enableTools": false,
-                     *             "enableVerifier": false
+                     *             "enable_director": false,
+                     *             "enable_tools": false,
+                     *             "enable_verifier": false
                      *           }
                      *         },
                      *         "scope": {
@@ -37806,29 +38421,23 @@ export interface operations {
                                 code: string;
                                 field_path?: string;
                                 message: string;
-                                /** @enum {string} */
-                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                phase?: string;
                                 /** @enum {string} */
                                 severity: "info" | "warning" | "error";
-                                /** @enum {string} */
-                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                                source?: string;
                             }[];
                             excluded_sources: {
                                 detail?: string;
                                 /** @enum {string} */
                                 reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
-                                /**
-                                 * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
-                                 * @enum {string}
-                                 */
+                                /** @enum {string} */
                                 source: "history" | "memory" | "worldbook" | "examples";
                             }[];
                             governance: {
                                 entries: {
                                     budget_groups: string[];
-                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
-                                    /** @enum {string} */
-                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    declared_level: string | null;
+                                    effective_retention: string;
                                     pinned: boolean | null;
                                     prunable: boolean | null;
                                     pruned_token_count: number;
@@ -37841,11 +38450,9 @@ export interface operations {
                                 limitations: string[];
                                 mismatches: {
                                     budget_groups: string[];
-                                    /** @enum {string} */
-                                    code: "declared_budget_prunable_but_effectively_fixed" | "declared_soft_required_but_effectively_budget_prunable" | "unregistered_governed_source" | "mixed_effective_retention";
-                                    declared_level?: ("hard_required" | "soft_required" | "budget_prunable") | null;
-                                    /** @enum {string} */
-                                    effective_retention: "fixed" | "soft_required" | "budget_prunable" | "mixed";
+                                    code: string;
+                                    declared_level: string | null;
+                                    effective_retention: string;
                                     message: string;
                                     source_kind: string;
                                 }[];
@@ -37897,16 +38504,6 @@ export interface operations {
                                 }[];
                             };
                             limitations: string[];
-                            /**
-                             * @example {
-                             *       "default_prompt_mode": "compat_strict",
-                             *       "effective_prompt_mode": "native",
-                             *       "legacy_fallback": true,
-                             *       "prompt_mode": "native",
-                             *       "session_prompt_mode": null,
-                             *       "source": "legacy_metadata"
-                             *     }
-                             */
                             mode: {
                                 /** @enum {string} */
                                 default_prompt_mode: "compat_strict" | "compat_plus" | "native";
@@ -37951,8 +38548,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -37988,7 +38584,26 @@ export interface operations {
                                     } | null;
                                     source_kind: string;
                                 }[];
-                                generation_params: Record<string, never>;
+                                /**
+                                 * @example {
+                                 *       "max_output_tokens": 256,
+                                 *       "reasoning_effort": "low",
+                                 *       "temperature": 0.7,
+                                 *       "top_p": 0.9
+                                 *     }
+                                 */
+                                generation_params: {
+                                    frequency_penalty?: number;
+                                    max_output_tokens?: number;
+                                    presence_penalty?: number;
+                                    /** @enum {string} */
+                                    reasoning_effort?: "low" | "medium" | "high";
+                                    stop_sequences?: string[];
+                                    stream?: boolean;
+                                    temperature?: number;
+                                    top_k?: number;
+                                    top_p?: number;
+                                };
                                 memory?: {
                                     effective_write?: boolean;
                                     page_id?: string;
@@ -38035,6 +38650,49 @@ export interface operations {
                                         micro_summary: number;
                                         used: number;
                                     };
+                                };
+                                memory_injection?: {
+                                    formatted_text: string;
+                                    items: {
+                                        confidence: number;
+                                        content: string;
+                                        created_at: number;
+                                        fact_key: string | null;
+                                        id: string;
+                                        importance: number;
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "branch" | "floor";
+                                        scope_id: string;
+                                        source_floor_id: string | null;
+                                        source_message_id: string | null;
+                                        status: string;
+                                        summary_tier: ("micro" | "macro") | null;
+                                        token_count_estimate: number | null;
+                                        /** @enum {string} */
+                                        type: "fact" | "summary" | "open_loop";
+                                        updated_at: number;
+                                    }[];
+                                    scope_resolution: {
+                                        error?: {
+                                            message: string;
+                                            name: string;
+                                        };
+                                        explicit_scope?: {
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scopeId: string;
+                                        };
+                                        fallback_scope_id?: string;
+                                        /** @enum {string} */
+                                        mode: "visible_refs" | "explicit_scope" | "direct_scope_fallback" | "strict_empty" | "resolver_error";
+                                        scope_refs?: {
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scopeId: string;
+                                        }[];
+                                        strict: boolean;
+                                    } | null;
+                                    token_count: number;
                                 };
                                 memory_summary: string | null;
                                 messages: {
@@ -38098,7 +38756,17 @@ export interface operations {
                                     worldbook_version: number | null;
                                     worldbook_version_id: string | null;
                                 } | null;
-                                requested_turn_config: Record<string, never> | null;
+                                requested_turn_config: {
+                                    enable_director?: boolean;
+                                    enable_memory_consolidation?: boolean;
+                                    enable_tools?: boolean;
+                                    enable_verifier?: boolean;
+                                    max_retries?: number;
+                                    /** @enum {string} */
+                                    tool_mode?: "inline" | "standalone" | "both";
+                                    /** @enum {string} */
+                                    verifier_fail_strategy?: "warn" | "block" | "retry";
+                                } | null;
                                 runtime_trace: {
                                     budgets?: {
                                         by_group: {
@@ -38435,7 +39103,17 @@ export interface operations {
                                     }[];
                                 };
                                 token_estimate: number;
-                                turn_config: Record<string, never> | null;
+                                turn_config: {
+                                    enable_director?: boolean;
+                                    enable_memory_consolidation?: boolean;
+                                    enable_tools?: boolean;
+                                    enable_verifier?: boolean;
+                                    max_retries?: number;
+                                    /** @enum {string} */
+                                    tool_mode?: "inline" | "standalone" | "both";
+                                    /** @enum {string} */
+                                    verifier_fail_strategy?: "warn" | "block" | "retry";
+                                } | null;
                             };
                             scope: {
                                 branch_exists: boolean;
@@ -38443,11 +39121,10 @@ export interface operations {
                                 /** @enum {string} */
                                 history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 session_id: string;
-                                source_floor_id?: string | null;
+                                source_floor_id: string | null;
                                 target_branch_id: string;
                             };
                             section_stats: {
-                                /** @description Prompt section name. Section stats remain section-level even when budget groups use concrete labels such as `section:main`. */
                                 section_name: string;
                                 token_count: number;
                             }[];
@@ -38458,14 +39135,6 @@ export interface operations {
                                     /** @enum {string} */
                                     reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
-                                debug?: {
-                                    /** @enum {string} */
-                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                };
                                 delivery?: {
                                     /** @enum {string} */
                                     allow_assistant_prefill?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
@@ -38475,9 +39144,9 @@ export interface operations {
                                     require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                                 history?: {
-                                    source_branch_id?: string;
+                                    source_branch_id: string;
                                     /** @enum {string} */
-                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                    source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 };
                                 source_selection?: {
                                     examples?: {
@@ -38522,7 +39191,6 @@ export interface operations {
                             };
                             trim_reasons: {
                                 detail?: string;
-                                /** @description Budget group label. This may include concrete section groups such as `section:main`. */
                                 group: string;
                                 pruned_token_count?: number;
                                 /** @enum {string} */
@@ -38649,16 +39317,6 @@ export interface operations {
                      *     }
                      */
                     "application/json": {
-                        /**
-                         * @example {
-                         *       "default_prompt_mode": "compat_strict",
-                         *       "effective_prompt_mode": "native",
-                         *       "legacy_fallback": true,
-                         *       "prompt_mode": "native",
-                         *       "session_prompt_mode": null,
-                         *       "source": "legacy_metadata"
-                         *     }
-                         */
                         data: {
                             /** @enum {string} */
                             default_prompt_mode: "compat_strict" | "compat_plus" | "native";
@@ -38746,16 +39404,6 @@ export interface operations {
                      *     }
                      */
                     "application/json": {
-                        /**
-                         * @example {
-                         *       "default_prompt_mode": "compat_strict",
-                         *       "effective_prompt_mode": "native",
-                         *       "legacy_fallback": true,
-                         *       "prompt_mode": "native",
-                         *       "session_prompt_mode": null,
-                         *       "source": "legacy_metadata"
-                         *     }
-                         */
                         data: {
                             /** @enum {string} */
                             default_prompt_mode: "compat_strict" | "compat_plus" | "native";
@@ -38879,25 +39527,75 @@ export interface operations {
                      * @example {
                      *       "data": {
                      *         "persistent_policy": {
-                     *           "delivery": {
-                     *             "require_last_user": true
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
                      *           },
-                     *           "structure": {
-                     *             "mode": "strict_alternating"
+                     *           "delivery": {
+                     *             "no_assistant": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "persistent_policy_envelope": {
-                     *           "updated_at": 1710000004300,
+                     *           "updated_at": 1710000004500,
                      *           "updated_by": "user-1",
                      *           "value": {
-                     *             "delivery": {
-                     *               "require_last_user": true
+                     *             "budget": {
+                     *               "max_input_tokens": 4096,
+                     *               "reserved_completion_tokens": 1024
                      *             },
-                     *             "structure": {
-                     *               "mode": "strict_alternating"
+                     *             "delivery": {
+                     *               "no_assistant": true
+                     *             },
+                     *             "source_selection": {
+                     *               "examples": {
+                     *                 "enabled": false
+                     *               },
+                     *               "history": {
+                     *                 "max_messages": 24,
+                     *                 "mode": "windowed"
+                     *               },
+                     *               "memory": {
+                     *                 "enabled": true
+                     *               },
+                     *               "worldbook": {
+                     *                 "enabled": true
+                     *               }
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
                      *             }
                      *           },
-                     *           "version": 1
+                     *           "version": 2
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -38982,20 +39680,9 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
-                                /**
-                                 * @example {
-                                 *       "hidden_floor_ranges": [
-                                 *         {
-                                 *           "end_floor_no": 2,
-                                 *           "start_floor_no": 1
-                                 *         }
-                                 *       ],
-                                 *       "mode": "allow_all_except_hidden"
-                                 *     }
-                                 */
                                 visibility?: {
                                     hidden_floor_ids?: string[];
                                     hidden_floor_ranges?: {
@@ -39044,20 +39731,9 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
                                     };
-                                    /**
-                                     * @example {
-                                     *       "hidden_floor_ranges": [
-                                     *         {
-                                     *           "end_floor_no": 2,
-                                     *           "start_floor_no": 1
-                                     *         }
-                                     *       ],
-                                     *       "mode": "allow_all_except_hidden"
-                                     *     }
-                                     */
                                     visibility?: {
                                         hidden_floor_ids?: string[];
                                         hidden_floor_ranges?: {
@@ -39106,8 +39782,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -39221,7 +39896,7 @@ export interface operations {
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     } | null;
                     visibility?: {
@@ -39237,7 +39912,7 @@ export interface operations {
                             start_floor_no: number;
                         }[];
                     } | null;
-                } | unknown | unknown | unknown | unknown | unknown;
+                };
             };
         };
         responses: {
@@ -39251,25 +39926,75 @@ export interface operations {
                      * @example {
                      *       "data": {
                      *         "persistent_policy": {
-                     *           "delivery": {
-                     *             "require_last_user": true
+                     *           "budget": {
+                     *             "max_input_tokens": 4096,
+                     *             "reserved_completion_tokens": 1024
                      *           },
-                     *           "structure": {
-                     *             "mode": "strict_alternating"
+                     *           "delivery": {
+                     *             "no_assistant": true
+                     *           },
+                     *           "source_selection": {
+                     *             "examples": {
+                     *               "enabled": false
+                     *             },
+                     *             "history": {
+                     *               "max_messages": 24,
+                     *               "mode": "windowed"
+                     *             },
+                     *             "memory": {
+                     *               "enabled": true
+                     *             },
+                     *             "worldbook": {
+                     *               "enabled": true
+                     *             }
+                     *           },
+                     *           "visibility": {
+                     *             "hidden_floor_ranges": [
+                     *               {
+                     *                 "end_floor_no": 2,
+                     *                 "start_floor_no": 1
+                     *               }
+                     *             ],
+                     *             "mode": "allow_all_except_hidden"
                      *           }
                      *         },
                      *         "persistent_policy_envelope": {
-                     *           "updated_at": 1710000004300,
+                     *           "updated_at": 1710000004500,
                      *           "updated_by": "user-1",
                      *           "value": {
-                     *             "delivery": {
-                     *               "require_last_user": true
+                     *             "budget": {
+                     *               "max_input_tokens": 4096,
+                     *               "reserved_completion_tokens": 1024
                      *             },
-                     *             "structure": {
-                     *               "mode": "strict_alternating"
+                     *             "delivery": {
+                     *               "no_assistant": true
+                     *             },
+                     *             "source_selection": {
+                     *               "examples": {
+                     *                 "enabled": false
+                     *               },
+                     *               "history": {
+                     *                 "max_messages": 24,
+                     *                 "mode": "windowed"
+                     *               },
+                     *               "memory": {
+                     *                 "enabled": true
+                     *               },
+                     *               "worldbook": {
+                     *                 "enabled": true
+                     *               }
+                     *             },
+                     *             "visibility": {
+                     *               "hidden_floor_ranges": [
+                     *                 {
+                     *                   "end_floor_no": 2,
+                     *                   "start_floor_no": 1
+                     *                 }
+                     *               ],
+                     *               "mode": "allow_all_except_hidden"
                      *             }
                      *           },
-                     *           "version": 1
+                     *           "version": 2
                      *         },
                      *         "resolved_policy": {
                      *           "budget": {
@@ -39354,20 +40079,9 @@ export interface operations {
                                     assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                     merge_adjacent_same_role?: boolean;
                                     /** @enum {string} */
-                                    mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                    mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                     preserve_system_messages?: boolean;
                                 };
-                                /**
-                                 * @example {
-                                 *       "hidden_floor_ranges": [
-                                 *         {
-                                 *           "end_floor_no": 2,
-                                 *           "start_floor_no": 1
-                                 *         }
-                                 *       ],
-                                 *       "mode": "allow_all_except_hidden"
-                                 *     }
-                                 */
                                 visibility?: {
                                     hidden_floor_ids?: string[];
                                     hidden_floor_ranges?: {
@@ -39416,20 +40130,9 @@ export interface operations {
                                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                                         merge_adjacent_same_role?: boolean;
                                         /** @enum {string} */
-                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                                         preserve_system_messages?: boolean;
                                     };
-                                    /**
-                                     * @example {
-                                     *       "hidden_floor_ranges": [
-                                     *         {
-                                     *           "end_floor_no": 2,
-                                     *           "start_floor_no": 1
-                                     *         }
-                                     *       ],
-                                     *       "mode": "allow_all_except_hidden"
-                                     *     }
-                                     */
                                     visibility?: {
                                         hidden_floor_ids?: string[];
                                         hidden_floor_ranges?: {
@@ -39478,8 +40181,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -39673,7 +40375,7 @@ export interface operations {
                         assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
                         merge_adjacent_same_role?: boolean;
                         /** @enum {string} */
-                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                        mode?: "default" | "strict_alternating" | "no_assistant" | "flattened";
                         preserve_system_messages?: boolean;
                     };
                     text: string;
@@ -39710,13 +40412,6 @@ export interface operations {
                      *             "message": "delivery.noAssistant forced the resolved structure.mode to no_assistant.",
                      *             "severity": "warning",
                      *             "source": "policy"
-                     *           },
-                     *           {
-                     *             "code": "unmaterialized_branch_preview",
-                     *             "message": "Preview targeted unmaterialized branch 'alt-preview'. Branch policy overlay is unavailable until the branch is materialized.",
-                     *             "phase": "preview",
-                     *             "severity": "info",
-                     *             "source": "branch"
                      *           }
                      *         ],
                      *         "limitations": [
@@ -39730,7 +40425,7 @@ export interface operations {
                      *           "scope_resolution": {
                      *             "fallback_reason": null,
                      *             "mode": "branch_aware",
-                     *             "requested_branch_id": "alt-preview",
+                     *             "requested_branch_id": "main",
                      *             "requested_scopes": [
                      *               "global",
                      *               "branch"
@@ -39744,26 +40439,91 @@ export interface operations {
                      *           "selected_items": [
                      *             {
                      *               "branch_id": "main",
-                     *               "kind": "macro_summary",
-                     *               "memory_id": "memory-branch-summary-2",
+                     *               "kind": "fact",
+                     *               "memory_id": "memory-branch-fact-1",
                      *               "scope": "branch",
                      *               "scope_id": "memscope:session-1:main",
-                     *               "score": 0.71,
+                     *               "score": 0.82,
+                     *               "selected_reason": null,
+                     *               "source": "store",
+                     *               "token_count": 18
+                     *             },
+                     *             {
+                     *               "branch_id": "main",
+                     *               "kind": "micro_summary",
+                     *               "memory_id": "memory-branch-summary-1",
+                     *               "scope": "branch",
+                     *               "scope_id": "memscope:session-1:main",
+                     *               "score": 0.64,
                      *               "source": "summary",
-                     *               "token_count": 22
+                     *               "token_count": 14
                      *             }
                      *           ],
-                     *           "strategy": "single_summary",
+                     *           "strategy": "dual_summary",
                      *           "summary_injected": true,
-                     *           "summary_text": "[Memory]\n- The party recently agreed to search the northern pass.",
-                     *           "summary_text_hash": "sha256:6bf5658e833e81fb6fe5061ab9197d2e9c2e0e2c76a9e813d08f74de33e5bea5",
+                     *           "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                     *           "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
                      *           "token_stats": {
                      *             "budget": 500,
-                     *             "direct_items": 0,
-                     *             "macro_summary": 22,
-                     *             "micro_summary": 0,
-                     *             "used": 22
+                     *             "direct_items": 50,
+                     *             "macro_summary": 0,
+                     *             "micro_summary": 14,
+                     *             "used": 64
                      *           }
+                     *         },
+                     *         "memory_injection": {
+                     *           "formatted_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                     *           "items": [
+                     *             {
+                     *               "confidence": 1,
+                     *               "content": "Bob still holds the vault key.",
+                     *               "created_at": 1710000000100,
+                     *               "fact_key": "vault_key_owner",
+                     *               "id": "memory-branch-fact-1",
+                     *               "importance": 0.82,
+                     *               "scope": "branch",
+                     *               "scope_id": "memscope:session-1:main",
+                     *               "source_floor_id": null,
+                     *               "source_message_id": null,
+                     *               "status": "active",
+                     *               "summary_tier": null,
+                     *               "token_count_estimate": 18,
+                     *               "type": "fact",
+                     *               "updated_at": 1710000000200
+                     *             },
+                     *             {
+                     *               "confidence": 1,
+                     *               "content": "Alice had started to distrust Bob.",
+                     *               "created_at": 1710000000300,
+                     *               "fact_key": null,
+                     *               "id": "memory-branch-summary-1",
+                     *               "importance": 0.64,
+                     *               "scope": "branch",
+                     *               "scope_id": "memscope:session-1:main",
+                     *               "source_floor_id": null,
+                     *               "source_message_id": null,
+                     *               "status": "active",
+                     *               "summary_tier": "micro",
+                     *               "token_count_estimate": 14,
+                     *               "type": "summary",
+                     *               "updated_at": 1710000000400
+                     *             }
+                     *           ],
+                     *           "scope_resolution": {
+                     *             "mode": "visible_refs",
+                     *             "scope_refs": [
+                     *               {
+                     *                 "scope": "global",
+                     *                 "scopeId": "default-admin"
+                     *               },
+                     *               {
+                     *                 "scope": "branch",
+                     *                 "scopeId": "memscope:session-1:main"
+                     *               }
+                     *             ],
+                     *             "strict": false
+                     *           },
+                     *           "token_count": 64
                      *         },
                      *         "policy": {
                      *           "budget": {
@@ -39839,10 +40599,10 @@ export interface operations {
                      *           "macro": {
                      *             "mutation_preview": [
                      *               {
-                     *                 "key": "资产",
+                     *                 "key": "资产.金币",
                      *                 "kind": "set",
                      *                 "scope": "branch",
-                     *                 "value": "{\"金币\":3}"
+                     *                 "value": "3"
                      *               }
                      *             ],
                      *             "staged_mutations": [],
@@ -39866,20 +40626,14 @@ export interface operations {
                      *               "setvar",
                      *               "getvar"
                      *             ],
-                     *             "warnings": [
-                     *               {
-                     *                 "code": "macro_preview_side_effect_suppressed",
-                     *                 "macro_name": "setvar",
-                     *                 "message": "Macro setvar side effect was previewed but not committed."
-                     *               }
-                     *             ]
+                     *             "warnings": []
                      *           },
                      *           "source_selection": {
                      *             "excluded_sources": [
                      *               {
-                     *                 "detail": "Visibility filtered 2 floor(s) from the available history window.",
-                     *                 "reason": "visibility_filtered",
-                     *                 "source": "history"
+                     *                 "detail": "sourceSelection.examples.enabled=false removed example dialogue from prompt assembly.",
+                     *                 "reason": "disabled_by_policy",
+                     *                 "source": "examples"
                      *               }
                      *             ]
                      *           },
@@ -39944,7 +40698,7 @@ export interface operations {
                      *             "mode": "request_override"
                      *           }
                      *         },
-                     *         "text": "{\"金币\":3}"
+                     *         "text": "{\"资产\":3}"
                      *       }
                      *     }
                      */
@@ -39954,12 +40708,10 @@ export interface operations {
                                 code: string;
                                 field_path?: string;
                                 message: string;
-                                /** @enum {string} */
-                                phase?: "preview" | "dry_run" | "assemble" | "commit_consume" | "explain";
+                                phase?: string;
                                 /** @enum {string} */
                                 severity: "info" | "warning" | "error";
-                                /** @enum {string} */
-                                source?: "policy" | "branch" | "macro" | "budget" | "source_selection" | "provider_constraint";
+                                source?: string;
                             }[];
                             limitations: string[];
                             memory?: {
@@ -40009,6 +40761,49 @@ export interface operations {
                                     used: number;
                                 };
                             };
+                            memory_injection?: {
+                                formatted_text: string;
+                                items: {
+                                    confidence: number;
+                                    content: string;
+                                    created_at: number;
+                                    fact_key: string | null;
+                                    id: string;
+                                    importance: number;
+                                    /** @enum {string} */
+                                    scope: "global" | "chat" | "branch" | "floor";
+                                    scope_id: string;
+                                    source_floor_id: string | null;
+                                    source_message_id: string | null;
+                                    status: string;
+                                    summary_tier: ("micro" | "macro") | null;
+                                    token_count_estimate: number | null;
+                                    /** @enum {string} */
+                                    type: "fact" | "summary" | "open_loop";
+                                    updated_at: number;
+                                }[];
+                                scope_resolution: {
+                                    error?: {
+                                        message: string;
+                                        name: string;
+                                    };
+                                    explicit_scope?: {
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "branch" | "floor";
+                                        scopeId: string;
+                                    };
+                                    fallback_scope_id?: string;
+                                    /** @enum {string} */
+                                    mode: "visible_refs" | "explicit_scope" | "direct_scope_fallback" | "strict_empty" | "resolver_error";
+                                    scope_refs?: {
+                                        /** @enum {string} */
+                                        scope: "global" | "chat" | "branch" | "floor";
+                                        scopeId: string;
+                                    }[];
+                                    strict: boolean;
+                                } | null;
+                                token_count: number;
+                            };
                             policy: {
                                 budget: {
                                     max_input_tokens?: number;
@@ -40041,8 +40836,7 @@ export interface operations {
                                     };
                                 };
                                 structure: {
-                                    /** @enum {string} */
-                                    assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                                    assistant_rewrite_strategy?: ("to_system" | "to_user_transcript") | null;
                                     merge_adjacent_same_role: boolean;
                                     /** @enum {string} */
                                     mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
@@ -40113,32 +40907,42 @@ export interface operations {
                                  * @example {
                                  *       "mutation_preview": [
                                  *         {
-                                 *           "key": "资产",
+                                 *           "key": "mood",
                                  *           "kind": "set",
                                  *           "scope": "branch",
-                                 *           "value": "{\"金币\":3}"
+                                 *           "value": "steady"
                                  *         }
                                  *       ],
-                                 *       "staged_mutations": [],
+                                 *       "staged_mutations": [
+                                 *         {
+                                 *           "key": "mood",
+                                 *           "kind": "set",
+                                 *           "scope": "branch",
+                                 *           "source_macro": "setvar",
+                                 *           "value": "steady"
+                                 *         }
+                                 *       ],
                                  *       "traces": [
                                  *         {
-                                 *           "macro_name": "setvar",
-                                 *           "phase": "preview",
-                                 *           "raw_text": "{{setvar::资产.金币::3}}",
-                                 *           "resolved_text": "",
+                                 *           "macro_name": "lastGenerationType",
+                                 *           "phase": "assemble",
+                                 *           "raw_text": "{{lastGenerationType}}",
+                                 *           "resolved_text": "respond",
                                  *           "source_kind": "macro"
                                  *         },
                                  *         {
-                                 *           "macro_name": "getvar",
-                                 *           "phase": "preview",
-                                 *           "raw_text": "{{getvar::资产}}",
-                                 *           "resolved_text": "{\"金币\":3}",
-                                 *           "source_kind": "macro"
+                                 *           "macro_name": "if",
+                                 *           "phase": "assemble",
+                                 *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                 *           "resolved_text": "YES",
+                                 *           "selected_branch": "then",
+                                 *           "source_kind": "if"
                                  *         }
                                  *       ],
                                  *       "used_names": [
-                                 *         "setvar",
-                                 *         "getvar"
+                                 *         "if",
+                                 *         "lastGenerationType",
+                                 *         "setvar"
                                  *       ],
                                  *       "warnings": [
                                  *         {
@@ -40208,7 +41012,7 @@ export interface operations {
                                 /** @enum {string} */
                                 history_source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 session_id: string;
-                                source_floor_id?: string | null;
+                                source_floor_id: string | null;
                                 target_branch_id: string;
                             };
                             source_map?: {
@@ -40217,14 +41021,6 @@ export interface operations {
                                     max_input_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                     /** @enum {string} */
                                     reserved_completion_tokens?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                };
-                                debug?: {
-                                    /** @enum {string} */
-                                    include_prompt_snapshot?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_runtime_trace?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
-                                    /** @enum {string} */
-                                    include_worldbook_matches?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                                 delivery?: {
                                     /** @enum {string} */
@@ -40235,9 +41031,9 @@ export interface operations {
                                     require_last_user?: "system_default" | "asset_default" | "session_policy" | "branch_policy" | "request_override" | "provider_constraint";
                                 };
                                 history?: {
-                                    source_branch_id?: string;
+                                    source_branch_id: string;
                                     /** @enum {string} */
-                                    source_mode?: "existing_branch" | "source_floor_branch" | "main_fallback";
+                                    source_mode: "existing_branch" | "source_floor_branch" | "main_fallback";
                                 };
                                 source_selection?: {
                                     examples?: {

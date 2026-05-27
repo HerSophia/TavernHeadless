@@ -239,6 +239,9 @@ Profile 支持按作用域（全局或会话）和槽位粒度绑定。你可以
 Prompt Runtime 的 preview、inspect 和 historical explain 现在会在兼容字段 `memory_summary` 旁边，额外返回结构化 `memory` 真相。
 这组结构会说明当前回合使用了哪条记忆运行模式、命中了哪些记忆条目、scope 是如何解析的，以及 proposal / promotion 的状态。
 这样做的目的，是让 explain、回放和分支排查都能直接看到记忆链路，而不必再把真相压成一个字符串。
+其中 preview 和 inspect 还会额外返回原始 `memory_injection`。
+这组字段对应请求期的 `MemoryInjectionResult`。
+dry-run 则只返回结构化 `memory` 与兼容字段 `memory_summary`。
 
 ### 事件系统
 

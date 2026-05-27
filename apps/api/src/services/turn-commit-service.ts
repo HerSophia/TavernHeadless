@@ -46,6 +46,7 @@ import {
   type VariablePromotionPolicy,
 } from "./variables/commit/variable-commit-service.js";
 import { VariablePromotionService } from "./variables/commit/variable-promotion-service.js";
+import { PageVariableDecisionService } from "./variables/commit/page-variable-decision-service.js";
 import { PageVariableStageService } from "./variables/stage/page-variable-stage-service.js";
 import type {
   PageVariableDecision,
@@ -98,6 +99,8 @@ interface VariableCommitOptions {
   pageId?: string;
   policy?: VariablePromotionPolicy;
   pageDecision?: PageVariableDecision;
+  actorClientId?: string | null;
+  rerouteToSessionState?: boolean;
 }
 
 export interface TurnCommitOperationLogContext {
@@ -361,7 +364,7 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
 
 function createEmptyVariableCommitResult(input: TurnCommitInput): TurnVariableCommitResult {
   return {
-    pageId: input.variableCommit?.pageId,
+    pageId: undefined,
     floorId: input.floorId,
     sessionId: input.sessionId,
     fromScope: "page",
@@ -791,11 +794,20 @@ export class TurnCommitService {
           sessionId: input.sessionId,
           branchId: effectiveBranchId,
           floorId: input.floorId,
-          pageId: input.variableCommit?.pageId,
+          pageId: assistantMessage.pageId,
           mutations: toolBufferedVariableMutations,
           committedAt,
+          actorClientId: input.variableCommit?.actorClientId,
         });
-        let variableCommit = createEmptyVariableCommitResult(input);
+        const pageDecision = input.variableCommit?.pageDecision
+          ?? (input.variableCommit
+            ? new (PageVariableDecisionService)(tx).resolveForCommit({
+                floorId: input.floorId,
+                pageId: assistantMessage.pageId,
+                rerouteToSessionState: input.variableCommit.rerouteToSessionState,
+              })
+            : undefined);
+        let variableCommit: TurnVariableCommitResult = { ...createEmptyVariableCommitResult(input), pageId: assistantMessage.pageId };
         let sessionStateMutationCount = 0;
 
         const floorRow = tx
@@ -957,16 +969,17 @@ export class TurnCommitService {
           })
           .run();
 
-        variableCommit = new VariablePromotionService(tx).finalizePageWrites({
+        variableCommit = new VariablePromotionService(tx, this.sessionStateService).finalizePageWrites({
           accountId: input.accountId,
           sessionId: input.sessionId,
           branchId: effectiveBranchId,
           floorId: input.floorId,
-          pageId: input.variableCommit?.pageId,
+          pageId: assistantMessage.pageId,
           committedAt,
-          pageDecision: input.variableCommit?.pageDecision,
+          pageDecision,
           conflictPolicy: input.variableCommit?.policy === "ifAbsent" ? "if_absent" : "replace",
           stagedWrites: stagedVariableWrites,
+          actorClientId: input.variableCommit?.actorClientId,
         });
 
         if (this.sessionStateService) {
@@ -1134,7 +1147,7 @@ export class TurnCommitService {
               sessionId: input.sessionId,
               branchId: effectiveBranchId,
               floorId: input.floorId,
-              pageId: input.variableCommit?.pageId ?? null,
+              pageId: variableCommit.pageId ?? null,
               operationLogId: floorOperation.id,
               correlationId,
               causationEventId: committedEvent.id,
@@ -1142,7 +1155,7 @@ export class TurnCommitService {
                 session_id: input.sessionId,
                 branch_id: effectiveBranchId,
                 floor_id: input.floorId,
-                page_id: input.variableCommit?.pageId ?? null,
+                page_id: variableCommit.pageId ?? null,
                 variable_id: materialized.entry.id,
                 scope: materialized.entry.scope,
                 scope_id: materialized.entry.scopeId,
@@ -1165,7 +1178,7 @@ export class TurnCommitService {
               sessionId: input.sessionId,
               branchId: effectiveBranchId,
               floorId: input.floorId,
-              pageId: input.variableCommit?.pageId ?? null,
+              pageId: variableCommit.pageId ?? null,
               operationLogId: floorOperation.id,
               correlationId,
               causationEventId: committedEvent.id,
@@ -1173,7 +1186,7 @@ export class TurnCommitService {
                 session_id: input.sessionId,
                 branch_id: effectiveBranchId,
                 floor_id: input.floorId,
-                page_id: input.variableCommit?.pageId ?? null,
+                page_id: variableCommit.pageId ?? null,
                 key: promoted.key,
                 from_scope: variableCommit.fromScope,
                 to_scope: variableCommit.toScope,

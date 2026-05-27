@@ -78,4 +78,42 @@ describe("PromptRuntimeContributorRunner", () => {
       "native",
     ]);
   });
+
+  it("collects memory projection even when memorySummary is absent but structured trace exists", () => {
+    const runner = new PromptRuntimeContributorRunner();
+
+    const result = runner.resolve({
+      promptMode: "native",
+      memorySummary: undefined,
+      memoryTrace: {
+        summaryInjected: false,
+        strategy: "direct_items",
+        selectedItems: [
+          {
+            memoryId: "memory-1",
+            scope: "branch",
+            scopeId: "memscope:session-1:main",
+            branchId: "main",
+            kind: "fact",
+            source: "store",
+            score: 0.8,
+            tokenCount: 12,
+            selectedReason: null,
+          },
+        ],
+      },
+      firstPartyStateContext: {
+        scene: null,
+        world: null,
+      },
+    });
+
+    expect(result.contributors.map((contributor) => contributor.kind)).toEqual(["memory_projection"]);
+    expect(result.contributors[0]?.payload).toMatchObject({
+      summary: null,
+      memoryTrace: {
+        strategy: "direct_items",
+      },
+    });
+  });
 });

@@ -8,6 +8,7 @@ import type { FloorRunServiceOptions } from "../services/floor-run-service.js";
 import type { McpConnectionManager } from "../services/tooling/mcp/mcp-connection-manager.js";
 import type { MutationRuntime } from "../services/runtime-mutation-types.js";
 import type { ProjectEventLiveHub } from "../services/project-event-live-hub.js";
+import type { SessionStateObservationService } from "../session-state/session-state-observation-service.js";
 import { registerCharacterRoutes } from "./characters";
 import { registerFloorRoutes } from "./floors";
 import { registerImportRoutes } from "./imports";
@@ -54,6 +55,7 @@ export interface CrudRoutesOptions {
   clientData?: ClientDataConfig;
   floorRun?: FloorRunServiceOptions;
   projectEventLiveHub?: ProjectEventLiveHub;
+  sessionStateObservationService?: SessionStateObservationService;
 }
 
 export async function registerCrudRoutes(
@@ -83,7 +85,9 @@ export async function registerCrudRoutes(
     floorRun: options.floorRun,
   });
   await registerUserRoutes(app, connection);
-  await registerMessagePageRoutes(app, connection);
+  await registerMessagePageRoutes(app, connection, {
+    sessionStateObservationService: options.sessionStateObservationService,
+  });
   await registerMessageRoutes(app, connection);
   await registerVariableRoutes(app, connection, {
     eventBus: options.variableEventBus,

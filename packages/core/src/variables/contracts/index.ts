@@ -1,1 +1,1 @@
-export type { VariableWriteIntent, VariableWriteSourceMetadata } from './variable-write-intent.js';
+export type { VariableWriteIntent, VariableWriteSourceMetadata, VariableWriteTargetSurface } from './variable-write-intent.js';

@@ -240,7 +240,7 @@ describe("TurnCommitService project events", () => {
     expect(variableSet).toMatchObject({
       sequence: 3,
       type: "variable.set",
-      pageId,
+      pageId: result.outputPageId,
       causationEventId: committed!.id,
       operationLogId: stateChanged!.operationLogId,
       correlationId: "req-project-events",
@@ -249,27 +249,19 @@ describe("TurnCommitService project events", () => {
       session_id: session.sessionId,
       branch_id: "main",
       floor_id: floorId,
-      page_id: pageId,
+      page_id: result.outputPageId,
+      variable_id: expect.any(String),
       scope: "page",
-      scope_id: pageId,
+      scope_id: result.outputPageId,
       key: "mood",
       is_new: true,
     });
     expect(payloadOf(variableSet!)).not.toHaveProperty("value");
-
-    expect(variablePromoted).toMatchObject({
-      sequence: 4,
-      type: "variable.promoted",
-      pageId,
-      causationEventId: committed!.id,
-      operationLogId: stateChanged!.operationLogId,
-      correlationId: "req-project-events",
-    });
     expect(payloadOf(variablePromoted!)).toMatchObject({
       session_id: session.sessionId,
       branch_id: "main",
       floor_id: floorId,
-      page_id: pageId,
+      page_id: result.outputPageId,
       key: "mood",
       from_scope: "page",
       to_scope: "floor",

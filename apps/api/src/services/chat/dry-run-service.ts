@@ -110,6 +110,7 @@ export class DryRunService {
       messages: prepared.materialized.messages,
       tokenEstimate: execution.tokenEstimate!,
       availableForReply: execution.availableForReply!,
+      memory: prepared.memoryTrace,
       memorySummary: prepared.memorySummary,
       promptSnapshot: execution.promptSnapshotPreview!,
       assembly: buildPromptAssemblyCompat({

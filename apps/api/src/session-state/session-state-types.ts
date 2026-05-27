@@ -30,6 +30,19 @@ export type SessionStateWriteMode =
   | "direct"
   | "commit_bound";
 
+export type SessionStateMutationCommitMode =
+  | "direct_public"
+  | "turn_bound"
+  | "variable_reroute";
+
+export type SessionStateMutationDecisionStatus =
+  | "accepted"
+  | "discarded"
+  | "blocked"
+  | "rerouted_to_session_state";
+
+export type SessionStateMutationSourceKind = string & {};
+
 export type SessionStateReplaySafety = ToolReplaySafety;
 
 export type SessionStateMutationStatus =
@@ -88,6 +101,19 @@ export interface SessionStateMutationPayload {
   value: unknown | null;
 }
 
+export interface SessionStateMutationPageInspectFilters {
+  branchId?: string;
+  sourceFloorId?: string;
+  sourcePageId?: string;
+  sourceBranchId?: string;
+  targetSlot?: string;
+  stateNamespace?: SessionStateNamespace;
+  writeMode?: SessionStateWriteMode;
+  sourceKind?: SessionStateMutationSourceKind;
+  commitMode?: SessionStateMutationCommitMode;
+  actorClientId?: string | null;
+}
+
 export interface SessionStateMutationView {
   id: string;
   accountId: string;
@@ -96,9 +122,14 @@ export interface SessionStateMutationView {
   sessionId: string;
   branchId: string;
   sourceFloorId: string | null;
+  sourcePageId: string | null;
+  sourceBranchId: string | null;
   targetSlot: string;
+  actorClientId: string | null;
+  sourceKind: SessionStateMutationSourceKind | null;
   visibilityMode: SessionStateVisibilityMode;
   writeMode: SessionStateWriteMode;
+  commitMode: SessionStateMutationCommitMode;
   payloadJson: string;
   replaySafety: ToolReplaySafety;
   status: SessionStateMutationStatus;
@@ -107,6 +138,10 @@ export interface SessionStateMutationView {
   payload: SessionStateMutationPayload;
   sourceSnapshotFloorId: string | null;
   liveHeadKey: string | null;
+  decisionStatus: SessionStateMutationDecisionStatus;
+  decisionReason: string | null;
+  decisionCode: string | null;
+  linkedVariableStageId: string | null;
   discardReason: string | null;
   blockedReason: string | null;
   createdAt: number;

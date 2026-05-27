@@ -428,6 +428,13 @@
                         "when":  1766000000000,
                         "tag":  "0060_workspace_phase_5_agentic_readiness",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  61,
+                        "version":  "7",
+                        "when":  1766100000000,
+                        "tag":  "0061_pre_agentic_state_systems_governance_closeout",
+                        "breakpoints":  true
                     }
                 ]
 }

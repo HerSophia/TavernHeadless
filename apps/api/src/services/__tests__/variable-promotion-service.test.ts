@@ -9,11 +9,14 @@ import {
   messagePages,
   pageStagedVariableWrites,
   sessions,
+  sessionStateMutations,
   variablePromotionTraces,
   variables,
 } from "../../db/schema.js";
 import { VariablePromotionService } from "../variables/commit/variable-promotion-service.js";
 import { PageVariableStageService } from "../variables/stage/page-variable-stage-service.js";
+import { SessionStateService } from "../../session-state/session-state-service.js";
+import { SessionStateCustomNamespaceService } from "../../session-state/session-state-custom-namespace-service.js";
 
 const ACCOUNT_ID = "default-admin";
 
@@ -72,11 +75,36 @@ describe("VariablePromotionService", () => {
   let database: DatabaseConnection;
   let stageService: PageVariableStageService;
   let promotionService: VariablePromotionService;
+  let sessionStateService: SessionStateService;
+  let customNamespaceService: SessionStateCustomNamespaceService;
 
   beforeEach(() => {
     database = createDatabase(":memory:");
     stageService = new PageVariableStageService(database.db);
-    promotionService = new VariablePromotionService(database.db);
+    customNamespaceService = new SessionStateCustomNamespaceService(database.db, {
+      clientData: {
+        defaultMaxItemSizeBytes: 1_048_576,
+        defaultQuotaMaxEntries: 10_000,
+        defaultQuotaMaxBytes: 10_485_760,
+        maxDomainsPerAccount: 64,
+        maxTotalEntriesPerAccount: 100_000,
+        maxTotalBytesPerAccount: 104_857_600,
+        domainPurgeGracePeriodMs: 604_800_000,
+      },
+    });
+    sessionStateService = new SessionStateService(database.db, {
+      clientData: {
+        defaultMaxItemSizeBytes: 1_048_576,
+        defaultQuotaMaxEntries: 10_000,
+        defaultQuotaMaxBytes: 10_485_760,
+        maxDomainsPerAccount: 64,
+        maxTotalEntriesPerAccount: 100_000,
+        maxTotalBytesPerAccount: 104_857_600,
+        domainPurgeGracePeriodMs: 604_800_000,
+      },
+      customNamespaceService,
+    });
+    promotionService = new VariablePromotionService(database.db, sessionStateService);
   });
 
   afterEach(() => {
@@ -158,6 +186,12 @@ describe("VariablePromotionService", () => {
       fromScopeId: pageId,
       toScope: "floor",
       toScopeId: floorId,
+      sourceKind: "unknown",
+      actorClientId: null,
+      source: {},
+      evidence: expect.objectContaining({ runId: "run-1", generationAttemptNo: 1 }),
+      decisionCode: "promotion_allowed",
+      decisionReason: null,
       conflictPolicy: "replace",
       value: "steady",
       createdAt: committedAt,
@@ -182,6 +216,15 @@ describe("VariablePromotionService", () => {
       .select()
       .from(pageStagedVariableWrites)
       .where(eq(pageStagedVariableWrites.pageId, pageId));
+    expect(stagedRows.find((row) => row.key === "mood")).toMatchObject({
+      sourceKind: "unknown",
+      actorClientId: null,
+      decisionCode: "promotion_allowed",
+    });
+    expect(stagedRows.find((row) => row.key === "hp")).toMatchObject({
+      sourceKind: "unknown",
+      decisionCode: "promotion_allowed",
+    });
     expect(stagedRows.map((row) => [row.key, row.status]).sort((left, right) => {
       return String(left[0]).localeCompare(String(right[0]));
     })).toEqual([
@@ -254,6 +297,7 @@ describe("VariablePromotionService", () => {
     expect(result.stageWrites[0]).toMatchObject({
       key: "mood",
       status: "accepted_page_only",
+      decisionCode: "policy_forbidden",
       decisionReason: "promotion_skipped_if_absent",
     });
   });
@@ -327,4 +371,94 @@ describe("VariablePromotionService", () => {
       expect(stagedRow).toMatchObject({ key: "mood", status, decisionReason, resolvedAt: committedAt });
     },
   );
+
+  it("reroutes session-state candidate writes through SessionStateService and records bidirectional traces", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const now = 1_735_700_230_000;
+    const committedAt = now + 100;
+
+    await seedAccount(database, now);
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, sessionId, floorId, now);
+    await seedInputPage(database, floorId, pageId, now);
+
+    customNamespaceService.registerNamespace({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      namespace: "custom.world",
+      logicalOwnerType: "test",
+      logicalOwnerId: "variable-promotion-service-test",
+    });
+
+    stageService.stageBufferedWrites({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId,
+      pageId,
+      committedAt,
+      mutations: [
+        {
+          runId: "run-reroute-1",
+          generationAttemptNo: 1,
+          scope: "page",
+          scopeId: pageId,
+          key: "scene_state",
+          value: { weather: "rain" },
+          intent: "promote_to_floor_on_accept",
+          source: {
+            toolName: "set_variable",
+            providerId: "builtin",
+            targetSurface: "session_state",
+            sessionStateNamespace: "custom.world",
+            sessionStateSlot: "scene",
+          },
+          bufferedAt: now + 10,
+        },
+      ],
+    });
+
+    const result = promotionService.finalizePageWrites({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      floorId,
+      pageId,
+      committedAt,
+      pageDecision: { status: "accepted" },
+    });
+
+    expect(result.pageVariables).toEqual([]);
+    expect(result.promotedVariables).toEqual([]);
+    expect(result.stageWrites).toEqual([
+      expect.objectContaining({
+        key: "scene_state",
+        status: "rerouted_to_session_state",
+        linkedSessionStateMutationId: expect.any(String),
+      }),
+    ]);
+    expect(result.promotionTraces).toEqual([
+      expect.objectContaining({
+        key: "scene_state",
+        toScope: "session_state",
+        toScopeId: "session_state:custom.world:scene",
+        decisionCode: "rerouted_to_session_state",
+        linkedSessionStateMutationId: result.stageWrites[0]!.linkedSessionStateMutationId,
+      }),
+    ]);
+
+    const [mutation] = await database.db.select().from(sessionStateMutations).where(eq(sessionStateMutations.sourcePageId, pageId));
+    expect(mutation).toMatchObject({
+      sourceFloorId: floorId,
+      sourcePageId: pageId,
+      sourceBranchId: "main",
+      sourceKind: "tool",
+      commitMode: "variable_reroute",
+      decisionStatus: "rerouted_to_session_state",
+      decisionCode: "rerouted_to_session_state",
+      linkedVariableStageId: result.stageWrites[0]!.id,
+    });
+  });
 });

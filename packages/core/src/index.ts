@@ -81,7 +81,7 @@ export type { FloorRepository } from './ports/floor-repository.js';
 // ── Variables ─────────────────────────────────────────
 export { VariableResolver } from './variables/index.js';
 export { VariableStore } from './variables/index.js';
-export type { VariableWriteIntent, VariableWriteSourceMetadata } from './variables/index.js';
+export type { VariableWriteIntent, VariableWriteSourceMetadata, VariableWriteTargetSurface } from './variables/index.js';
 export type { VariableContext } from './types.js';
 export type { VariableRepository, VariableRepositoryOptions } from './ports/variable-repository.js';
 

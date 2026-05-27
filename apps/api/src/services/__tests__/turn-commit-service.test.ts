@@ -1180,7 +1180,7 @@ describe("TurnCommitService", () => {
   });
 
 
-  it("flushes buffered tool variable mutations before page-to-floor promotion", async () => {
+  it("flushes buffered tool variable mutations into the accepted output page before page-to-floor promotion", async () => {
     const sessionId = nanoid();
     const floorId = nanoid();
     const pageId = nanoid();
@@ -1208,6 +1208,7 @@ describe("TurnCommitService", () => {
           generationAttemptNo: 1,
           scope: "page",
           scopeId: pageId,
+          intent: "promote_to_floor_on_accept",
           key: "mood",
           value: "hopeful",
           bufferedAt: now + 10,
@@ -1218,7 +1219,7 @@ describe("TurnCommitService", () => {
     const variableSetHandler = vi.fn();
     eventBus.on("variable.set", variableSetHandler);
 
-    await service.commit({
+    const commitResult = await service.commit({
       accountId: DEFAULT_ACCOUNT_ID,
       floorId,
       sessionId,
@@ -1227,45 +1228,30 @@ describe("TurnCommitService", () => {
       variableCommit: { pageId },
     });
 
-    const [pageVariable] = await database.db.select().from(variables).where(
-      and(eq(variables.scope, "page"), eq(variables.scopeId, pageId), eq(variables.key, "mood")),
-    );
-    expect(pageVariable).toMatchObject({
-      scope: "page",
-      scopeId: pageId,
-      key: "mood",
-      updatedAt: committedAt,
-    });
-    expect(pageVariable && JSON.parse(pageVariable.valueJson)).toBe("hopeful");
+    const outputPageId = commitResult.outputPageId;
 
-    const [floorVariable] = await database.db.select().from(variables).where(
-      and(eq(variables.scope, "floor"), eq(variables.scopeId, floorId), eq(variables.key, "mood")),
-    );
-    expect(floorVariable).toMatchObject({
-      scope: "floor",
-      scopeId: floorId,
-      key: "mood",
-      updatedAt: committedAt,
-    });
-    expect(floorVariable && JSON.parse(floorVariable.valueJson)).toBe("hopeful");
+    const pageRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(eq(variables.scope, "page"), eq(variables.scopeId, outputPageId)));
+    expect(pageRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([
+      ["mood", "hopeful"],
+    ]);
 
-    // Phase 1 语义：buffered tool 写入在 commit 成功后必须 flush 一次
-    // durable variable.set。事件里应带上 session 上下文，便于 WS 转发按
-    // sessionId 过滤。
-    const bufferedSetCall = variableSetHandler.mock.calls.find(
-      ([payload]) => payload?.entry?.scope === "page" && payload?.entry?.key === "mood",
-    );
-    expect(bufferedSetCall).toBeDefined();
-    expect(bufferedSetCall![0]).toMatchObject({
+    const floorRows = await database.db
+      .select()
+      .from(variables)
+      .where(and(eq(variables.scope, "floor"), eq(variables.scopeId, floorId)));
+    expect(floorRows.map((row) => [row.key, JSON.parse(row.valueJson)])).toEqual([
+      ["mood", "hopeful"],
+    ]);
+
+    expect(variableSetHandler).toHaveBeenCalledWith(expect.objectContaining({
       sessionId,
       branchId: "main",
-      entry: expect.objectContaining({
-        scope: "page",
-        scopeId: pageId,
-        key: "mood",
-        value: "hopeful",
-      }),
-    });
+      entry: expect.objectContaining({ scope: "page", scopeId: outputPageId, key: "mood", value: "hopeful" }),
+      isNew: true,
+    }));
   });
 
   it("derives legacy tool_call_record rows from real toolExecutionRecords when needed", async () => {
@@ -1497,8 +1483,6 @@ describe("TurnCommitService", () => {
     await seedSession(database, sessionId, now);
     await seedFloor({ database, sessionId, floorId, state: "generating", now });
     await seedInputPage({ database, floorId, pageId, now });
-    await seedVariable({ database, scope: "page", scopeId: pageId, key: "mood", value: "steady", now });
-    await seedVariable({ database, scope: "page", scopeId: pageId, key: "hp", value: 95, now });
 
     const execution: TurnExecutionResult = {
       floorId,
@@ -1511,6 +1495,28 @@ describe("TurnCommitService", () => {
         completionTokens: 6,
         totalTokens: 15,
       },
+      bufferedVariableMutations: [
+        {
+          runId: "run-promote-page-variables",
+          generationAttemptNo: 1,
+          scope: "page",
+          scopeId: pageId,
+          key: "mood",
+          value: "steady",
+          intent: "promote_to_floor_on_accept",
+          bufferedAt: now + 10,
+        },
+        {
+          runId: "run-promote-page-variables",
+          generationAttemptNo: 1,
+          scope: "page",
+          scopeId: pageId,
+          key: "hp",
+          value: 95,
+          intent: "promote_to_floor_on_accept",
+          bufferedAt: now + 20,
+        },
+      ],
     };
 
     const committedHandler = vi.fn();
@@ -1933,14 +1939,6 @@ describe("TurnCommitService", () => {
     });
     await seedFloor({ database, sessionId, floorId, state: "generating", now });
     await seedInputPage({ database, floorId, pageId, now });
-    await seedVariable({
-      database,
-      scope: "page",
-      scopeId: pageId,
-      key: "mood",
-      value: "steady",
-      now,
-    });
 
     const liveHub = new ProjectEventLiveHub();
     const liveEvents: ProjectEventRecord[] = [];
@@ -1966,6 +1964,18 @@ describe("TurnCommitService", () => {
         completionTokens: 4,
         totalTokens: 7,
       },
+      bufferedVariableMutations: [
+        {
+          runId: "run-live-hub-project-events",
+          generationAttemptNo: 1,
+          scope: "page",
+          scopeId: pageId,
+          key: "mood",
+          value: "steady",
+          intent: "promote_to_floor_on_accept",
+          bufferedAt: now + 10,
+        },
+      ],
     };
 
     // No project events should be observed via the live hub before the
@@ -1994,6 +2004,7 @@ describe("TurnCommitService", () => {
       expect.arrayContaining([
         "floor.stateChanged",
         "floor.committed",
+        "variable.set",
         "variable.promoted",
       ]),
     );

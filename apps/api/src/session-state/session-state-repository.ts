@@ -5,10 +5,13 @@ import { floors, sessions, sessionStateMutations, sessionStateNamespaceRegistrat
 import type {
   SessionStateNamespaceRegistrationRecord,
   SessionStateMutationStatus,
+  SessionStateMutationDecisionStatus,
+  SessionStateMutationCommitMode,
   SessionStateMutationView,
   SessionStateNamespace,
   SessionStateReplayPolicySource,
   SessionStateReplaySafety,
+  SessionStateMutationSourceKind,
   SessionStateVisibilityMode,
   SessionStateWriteMode,
 } from "./session-state-types.js";
@@ -46,6 +49,11 @@ export interface SessionStateMutationListFilters {
   branchId?: string;
   status?: SessionStateMutationStatus;
   sourceFloorId?: string;
+  sourcePageId?: string;
+  sourceBranchId?: string;
+  sourceKind?: SessionStateMutationSourceKind;
+  commitMode?: SessionStateMutationCommitMode;
+  actorClientId?: string | null;
   runId?: string;
   targetSlot?: string;
   stateNamespace?: SessionStateNamespace;
@@ -270,16 +278,25 @@ export class SessionStateRepository {
     sessionId: string;
     branchId: string;
     sourceFloorId?: string | null;
+    sourcePageId?: string | null;
+    sourceBranchId?: string | null;
     targetSlot: string;
+    actorClientId?: string | null;
+    sourceKind?: SessionStateMutationSourceKind | null;
     visibilityMode: SessionStateVisibilityMode;
     writeMode: SessionStateWriteMode;
+    commitMode: SessionStateMutationCommitMode;
     replaySafety: SessionStateMutationView["replaySafety"];
     status: SessionStateMutationStatus;
+    decisionStatus: SessionStateMutationDecisionStatus;
+    decisionReason?: string | null;
+    decisionCode?: string | null;
     requestId?: string | null;
     runId?: string | null;
     payloadJson: string;
     sourceSnapshotFloorId?: string | null;
     liveHeadKey?: string | null;
+    linkedVariableStageId?: string | null;
     discardReason?: string | null;
     blockedReason?: string | null;
     createdAt: number;
@@ -293,19 +310,28 @@ export class SessionStateRepository {
         accountId: input.accountId,
         domainId: input.domainId,
         stateNamespace: input.stateNamespace,
+        sourceKind: input.sourceKind ?? null,
         sessionId: input.sessionId,
         branchId: input.branchId,
         sourceFloorId: input.sourceFloorId ?? null,
+        sourcePageId: input.sourcePageId ?? null,
+        sourceBranchId: input.sourceBranchId ?? null,
         targetSlot: input.targetSlot,
+        actorClientId: input.actorClientId ?? null,
         visibilityMode: input.visibilityMode,
         writeMode: input.writeMode,
+        commitMode: input.commitMode,
         replaySafety: input.replaySafety,
         status: input.status,
+        decisionStatus: input.decisionStatus,
+        decisionReason: input.decisionReason ?? null,
+        decisionCode: input.decisionCode ?? null,
         requestId: input.requestId ?? null,
         runId: input.runId ?? null,
         payloadJson: input.payloadJson,
         sourceSnapshotFloorId: input.sourceSnapshotFloorId ?? null,
         liveHeadKey: input.liveHeadKey ?? null,
+        linkedVariableStageId: input.linkedVariableStageId ?? null,
         discardReason: input.discardReason ?? null,
         blockedReason: input.blockedReason ?? null,
         createdAt: input.createdAt,
@@ -324,6 +350,14 @@ export class SessionStateRepository {
     payloadJson?: string;
     sourceSnapshotFloorId?: string | null;
     liveHeadKey?: string | null;
+    decisionStatus?: SessionStateMutationDecisionStatus;
+    decisionReason?: string | null;
+    decisionCode?: string | null;
+    linkedVariableStageId?: string | null;
+    sourcePageId?: string | null;
+    actorClientId?: string | null;
+    sourceKind?: SessionStateMutationSourceKind | null;
+    commitMode?: SessionStateMutationCommitMode;
     discardReason?: string | null;
     blockedReason?: string | null;
     updatedAt: number;
@@ -336,6 +370,14 @@ export class SessionStateRepository {
         ...(input.payloadJson !== undefined ? { payloadJson: input.payloadJson } : {}),
         ...(input.sourceSnapshotFloorId !== undefined ? { sourceSnapshotFloorId: input.sourceSnapshotFloorId } : {}),
         ...(input.liveHeadKey !== undefined ? { liveHeadKey: input.liveHeadKey } : {}),
+        ...(input.decisionStatus !== undefined ? { decisionStatus: input.decisionStatus } : {}),
+        ...(input.decisionReason !== undefined ? { decisionReason: input.decisionReason } : {}),
+        ...(input.decisionCode !== undefined ? { decisionCode: input.decisionCode } : {}),
+        ...(input.linkedVariableStageId !== undefined ? { linkedVariableStageId: input.linkedVariableStageId } : {}),
+        ...(input.sourcePageId !== undefined ? { sourcePageId: input.sourcePageId } : {}),
+        ...(input.actorClientId !== undefined ? { actorClientId: input.actorClientId } : {}),
+        ...(input.sourceKind !== undefined ? { sourceKind: input.sourceKind } : {}),
+        ...(input.commitMode !== undefined ? { commitMode: input.commitMode } : {}),
         ...(input.discardReason !== undefined ? { discardReason: input.discardReason } : {}),
         ...(input.blockedReason !== undefined ? { blockedReason: input.blockedReason } : {}),
         ...(input.appliedAt !== undefined ? { appliedAt: input.appliedAt } : {}),
@@ -425,6 +467,25 @@ function buildListMutationsConditions(filters: SessionStateMutationListFilters):
   if (filters.sourceFloorId !== undefined) {
     conditions.push(eq(sessionStateMutations.sourceFloorId, filters.sourceFloorId));
   }
+  if (filters.sourcePageId !== undefined) {
+    conditions.push(eq(sessionStateMutations.sourcePageId, filters.sourcePageId));
+  }
+  if (filters.sourceBranchId !== undefined) {
+    conditions.push(eq(sessionStateMutations.sourceBranchId, filters.sourceBranchId));
+  }
+  if (filters.sourceKind !== undefined) {
+    conditions.push(eq(sessionStateMutations.sourceKind, filters.sourceKind));
+  }
+  if (filters.commitMode !== undefined) {
+    conditions.push(eq(sessionStateMutations.commitMode, filters.commitMode));
+  }
+  if (filters.actorClientId !== undefined) {
+    if (filters.actorClientId === null) {
+      conditions.push(isNull(sessionStateMutations.actorClientId));
+    } else {
+      conditions.push(eq(sessionStateMutations.actorClientId, filters.actorClientId));
+    }
+  }
   if (filters.runId !== undefined) {
     conditions.push(eq(sessionStateMutations.runId, filters.runId));
   }
@@ -456,20 +517,29 @@ function toMutationView(row: typeof sessionStateMutations.$inferSelect): Session
     accountId: row.accountId,
     domainId: row.domainId,
     stateNamespace: row.stateNamespace,
+    sourceKind: row.sourceKind ?? null,
     sessionId: row.sessionId,
     branchId: row.branchId,
     sourceFloorId: row.sourceFloorId ?? null,
+    sourcePageId: row.sourcePageId ?? null,
+    sourceBranchId: row.sourceBranchId ?? null,
     targetSlot: row.targetSlot,
+    actorClientId: row.actorClientId ?? null,
     visibilityMode: row.visibilityMode,
     writeMode: row.writeMode,
+    commitMode: row.commitMode,
     replaySafety: row.replaySafety,
     payloadJson: row.payloadJson,
     status: row.status,
+    decisionStatus: row.decisionStatus,
+    decisionReason: row.decisionReason ?? null,
+    decisionCode: row.decisionCode ?? null,
     requestId: row.requestId ?? null,
     runId: row.runId ?? null,
     payload: { present: true, value: null },
     sourceSnapshotFloorId: row.sourceSnapshotFloorId ?? null,
     liveHeadKey: row.liveHeadKey ?? null,
+    linkedVariableStageId: row.linkedVariableStageId ?? null,
     discardReason: row.discardReason ?? null,
     blockedReason: row.blockedReason ?? null,
     createdAt: row.createdAt,
