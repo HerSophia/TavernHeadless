@@ -6,6 +6,16 @@ import { OwnedPageRepository } from "../../owned-resource-repositories.js";
 import { VariableServiceError } from "../../variable-service-errors.js";
 import type { PageVariablePromotionTraceSnapshot, VariablePromotionTraceRecord } from "../contracts.js";
 
+function parseJsonObject(value: string | null | undefined): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
 function toVariablePromotionTraceRecord(
   row: typeof variablePromotionTraces.$inferSelect,
 ): VariablePromotionTraceRecord {
@@ -25,6 +35,14 @@ function toVariablePromotionTraceRecord(
     conflictPolicy: row.conflictPolicy,
     sourceVariableId: row.sourceVariableId,
     targetVariableId: row.targetVariableId,
+    sourceKind: row.sourceKind as VariablePromotionTraceRecord["sourceKind"],
+    actorClientId: row.actorClientId,
+    source: parseJsonObject(row.sourceJson),
+    evidence: parseJsonObject(row.evidenceJson),
+    decisionCode: row.decisionCode,
+    decisionReason: row.decisionReason,
+    linkedSessionStateMutationId: row.linkedSessionStateMutationId,
+    reroutedTarget: parseJsonObject(row.sourceJson).reroutedTarget as VariablePromotionTraceRecord["reroutedTarget"] ?? null,
     value: JSON.parse(row.valueJson),
     createdAt: row.createdAt,
   };

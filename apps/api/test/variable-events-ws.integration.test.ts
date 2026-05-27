@@ -344,20 +344,11 @@ describe("variable events shared event bus and websocket integration", () => {
       updatedAt: now,
     });
 
-    await directDatabase.db.insert(variables).values({
-      id: nanoid(),
-      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-      scope: "page",
-      scopeId: pageId,
-      key: "mood",
-      valueJson: JSON.stringify("steady"),
-      updatedAt: now,
-    });
-
     const commitService = new TurnCommitService(
       directDatabase.db,
       new ChatMessagePersistence(directDatabase.db, new SimpleTokenCounter()),
-      buildResult.orchestrationContext!.eventBus
+      buildResult.orchestrationContext!.eventBus,
+      { projectEventLiveHub: buildResult.projectEventLiveHub }
     );
 
     const execution: TurnExecutionResult = {
@@ -371,6 +362,18 @@ describe("variable events shared event bus and websocket integration", () => {
         completionTokens: 6,
         totalTokens: 15,
       },
+      bufferedVariableMutations: [
+        {
+          runId: "run-ws-promoted-variable",
+          generationAttemptNo: 1,
+          scope: "page",
+          scopeId: pageId,
+          key: "mood",
+          value: "steady",
+          intent: "promote_to_floor_on_accept",
+          bufferedAt: now + 10,
+        },
+      ],
     };
 
     await commitService.commit({

@@ -16,7 +16,7 @@ describe("buildMemoryRuntimeJobEventAugment", () => {
       pageId: "page-output-1",
       status: "succeeded",
       phase: null,
-      payloadJson: JSON.stringify({ pageId: "page-output-1", runtimeMode: "async_primary" }),
+      payloadJson: JSON.stringify({ pageId: "page-output-1", runtimeMode: "async_primary", strategy: "dual_summary" }),
       stateJson: null,
       resultJson: JSON.stringify({
         proposalBatchId: "memory-proposal:page-output-1",
@@ -58,6 +58,7 @@ describe("buildMemoryRuntimeJobEventAugment", () => {
     expect(augment).toMatchObject({
       branchId: "main",
       runtimeMode: "async_primary",
+      strategy: "dual_summary",
       proposalBatchId: "memory-proposal:page-output-1",
       proposalStatus: "promoted",
       promotionStatus: "promoted",

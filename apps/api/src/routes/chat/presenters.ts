@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import type { MemoryInjectionResult } from "@tavern/core";
 
 import type { PromptRuntimeTrace, PromptSnapshotPreview, WorldbookMatchDetail } from "../../services/prompt-assembler.js";
 import { ChatServiceError } from "../../services/chat/errors.js";
@@ -333,6 +334,61 @@ export function mapOptionalRuntimeTraceResponseField(runtimeTrace?: PromptRuntim
   return runtimeTrace
     ? { runtime_trace: mapRuntimeTraceToSnakeCase(runtimeTrace) }
     : {};
+}
+
+function mapMemoryInjectionScopeRefToSnakeCase(scopeRef: { scope: string; scopeId: string }): Record<string, unknown> {
+  return {
+    scope: scopeRef.scope,
+    scopeId: scopeRef.scopeId,
+  };
+}
+
+
+export function mapMemoryInjectionResultToSnakeCase(memoryInjection: MemoryInjectionResult): Record<string, unknown> {
+  return {
+    items: memoryInjection.items.map((item) => ({
+      id: item.id,
+      scope: item.scope,
+      scope_id: item.scopeId,
+      type: item.type,
+      summary_tier: item.summaryTier ?? null,
+      content: item.content,
+      fact_key: item.factKey ?? null,
+      importance: item.importance,
+      confidence: item.confidence,
+      source_floor_id: item.sourceFloorId ?? null,
+      source_message_id: item.sourceMessageId ?? null,
+      status: item.status,
+      token_count_estimate: item.tokenCountEstimate ?? null,
+      created_at: item.createdAt,
+      updated_at: item.updatedAt,
+    })),
+    formatted_text: memoryInjection.formattedText,
+    token_count: memoryInjection.tokenCount,
+    scope_resolution: memoryInjection.scopeResolution
+      ? {
+          mode: memoryInjection.scopeResolution.mode,
+          strict: memoryInjection.scopeResolution.strict,
+          ...(memoryInjection.scopeResolution.scopeRefs
+            ? { scope_refs: memoryInjection.scopeResolution.scopeRefs.map((scopeRef) => mapMemoryInjectionScopeRefToSnakeCase(scopeRef)) }
+            : {}),
+          ...(memoryInjection.scopeResolution.explicitScope
+            ? { explicit_scope: mapMemoryInjectionScopeRefToSnakeCase(memoryInjection.scopeResolution.explicitScope) }
+            : {}),
+          ...(memoryInjection.scopeResolution.fallbackScopeId !== undefined
+            ? { fallback_scope_id: memoryInjection.scopeResolution.fallbackScopeId }
+            : {}),
+          ...(memoryInjection.scopeResolution.error
+            ? {
+                error: {
+                  name: memoryInjection.scopeResolution.error.name,
+                  message: memoryInjection.scopeResolution.error.message,
+                },
+              }
+            : {}),
+        }
+      : null,
+  };
 }
 
 export function mapOptionalPromptDebugResponseFields(payload: {

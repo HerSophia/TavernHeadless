@@ -50,6 +50,7 @@ describe("TurnMemoryService", () => {
     });
 
     await expect(service.retrieveMemoryInjection("sess", "acc", "floor-1", "main")).resolves.toMatchObject({
+      injection: expect.objectContaining({ formattedText: "memory summary", tokenCount: 14 }),
       memorySummary: "memory summary",
       memoryTrace: expect.objectContaining({ strategy: "dual_summary", summaryText: "memory summary" }),
     });

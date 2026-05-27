@@ -3,6 +3,7 @@ import { TavernApiError } from "../errors/tavern-api-error.js";
 import {
   mapPromptDebugPayload,
   mapPromptLiveDebugOptionsRequest,
+  mapPromptRuntimeTraceMemoryPayload,
   mapPromptRuntimeTracePayload,
   mapPromptSnapshotPayload,
   type PromptLiveDebugOptions,
@@ -409,6 +410,7 @@ export type RespondDryRunAssembly = PromptAssemblyCompat;
 export type RespondDryRunResult = {
   assembly: RespondDryRunAssembly;
   availableForReply: number;
+  memory?: PromptRuntimeTrace["memory"];
   memorySummary: string | null;
   messages: RespondDryRunMessage[];
   promptSnapshot: RespondDryRunPromptSnapshot;
@@ -1412,6 +1414,7 @@ function mapDryRunPayload(payload: Record<string, unknown> | null): RespondDryRu
       worldbookHits: readNumber(assembly?.worldbook_hits),
     },
     availableForReply: readNumber(data?.available_for_reply),
+    ...(mapPromptRuntimeTraceMemoryPayload(data?.memory) ? { memory: mapPromptRuntimeTraceMemoryPayload(data?.memory) } : {}),
     memorySummary: readNullableString(data?.memory_summary),
     messages: readArray(data?.messages)
       .map(mapDryRunMessage)

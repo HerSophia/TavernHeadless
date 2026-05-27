@@ -122,8 +122,10 @@ export class SessionStateService {
         targetSlot: input.slot,
         visibilityMode: definition.visibilityMode,
         writeMode: "commit_bound",
+        commitMode: "turn_bound",
         replaySafety,
         status: "staged",
+        decisionStatus: "accepted",
         requestId: input.requestId ?? null,
         runId: input.runId ?? null,
         payloadJson: JSON.stringify(payload),
@@ -136,11 +138,78 @@ export class SessionStateService {
     });
   }
 
+  stageVariableRerouteValue(input: {
+    accountId: string;
+    sessionId: string;
+    branchId: string;
+    sourceFloorId: string;
+    sourcePageId: string;
+    namespace: SessionStateNamespace;
+    slot: string;
+    value: unknown | null;
+    present?: boolean;
+    actorClientId?: string | null;
+    sourceKind?: string | null;
+    decisionReason?: string | null;
+    decisionCode?: string | null;
+    linkedVariableStageId: string | null;
+    createdAt?: number;
+  }, executor?: DbExecutor): SessionStateMutationView {
+    if (!executor) {
+      return this.executeTransaction((tx) => this.stageVariableRerouteValue(input, tx));
+    }
+
+    const tx = executor;
+    const host = this.requireSessionHost(tx, input.accountId, input.sessionId, { requireActive: true });
+    const definition = this.requireWritableSlotDefinition(host.accountId, host.id, input.namespace, input.slot);
+    this.ensureWriteModeAllowed(definition, "commit_bound");
+    const replaySafety = this.resolveReplaySafety(definition);
+    const sourceFloor = this.requireFloorInSession(tx, host.id, input.sourceFloorId);
+    this.requireFloorBranchMatch(sourceFloor, input.branchId, "Source floor");
+    const binding = this.ensureManagedDomainBinding(tx, host.accountId, host.id, input.namespace);
+    const payload = this.createMutationPayload({
+      present: input.present ?? true,
+      value: input.value,
+    });
+    this.assertPayloadWithinBudget(definition, payload);
+    const mutation = this.sessionStateRepository(tx).createMutation({
+      id: nanoid(),
+      accountId: host.accountId,
+      domainId: binding.domainId,
+      stateNamespace: input.namespace,
+      sourceKind: input.sourceKind ?? "variable_reroute",
+      sessionId: host.id,
+      branchId: input.branchId,
+      sourceBranchId: input.branchId,
+      sourceFloorId: input.sourceFloorId,
+      sourcePageId: input.sourcePageId,
+      targetSlot: input.slot,
+      actorClientId: input.actorClientId ?? null,
+      visibilityMode: definition.visibilityMode,
+      writeMode: "commit_bound",
+      commitMode: "variable_reroute",
+      replaySafety,
+      status: "staged",
+      decisionStatus: "rerouted_to_session_state",
+      decisionReason: input.decisionReason ?? null,
+      decisionCode: input.decisionCode ?? "rerouted_to_session_state",
+      payloadJson: JSON.stringify(payload),
+      sourceSnapshotFloorId: input.sourceFloorId,
+      liveHeadKey: this.buildLiveHeadItemKey(input.namespace, input.slot, definition.visibilityMode, host.id, input.branchId),
+      linkedVariableStageId: input.linkedVariableStageId,
+      createdAt: input.createdAt ?? this.now(),
+      updatedAt: input.createdAt ?? this.now(),
+    });
+    return this.inflateMutation(mutation);
+  }
+
   stageClientCommitBoundValue(input: {
     accountId: string;
     sessionId: string;
     branchId: string;
     sourceFloorId: string;
+    sourcePageId?: string | null;
+    actorClientId?: string | null;
     namespace: SessionStateNamespace;
     slot: string;
     value: unknown | null;
@@ -170,14 +239,22 @@ export class SessionStateService {
         accountId: host.accountId,
         domainId: binding.domainId,
         stateNamespace: input.namespace,
+        sourceKind: "client_turn_write",
         sessionId: host.id,
         branchId: input.branchId,
+        sourceBranchId: input.branchId,
         sourceFloorId: input.sourceFloorId,
+        sourcePageId: input.sourcePageId ?? null,
         targetSlot: input.slot,
+        actorClientId: input.actorClientId ?? null,
         visibilityMode: definition.visibilityMode,
         writeMode: "commit_bound",
+        commitMode: "turn_bound",
         replaySafety,
         status: "staged",
+        decisionStatus: "accepted",
+        decisionReason: null,
+        decisionCode: null,
         requestId: input.requestId ?? input.operationLog?.requestId ?? null,
         runId: input.runId ?? null,
         payloadJson: JSON.stringify(payload),
@@ -266,14 +343,22 @@ export class SessionStateService {
         accountId: host.accountId,
         domainId: binding.domainId,
         stateNamespace: input.namespace,
+        sourceKind: "client_direct_write",
         sessionId: host.id,
         branchId: input.branchId,
+        sourceBranchId: input.branchId,
         sourceFloorId: input.sourceFloorId ?? null,
+        sourcePageId: null,
         targetSlot: input.slot,
+        actorClientId: null,
         visibilityMode: definition.visibilityMode,
         writeMode: "direct",
+        commitMode: "direct_public",
         replaySafety,
         status: replaySafety === "uncertain" ? "uncertain" : "staged",
+        decisionStatus: replaySafety === "uncertain" ? "blocked" : "accepted",
+        decisionReason: replaySafety === "uncertain" ? "uncertain_replay_safety" : null,
+        decisionCode: null,
         requestId: input.requestId ?? input.operationLog?.requestId ?? null,
         runId: input.runId ?? null,
         payloadJson: JSON.stringify(payload),
@@ -452,6 +537,9 @@ export class SessionStateService {
         this.sessionStateRepository(tx).updateMutation({
           mutationId: mutationBase.id,
           status: "uncertain",
+          decisionStatus: "blocked",
+          decisionReason: "uncertain_replay_safety",
+          decisionCode: null,
           blockedReason: "uncertain_replay_safety",
           updatedAt: input.committedAt,
         });

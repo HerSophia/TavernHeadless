@@ -190,6 +190,7 @@ export class PreparedPromptArtifactsBuilder {
           args.branchId,
         );
     const effectiveMemorySummary = memoryInjection?.memorySummary;
+    const structuredMemoryInjection = memoryInjection?.injection;
     const memoryRuntimeTrace = {
       ...memoryWritePolicy,
       ...(memoryInjection?.memoryTrace ?? {}),
@@ -348,6 +349,7 @@ export class PreparedPromptArtifactsBuilder {
       conversation: conversationState,
       history: conversationState.history,
       visibilityTrace: conversationState.visibilityTrace,
+      ...(structuredMemoryInjection ? { memoryInjection: structuredMemoryInjection } : {}),
       memorySummary: effectiveMemorySummary,
       memoryTrace,
       contributors,

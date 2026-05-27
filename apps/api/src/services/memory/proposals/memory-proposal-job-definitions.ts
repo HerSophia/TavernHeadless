@@ -10,6 +10,7 @@ export const MEMORY_PROPOSAL_BATCH_STATUSES = [
 export type MemoryProposalBatchStatus = (typeof MEMORY_PROPOSAL_BATCH_STATUSES)[number];
 
 export interface MemoryProposalBatchRecord {
+  id?: string;
   proposalBatchId: string;
   floorId: string;
   pageId: string;

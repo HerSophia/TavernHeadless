@@ -28,6 +28,7 @@ export class TurnSessionStateService {
     sessionId: string;
     branchId: string;
     floorId: string;
+    sourcePageId?: string | null;
     writes?: TurnSessionStateWriteRequest[];
     operationLog?: SessionStateOperationLogContext;
   }): void {
@@ -50,6 +51,8 @@ export class TurnSessionStateService {
           sessionId: input.sessionId,
           branchId: input.branchId,
           sourceFloorId: input.floorId,
+          sourcePageId: input.sourcePageId,
+          actorClientId: write.actorClientId ?? null,
           namespace: write.namespace,
           slot: write.slot,
           value: write.delete === true ? null : write.value,

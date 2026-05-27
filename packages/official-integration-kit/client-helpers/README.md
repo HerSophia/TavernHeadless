@@ -37,6 +37,10 @@ TavernHeadless 官方接入的语义层。
 
 本包依赖 `@tavern/sdk`。
 
+## 当前轮次说明
+
+本轮没有新增 `@tavern/client-helpers` 对 Prompt Runtime 结构化记忆字段的专用 helper。当前同步主要集中在 `@tavern/sdk` 的 preview / inspect / dry-run 返回面与文档口径。
+
 ## 当前导出
 
 | 函数 | 用途 |

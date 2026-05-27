@@ -229,6 +229,28 @@ function repairSessionStateGovernanceDrift(sqlite: Database.Database): void {
   sqlite.exec("CREATE INDEX IF NOT EXISTS `session_state_mutation_source_floor_idx` ON `session_state_mutation` (`source_floor_id`, `status`, `created_at`);");
   sqlite.exec("CREATE INDEX IF NOT EXISTS `session_state_mutation_run_idx` ON `session_state_mutation` (`run_id`, `created_at`);");
 
+  addColumnIfMissing(sqlite, "session_state_mutation", "source_kind", "`source_kind` text");
+  addColumnIfMissing(sqlite, "session_state_mutation", "source_branch_id", "`source_branch_id` text");
+  addColumnIfMissing(sqlite, "session_state_mutation", "source_page_id", "`source_page_id` text REFERENCES `message_page`(`id`) ON DELETE set null");
+  addColumnIfMissing(sqlite, "session_state_mutation", "actor_client_id", "`actor_client_id` text REFERENCES `client`(`id`) ON DELETE set null");
+  addColumnIfMissing(sqlite, "session_state_mutation", "commit_mode", "`commit_mode` text NOT NULL DEFAULT 'turn_bound'");
+  addColumnIfMissing(sqlite, "session_state_mutation", "decision_status", "`decision_status` text NOT NULL DEFAULT 'accepted'");
+  addColumnIfMissing(sqlite, "session_state_mutation", "decision_reason", "`decision_reason` text");
+  addColumnIfMissing(sqlite, "session_state_mutation", "decision_code", "`decision_code` text");
+  addColumnIfMissing(sqlite, "session_state_mutation", "linked_variable_stage_id", "`linked_variable_stage_id` text REFERENCES `page_staged_variable_write`(`id`) ON DELETE set null");
+  createIndexIfColumnsExist(
+    sqlite,
+    "session_state_mutation",
+    ["source_page_id", "status", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `session_state_mutation_source_page_idx` ON `session_state_mutation` (`source_page_id`, `status`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "session_state_mutation",
+    ["linked_variable_stage_id"],
+    "CREATE INDEX IF NOT EXISTS `session_state_mutation_linked_variable_stage_idx` ON `session_state_mutation` (`linked_variable_stage_id`);",
+  );
+
   if (!tableExists(sqlite, "session_state_namespace_registration")) {
     sqlite.exec(`CREATE TABLE \`session_state_namespace_registration\` (
   \`id\` text PRIMARY KEY NOT NULL,

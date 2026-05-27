@@ -1,5 +1,6 @@
 import type { PromptRuntimeInspectResult } from "../../services/prompt-runtime/types.js";
 import {
+  mapMemoryInjectionResultToSnakeCase,
   mapPromptSnapshotToSnakeCase,
   mapPromptRuntimeHistoryNormalizationToSnakeCase,
   mapPromptRuntimeMemoryTraceToSnakeCase,
@@ -110,8 +111,9 @@ function mapPreparedTurnToSnakeCase(result: PromptRuntimeInspectResult["prepared
     preprocessed_user_message: result.preprocessedUserMessage ?? null,
     prompt_snapshot: result.promptSnapshot ? mapPromptSnapshotToSnakeCase(result.promptSnapshot) : null,
     runtime_trace: result.runtimeTrace ? mapRuntimeTraceToSnakeCase(result.runtimeTrace) : null,
+    ...(result.memoryInjection ? { memory_injection: mapMemoryInjectionResultToSnakeCase(result.memoryInjection) } : {}),
     memory_summary: result.memorySummary ?? null,
-    ...(result.runtimeTrace?.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(result.runtimeTrace.memory) } : {}),
+    ...(result.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(result.memory) } : {}),
     generation_params: mapUnknownKeysToSnakeCase(result.generationParams),
     requested_turn_config: result.requestedTurnConfig ? mapUnknownKeysToSnakeCase(result.requestedTurnConfig) : null,
     turn_config: result.turnConfig ? mapUnknownKeysToSnakeCase(result.turnConfig) : null,

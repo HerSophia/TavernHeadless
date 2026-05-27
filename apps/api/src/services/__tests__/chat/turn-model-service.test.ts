@@ -108,4 +108,21 @@ describe("TurnModelService", () => {
       enableMemoryConsolidation: false,
     });
   });
+
+  it("resolveRequestedTurnConfig keeps requested write intent available while async orchestrator execution is gated off", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: true,
+      enableAsyncMemoryIngest: true,
+      memoryStoreEnabled: true,
+      executionTimeoutMs: 60_000,
+    });
+
+    const config = service.resolveRequestedTurnConfig(undefined, {});
+    expect(config).toEqual({ enableMemoryConsolidation: true });
+    expect(service.resolveMemoryWritePolicy(config)).toEqual({
+      runtimeMode: "async_primary",
+      requestedWrite: true,
+      effectiveWrite: true,
+    });
+  });
 });

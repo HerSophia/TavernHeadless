@@ -248,6 +248,60 @@ describe("SessionStateService", () => {
     }
   });
 
+  it("stages variable reroute writes for built-in namespaces through the governed service path", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const pageId = nanoid();
+    const now = 1_735_900_007_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor(database, {
+      id: floorId,
+      sessionId,
+      floorNo: 1,
+      branchId: "main",
+      parentFloorId: null,
+      state: "generating",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await seedInputPage(database, { floorId, pageId, now });
+    await database.db.insert(messages).values({
+      id: nanoid(),
+      pageId,
+      seq: 0,
+      role: "assistant",
+      content: "scene update",
+      contentFormat: "text",
+      tokenCount: 0,
+      isHidden: false,
+      source: "narrator",
+      createdAt: now,
+    });
+
+    const mutation = service.stageVariableRerouteValue({
+      accountId: ACCOUNT_ID,
+      sessionId,
+      branchId: "main",
+      sourceFloorId: floorId,
+      sourcePageId: pageId,
+      namespace: "game_state",
+      slot: "scene",
+      value: { revision: 1 },
+      actorClientId: null,
+      sourceKind: "tool",
+      decisionReason: "identified_as_session_state_candidate",
+      decisionCode: "rerouted_to_session_state",
+      linkedVariableStageId: null,
+      createdAt: now + 10,
+    });
+
+    expect(mutation.commitMode).toBe("variable_reroute");
+    expect(mutation.decisionStatus).toBe("rerouted_to_session_state");
+    expect(mutation.sourcePageId).toBe(pageId);
+    expect(mutation.linkedVariableStageId).toBeNull();
+  });
+
   it("discarding a staged mutation does not pollute the live head", async () => {
     const sessionId = nanoid();
     const floor1 = nanoid();

@@ -147,6 +147,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       ],
       tokenEstimate: 42,
       availableForReply: 1000,
+      memory: { summaryInjected: true },
       memorySummary: "[Memory] hello",
       promptSnapshot: {
         presetId: "preset-1",
@@ -504,6 +505,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
       messages: [{ role: "user", content: "hello" }],
       tokenEstimate: 12,
       availableForReply: 256,
+      memory: { summaryInjected: false },
       promptSnapshot: {
         presetId: null,
         presetUpdatedAt: null,
@@ -572,7 +574,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
 
 
         available_for_reply: 256,
-        memory_summary: null,
+        memory: { summary_injected: false },
         prompt_snapshot: {
           preset_id: null,
           preset_updated_at: null,
@@ -626,6 +628,7 @@ describe("POST /sessions/:id/respond/dry-run", () => {
           in_chat_inserted_entry_ids: [],
           preprocessed_user_message: null,
         },
+        memory_summary: null,
       },
     });
   });

@@ -334,6 +334,7 @@ export interface RuntimeJobEvent {
   pageId?: string;
   branchId?: string;
   runtimeMode?: MemoryRuntimeMode;
+  strategy?: 'none' | 'single_summary' | 'dual_summary' | 'direct_items';
   proposalBatchId?: string;
   proposalStatus?: 'proposed' | 'promoted' | 'rejected' | 'superseded';
   promotionStatus?: 'promoted' | 'rejected' | 'superseded';

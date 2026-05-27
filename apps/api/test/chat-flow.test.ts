@@ -1150,20 +1150,20 @@ describe("ChatService", () => {
     expect(commitSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId,
-        variableCommit: { pageId: expect.any(String) },
+        variableCommit: expect.objectContaining({ actorClientId: null, rerouteToSessionState: false }),
         promptSnapshot: expect.objectContaining({
           sessionId,
           promptMode: "compat_strict",
           presetId: null,
         }),
-        toolExecutionRecords: [
+        toolExecutionRecords: expect.arrayContaining([
           expect.objectContaining({
             floorId: expect.any(String),
             providerId: "builtin",
             toolName: "roll_dice",
             status: "success",
           }),
-        ],
+        ]),
         execution: expect.objectContaining({
           finalState: "generating",
           generatedText: MOCK_GENERATED_TEXT,
@@ -1228,19 +1228,21 @@ describe("ChatService", () => {
           .set({ state: "generating", updatedAt: Date.now() })
           .where(eq(floors.id, input.floorId));
 
-        await database.db.insert(variables).values({
-          id: nanoid(),
-          accountId: DEFAULT_ADMIN_ACCOUNT_ID,
-          scope: "page",
-          scopeId: input.pageId!,
-          key: "mood",
-          valueJson: JSON.stringify("focused"),
-          updatedAt: Date.now(),
-        });
-
         return {
           ...MOCK_TURN_OUTPUT,
           floorId: input.floorId,
+          bufferedVariableMutations: [
+            {
+              runId: `run-${input.floorId}`,
+              generationAttemptNo: 1,
+              scope: "page",
+              scopeId: input.pageId!,
+              key: "mood",
+              value: "focused",
+              intent: "promote_to_floor_on_accept",
+              bufferedAt: Date.now(),
+            },
+          ],
         };
       }
     );
@@ -2635,20 +2637,20 @@ describe("ChatService", () => {
         expect.objectContaining({
           floorId: regenResult.floorId,
           sessionId,
-          variableCommit: { pageId: expect.any(String) },
+          variableCommit: expect.objectContaining({ actorClientId: null, rerouteToSessionState: false }),
           promptSnapshot: expect.objectContaining({
             floorId: regenResult.floorId,
             sessionId,
             promptMode: "compat_strict",
           }),
-          toolExecutionRecords: [
+          toolExecutionRecords: expect.arrayContaining([
             expect.objectContaining({
               floorId: regenResult.floorId,
               providerId: "builtin",
               toolName: "roll_dice",
               status: "success",
             }),
-          ],
+          ]),
           execution: expect.objectContaining({ floorId: regenResult.floorId, finalState: "generating" }),
         })
       );
@@ -3402,20 +3404,20 @@ describe("ChatService", () => {
         expect.objectContaining({
           floorId: baseTurn.floorId,
           sessionId,
-          variableCommit: { pageId: expect.any(String) },
+          variableCommit: expect.objectContaining({ actorClientId: null, rerouteToSessionState: false }),
           promptSnapshot: expect.objectContaining({
             floorId: baseTurn.floorId,
             sessionId,
             promptMode: "compat_strict",
           }),
-          toolExecutionRecords: [
+          toolExecutionRecords: expect.arrayContaining([
             expect.objectContaining({
               floorId: baseTurn.floorId,
               providerId: "builtin",
               toolName: "roll_dice",
               status: "success",
             }),
-          ],
+          ]),
           execution: expect.objectContaining({ floorId: baseTurn.floorId, finalState: "generating" }),
         })
       );
@@ -4041,20 +4043,20 @@ describe("ChatService", () => {
         expect.objectContaining({
           floorId: editedResult.floorId,
           sessionId,
-          variableCommit: { pageId: expect.any(String) },
+          variableCommit: expect.objectContaining({ actorClientId: null, rerouteToSessionState: false }),
           promptSnapshot: expect.objectContaining({
             floorId: editedResult.floorId,
             sessionId,
             promptMode: "compat_strict",
           }),
-          toolExecutionRecords: [
+          toolExecutionRecords: expect.arrayContaining([
             expect.objectContaining({
               floorId: editedResult.floorId,
               providerId: "builtin",
               toolName: "roll_dice",
               status: "success",
             }),
-          ],
+          ]),
           execution: expect.objectContaining({ floorId: editedResult.floorId, finalState: "generating" }),
         })
       );

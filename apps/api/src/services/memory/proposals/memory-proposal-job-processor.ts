@@ -18,10 +18,13 @@ export function commitIngestProposalBatch(args: {
   sourceJobId: string;
   timestamp: number;
 }): PromoteIngestProposalResult {
-  const proposalBatch = new MemoryProposalService().createIngestProposalBatch({
+  const proposalBatch = new MemoryProposalService(args.db).createIngestProposalBatch({
     payload: args.payload,
     ingestOutput: args.ingestOutput,
     defaultScope: args.defaultScope,
+    createdAt: args.timestamp,
+    sourceJobId: args.sourceJobId,
+    strategy: "dual_summary",
   });
 
   return new MemoryPromotionService(args.db).promoteIngestProposal({

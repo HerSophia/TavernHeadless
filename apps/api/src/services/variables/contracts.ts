@@ -1,6 +1,11 @@
 import type { VariableWriteIntent, VariableWriteSourceMetadata } from "@tavern/core";
 import type { VariableEntry, VariableScope } from "@tavern/shared";
 
+import type {
+  PageInspectionDecisionCode,
+  PageInspectionSourceKind,
+} from "../state-governance/shared/page-inspection-contracts.js";
+
 export const PAGE_STAGED_VARIABLE_WRITE_OPS = ["set", "delete"] as const;
 export type PageStagedVariableWriteOp = (typeof PAGE_STAGED_VARIABLE_WRITE_OPS)[number];
 
@@ -25,6 +30,8 @@ export type PageVariableDecisionStatus = (typeof PAGE_VARIABLE_DECISION_STATUSES
 export interface PageVariableDecision {
   status: PageVariableDecisionStatus;
   decisionReason?: string | null;
+  decisionCode?: PageInspectionDecisionCode | null;
+  reroutedTarget?: "session_state" | null;
 }
 
 export const VARIABLE_CONFLICT_POLICIES = ["replace", "if_absent"] as const;
@@ -36,9 +43,16 @@ export interface PageStagedVariableWriteEvidence {
   runId?: string;
   generationAttemptNo?: number;
   bufferedAt?: number;
+  committedAt?: number;
   accountId?: string;
   scope?: VariableScope;
   scopeId?: string;
+}
+
+export interface PageStagedVariableRerouteTarget {
+  surface: "session_state";
+  namespace?: string | null;
+  slot?: string | null;
 }
 
 export interface PageStagedVariableWriteRecord {
@@ -53,11 +67,16 @@ export interface PageStagedVariableWriteRecord {
   value: unknown | null;
   intent: VariableWriteIntent;
   conflictPolicy: VariableConflictPolicy;
+  sourceKind: PageInspectionSourceKind;
+  actorClientId: string | null;
   source: PageStagedVariableWriteSource;
   evidence: PageStagedVariableWriteEvidence;
   reason: string;
   status: PageStagedVariableWriteStatus;
+  reroutedTarget?: PageStagedVariableRerouteTarget | null;
+  decisionCode: PageInspectionDecisionCode | null;
   decisionReason: string | null;
+  linkedSessionStateMutationId: string | null;
   createdAt: number;
   resolvedAt: number | null;
 }
@@ -73,7 +92,7 @@ export interface PageVariableStageSnapshot {
 export const VARIABLE_PROMOTION_FROM_SCOPES = ["page", "floor", "branch", "chat"] as const;
 export type VariablePromotionFromScope = (typeof VARIABLE_PROMOTION_FROM_SCOPES)[number];
 
-export const VARIABLE_PROMOTION_TO_SCOPES = ["floor", "branch", "chat", "global"] as const;
+export const VARIABLE_PROMOTION_TO_SCOPES = ["floor", "branch", "chat", "global", "session_state"] as const;
 export type VariablePromotionToScope = (typeof VARIABLE_PROMOTION_TO_SCOPES)[number];
 
 export interface VariablePromotionTraceRecord {
@@ -92,6 +111,14 @@ export interface VariablePromotionTraceRecord {
   conflictPolicy: VariableConflictPolicy;
   sourceVariableId: string | null;
   targetVariableId: string | null;
+  sourceKind: PageInspectionSourceKind;
+  actorClientId: string | null;
+  source: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  decisionCode: PageInspectionDecisionCode | null;
+  reroutedTarget?: PageStagedVariableRerouteTarget | null;
+  decisionReason: string | null;
+  linkedSessionStateMutationId: string | null;
   value: unknown;
   createdAt: number;
 }

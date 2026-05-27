@@ -160,8 +160,9 @@ export interface PreparedPromptArtifacts {
   conversation: import("./prompt-preparation-service.js").PromptRuntimeConversationWindow;
   history: ChatMessage[];
   visibilityTrace?: PromptVisibilityTrace;
+  memoryInjection?: import("@tavern/core").MemoryInjectionResult;
   memorySummary?: string;
-  memoryTrace?: PromptRuntimeTrace["memory"];
+  memoryTrace: PromptRuntimeTrace["memory"];
   contributors: PromptRuntimeContributorOutput[];
   resolvedTurnModels: ResolvedTurnModels;
   assembled: AssembleResult;
@@ -193,7 +194,9 @@ export interface PreparedTurnContext {
   executionContext: PromptRuntimeResolvedContext;
   history: ChatMessage[];
   visibilityTrace?: PromptVisibilityTrace;
+  memoryInjection?: import("@tavern/core").MemoryInjectionResult;
   memorySummary?: string;
+  memoryTrace: PromptRuntimeTrace["memory"];
   resolvedTurnModels: ResolvedTurnModels;
   assembled: AssembleResult;
   materialized: MaterializePromptRuntimeMessagesResult;

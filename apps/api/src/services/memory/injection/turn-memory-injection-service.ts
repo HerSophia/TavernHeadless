@@ -40,6 +40,7 @@ export class TurnMemoryInjectionService {
       const injectionOptions = this.buildInjectionOptions(args);
       const injection = await this.options.memoryStore.prepareInjection(args.sessionId, injectionOptions);
       const memorySummary = injection.formattedText || undefined;
+      const strategy = this.options.enableDualSummaryInjection ? "dual_summary" : undefined;
 
       return {
         injection,
@@ -51,6 +52,7 @@ export class TurnMemoryInjectionService {
           options: injectionOptions,
           injection,
           memorySummary,
+          strategy,
         }),
       };
     } catch (error) {

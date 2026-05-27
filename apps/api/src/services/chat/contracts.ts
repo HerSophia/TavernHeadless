@@ -66,6 +66,7 @@ export interface TurnSessionStateWriteRequest {
   slot: string;
   value?: unknown;
   delete?: boolean;
+  actorClientId?: string | null;
 }
 
 interface TurnOperationLogRequest {
@@ -121,6 +122,7 @@ export interface DryRunResult {
   messages: ChatMessage[];
   tokenEstimate: number;
   availableForReply: number;
+  memory?: PromptRuntimeTrace["memory"];
   memorySummary?: string;
   promptSnapshot: PromptSnapshotPreview;
   assembly: PromptAssemblyCompat;
@@ -145,6 +147,7 @@ export interface PromptRuntimePreviewResult {
   diagnostics: PromptRuntimeDiagnostic[];
   limitations: string[];
   text: string;
+  memoryInjection?: import("@tavern/core").MemoryInjectionResult;
   memory?: PromptRuntimeTrace["memory"];
   runtimeTrace: PromptRuntimePreviewTrace;
 }
