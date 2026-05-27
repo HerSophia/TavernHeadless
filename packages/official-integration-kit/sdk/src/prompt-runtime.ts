@@ -316,6 +316,56 @@ export type PromptRuntimeMemoryScopeResolutionTrace = {
   strict?: boolean;
 };
 
+export type PromptRuntimeMemoryInjectionScope = "global" | "chat" | "branch" | "floor";
+export type PromptRuntimeMemoryInjectionType = "fact" | "summary" | "open_loop";
+export type PromptRuntimeMemoryInjectionStatus = "active" | "deprecated";
+export type PromptRuntimeMemoryInjectionSummaryTier = "micro" | "macro";
+export type PromptRuntimeMemoryInjectionScopeResolutionMode =
+  | "visible_refs"
+  | "explicit_scope"
+  | "direct_scope_fallback"
+  | "strict_empty"
+  | "resolver_error";
+
+export type PromptRuntimeMemoryInjectionScopeRef = {
+  scope: PromptRuntimeMemoryInjectionScope;
+  scopeId: string;
+};
+
+export type PromptRuntimeMemoryInjectionScopeResolution = {
+  mode: PromptRuntimeMemoryInjectionScopeResolutionMode;
+  strict: boolean;
+  scopeRefs?: PromptRuntimeMemoryInjectionScopeRef[];
+  explicitScope?: PromptRuntimeMemoryInjectionScopeRef;
+  fallbackScopeId?: string;
+  error?: { name: string; message: string };
+} | null;
+
+export type PromptRuntimeMemoryInjectionItem = {
+  confidence: number;
+  content: string;
+  createdAt: number;
+  factKey: string | null;
+  id: string;
+  importance: number;
+  scope: PromptRuntimeMemoryInjectionScope;
+  scopeId: string;
+  sourceFloorId: string | null;
+  sourceMessageId: string | null;
+  status: PromptRuntimeMemoryInjectionStatus;
+  summaryTier: PromptRuntimeMemoryInjectionSummaryTier | null;
+  tokenCountEstimate: number | null;
+  type: PromptRuntimeMemoryInjectionType;
+  updatedAt: number;
+};
+
+export type PromptRuntimeMemoryInjectionResult = {
+  formattedText: string;
+  items: PromptRuntimeMemoryInjectionItem[];
+  scopeResolution: PromptRuntimeMemoryInjectionScopeResolution;
+  tokenCount: number;
+};
+
 export type PromptRuntimeMacroWarning = {
   code: string;
   macroName?: string;
@@ -802,6 +852,24 @@ export function mapPromptRuntimeTraceMemoryPayload(value: unknown): PromptRuntim
   return mapped;
 }
 
+export function mapPromptRuntimeMemoryInjectionPayload(value: unknown): PromptRuntimeMemoryInjectionResult | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  return {
+    formattedText: readString(record.formatted_text),
+    items: readArray(record.items)
+      .map(mapPromptRuntimeMemoryInjectionItem)
+      .filter((item): item is PromptRuntimeMemoryInjectionItem => item !== null),
+    scopeResolution: record.scope_resolution === null
+      ? null
+      : mapPromptRuntimeMemoryInjectionScopeResolution(record.scope_resolution) ?? null,
+    tokenCount: readNumber(record.token_count),
+  };
+}
+
 function mapPromptRuntimeMemorySelectedItemTrace(value: unknown): PromptRuntimeMemorySelectedItemTrace | null {
   const record = readRecord(value);
   if (!record) {
@@ -830,6 +898,38 @@ function mapPromptRuntimeMemorySelectedItemTrace(value: unknown): PromptRuntimeM
   if (record.selected_reason !== undefined) mapped.selectedReason = readNullableString(record.selected_reason);
 
   return mapped;
+}
+
+function mapPromptRuntimeMemoryInjectionItem(value: unknown): PromptRuntimeMemoryInjectionItem | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const scope = readOptionalPromptRuntimeMemoryInjectionScope(record.scope);
+  const type = readOptionalPromptRuntimeMemoryInjectionType(record.type);
+  const status = readOptionalPromptRuntimeMemoryInjectionStatus(record.status);
+  if (!scope || !type || !status) {
+    return null;
+  }
+
+  return {
+    confidence: readNumber(record.confidence),
+    content: readString(record.content),
+    createdAt: readNumber(record.created_at),
+    factKey: readNullableString(record.fact_key),
+    id: readString(record.id),
+    importance: readNumber(record.importance),
+    scope,
+    scopeId: readString(record.scope_id),
+    sourceFloorId: readNullableString(record.source_floor_id),
+    sourceMessageId: readNullableString(record.source_message_id),
+    status,
+    summaryTier: readOptionalPromptRuntimeMemoryInjectionSummaryTier(record.summary_tier) ?? null,
+    tokenCountEstimate: readNullableNumber(record.token_count_estimate),
+    type,
+    updatedAt: readNumber(record.updated_at),
+  };
 }
 
 function mapPromptRuntimeMacroWarning(value: unknown): PromptRuntimeMacroWarning | null {
@@ -1088,6 +1188,51 @@ function mapPromptRuntimeMemoryScopeResolutionTrace(value: unknown): PromptRunti
     ...(record.resolved_branch_id !== undefined ? { resolvedBranchId: readNullableString(record.resolved_branch_id) } : {}),
     ...(record.fallback_reason !== undefined ? { fallbackReason: readNullableString(record.fallback_reason) } : {}),
   };
+}
+
+function mapPromptRuntimeMemoryInjectionScopeResolution(value: unknown): Exclude<PromptRuntimeMemoryInjectionScopeResolution, null> | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const mode = readOptionalPromptRuntimeMemoryInjectionScopeResolutionMode(record.mode);
+  if (!mode) {
+    return null;
+  }
+
+  const error = mapPromptRuntimeMemoryInjectionScopeResolutionError(record.error);
+
+  const explicitScope = mapPromptRuntimeMemoryInjectionScopeRef(record.explicit_scope);
+
+  return {
+    mode,
+    strict: readBoolean(record.strict),
+    ...(record.scope_refs !== undefined
+      ? {
+          scopeRefs: readArray(record.scope_refs)
+            .map(mapPromptRuntimeMemoryInjectionScopeRef)
+            .filter((item): item is PromptRuntimeMemoryInjectionScopeRef => item !== null),
+        }
+      : {}),
+    ...(explicitScope ? { explicitScope } : {}),
+    ...(record.fallback_scope_id !== undefined ? { fallbackScopeId: readString(record.fallback_scope_id) } : {}),
+    ...(error ? { error } : {}),
+  };
+}
+
+function mapPromptRuntimeMemoryInjectionScopeRef(value: unknown): PromptRuntimeMemoryInjectionScopeRef | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const scope = readOptionalPromptRuntimeMemoryInjectionScope(record.scope);
+  if (!scope) {
+    return null;
+  }
+
+  return { scope, scopeId: readString(record.scopeId ?? record.scope_id) };
 }
 
 function mapStringArray(value: unknown): string[] {
@@ -1379,10 +1524,82 @@ function readOptionalPromptRuntimeMemoryPromotionStatus(value: unknown): PromptR
   return undefined;
 }
 
+function readOptionalPromptRuntimeMemoryInjectionScope(
+  value: unknown,
+): PromptRuntimeMemoryInjectionScope | undefined {
+  const scope = readOptionalString(value);
+  if (scope === "global" || scope === "chat" || scope === "branch" || scope === "floor") {
+    return scope;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryInjectionType(
+  value: unknown,
+): PromptRuntimeMemoryInjectionType | undefined {
+  const type = readOptionalString(value);
+  if (type === "fact" || type === "summary" || type === "open_loop") {
+    return type;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryInjectionStatus(
+  value: unknown,
+): PromptRuntimeMemoryInjectionStatus | undefined {
+  const status = readOptionalString(value);
+  if (status === "active" || status === "deprecated") {
+    return status;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryInjectionSummaryTier(
+  value: unknown,
+): PromptRuntimeMemoryInjectionSummaryTier | undefined {
+  const tier = readOptionalString(value);
+  if (tier === "micro" || tier === "macro") {
+    return tier;
+  }
+
+  return undefined;
+}
+
+function readOptionalPromptRuntimeMemoryInjectionScopeResolutionMode(
+  value: unknown,
+): PromptRuntimeMemoryInjectionScopeResolutionMode | undefined {
+  const mode = readOptionalString(value);
+  if (mode === "visible_refs" || mode === "explicit_scope" || mode === "direct_scope_fallback" || mode === "strict_empty" || mode === "resolver_error") {
+    return mode;
+  }
+
+  return undefined;
+}
+
 function mapPromptRuntimeMemoryScopeArray(value: unknown): PromptRuntimeMemorySelectedItemScope[] {
   return readArray(value)
     .map((item) => readOptionalPromptRuntimeMemorySelectedItemScope(item))
     .filter((item): item is PromptRuntimeMemorySelectedItemScope => item !== undefined);
+}
+
+function mapPromptRuntimeMemoryInjectionScopeResolutionError(
+  value: unknown,
+): { name: string; message: string } | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const name = readOptionalString(record.name);
+  const message = readOptionalString(record.message);
+  if (!name || !message) {
+    return null;
+  }
+
+  return { name, message };
 }
 
 function readOptionalPromptMessageRole(

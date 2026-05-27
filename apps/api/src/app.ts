@@ -731,6 +731,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       staleRunTimeoutMs: options.llmDefaultTimeoutMs,
     },
     projectEventLiveHub,
+    sessionStateObservationService,
   });
 
   const promptRuntimeControlService = new PromptRuntimeControlService(database.db, {
@@ -765,7 +766,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
             const result: Record<string, unknown> = {};
 
             for (const slot of resolvedSlots) {
-              const activeProfile = activeProfiles[slot.slot as keyof typeof activeProfiles];
+              const activeProfile = activeProfiles[slot.slot as keyof typeof activeProfiles] ?? activeProfiles["*" as keyof typeof activeProfiles];
               if (slot.enabled !== true) {
                 result[slot.slot] = {
                   enabled: false,

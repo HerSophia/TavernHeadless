@@ -78,6 +78,7 @@ import {
   logNativePipelineError,
   mapChatServiceError,
   mapMemoryToSnakeCase,
+  mapPromptRuntimeMemoryTraceToSnakeCase,
   mapOptionalPromptDebugResponseFields,
   mapPromptSnapshotToSnakeCase,
   mapRunToSnakeCase,
@@ -283,6 +284,7 @@ export async function registerChatRoutes(
           available_for_reply: result.availableForReply,
           memory_summary: result.memorySummary ?? null,
           prompt_snapshot: mapPromptSnapshotToSnakeCase(result.promptSnapshot),
+          ...(result.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(result.memory) } : {}),
           ...mapOptionalPromptDebugResponseFields({ runtimeTrace: result.runtimeTrace }),
           assembly: {
             mode: result.assembly.mode,

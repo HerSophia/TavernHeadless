@@ -143,6 +143,8 @@ export class PreparedTurnInspectionService {
         preprocessedUserMessage: prepared.preprocessedUserMessage,
         promptSnapshot: prepared.promptSnapshot,
         runtimeTrace: prepared.runtimeTrace,
+        ...(prepared.memoryInjection ? { memoryInjection: prepared.memoryInjection } : {}),
+        memory: prepared.memoryTrace,
         memorySummary: prepared.memorySummary,
         generationParams: prepared.generationParams,
         requestedTurnConfig: prepared.requestedTurnConfig,

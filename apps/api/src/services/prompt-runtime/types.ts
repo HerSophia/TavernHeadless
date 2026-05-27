@@ -63,6 +63,8 @@ export interface PromptRuntimeInspectionPreparedTurn {
   preprocessedUserMessage?: string;
   promptSnapshot?: PromptSnapshotPreview;
   runtimeTrace?: PromptRuntimeTrace;
+  memoryInjection?: import("@tavern/core").MemoryInjectionResult;
+  memory?: PromptRuntimeTrace["memory"];
   memorySummary?: string;
   generationParams: GenerationParams;
   requestedTurnConfig?: TurnConfig;

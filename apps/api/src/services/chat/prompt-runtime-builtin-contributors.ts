@@ -16,7 +16,10 @@ export function buildMemoryProjectionContributor(args: {
   memoryTrace?: PromptRuntimeTrace["memory"];
 }): PromptRuntimeBuiltinContributorResult {
   const summary = args.memorySummary?.trim();
-  if (!summary) {
+  const structuredRenderable = !summary && args.memoryTrace
+    ? buildStructuredMemorySelectionRenderable(args.memoryTrace)
+    : undefined;
+  if (!summary && !structuredRenderable) {
     return { kind: "memory_projection" };
   }
 
@@ -27,13 +30,15 @@ export function buildMemoryProjectionContributor(args: {
     sourceKind: "memory",
     modeScope,
     payload: {
-      summary,
+      summary: summary ?? null,
       memoryTrace: args.memoryTrace ?? null,
     },
-    promptRenderable: {
-      title: "Memory summary",
-      content: summary,
-    },
+    promptRenderable: summary
+      ? {
+          title: "Memory summary",
+          content: summary,
+        }
+      : structuredRenderable,
     trace: {
       deterministic: true,
       cacheScope: "floor",
@@ -41,6 +46,31 @@ export function buildMemoryProjectionContributor(args: {
   };
 
   return { kind: "memory_projection", contributor };
+}
+
+function buildStructuredMemorySelectionRenderable(
+  memoryTrace: NonNullable<PromptRuntimeTrace["memory"]>,
+): { title: string; content: string } | undefined {
+  const selectedItems = memoryTrace.selectedItems ?? [];
+  if (selectedItems.length === 0) {
+    return undefined;
+  }
+
+  return {
+    title: "Memory selection",
+    content: JSON.stringify({
+      selected_items: selectedItems.map((item) => ({
+        memory_id: item.memoryId,
+        scope: item.scope,
+        scope_id: item.scopeId,
+        branch_id: item.branchId ?? null,
+        kind: item.kind,
+        ...(item.source !== undefined ? { source: item.source } : {}),
+        ...(item.score !== undefined ? { score: item.score } : {}),
+        ...(item.tokenCount !== undefined ? { token_count: item.tokenCount } : {}),
+      })),
+    }, null, 2),
+  };
 }
 
 export function buildStateProjectionContributor(args: {

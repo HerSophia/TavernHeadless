@@ -101,8 +101,27 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 
 `client.promptRuntime.inspect(...)` 的 `preparedTurn` 现在新增：
 
+- `memoryInjection`
+- `memory`
+- `memorySummary`
 - `contributors`
 - `preparePhaseTrace`
+
+其中：
+
+- `memoryInjection` 是请求期原始 `MemoryInjectionResult` 的结构化真相
+- `memory` 是 Prompt Runtime 统一的记忆 trace 视图
+- `memorySummary` 继续保留为兼容投影
+
+`client.promptRuntime.previewText(...)` 现在也会同步返回：
+
+- `memoryInjection`
+- `memory`
+
+`client.sessions.respondDryRun(...)` 现在会返回：
+
+- `memory`
+- `memorySummary`
 
 同时 `client.promptRuntime.getCapabilities()` 的 `observability.inspect` 现在也会明确返回：
 
@@ -112,6 +131,7 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 这几项字段用来表达：
 
 - inspect 返回的是 prepared turn
+- preview / inspect / dry-run 不再只靠 `memorySummary` 表达记忆真相
 - inspect 现在还能返回 pre-response contributor 视图
 - inspect 现在还能返回准备阶段的 phase trace
 

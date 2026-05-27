@@ -20,6 +20,7 @@ export class MemoryInspectionService {
     options: MemoryInjectionOptions;
     injection: MemoryInjectionResult;
     memorySummary?: string;
+    strategy?: NonNullable<PromptRuntimeMemoryTrace["strategy"]>;
   }): Omit<PromptRuntimeMemoryTrace, "summaryInjected"> {
     const selectedItems = args.injection.items.map((item) => this.toSelectedItemTrace(item));
     const scopeResolution = buildPromptRuntimeMemoryScopeResolutionTrace({
@@ -30,7 +31,7 @@ export class MemoryInspectionService {
       diagnostics: args.injection.scopeResolution,
       selectedItems,
     });
-    const strategy = resolveMemoryStrategy(args.options, args.injection, args.memorySummary);
+    const strategy = args.strategy ?? resolveMemoryStrategy(args.options, args.injection, args.memorySummary);
     const summaryTextHash = args.memorySummary ? createSummaryTextHash(args.memorySummary) : null;
 
     return {

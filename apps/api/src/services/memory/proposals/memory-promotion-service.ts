@@ -9,6 +9,7 @@ import {
   type PendingCoreEvent,
   type TransactionalMemoryMutationCounts,
 } from "../../memory-transaction-mutations.js";
+import { MemoryProposalLedgerService } from "./memory-proposal-ledger-service.js";
 
 import type { MemoryProposalBatchRecord } from "./memory-proposal-job-definitions.js";
 
@@ -23,6 +24,30 @@ const EMPTY_COUNTS: TransactionalMemoryMutationCounts = {
   updated: 0,
   deprecated: 0,
 };
+
+function resolvePromotionDecision(
+  page: typeof messagePages.$inferSelect | undefined,
+  floorId: string,
+): {
+  proposalStatus: MemoryProposalBatchRecord["status"];
+  promotionStatus: PromoteIngestProposalResult["promotionStatus"];
+  decisionReason: string;
+  decisionCode: "source_page_missing" | "source_page_scope_mismatch" | "source_page_not_output" | "source_page_not_active" | "promotion_allowed";
+} {
+  if (!page) {
+    return { proposalStatus: "rejected", promotionStatus: "rejected", decisionReason: "page_commit_gate_source_page_missing", decisionCode: "source_page_missing" };
+  }
+  if (page.floorId !== floorId) {
+    return { proposalStatus: "rejected", promotionStatus: "rejected", decisionReason: "page_commit_gate_floor_mismatch", decisionCode: "source_page_scope_mismatch" };
+  }
+  if (page.pageKind !== "output") {
+    return { proposalStatus: "rejected", promotionStatus: "rejected", decisionReason: "page_commit_gate_source_page_not_output", decisionCode: "source_page_not_output" };
+  }
+  if (!page.isActive) {
+    return { proposalStatus: "superseded", promotionStatus: "superseded", decisionReason: "page_not_active_at_commit", decisionCode: "source_page_not_active" };
+  }
+  return { proposalStatus: "promoted", promotionStatus: "promoted", decisionReason: "promotion_allowed", decisionCode: "promotion_allowed" };
+}
 
 export class MemoryPromotionService {
   constructor(private readonly db: AppDb | DbExecutor) {}
@@ -41,32 +66,31 @@ export class MemoryPromotionService {
     timestamp: number;
     pendingEvents: PendingCoreEvent[];
   }): PromoteIngestProposalResult {
+    const ledgerService = new MemoryProposalLedgerService(this.db);
     const page = this.db
       .select()
       .from(messagePages)
       .where(eq(messagePages.id, input.proposalBatch.pageId))
       .limit(1)
       .all()[0];
+    const decision = resolvePromotionDecision(page, input.floorId);
 
-    if (!page || page.floorId !== input.floorId || page.pageKind !== "output") {
+    if (decision.promotionStatus !== "promoted") {
+      ledgerService.markBatchDecision({
+        proposalBatchId: input.proposalBatch.proposalBatchId,
+        proposalStatus: decision.proposalStatus,
+        promotionStatus: decision.promotionStatus,
+        decisionReason: decision.decisionReason,
+        decisionCode: decision.decisionCode,
+        decidedAt: input.timestamp,
+      });
       return {
         proposalBatch: {
           ...input.proposalBatch,
-          status: "rejected",
+          status: decision.proposalStatus,
         },
         counts: EMPTY_COUNTS,
-        promotionStatus: "rejected",
-      };
-    }
-
-    if (!page.isActive) {
-      return {
-        proposalBatch: {
-          ...input.proposalBatch,
-          status: "superseded",
-        },
-        counts: EMPTY_COUNTS,
-        promotionStatus: "superseded",
+        promotionStatus: decision.promotionStatus,
       };
     }
 
@@ -89,14 +113,22 @@ export class MemoryPromotionService {
       sourceFloorId: input.floorId,
       sourceMessageId: input.proposalBatch.assistantMessageId,
     });
+    ledgerService.markBatchDecision({
+      proposalBatchId: input.proposalBatch.proposalBatchId,
+      proposalStatus: "promoted",
+      promotionStatus: "promoted",
+      decisionReason: "promotion_allowed",
+      decisionCode: "promotion_allowed",
+      decidedAt: input.timestamp,
+    });
 
     return {
       proposalBatch: {
         ...input.proposalBatch,
-        status: "promoted",
+        status: decision.proposalStatus,
       },
       counts,
-      promotionStatus: "promoted",
+      promotionStatus: decision.promotionStatus,
     };
   }
 }

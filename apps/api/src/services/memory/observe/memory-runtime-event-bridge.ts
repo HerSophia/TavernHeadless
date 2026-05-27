@@ -11,6 +11,7 @@ import type { MemoryRuntimeMode } from "../shared/memory-runtime-mode.js";
 export interface MemoryRuntimeJobEventAugment {
   branchId?: string;
   runtimeMode?: MemoryRuntimeMode;
+  strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
   proposalBatchId?: string;
   proposalStatus?: MemoryProposalBatchRecord["status"];
   promotionStatus?: "promoted" | "rejected" | "superseded";
@@ -35,6 +36,9 @@ export function buildMemoryRuntimeJobEventAugment(job: RuntimeJobRecord): Memory
       : payload.runtimeMode
         ? { runtimeMode: payload.runtimeMode }
         : {}),
+    ...(payload.strategy
+      ? { strategy: payload.strategy }
+      : {}),
     ...(proposalBatch ? { proposalBatchId: proposalBatch.proposalBatchId } : {}),
     ...(proposalStatus ? { proposalStatus } : {}),
     ...(promotionStatus ? { promotionStatus } : {}),
@@ -44,6 +48,7 @@ export function buildMemoryRuntimeJobEventAugment(job: RuntimeJobRecord): Memory
 function parseMemoryJobPayload(value: string | null | undefined): {
   branchId?: string;
   runtimeMode?: MemoryRuntimeMode;
+  strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
   pageId?: string;
 } {
   if (!value) {
@@ -56,6 +61,9 @@ function parseMemoryJobPayload(value: string | null | undefined): {
       ...(typeof parsed.branchId === "string" ? { branchId: parsed.branchId } : {}),
       ...(parsed.runtimeMode === "legacy_sync" || parsed.runtimeMode === "async_primary"
         ? { runtimeMode: parsed.runtimeMode }
+        : {}),
+      ...(parsed.strategy === "none" || parsed.strategy === "single_summary" || parsed.strategy === "dual_summary" || parsed.strategy === "direct_items"
+        ? { strategy: parsed.strategy }
         : {}),
       ...(typeof parsed.pageId === "string" ? { pageId: parsed.pageId } : {}),
     };

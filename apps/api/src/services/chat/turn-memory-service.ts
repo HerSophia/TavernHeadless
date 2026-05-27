@@ -1,4 +1,4 @@
-import type { CoreEventMap, MemoryInjectionOptions, MemoryStore, PromptRuntimeMemoryTrace, TurnInput } from "@tavern/core";
+import type { CoreEventMap, MemoryInjectionOptions, MemoryInjectionResult, MemoryStore, PromptRuntimeMemoryTrace, TurnInput } from "@tavern/core";
 import { MemoryScopeResolver } from "@tavern/core";
 
 import { TurnMemoryInjectionService } from "../memory/injection/turn-memory-injection-service.js";
@@ -29,8 +29,9 @@ export class TurnMemoryService {
     floorId?: string,
     branchId?: string,
   ): Promise<{
+    injection: MemoryInjectionResult;
     memorySummary?: string;
-    memoryTrace?: Omit<PromptRuntimeMemoryTrace, "summaryInjected">;
+    memoryTrace: Omit<PromptRuntimeMemoryTrace, "summaryInjected">;
   } | undefined> {
     const result = await this.injectionService.retrieveMemoryInjection({
       sessionId,
@@ -43,7 +44,11 @@ export class TurnMemoryService {
       return undefined;
     }
 
-    return { memorySummary: result.memorySummary, memoryTrace: result.memoryTrace };
+    return {
+      injection: result.injection,
+      memorySummary: result.memorySummary,
+      memoryTrace: result.memoryTrace,
+    };
   }
 
   async retrieveMemorySummary(

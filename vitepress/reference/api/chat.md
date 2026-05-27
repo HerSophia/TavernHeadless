@@ -276,6 +276,43 @@ dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot
     ],
     "token_estimate": 512,
     "available_for_reply": 1536,
+    "memory": {
+      "summary_injected": true,
+      "runtime_mode": "async_primary",
+      "requested_write": false,
+      "effective_write": false,
+      "strategy": "dual_summary",
+      "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+      "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+      "selected_items": [
+        {
+          "memory_id": "memory-branch-fact-1",
+          "scope": "branch",
+          "scope_id": "memscope:session-1:main",
+          "branch_id": "main",
+          "kind": "fact",
+          "source": "store",
+          "score": 0.82,
+          "token_count": 18,
+          "selected_reason": null
+        }
+      ],
+      "token_stats": {
+        "budget": 500,
+        "used": 64,
+        "micro_summary": 14,
+        "macro_summary": 0,
+        "direct_items": 50
+      },
+      "scope_resolution": {
+        "mode": "branch_aware",
+        "requested_scopes": ["global", "branch"],
+        "resolved_scopes": ["global", "branch"],
+        "requested_branch_id": "main",
+        "resolved_branch_id": "main",
+        "fallback_reason": null
+      }
+    },
     "memory_summary": "The party recently agreed to search the northern pass.",
     "prompt_snapshot": {
       "preset_id": "preset_001",
@@ -353,6 +390,19 @@ dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot
   }
 }
 ```
+
+这里需要区分两层记忆字段：
+
+- `memory`：结构化 Prompt Runtime 记忆真相，适合调试、回放、契约消费和 SDK 映射。
+- `memory_summary`：兼容投影，便于旧界面继续读取单段文本摘要。
+
+当前 dry-run 不返回原始 `memory_injection`。
+在这条接口上，稳定结构化记忆面是顶层 `memory`。
+
+如果需要请求期原始注入结果，请改用：
+
+- `POST /sessions/:id/prompt-runtime/preview`
+- `POST /sessions/:id/prompt-runtime/inspect`
 
 `prompt_snapshot.regex_pre_rule_names` 和 `prompt_snapshot.regex_post_rule_names` 当前表示本轮装配时启用并写入快照的规则名列表。
 它们适合做资源版本比对和调试展示，不应被解释为逐条精确命中或逐条实际执行结果。

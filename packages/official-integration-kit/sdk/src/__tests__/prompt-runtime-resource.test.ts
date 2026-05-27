@@ -25,6 +25,45 @@ const promptRuntimeLimitations = [
   "Variable commit remains page -> floor. Branch promotion is not automatic.",
 ] as const;
 
+const previewMemoryInjectionPayload = {
+  items: [
+    {
+      id: "memory-branch-summary-2",
+      scope: "branch",
+      scope_id: "memscope:session-1:main",
+      type: "summary",
+      summary_tier: "macro",
+      content: "The party recently agreed to search the northern pass.",
+      fact_key: null,
+      importance: 0.71,
+      confidence: 1,
+      source_floor_id: null,
+      source_message_id: null,
+      status: "active",
+      token_count_estimate: 22,
+      created_at: 1710000000100,
+      updated_at: 1710000000200,
+    },
+  ],
+  formatted_text: "[Memory]\n- The party recently agreed to search the northern pass.",
+  token_count: 22,
+  scope_resolution: {
+    mode: "visible_refs",
+    strict: false,
+    scope_refs: [
+      { scope: "global", scopeId: "default-admin" },
+      { scope: "branch", scopeId: "memscope:session-1:main" },
+    ],
+  },
+} as const;
+
+const previewMemoryInjection = {
+  formattedText: "[Memory]\n- The party recently agreed to search the northern pass.",
+  items: [{ id: "memory-branch-summary-2", scope: "branch", scopeId: "memscope:session-1:main", type: "summary", summaryTier: "macro", content: "The party recently agreed to search the northern pass.", factKey: null, importance: 0.71, confidence: 1, sourceFloorId: null, sourceMessageId: null, status: "active", tokenCountEstimate: 22, createdAt: 1710000000100, updatedAt: 1710000000200 }],
+  tokenCount: 22,
+  scopeResolution: { mode: "visible_refs", strict: false, scopeRefs: [{ scope: "global", scopeId: "default-admin" }, { scope: "branch", scopeId: "memscope:session-1:main" }] },
+} as const;
+
 const previewMemoryTracePayload = {
   summary_injected: true,
   runtime_mode: "async_primary",
@@ -67,6 +106,42 @@ const committedMemoryTracePayload = {
   proposal_batch_id: "memory-proposal:page-output-12",
   proposal_status: "promoted",
   promotion_status: "promoted",
+} as const;
+
+const committedMemoryInjectionPayload = {
+  items: [
+    {
+      id: "memory-branch-fact-1",
+      scope: "branch",
+      scope_id: "memscope:session-1:main",
+      type: "fact",
+      summary_tier: null,
+      content: "Bob still holds the vault key.",
+      fact_key: "vault_key_owner",
+      importance: 0.82,
+      confidence: 1,
+      source_floor_id: null,
+      source_message_id: null,
+      status: "active",
+      token_count_estimate: 18,
+      created_at: 1710000000300,
+      updated_at: 1710000000400,
+    },
+  ],
+  formatted_text: "[Memory]\n- Bob still holds the vault key.",
+  token_count: 18,
+  scope_resolution: {
+    mode: "explicit_scope",
+    strict: false,
+    explicit_scope: { scope: "branch", scopeId: "memscope:session-1:main" },
+  },
+} as const;
+
+const committedMemoryInjection = {
+  formattedText: "[Memory]\n- Bob still holds the vault key.",
+  items: [{ id: "memory-branch-fact-1", scope: "branch", scopeId: "memscope:session-1:main", type: "fact", summaryTier: null, content: "Bob still holds the vault key.", factKey: "vault_key_owner", importance: 0.82, confidence: 1, sourceFloorId: null, sourceMessageId: null, status: "active", tokenCountEstimate: 18, createdAt: 1710000000300, updatedAt: 1710000000400 }],
+  tokenCount: 18,
+  scopeResolution: { mode: "explicit_scope", strict: false, explicitScope: { scope: "branch", scopeId: "memscope:session-1:main" } },
 } as const;
 
 const committedMemoryTrace = {
@@ -1111,6 +1186,7 @@ describe("sdk prompt runtime resource", () => {
                 ],
               },
             },
+            memory_injection: committedMemoryInjectionPayload,
             memory: committedMemoryTracePayload,
             memory_summary: "Remember the promise.",
             generation_params: {
@@ -1220,6 +1296,7 @@ describe("sdk prompt runtime resource", () => {
         preprocessedUserMessage: "Hello there",
         promptSnapshot: { characterId: "char-1", characterVersionId: "charver-1", characterImportedFormat: "tavern_card_v2", characterContentHash: "char-hash-1", worldbookActivatedEntries: [{ uid: 7, activationKey: "worldbook:worldbook-1:5:entry:7", source: { kind: "session_worldbook", worldbookId: null, worldbookName: "Inspect Worldbook", assetScopeId: "worldbook:worldbook-1:5" }, insertion: { position: "before" } }] },
         runtimeTrace: { budgets: { byGroup: [{ group: "history", tokenCount: 256 }] }, memory: committedMemoryTrace },
+        memoryInjection: committedMemoryInjection,
         memory: committedMemoryTrace,
         memorySummary: "Remember the promise.",
         generationParams: { maxOutputTokens: 256, temperature: 0.7, reasoningEffort: "medium" },
@@ -1469,6 +1546,7 @@ describe("sdk prompt runtime resource", () => {
             { code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" },
           ],
           limitations: [...promptRuntimeLimitations],
+          memory_injection: previewMemoryInjectionPayload,
           memory: previewMemoryTracePayload,
           text: '{"金币":3}/霜刃',
           runtime_trace: {
@@ -1558,6 +1636,7 @@ describe("sdk prompt runtime resource", () => {
       sourceMap: { delivery: { noAssistant: "request_override" }, budget: { maxInputTokens: "request_override", reservedCompletionTokens: "request_override" }, sourceSelection: { history: { mode: "request_override", maxMessages: "request_override" }, memory: { enabled: "system_default" }, worldbook: { enabled: "system_default" }, examples: { enabled: "request_override" } }, visibility: { mode: "request_override", hiddenFloorRanges: "request_override" }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
       diagnostics: [{ code: "unmaterialized_branch_preview", message: "branch pending", severity: "info", source: "branch", phase: "preview" }],
       limitations: [...promptRuntimeLimitations],
+      memoryInjection: previewMemoryInjection,
       memory: previewMemoryTrace,
       text: '{"金币":3}/霜刃',
       runtimeTrace: {

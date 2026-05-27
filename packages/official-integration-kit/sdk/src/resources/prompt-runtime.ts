@@ -1,11 +1,13 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
+  mapPromptRuntimeMemoryInjectionPayload,
   mapPromptLiveDebugOptionsRequest,
   mapPromptSnapshotPayload,
   mapPromptRuntimeTraceMemoryPayload,
   mapPromptRuntimePreviewTracePayload,
   mapPromptRuntimeTracePayload,
   type PromptLiveDebugOptions,
+  type PromptRuntimeMemoryInjectionResult,
   type PromptSnapshotPreview,
   type PromptRuntimePreviewTrace,
   type PromptRuntimeMemoryTrace,
@@ -469,6 +471,7 @@ export type PromptRuntimePreviewOptions = PromptRuntimeGetSessionOptions & {
 };
 
 export type PromptRuntimePreviewResult = {
+  memoryInjection?: PromptRuntimeMemoryInjectionResult;
   memory?: PromptRuntimeMemoryTrace;
   diagnostics?: PromptRuntimeDiagnostic[];
   limitations?: string[];
@@ -567,6 +570,7 @@ export type PromptRuntimeInspectPreparedTurn = {
   preprocessedUserMessage: string | null;
   promptSnapshot: PromptSnapshotPreview | null;
   runtimeTrace: PromptRuntimeTrace | null;
+  memoryInjection?: PromptRuntimeMemoryInjectionResult;
   memory?: PromptRuntimeMemoryTrace;
   memorySummary: string | null;
   generationParams: PromptRuntimeInspectGenerationParams;
@@ -1552,6 +1556,7 @@ function mapPromptRuntimePreviewResult(value: unknown): PromptRuntimePreviewResu
   }
 
   return {
+    ...(mapPromptRuntimeMemoryInjectionPayload(record.memory_injection) ? { memoryInjection: mapPromptRuntimeMemoryInjectionPayload(record.memory_injection) } : {}),
     ...(mapPromptRuntimeTraceMemoryPayload(record.memory) ? { memory: mapPromptRuntimeTraceMemoryPayload(record.memory) } : {}),
     ...(record.diagnostics !== undefined ? { diagnostics: mapPromptRuntimeDiagnostics(record.diagnostics) } : {}),
     ...(record.limitations !== undefined ? { limitations: mapStringArray(record.limitations) } : {}),
@@ -1648,6 +1653,7 @@ function mapPromptRuntimeInspectPreparedTurn(value: unknown): PromptRuntimeInspe
     preprocessedUserMessage: readNullableString(record.preprocessed_user_message),
     promptSnapshot: record.prompt_snapshot === null ? null : mapPromptSnapshotPayload(record.prompt_snapshot) ?? null,
     runtimeTrace: record.runtime_trace === null ? null : mapPromptRuntimeTracePayload(record.runtime_trace) ?? null,
+    ...(mapPromptRuntimeMemoryInjectionPayload(record.memory_injection) ? { memoryInjection: mapPromptRuntimeMemoryInjectionPayload(record.memory_injection) } : {}),
     ...(mapPromptRuntimeTraceMemoryPayload(record.memory) ? { memory: mapPromptRuntimeTraceMemoryPayload(record.memory) } : {}),
     memorySummary: readNullableString(record.memory_summary),
     generationParams: mapPromptRuntimeInspectGenerationParams(record.generation_params),

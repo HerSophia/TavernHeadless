@@ -65,6 +65,7 @@ import {
 import { mapPromptRuntimeInspectResultToSnakeCase } from "./presenters.js";
 import {
   mapPromptRuntimeHistoryNormalizationToSnakeCase,
+  mapMemoryInjectionResultToSnakeCase,
   mapPromptRuntimeMemoryTraceToSnakeCase,
 } from "../chat/presenters.js";
 import { sendPromptRuntimeInspectServiceError } from "./errors.js";
@@ -870,6 +871,7 @@ function mapPreviewResultToSnakeCase(result: PromptRuntimePreviewResult): Record
     policy: mapResolvedPolicyToSnakeCase(result.policy),
     diagnostics: result.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
     limitations: result.limitations,
+    ...(result.memoryInjection ? { memory_injection: mapMemoryInjectionResultToSnakeCase(result.memoryInjection) } : {}),
     ...(result.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(result.memory) } : {}),
     ...(result.sourceMap ? { source_map: mapSourceMapToSnakeCase(result.sourceMap) } : {}),
     text: result.text,

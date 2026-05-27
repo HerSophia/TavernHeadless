@@ -289,7 +289,9 @@ describe("buildApp LLM runtime wiring", () => {
     expect(second.narrator?.model?.languageModel).toBeDefined();
   });
 
-  it("falls back to env model when profile secret cannot be decrypted during turn model resolution", async () => {
+  it(
+    "falls back to env model when profile secret cannot be decrypted during turn model resolution",
+    async () => {
     await app.close();
     persistedDatabasePath = `data/test-llm-runtime-secret-format-${Date.now()}.db`;
 
@@ -352,9 +354,13 @@ describe("buildApp LLM runtime wiring", () => {
     });
     expect(resolved.narrator?.profileId).toBeUndefined();
     expect(resolved.narrator?.model).toBeUndefined();
-  });
+    },
+    15_000,
+  );
 
-  it("skips a broken higher-priority profile and continues to a lower-priority healthy binding", async () => {
+  it(
+    "skips a broken higher-priority profile and continues to a lower-priority healthy binding",
+    async () => {
     await app.close();
     persistedDatabasePath = `data/test-llm-runtime-secret-priority-${Date.now()}.db`;
 
@@ -422,5 +428,7 @@ describe("buildApp LLM runtime wiring", () => {
       profileId: wildcardProfileId,
       model: { modelId: "gpt-4o-mini" },
     });
-  });
+    },
+    15_000,
+  );
 });

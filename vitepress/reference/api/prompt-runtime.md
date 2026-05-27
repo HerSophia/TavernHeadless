@@ -10,6 +10,8 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 
 如果你只是正常发消息，请先看 [Chat（对话生成）](./chat)。只有在你需要排查提示词组装、确认当前模式来源、查看资源绑定、做只读检查或回看历史快照时，才需要看这里。
 
+当前这一组接口里的记忆公开面也已经分层固定：`preview` / `inspect` 返回原始 `memory_injection` 与统一 `memory` trace，historical `explain` 返回 committed `memory`，`dry-run` 则在 Chat 路由下返回顶层 `memory` 与兼容 `memory_summary`。
+
 ## 什么时候需要看这页
 
 - 想快速了解 Prompt Runtime 现在有哪些稳定入口。

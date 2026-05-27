@@ -38,7 +38,6 @@ import {
   type GenerationCoordinator,
 } from "../generation-guard-service.js";
 import { TurnCommitService } from "../turn-commit-service.js";
-import { PageVariableDecisionService } from "../variables/commit/page-variable-decision-service.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 import {
   BranchLocalVariableSnapshotService,
@@ -1373,6 +1372,7 @@ export class ChatService {
         sessionId: args.sessionId,
         branchId: args.branchId ?? "main",
         floorId: args.floorId,
+        sourcePageId: null,
         writes: args.sessionStateWrites,
         operationLog: args.sessionStateOperationLog,
       });
@@ -1397,11 +1397,6 @@ export class ChatService {
 
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "transaction_prepared");
 
-    const pageDecision = new PageVariableDecisionService(this.db).resolveForCommit({
-      floorId: args.floorId,
-      pageId: turnInput.pageId,
-    });
-
     const commitInput = {
       accountId: args.accountId,
       floorId: args.floorId,
@@ -1412,7 +1407,8 @@ export class ChatService {
       operationLog: args.turnOperationLog,
       variableCommit: {
         pageId: turnInput.pageId,
-        ...(pageDecision ? { pageDecision } : {}),
+        rerouteToSessionState: (execution.bufferedVariableMutations ?? []).some((mutation) => mutation.source?.targetSurface === "session_state"),
+        actorClientId: null,
       },
       promptSnapshot: args.promptSnapshot,
       promptRuntimeInspection: args.promptRuntimeInspection,

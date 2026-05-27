@@ -17,6 +17,7 @@ import type {
   SessionStateDiffEntry,
   SessionStateFloorSnapshotView,
   SessionStateLiveHeadEnvelope,
+  SessionStateMutationPageInspectFilters,
   SessionStateMutationStatus,
   SessionStateMutationView,
   SessionStateNamespace,
@@ -71,6 +72,35 @@ export class SessionStateObservationService {
       rows: rows.map((row) => this.buildMutationSummary(row)),
       total,
     };
+  }
+
+  listPageMutations(
+    accountId: string,
+    sessionId: string,
+    filters: SessionStateMutationPageInspectFilters,
+  ): SessionStateObservedMutationSummary[] {
+    this.requireOwnedSession(accountId, sessionId);
+    const { rows } = this.access.sessionStateRepository(this.db).listMutations(
+      {
+        sessionId,
+        branchId: filters.branchId,
+        sourceFloorId: filters.sourceFloorId,
+        sourcePageId: filters.sourcePageId,
+        sourceBranchId: filters.sourceBranchId,
+        targetSlot: filters.targetSlot,
+        stateNamespace: filters.stateNamespace,
+        writeMode: filters.writeMode,
+        sourceKind: filters.sourceKind ?? undefined,
+        commitMode: filters.commitMode ?? undefined,
+        actorClientId: filters.actorClientId,
+      },
+      {
+        limit: 500,
+        offset: 0,
+        sortOrder: "asc",
+      },
+    );
+    return rows.map((row) => this.buildMutationSummary(row));
   }
 
   getMutationById(
@@ -286,14 +316,23 @@ export class SessionStateObservationService {
       sessionId: mutation.sessionId,
       branchId: mutation.branchId,
       sourceFloorId: mutation.sourceFloorId,
+      sourcePageId: mutation.sourcePageId,
+      sourceBranchId: mutation.sourceBranchId,
       sourceSnapshotFloorId: mutation.sourceSnapshotFloorId,
+      actorClientId: mutation.actorClientId,
+      sourceKind: mutation.sourceKind,
       visibilityMode: mutation.visibilityMode,
       writeMode: mutation.writeMode,
+      commitMode: mutation.commitMode,
       status: mutation.status,
       replaySafety: mutation.replaySafety,
       requestId: mutation.requestId,
       runId: mutation.runId,
       liveHeadKey: mutation.liveHeadKey,
+      decisionStatus: mutation.decisionStatus,
+      decisionReason: mutation.decisionReason,
+      decisionCode: mutation.decisionCode,
+      linkedVariableStageId: mutation.linkedVariableStageId,
       discardReason: mutation.discardReason,
       blockedReason: mutation.blockedReason,
       payloadSizeBytes,
@@ -424,14 +463,23 @@ export interface SessionStateObservedMutationSummary {
   sessionId: string;
   branchId: string;
   sourceFloorId: string | null;
+  sourcePageId: string | null;
+  sourceBranchId: string | null;
   sourceSnapshotFloorId: string | null;
+  actorClientId: string | null;
+  sourceKind: SessionStateMutationView["sourceKind"];
   visibilityMode: SessionStateMutationView["visibilityMode"];
   writeMode: SessionStateMutationView["writeMode"];
+  commitMode: SessionStateMutationView["commitMode"];
   status: SessionStateMutationStatus;
   replaySafety: SessionStateMutationView["replaySafety"];
   requestId: string | null;
   runId: string | null;
   liveHeadKey: string | null;
+  decisionStatus: SessionStateMutationView["decisionStatus"];
+  decisionReason: string | null;
+  decisionCode: string | null;
+  linkedVariableStageId: string | null;
   discardReason: string | null;
   blockedReason: string | null;
   payloadSizeBytes: number;

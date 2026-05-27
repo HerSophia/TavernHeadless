@@ -41,6 +41,18 @@ outline: [2, 3]
 
 `inspect` 则继续表示一次真实 prepared turn 的只读视图。
 
+## 结构化记忆真相边界
+
+这组 inspection 入口现在统一遵守下面这条口径：
+
+- `memory_injection`：原始 `MemoryInjectionResult`，只在 `preview` 和 `inspect` 返回
+- `memory`：Prompt Runtime 统一记忆 trace，`preview`、`inspect`、historical `explain` 都可返回
+- `memory_summary`：兼容投影，不再被视为唯一真相
+
+其中 `memory_injection.scope_resolution` 的外层字段是 snake_case，
+但内部 `scope_refs[].scopeId` 与 `explicit_scope.scopeId` 继续保持 `scopeId`。
+这是当前公开契约的一部分。
+
 ## inspect 新增的 mode 视图
 
 `POST /sessions/:id/prompt-runtime/inspect` 现在会在顶层返回 `mode`。
@@ -63,6 +75,9 @@ outline: [2, 3]
 
 `inspect` 的 `prepared_turn` 现在还会返回两组新增字段：
 
+- `memory_injection`
+- `memory`
+- `memory_summary`
 - `contributors`
 - `prepare_phase_trace`
 
@@ -123,6 +138,9 @@ outline: [2, 3]
 ## explain 的真相边界
 
 `GET /floors/:id/prompt-runtime/explain` 仍然只读取 **历史 committed truth**。
+
+它继续返回 committed `memory` trace，
+但不会补回请求期原始 `memory_injection`。
 
 这条边界不变：
 

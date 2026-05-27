@@ -23,6 +23,15 @@ import { VariableStageInspectionService } from "../services/variables/inspect/va
 import { VariablePromotionTraceService } from "../services/variables/inspect/variable-promotion-trace-service.js";
 import { VariableServiceError } from "../services/variable-service-errors.js";
 import {
+  SessionStateObservationServiceError,
+  type SessionStateObservedMutationSummary,
+} from "../session-state/session-state-observation-service.js";
+import {
+  MemoryProposalLedgerService,
+  MemoryProposalLedgerServiceError,
+  type MemoryProposalLedgerBatchRecord,
+} from "../services/memory/proposals/memory-proposal-ledger-service.js";
+import {
   mapSqliteConstraintErrorToRouteError,
   type SqliteConstraintErrorMapping,
 } from "../services/resource-write.js";
@@ -156,9 +165,19 @@ const pageVariableInspectionObjectJsonSchema = {
   additionalProperties: true,
 } as const;
 
+const pageInspectionSourceKindJsonSchema = {
+  type: "string",
+  enum: ["unknown", "macro", "tool", "agent", "memory_runtime"],
+} as const;
+
+const pageInspectionDecisionCodeJsonSchema = {
+  type: "string",
+  enum: ["source_page_missing", "source_page_not_output", "source_page_not_active", "source_page_superseded", "source_page_scope_mismatch", "rerouted_to_session_state", "policy_forbidden", "promotion_allowed"],
+} as const;
+
 const pageStagedVariableWriteJsonSchema = {
   type: "object",
-  required: ["id", "key", "op", "value", "intent", "conflict_policy", "reason", "source", "evidence", "status", "created_at", "resolved_at"],
+  required: ["id", "key", "op", "value", "intent", "conflict_policy", "source_kind", "actor_client_id", "reason", "source", "source_json", "evidence", "evidence_json", "status", "created_at", "resolved_at"],
   properties: {
     id: { type: "string" },
     key: { type: "string" },
@@ -166,11 +185,18 @@ const pageStagedVariableWriteJsonSchema = {
     value: {},
     intent: { type: "string", enum: ["page_only", "promote_to_floor_on_accept"] },
     conflict_policy: { type: "string", enum: ["replace", "if_absent"] },
+    source_kind: pageInspectionSourceKindJsonSchema,
+    actor_client_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     reason: { type: "string" },
     source: pageVariableInspectionObjectJsonSchema,
+    source_json: pageVariableInspectionObjectJsonSchema,
     evidence: pageVariableInspectionObjectJsonSchema,
+    evidence_json: pageVariableInspectionObjectJsonSchema,
+    rerouted_target: { anyOf: [pageVariableInspectionObjectJsonSchema, { type: "null" }] },
     status: { type: "string", enum: ["staged", "accepted_page_only", "promoted", "rejected", "discarded", "rerouted_to_session_state"] },
+    decision_code: { anyOf: [pageInspectionDecisionCodeJsonSchema, { type: "null" }] },
     decision_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    linked_session_state_mutation_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     created_at: { type: "integer", minimum: 0 },
     resolved_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
   },
@@ -179,20 +205,124 @@ const pageStagedVariableWriteJsonSchema = {
 
 const pageVariablePromotionTraceJsonSchema = {
   type: "object",
-  required: ["id", "staged_write_id", "key", "from_scope", "from_scope_id", "to_scope", "to_scope_id", "conflict_policy", "value", "created_at"],
+  required: ["id", "staged_write_id", "key", "from_scope", "from_scope_id", "to_scope", "to_scope_id", "conflict_policy", "source_kind", "actor_client_id", "source", "source_json", "evidence", "evidence_json", "value", "created_at"],
   properties: {
     id: { type: "string" },
     staged_write_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     key: { type: "string" },
     from_scope: { type: "string", enum: ["page", "floor", "branch", "chat"] },
     from_scope_id: { type: "string" },
-    to_scope: { type: "string", enum: ["floor", "branch", "chat", "global"] },
+    to_scope: { type: "string", enum: ["floor", "branch", "chat", "global", "session_state"] },
     to_scope_id: { type: "string" },
     conflict_policy: { type: "string", enum: ["replace", "if_absent"] },
     source_variable_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     target_variable_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    source_kind: pageInspectionSourceKindJsonSchema,
+    actor_client_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    source: pageVariableInspectionObjectJsonSchema,
+    source_json: pageVariableInspectionObjectJsonSchema,
+    evidence: pageVariableInspectionObjectJsonSchema,
+    evidence_json: pageVariableInspectionObjectJsonSchema,
+    rerouted_target: { anyOf: [pageVariableInspectionObjectJsonSchema, { type: "null" }] },
+    decision_code: { anyOf: [pageInspectionDecisionCodeJsonSchema, { type: "null" }] },
+    decision_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    linked_session_state_mutation_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     value: {},
     created_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const pageMemoryProposalItemJsonSchema = {
+  type: "object",
+  required: ["id", "memory_kind", "operation_kind", "target_scope", "payload", "importance", "reason", "evidence_json", "status", "created_at", "updated_at"],
+  properties: {
+    id: { type: "string" },
+    memory_kind: { type: "string", enum: ["fact", "summary", "open_loop"] },
+    operation_kind: { type: "string", enum: ["add_fact", "update_fact", "deprecate_fact", "add_open_loop", "resolve_open_loop", "refresh_summary"] },
+    target_scope: { type: "string", enum: ["global", "chat", "branch", "floor"] },
+    payload: pageVariableInspectionObjectJsonSchema,
+    importance: { anyOf: [{ type: "number" }, { type: "null" }] },
+    reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    evidence_json: pageVariableInspectionObjectJsonSchema,
+    status: { type: "string", enum: ["proposed", "promoted", "rejected", "superseded"] },
+    created_at: { type: "integer", minimum: 0 },
+    updated_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const pageMemoryProposalBatchJsonSchema = {
+  type: "object",
+  required: ["id", "proposal_batch_id", "runtime_mode", "source_kind", "actor_client_id", "source_json", "evidence_json", "proposal_status", "promotion_status", "decision_reason", "decision_code", "summary_text_hash", "token_stats", "scope_resolution", "created_at", "updated_at", "decided_at", "items"],
+  properties: {
+    id: { type: "string" },
+    proposal_batch_id: { type: "string" },
+    runtime_mode: { type: "string", enum: ["legacy_sync", "async_primary"] },
+    strategy: { anyOf: [{ type: "string", enum: ["none", "single_summary", "dual_summary", "direct_items"] }, { type: "null" }] },
+    source_kind: pageInspectionSourceKindJsonSchema,
+    actor_client_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    source_json: pageVariableInspectionObjectJsonSchema,
+    evidence_json: pageVariableInspectionObjectJsonSchema,
+    proposal_status: { type: "string", enum: ["proposed", "promoted", "rejected", "superseded"] },
+    promotion_status: { anyOf: [{ type: "string", enum: ["promoted", "rejected", "superseded"] }, { type: "null" }] },
+    decision_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    decision_code: { anyOf: [pageInspectionDecisionCodeJsonSchema, { type: "null" }] },
+    summary_text_hash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    token_stats: {
+      anyOf: [{
+        type: "object",
+        required: ["budget", "used", "micro_summary", "macro_summary", "direct_items"],
+        properties: {
+          budget: { anyOf: [{ type: "integer" }, { type: "null" }] },
+          used: { type: "integer" },
+          micro_summary: { type: "integer" },
+          macro_summary: { type: "integer" },
+          direct_items: { type: "integer" },
+        },
+        additionalProperties: false,
+      }, { type: "null" }],
+    },
+    scope_resolution: {
+      anyOf: [{
+        type: "object",
+        required: ["mode", "requested_scopes", "resolved_scopes", "requested_branch_id", "resolved_branch_id", "fallback_reason"],
+        properties: {
+          mode: { type: "string" },
+          strict: { type: "boolean" },
+          requested_scopes: { type: "array", items: { type: "string" } },
+          resolved_scopes: { type: "array", items: { type: "string" } },
+          requested_branch_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+          resolved_branch_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+          fallback_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+        },
+        additionalProperties: false,
+      }, { type: "null" }],
+    },
+    created_at: { type: "integer", minimum: 0 },
+    updated_at: { type: "integer", minimum: 0 },
+    decided_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    items: { type: "array", items: pageMemoryProposalItemJsonSchema },
+  },
+  additionalProperties: false,
+} as const;
+
+const pageMemoryProposalsResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["page_id", "floor_id", "session_id", "branch_id", "items"],
+      properties: {
+        page_id: { type: "string" },
+        floor_id: { type: "string" },
+        session_id: { type: "string" },
+        branch_id: { type: "string" },
+        items: { type: "array", items: pageMemoryProposalBatchJsonSchema },
+      },
+      additionalProperties: false,
+    },
   },
   additionalProperties: false,
 } as const;
@@ -273,7 +403,12 @@ function toPageStagedVariableWriteResponse(item: {
   reason: string;
   source: unknown;
   evidence: unknown;
+  reroutedTarget?: unknown;
   status: string;
+  sourceKind?: string;
+  actorClientId?: string | null;
+  decisionCode?: string | null;
+  linkedSessionStateMutationId?: string | null;
   decisionReason: string | null;
   createdAt: number;
   resolvedAt: number | null;
@@ -286,10 +421,17 @@ function toPageStagedVariableWriteResponse(item: {
     intent: item.intent,
     conflict_policy: item.conflictPolicy,
     reason: item.reason,
+    source_kind: item.sourceKind ?? "unknown",
+    actor_client_id: item.actorClientId ?? null,
     source: item.source,
+    source_json: item.source,
     evidence: item.evidence,
+    evidence_json: item.evidence,
+    rerouted_target: item.reroutedTarget ?? null,
     status: item.status,
+    decision_code: item.decisionCode ?? null,
     decision_reason: item.decisionReason,
+    linked_session_state_mutation_id: item.linkedSessionStateMutationId ?? null,
     created_at: item.createdAt,
     resolved_at: item.resolvedAt,
   };
@@ -306,6 +448,14 @@ function toPageVariablePromotionTraceResponse(item: {
   conflictPolicy: string;
   sourceVariableId: string | null;
   targetVariableId: string | null;
+  sourceKind?: string;
+  actorClientId?: string | null;
+  source?: unknown;
+  evidence?: unknown;
+  reroutedTarget?: unknown;
+  decisionCode?: string | null;
+  decisionReason?: string | null;
+  linkedSessionStateMutationId?: string | null;
   value: unknown;
   createdAt: number;
 }) {
@@ -320,8 +470,88 @@ function toPageVariablePromotionTraceResponse(item: {
     conflict_policy: item.conflictPolicy,
     source_variable_id: item.sourceVariableId,
     target_variable_id: item.targetVariableId,
+    source_kind: item.sourceKind ?? "unknown",
+    actor_client_id: item.actorClientId ?? null,
+    source: item.source ?? {},
+    source_json: item.source ?? {},
+    evidence: item.evidence ?? {},
+    evidence_json: item.evidence ?? {},
+    rerouted_target: item.reroutedTarget ?? null,
+    decision_code: item.decisionCode ?? null,
+    decision_reason: item.decisionReason ?? null,
+    linked_session_state_mutation_id: item.linkedSessionStateMutationId ?? null,
     value: item.value,
     created_at: item.createdAt,
+  };
+}
+
+function toPageMemoryProposalItemResponse(item: {
+  id: string;
+  memoryKind: string;
+  operationKind: string;
+  targetScope: string;
+  payload: Record<string, unknown>;
+  importance: number | null;
+  reason: string | null;
+  evidence: Record<string, unknown>;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}) {
+  return {
+    id: item.id,
+    memory_kind: item.memoryKind,
+    operation_kind: item.operationKind,
+    target_scope: item.targetScope,
+    payload: item.payload,
+    importance: item.importance,
+    reason: item.reason,
+    evidence_json: item.evidence,
+    status: item.status,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+  };
+}
+
+function toPageMemoryProposalBatchResponse(item: MemoryProposalLedgerBatchRecord) {
+  return {
+    id: item.id,
+    proposal_batch_id: item.proposalBatchId,
+    runtime_mode: item.runtimeMode,
+    strategy: item.strategy,
+    source_kind: item.sourceKind,
+    actor_client_id: item.actorClientId,
+    source_json: item.source,
+    evidence_json: item.evidence,
+    proposal_status: item.proposalStatus,
+    promotion_status: item.promotionStatus,
+    decision_reason: item.decisionReason,
+    decision_code: item.decisionCode,
+    summary_text_hash: item.summaryTextHash,
+    token_stats: item.tokenStats
+      ? {
+          budget: item.tokenStats.budget,
+          used: item.tokenStats.used,
+          micro_summary: item.tokenStats.microSummary,
+          macro_summary: item.tokenStats.macroSummary,
+          direct_items: item.tokenStats.directItems,
+        }
+      : null,
+    scope_resolution: item.scopeResolution
+      ? {
+          mode: item.scopeResolution.mode,
+          ...(item.scopeResolution.strict !== undefined ? { strict: item.scopeResolution.strict } : {}),
+          requested_scopes: item.scopeResolution.requestedScopes,
+          resolved_scopes: item.scopeResolution.resolvedScopes,
+          requested_branch_id: item.scopeResolution.requestedBranchId ?? null,
+          resolved_branch_id: item.scopeResolution.resolvedBranchId ?? null,
+          fallback_reason: item.scopeResolution.fallbackReason ?? null,
+        }
+      : null,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+    decided_at: item.decidedAt,
+    items: item.items.map(toPageMemoryProposalItemResponse),
   };
 }
 
@@ -360,16 +590,159 @@ const PAGE_CONSTRAINT_MAPPINGS: SqliteConstraintErrorMapping[] = [
 
 const mapPageWriteError = (error: unknown) => mapSqliteConstraintErrorToRouteError(error, PAGE_CONSTRAINT_MAPPINGS);
 
+const pageSessionStateMutationJsonSchema = {
+  type: "object",
+  required: [
+    "id",
+    "page_id",
+    "floor_id",
+    "branch_id",
+    "state_namespace",
+    "target_slot",
+    "source_kind",
+    "actor_client_id",
+    "status",
+    "commit_mode",
+    "decision_status",
+    "decision_reason",
+    "decision_code",
+    "linked_variable_stage_id",
+    "created_at",
+    "updated_at",
+    "applied_at",
+  ],
+  properties: {
+    id: { type: "string" },
+    page_id: { type: "string" },
+    floor_id: { type: "string" },
+    branch_id: { type: "string" },
+    state_namespace: { type: "string" },
+    target_slot: { type: "string" },
+    source_kind: { anyOf: [{ type: "string" }, { type: "null" }] },
+    actor_client_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    source_page_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    source_floor_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    source_branch_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    status: { type: "string", enum: ["staged", "applied", "discarded", "blocked", "uncertain"] },
+    write_mode: { type: "string", enum: ["direct", "commit_bound"] },
+    commit_mode: { type: "string", enum: ["direct_public", "turn_bound", "variable_reroute"] },
+    replay_safety: { type: "string", enum: ["safe", "confirm_on_replay", "never_auto_replay", "uncertain"] },
+    request_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    run_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    live_head_key: { anyOf: [{ type: "string" }, { type: "null" }] },
+    discard_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    blocked_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    payload_size_bytes: { type: "integer", minimum: 0 },
+    payload_present: { type: "boolean" },
+    payload_preview: { type: "string" },
+    decision_status: { type: "string", enum: ["accepted", "discarded", "blocked", "rerouted_to_session_state"] },
+    decision_reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+    decision_code: { anyOf: [{ type: "string" }, { type: "null" }] },
+    linked_variable_stage_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    created_at: { type: "integer", minimum: 0 },
+    updated_at: { type: "integer", minimum: 0 },
+    applied_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
+const pageSessionStateMutationsResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: ["page_id", "floor_id", "session_id", "branch_id", "items"],
+      properties: {
+        page_id: { type: "string" },
+        floor_id: { type: "string" },
+        session_id: { type: "string" },
+        branch_id: { type: "string" },
+        items: { type: "array", items: pageSessionStateMutationJsonSchema },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+function toPageSessionStateMutationResponse(item: SessionStateObservedMutationSummary & {
+  sourcePageId?: string | null;
+  sourceBranchId?: string | null;
+  actorClientId?: string | null;
+  sourceKind?: string | null;
+  commitMode?: string | null;
+  decisionStatus?: string | null;
+  decisionReason?: string | null;
+  decisionCode?: string | null;
+  linkedVariableStageId?: string | null;
+}) {
+  return {
+    id: item.id,
+    page_id: item.sourcePageId ?? "",
+    floor_id: item.sourceFloorId ?? "",
+    branch_id: item.branchId,
+    state_namespace: item.stateNamespace,
+    target_slot: item.targetSlot,
+    source_kind: item.sourceKind ?? null,
+    actor_client_id: item.actorClientId ?? null,
+    source_page_id: item.sourcePageId ?? null,
+    source_floor_id: item.sourceFloorId ?? null,
+    source_branch_id: item.sourceBranchId ?? null,
+    status: item.status,
+    write_mode: item.writeMode,
+    commit_mode: item.commitMode ?? null,
+    replay_safety: item.replaySafety,
+    request_id: item.requestId,
+    run_id: item.runId,
+    live_head_key: item.liveHeadKey,
+    discard_reason: item.discardReason,
+    blocked_reason: item.blockedReason,
+    payload_size_bytes: item.payloadSizeBytes,
+    payload_present: item.payloadPresent,
+    payload_preview: item.payloadPreview,
+    decision_status: item.decisionStatus ?? null,
+    decision_reason: item.decisionReason ?? null,
+    decision_code: item.decisionCode ?? null,
+    linked_variable_stage_id: item.linkedVariableStageId ?? null,
+    created_at: item.createdAt,
+    updated_at: item.updatedAt,
+    applied_at: item.appliedAt,
+  };
+}
+
 export async function registerMessagePageRoutes(
   app: FastifyInstance,
-  connection: DatabaseConnection
+  connection: DatabaseConnection,
+  options: {
+    sessionStateObservationService?: {
+      listPageMutations: (
+        accountId: string,
+        sessionId: string,
+        filters: {
+          branchId?: string;
+          sourceFloorId?: string;
+          sourcePageId?: string;
+          sourceBranchId?: string;
+          targetSlot?: string;
+          stateNamespace?: SessionStateObservedMutationSummary["stateNamespace"];
+          writeMode?: SessionStateObservedMutationSummary["writeMode"];
+          sourceKind?: Exclude<SessionStateObservedMutationSummary["sourceKind"], null>;
+          commitMode?: SessionStateObservedMutationSummary["commitMode"];
+          actorClientId?: string | null;
+        },
+      ) => SessionStateObservedMutationSummary[];
+    };
+  } = {},
 ): Promise<void> {
   const { db } = connection;
   const ownedFloors = new OwnedFloorRepository(db);
   const ownedPages = new OwnedPageRepository(db);
   const pageActivationService = new PageActivationService(db);
+  const memoryProposalLedgerService = new MemoryProposalLedgerService(db);
   const variableStageInspectionService = new VariableStageInspectionService(db);
   const variablePromotionTraceService = new VariablePromotionTraceService(db);
+  const sessionStateObservationService = options.sessionStateObservationService;
   const projectAccessService = new ProjectAccessService(db);
   function toActorInput(auth: ReturnType<typeof getRequestAuthContext>): ProjectActorInput {
     return{
@@ -781,6 +1154,159 @@ export async function registerMessagePageRoutes(
     } catch (error) {
       if (error instanceof VariableServiceError && error.code === "variable_host_not_found") {
         return sendError(reply, 404, "not_found", "Message page not found");
+      }
+
+      throw error;
+    }
+  });
+
+  app.get("/pages/:id/memory/proposals", {
+    schema: {
+      tags: ["pages"],
+      summary: "List staged memory proposals for a page",
+      operationId: "listPageMemoryProposals",
+      params: idParamsJsonSchema,
+      response: {
+        200: pageMemoryProposalsResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(pageParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+
+    try {
+      const snapshot = memoryProposalLedgerService.getPageSnapshot(auth.accountId, parsedParams.data.id);
+      return reply.send({
+        data: {
+          page_id: snapshot.pageId,
+          floor_id: snapshot.floorId,
+          session_id: snapshot.sessionId,
+          branch_id: snapshot.branchId,
+          items: snapshot.items.map(toPageMemoryProposalBatchResponse),
+        },
+      });
+    } catch (error) {
+      if (error instanceof MemoryProposalLedgerServiceError && error.code === "memory_host_not_found") {
+        return sendError(reply, 404, "not_found", "Message page not found");
+      }
+
+      throw error;
+    }
+  });
+
+  app.get("/pages/:id/memory/promotions", {
+    schema: {
+      tags: ["pages"],
+      summary: "List decided memory promotions for a page",
+      operationId: "listPageMemoryPromotions",
+      params: idParamsJsonSchema,
+      response: {
+        200: pageMemoryProposalsResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(pageParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+
+    try {
+      const snapshot = memoryProposalLedgerService.getPageSnapshot(auth.accountId, parsedParams.data.id, { promotionsOnly: true });
+      return reply.send({
+        data: {
+          page_id: snapshot.pageId,
+          floor_id: snapshot.floorId,
+          session_id: snapshot.sessionId,
+          branch_id: snapshot.branchId,
+          items: snapshot.items.map(toPageMemoryProposalBatchResponse),
+        },
+      });
+    } catch (error) {
+      if (error instanceof MemoryProposalLedgerServiceError && error.code === "memory_host_not_found") {
+        return sendError(reply, 404, "not_found", "Message page not found");
+      }
+
+      throw error;
+    }
+  });
+
+  app.get("/pages/:id/session-state/mutations", {
+    schema: {
+      tags: ["pages"],
+      summary: "List turn-bound session-state mutations for a page",
+      operationId: "listPageSessionStateMutations",
+      params: idParamsJsonSchema,
+      response: {
+        200: pageSessionStateMutationsResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        503: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(pageParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    if (!sessionStateObservationService) {
+      return sendError(
+        reply,
+        503,
+        "feature_unavailable",
+        "Session state observation is unavailable because client-data is disabled",
+      );
+    }
+
+    const auth = getRequestAuthContext(request);
+    const page = new OwnedPageRepository(db).getContextById(auth.accountId, parsedParams.data.id);
+    if (!page) {
+      return sendError(reply, 404, "not_found", "Message page not found");
+    }
+
+    try {
+      const items = sessionStateObservationService
+        .listPageMutations(auth.accountId, page.sessionId, {
+          branchId: page.branchId,
+          sourceFloorId: page.floorId,
+          sourcePageId: page.id,
+        })
+        .filter((row) => row.commitMode !== "direct_public")
+        .sort((left, right) => {
+          if (left.createdAt !== right.createdAt) {
+            return left.createdAt - right.createdAt;
+          }
+          return left.id.localeCompare(right.id);
+        })
+        .map(toPageSessionStateMutationResponse)
+        .map((item) => ({
+          ...item,
+          page_id: page.id,
+          floor_id: page.floorId,
+        }));
+
+      return reply.send({
+        data: {
+          page_id: page.id,
+          floor_id: page.floorId,
+          session_id: page.sessionId,
+          branch_id: page.branchId,
+          items,
+        },
+      });
+    } catch (error) {
+      if (error instanceof SessionStateObservationServiceError) {
+        if (error.code === "not_found") {
+          return sendError(reply, 404, "not_found", "Message page not found");
+        }
+        return sendError(reply, error.statusCode, error.code, error.message);
       }
 
       throw error;

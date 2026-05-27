@@ -5,11 +5,25 @@ import type { BufferedToolVariableMutation, VariableWriteIntent } from "@tavern/
 import type { AppDb, DbExecutor } from "../../../db/client.js";
 import { pageStagedVariableWrites } from "../../../db/schema.js";
 import {
+  deriveVariableSourceKind,
+  resolveVariableDecisionCode,
+} from "../../state-governance/shared/page-inspection-contracts.js";
+import {
   type PageStagedVariableWriteEvidence,
   type PageStagedVariableWriteRecord,
   type PageStagedVariableWriteSource,
   type PageStagedVariableWriteStatus,
+  type PageStagedVariableRerouteTarget,
 } from "../contracts.js";
+
+function normalizeActorClientId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 function normalizeIntent(value: VariableWriteIntent | undefined): VariableWriteIntent {
   return value === "page_only" ? "page_only" : "promote_to_floor_on_accept";
@@ -51,9 +65,22 @@ function parseJsonValue(value: string | null): unknown | null {
   }
 }
 
+function resolveReroutedTarget(source: PageStagedVariableWriteSource | undefined): PageStagedVariableRerouteTarget | null {
+  if (!source || source.targetSurface !== "session_state") {
+    return null;
+  }
+
+  return {
+    surface: "session_state",
+    namespace: source.sessionStateNamespace ?? null,
+    slot: source.sessionStateSlot ?? null,
+  };
+}
+
 function toPageStagedVariableWriteRecord(
   row: typeof pageStagedVariableWrites.$inferSelect,
 ): PageStagedVariableWriteRecord {
+  const source = parseJsonObject<PageStagedVariableWriteSource>(row.sourceJson, {});
   return {
     id: row.id,
     accountId: row.accountId,
@@ -66,11 +93,16 @@ function toPageStagedVariableWriteRecord(
     value: parseJsonValue(row.valueJson),
     intent: row.intent,
     conflictPolicy: row.conflictPolicy,
-    source: parseJsonObject<PageStagedVariableWriteSource>(row.sourceJson, {}),
+    sourceKind: row.sourceKind as PageStagedVariableWriteRecord["sourceKind"],
+    actorClientId: row.actorClientId,
+    source,
     evidence: parseJsonObject<PageStagedVariableWriteEvidence>(row.evidenceJson, {}),
+    reroutedTarget: resolveReroutedTarget(source),
     reason: row.reason,
     status: row.status,
+    decisionCode: row.decisionCode,
     decisionReason: row.decisionReason,
+    linkedSessionStateMutationId: row.linkedSessionStateMutationId,
     createdAt: row.createdAt,
     resolvedAt: row.resolvedAt,
   };
@@ -87,6 +119,7 @@ export class PageVariableStageService {
     pageId?: string;
     mutations: BufferedToolVariableMutation[];
     committedAt: number;
+    actorClientId?: string | null;
   }): PageStagedVariableWriteRecord[] {
     if (!input.pageId || input.mutations.length === 0) {
       return [];
@@ -94,7 +127,7 @@ export class PageVariableStageService {
 
     const inserted = this.db
       .insert(pageStagedVariableWrites)
-      .values(input.mutations.map((mutation) => ({
+      .values(input.mutations.map((mutation): typeof pageStagedVariableWrites.$inferInsert => ({
         id: nanoid(),
         accountId: input.accountId,
         sessionId: input.sessionId,
@@ -106,26 +139,42 @@ export class PageVariableStageService {
         valueJson: JSON.stringify(mutation.value),
         intent: normalizeIntent(mutation.intent),
         conflictPolicy: "replace" as const,
-        sourceJson: JSON.stringify(mutation.source ?? {}),
+        sourceKind: deriveVariableSourceKind({ source: mutation.source, runId: mutation.runId }) as typeof pageStagedVariableWrites.$inferInsert["sourceKind"],
+        actorClientId: normalizeActorClientId(input.actorClientId),
+        sourceJson: JSON.stringify({
+          ...(mutation.source ?? {}),
+          ...(resolveReroutedTarget(mutation.source)
+            ? { reroutedTarget: resolveReroutedTarget(mutation.source) }
+            : {}),
+        }),
         evidenceJson: JSON.stringify({
           runId: mutation.runId,
           generationAttemptNo: mutation.generationAttemptNo,
           bufferedAt: mutation.bufferedAt,
+          committedAt: input.committedAt,
           accountId: mutation.accountId ?? input.accountId,
           scope: mutation.scope,
           scopeId: mutation.scopeId,
         } satisfies PageStagedVariableWriteEvidence),
         reason: normalizeReason(mutation.reason),
-        status: "staged" as const,
-        decisionReason: null,
+        status: resolveReroutedTarget(mutation.source)
+          ? "rerouted_to_session_state" as const
+          : "staged" as const,
+        decisionCode: resolveReroutedTarget(mutation.source)
+          ? "rerouted_to_session_state"
+          : null,
+        decisionReason: resolveReroutedTarget(mutation.source)
+          ? "identified_as_session_state_candidate"
+          : null,
+        linkedSessionStateMutationId: null,
         createdAt: mutation.bufferedAt,
         resolvedAt: null,
       })))
       .returning()
-      .all();
+      .all() as Array<typeof pageStagedVariableWrites.$inferSelect>;
 
     return inserted
-      .sort((left, right) => {
+      .sort((left: typeof pageStagedVariableWrites.$inferSelect, right: typeof pageStagedVariableWrites.$inferSelect) => {
         if (left.createdAt !== right.createdAt) {
           return left.createdAt - right.createdAt;
         }
@@ -152,7 +201,9 @@ export class PageVariableStageService {
     updates: Array<{
       id: string;
       status: PageStagedVariableWriteStatus;
+      decisionCode?: PageStagedVariableWriteRecord["decisionCode"];
       decisionReason?: string | null;
+      linkedSessionStateMutationId?: string | null;
     }>;
     resolvedAt: number;
   }): PageStagedVariableWriteRecord[] {
@@ -167,7 +218,11 @@ export class PageVariableStageService {
         .update(pageStagedVariableWrites)
         .set({
           status: update.status,
-          decisionReason: update.decisionReason ?? null,
+          decisionCode: update.decisionCode ?? resolveVariableDecisionCode({ status: update.status, decisionReason: update.decisionReason }),
+          ...(update.decisionReason !== undefined ? { decisionReason: update.decisionReason } : {}),
+          ...(update.linkedSessionStateMutationId !== undefined
+            ? { linkedSessionStateMutationId: update.linkedSessionStateMutationId }
+            : {}),
           resolvedAt: input.resolvedAt,
         })
         .where(eq(pageStagedVariableWrites.id, update.id))
