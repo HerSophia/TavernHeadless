@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildMemoryProjectionContributor, buildStateProjectionContributor } from "../../chat/prompt-runtime-builtin-contributors.js";
+import { buildMemoryProjectionContributor, buildStateProjectionContributor, buildToolListContributor } from "../../chat/prompt-runtime-builtin-contributors.js";
+
+function makeTool(name: string) {
+  return {
+    name,
+    description: `${name} description`,
+    parameters: {
+      type: "object" as const,
+      properties: {
+        value: { type: "string" },
+      },
+      required: ["value"],
+    },
+    sideEffectLevel: "none" as const,
+    allowedSlots: [],
+    source: "builtin" as const,
+  };
+}
 
 describe("prompt-runtime-builtin-contributors", () => {
   it("builds memory projection contributor from memory summary and trace", () => {
@@ -42,7 +59,7 @@ describe("prompt-runtime-builtin-contributors", () => {
   });
 
   it("still builds memory projection contributor when only structured memory items exist", () => {
-    const result = buildMemoryProjectionContributor({
+      const result = buildMemoryProjectionContributor({
       promptMode: "native",
       memorySummary: undefined,
       memoryTrace: {
@@ -137,5 +154,41 @@ describe("prompt-runtime-builtin-contributors", () => {
     });
 
     expect(result.contributor).toBeUndefined();
+  });
+
+  it("builds a tool_list contributor only for text_protocol transport", () => {
+    const result = buildToolListContributor({
+      promptMode: "native",
+      transport: "text_protocol",
+      toolsForSlot: [makeTool("roll_dice")],
+    });
+
+    expect(result.contributor).toMatchObject({
+      id: "builtin:tool_list",
+      kind: "tool_list",
+      sourceKind: "tool_list",
+      modeScope: "native",
+      payload: {
+        transport: "text_protocol",
+        toolNames: ["roll_dice"],
+      },
+      promptRenderable: {
+        title: "Tool list",
+      },
+    });
+    expect(result.contributor?.promptRenderable?.content).toContain("<tool_list>");
+    expect(result.contributor?.promptRenderable?.content).toContain('name="roll_dice"');
+
+    expect(buildToolListContributor({
+      promptMode: "native",
+      transport: "native_function_call",
+      toolsForSlot: [makeTool("roll_dice")],
+    }).contributor).toBeUndefined();
+
+    expect(buildToolListContributor({
+      promptMode: "native",
+      transport: "text_protocol",
+      toolsForSlot: [],
+    }).contributor).toBeUndefined();
   });
 });

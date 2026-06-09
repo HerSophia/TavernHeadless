@@ -103,6 +103,7 @@ export class DryRunService {
         materialized: prepared.materialized,
         visibilityTrace: prepared.visibilityTrace,
         ...(persistedUserMessage.runtimeTrace ? { baseRuntimeTrace: { regex: persistedUserMessage.runtimeTrace } } : {}),
+        ...(prepared.toolTransport ? { toolTransport: prepared.toolTransport } : {}),
       },
     });
 

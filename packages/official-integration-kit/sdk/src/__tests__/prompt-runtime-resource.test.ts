@@ -134,6 +134,44 @@ const generationParamsResolution = [
   },
 ] as const;
 
+const toolTransportPayload = {
+  selection: {
+    transport: "text_protocol",
+    reason_code: "explicit_override",
+    reason_detail: "Tool transport was explicitly overridden to 'text_protocol'.",
+  },
+  tool_list: {
+    injected: true,
+    contributor_id: "builtin:tool_list",
+    tool_count: 2,
+  },
+  parsing: {
+    block_count: 1,
+    accepted_count: 1,
+    rejected_count: 0,
+    diagnostics: [],
+  },
+} as const;
+
+const toolTransport = {
+  selection: {
+    transport: "text_protocol",
+    reasonCode: "explicit_override",
+    reasonDetail: "Tool transport was explicitly overridden to 'text_protocol'.",
+  },
+  toolList: {
+    injected: true,
+    contributorId: "builtin:tool_list",
+    toolCount: 2,
+  },
+  parsing: {
+    blockCount: 1,
+    acceptedCount: 1,
+    rejectedCount: 0,
+    diagnostics: [],
+  },
+} as const;
+
 const committedMemoryTracePayload = {
   summary_injected: true,
   runtime_mode: "async_primary",
@@ -1228,6 +1266,7 @@ describe("sdk prompt runtime resource", () => {
                 ],
               },
               generation_params_resolution: generationParamsResolutionPayload,
+              tool_transport: toolTransportPayload,
             },
             memory_injection: committedMemoryInjectionPayload,
             memory: committedMemoryTracePayload,
@@ -1338,7 +1377,12 @@ describe("sdk prompt runtime resource", () => {
         availableForReply: 704,
         preprocessedUserMessage: "Hello there",
         promptSnapshot: { characterId: "char-1", characterVersionId: "charver-1", characterImportedFormat: "tavern_card_v2", characterContentHash: "char-hash-1", worldbookActivatedEntries: [{ uid: 7, activationKey: "worldbook:worldbook-1:5:entry:7", source: { kind: "session_worldbook", worldbookId: null, worldbookName: "Inspect Worldbook", assetScopeId: "worldbook:worldbook-1:5" }, insertion: { position: "before" } }] },
-        runtimeTrace: { budgets: { byGroup: [{ group: "history", tokenCount: 256 }] }, memory: committedMemoryTrace, generationParamsResolution },
+        runtimeTrace: {
+          budgets: { byGroup: [{ group: "history", tokenCount: 256 }] },
+          memory: committedMemoryTrace,
+          generationParamsResolution,
+          toolTransport,
+        },
         memoryInjection: committedMemoryInjection,
         memory: committedMemoryTrace,
         memorySummary: "Remember the promise.",
@@ -1635,6 +1679,7 @@ describe("sdk prompt runtime resource", () => {
                 },
               ],
             },
+            tool_transport: toolTransportPayload,
           },
         },
       }),
@@ -1726,6 +1771,7 @@ describe("sdk prompt runtime resource", () => {
             },
           ],
         },
+        toolTransport,
       },
     });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFirstPartyStateProjectionRenderable,
+  buildPromptRuntimeContributorRenderablesForAssembly,
   buildPromptRuntimeContributorView,
   buildPromptRuntimeContributorViews,
   isContributorModeEnabled,
@@ -114,5 +115,31 @@ describe("prompt-runtime-contributors", () => {
       cacheScope: "floor",
     });
     expect(buildPromptRuntimeContributorViews([contributor])).toHaveLength(1);
+  });
+
+  it("maps tool_list contributors into assembly renderables outside compat_strict", () => {
+    const contributor: PromptRuntimeContributorOutput = {
+      id: "builtin:tool_list",
+      kind: "tool_list",
+      sourceKind: "tool_list",
+      modeScope: "native",
+      payload: { transport: "text_protocol", toolNames: ["roll_dice"] },
+      promptRenderable: {
+        title: "Tool list",
+        content: "<tool_list>...</tool_list>",
+      },
+      trace: {
+        deterministic: true,
+        cacheScope: "floor",
+      },
+    };
+
+    expect(buildPromptRuntimeContributorRenderablesForAssembly([contributor], "compat_strict")).toEqual([]);
+    expect(buildPromptRuntimeContributorRenderablesForAssembly([contributor], "compat_plus")).toEqual([
+      { sourceKind: "tool_list", title: "Tool list", content: "<tool_list>...</tool_list>" },
+    ]);
+    expect(buildPromptRuntimeContributorRenderablesForAssembly([contributor], "native")).toEqual([
+      { sourceKind: "tool_list", title: "Tool list", content: "<tool_list>...</tool_list>" },
+    ]);
   });
 });

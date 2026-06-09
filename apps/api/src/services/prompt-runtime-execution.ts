@@ -66,6 +66,7 @@ export interface PromptRuntimeExecutionArtifacts {
   visibilityTrace?: PromptVisibilityTrace;
   preprocessedUserMessage?: string;
   baseRuntimeTrace?: PromptRuntimeTrace;
+  toolTransport?: PromptRuntimeTrace["toolTransport"];
 }
 
 export interface PromptRuntimeExecutionResult {
@@ -187,6 +188,9 @@ export function buildPromptRuntimeExecutionTrace(
     ...(artifacts.materialized?.deliveryTrace ? { delivery: artifacts.materialized.deliveryTrace } : {}),
     ...(artifacts.inspection.historyNormalization ? { historyNormalization: artifacts.inspection.historyNormalization } : {}),
     ...(visibilityTrace ? { visibility: visibilityTrace } : {}),
+    ...((artifacts.toolTransport ?? artifacts.inspection.toolTransport)
+      ? { toolTransport: artifacts.toolTransport ?? artifacts.inspection.toolTransport }
+      : {}),
   };
 
   return Object.keys(trace).length > 0 ? trace : undefined;
@@ -205,6 +209,7 @@ export function buildPromptRuntimePreviewTrace(runtimeTrace?: PromptRuntimeTrace
       ? { generationParamsResolution: runtimeTrace.generationParamsResolution }
       : {}),
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
+    ...(runtimeTrace.toolTransport ? { toolTransport: runtimeTrace.toolTransport } : {}),
   };
 }
 

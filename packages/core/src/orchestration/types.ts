@@ -1,4 +1,4 @@
-import type { ChatMessage } from '../prompt/types.js';
+import type { ChatMessage, PromptRuntimeToolTransportTrace } from '../prompt/types.js';
 import type { GenerationParams, InstanceSlot, ModelConfig, TokenUsage } from '../llm/types.js';
 import type { SummaryExtractorOptions } from '../generation/summary-extractor.js';
 import type { MemoryInjectionOptions, MemoryInjectionResult, MemoryItem } from '../memory/types.js';
@@ -123,6 +123,8 @@ export interface TurnInput {
   toolPermissions?: ToolPermissions;
   /** 工具注册表（由外部注入，持有所有已注册的工具提供者） */
   toolRegistry?: ToolRegistry;
+  /** 本轮工具传输决策与注入信息。 */
+  toolTransport?: PromptRuntimeToolTransportTrace;
   /** 账户 ID（透传给工具执行上下文，资源类工具需要） */
   accountId?: string;
   // ── 回调 ──
@@ -164,6 +166,10 @@ export interface TurnExecutionResult {
   rawText: string;
   /** 提取的摘要 */
   summaries: string[];
+  /** 需要在主回复之后追加到最终 assistant 输出中的工具结果文本块。 */
+  toolResultWritebackText?: string;
+  /** 本轮工具传输 trace 片段。 */
+  toolTransport?: PromptRuntimeToolTransportTrace;
   /** Director 结果（如启用） */
   directorResult?: DirectorResult;
   /** Verifier 结果（如启用） */
