@@ -36,13 +36,34 @@ export type {
   ToolDenyReason,
 } from './types.js';
 
-// 类
+//类
 export { ToolRegistry } from './tool-registry.js';
 export { ToolExecutor } from './tool-executor.js';
 export type { LLMToolEntry } from './tool-executor.js';
 export { BuiltinToolProvider } from './builtin-provider.js';
 export { PresetToolProvider } from './preset-provider.js';
 export { ToolMutationBuffer } from './tool-mutation-buffer.js';
+export type {
+  ParsedToolCall,
+  ToolCallParseDiagnostic,
+  ToolCallParseDiagnosticReason,
+  ToolCallParseInput,
+  ToolCallParseOutput,
+  ToolCallParseStats,
+  ToolCallTransport,
+  ToolCallTransportKind,
+  ToolCallTransportReasonCode,
+  ToolCallTransportSelection,
+  ToolListRenderInput,
+  ToolListRenderOutput,
+  ToolResultFormatInput,
+  ToolResultFormatOutput,
+} from './transport/index.js';
+export {
+  TextProtocolToolCallParser,
+  TextProtocolToolListRenderer,
+  TextProtocolToolResultFormatter,
+} from './transport/index.js';
 export {
   evaluateExecutedToolCallReplaySafety,
   evaluateToolReplaySafety,

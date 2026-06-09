@@ -484,6 +484,24 @@ export const promptRuntimePreviewResponseExample = {
         },
       ],
     },
+    tool_transport: {
+      selection: {
+        transport: "text_protocol",
+        reason_code: "explicit_override",
+        reason_detail: "Tool transport was explicitly overridden to 'text_protocol'.",
+      },
+      tool_list: {
+        injected: true,
+        contributor_id: "builtin:tool_list",
+        tool_count: 2,
+      },
+      parsing: {
+        block_count: 1,
+        accepted_count: 1,
+        rejected_count: 0,
+        diagnostics: [],
+      },
+    },
   },
   diagnostics: promptRuntimeDiagnosticsExample,
   limitations: promptRuntimeLimitationsExample,
@@ -1254,6 +1272,7 @@ const promptRuntimePreviewRuntimeTraceJsonSchema = {
       },
       additionalProperties: false,
     },
+    tool_transport: dryRunRuntimeTraceJsonSchema.properties.tool_transport,
   },
   additionalProperties: false,
 } as const;

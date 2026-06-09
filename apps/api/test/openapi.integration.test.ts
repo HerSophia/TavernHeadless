@@ -321,6 +321,7 @@ describe("OpenAPI integration", () => {
       "history_normalization",
       "macro",
       "source_selection",
+      "tool_transport",
       "visibility",
     ]);
 

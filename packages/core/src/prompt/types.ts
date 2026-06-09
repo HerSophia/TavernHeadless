@@ -2,6 +2,11 @@
 
 import type { GenerationParams } from '../llm/types.js';
 import type { MemoryRuntimeMode } from '../memory/types.js';
+import type {
+  ToolCallParseDiagnostic,
+  ToolCallParseStats,
+  ToolCallTransportSelection,
+} from '../tools/transport/transport-types.js';
 
 /** LLM 消息角色 */
 export type ChatRole = 'system' | 'user' | 'assistant';
@@ -545,6 +550,18 @@ export interface PromptRuntimeGenerationParamResolution {
   valueFrom?: Exclude<PromptRuntimeGenerationParamOrigin, 'absent'>;
 }
 
+export interface PromptRuntimeToolTransportTrace {
+  selection: ToolCallTransportSelection;
+  toolList?: {
+    injected: boolean;
+    contributorId?: string;
+    toolCount: number;
+  };
+  parsing?: ToolCallParseStats & {
+    diagnostics: ToolCallParseDiagnostic[];
+  };
+}
+
 export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   preset?: PromptRuntimePresetTrace;
   worldbook?: PromptRuntimeWorldbookTrace<TWorldbookMatch>;
@@ -557,6 +574,7 @@ export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   delivery?: PromptRuntimeDeliveryTrace;
   visibility?: PromptRuntimeVisibilityTrace;
   generationParamsResolution?: PromptRuntimeGenerationParamResolution[];
+  toolTransport?: PromptRuntimeToolTransportTrace;
 }
 
 export interface PromptRuntimeDebugView<TWorldbookMatch = unknown> {

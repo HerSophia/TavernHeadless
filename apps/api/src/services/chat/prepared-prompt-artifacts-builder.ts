@@ -4,6 +4,9 @@ import type {
   FloorRunType,
   GenerationParams,
   PromptRunIntent,
+  PromptRuntimeToolTransportTrace,
+  ToolCallTransportKind,
+  ToolDefinition,
   TurnConfig,
 } from "@tavern/core";
 
@@ -43,6 +46,7 @@ import {
   type PersistedUserInputRegexResult,
 } from "./regex-input-service.js";
 import { FirstPartyStateContextService } from "./first-party-state-context-service.js";
+import { TurnToolingService } from "./turn-tooling-service.js";
 import { buildConversationHistoryWindow } from "./conversation-history-normalizer.js";
 import {
   buildConversationInputSnapshot as buildFloorConversationInputSnapshot,
@@ -55,6 +59,10 @@ import {
   buildPromptRuntimeContributorRenderablesForAssembly,
   resolvePreparedPromptArtifactsPromptMode,
 } from "./prompt-runtime-contributors.js";
+import {
+  ToolCallTransportResolver,
+  readToolCallTransportOverride,
+} from "./tool-call-transport-resolver.js";
 
 interface PreparedPromptArtifactsSessionShape {
   presetId: string | null;
@@ -104,10 +112,13 @@ export interface PreparePromptArtifactsArgs {
   includeRuntimeTrace?: boolean;
   baseRuntimeTrace?: PromptRuntimeTrace;
   stream?: boolean;
+  toolTransportOverride?: ToolCallTransportKind;
+  llmInstanceSupportsFunctionCall?: boolean;
 }
 
 export class PreparedPromptArtifactsBuilder {
   private readonly contributorRunner = new PromptRuntimeContributorRunner();
+  private readonly toolTransportResolver = new ToolCallTransportResolver();
 
   constructor(
     private readonly db: AppDb,
@@ -117,6 +128,7 @@ export class PreparedPromptArtifactsBuilder {
     private readonly memoryService: TurnMemoryService,
     private readonly regexInputService: RegexInputService,
     private readonly firstPartyStateContextService: FirstPartyStateContextService,
+    private readonly turnToolingService: TurnToolingService,
   ) {}
 
   async prepare(args: PreparePromptArtifactsArgs): Promise<PreparedPromptArtifacts> {
@@ -182,6 +194,25 @@ export class PreparedPromptArtifactsBuilder {
       args.request.config,
       args.resolvedTurnModels,
     );
+    const turnConfig = this.modelService.toOrchestratorTurnConfig(requestedTurnConfig);
+    const toolRuntime = await this.turnToolingService.resolveTurnToolingForTurn({
+      sessionId: args.sessionId,
+      accountId: args.accountId,
+      config: turnConfig,
+    });
+    const narratorTools: ToolDefinition[] = toolRuntime.toolRegistry && toolRuntime.toolPermissions
+      ? await toolRuntime.toolRegistry.listForSlot("narrator", toolRuntime.toolPermissions)
+      : [];
+    const toolTransportSelection = this.toolTransportResolver.resolve({
+      sessionId: args.sessionId,
+      branchId: args.branchId,
+      promptMode,
+      explicitTransport: args.toolTransportOverride ?? readToolCallTransportOverride(args.session.metadataJson),
+      toolsEnabled: turnConfig?.enableTools === true
+        && toolRuntime.toolRegistry !== undefined
+        && toolRuntime.toolPermissions?.enabled === true,
+      llmInstanceSupportsFunctionCall: args.llmInstanceSupportsFunctionCall,
+    });
     const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
     const memoryInjection = args.executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
       ? undefined
@@ -215,6 +246,8 @@ export class PreparedPromptArtifactsBuilder {
       memorySummary: effectiveMemorySummary,
       memoryTrace,
       firstPartyStateContext: args.firstPartyStateContext,
+      transport: toolTransportSelection.transport,
+      toolsForSlot: narratorTools,
     }).contributors;
     preparePhaseTrace.push({
       phase: "pre_response",
@@ -288,6 +321,16 @@ export class PreparedPromptArtifactsBuilder {
       },
     });
 
+    const toolListContributor = contributors.find((contributor) => contributor.kind === "tool_list");
+    const toolTransport: PromptRuntimeToolTransportTrace = {
+      selection: toolTransportSelection,
+      toolList: {
+        injected: Boolean(toolListContributor),
+        ...(toolListContributor ? { contributorId: toolListContributor.id } : {}),
+        toolCount: narratorTools.length,
+      },
+    };
+
     const inspection = await this.promptPreparationService.buildPromptRuntimeInspection({
       accountId: args.accountId,
       context: args.executionContext,
@@ -307,11 +350,15 @@ export class PreparedPromptArtifactsBuilder {
         ...(args.extraDiagnostics ?? []),
       ],
     });
+    const inspectionWithToolTransport = {
+      ...inspection,
+      toolTransport,
+    };
     if (args.mode === "inspect") {
       preparePhaseTrace.push({
         phase: "inspect",
         detail: {
-          diagnosticsCount: inspection.diagnostics.length,
+          diagnosticsCount: inspectionWithToolTransport.diagnostics.length,
         },
       });
     }
@@ -323,11 +370,12 @@ export class PreparedPromptArtifactsBuilder {
       sessionId: args.floorId ? args.sessionId : undefined,
       includeRuntimeTrace: args.includeRuntimeTrace ?? true,
       artifacts: {
-        inspection,
+        inspection: inspectionWithToolTransport,
         assembled,
         materialized,
         visibilityTrace: conversationState.visibilityTrace,
         ...(baseRuntimeTrace ? { baseRuntimeTrace } : {}),
+        toolTransport,
       },
     });
 
@@ -344,7 +392,6 @@ export class PreparedPromptArtifactsBuilder {
           generationParamsResolution: generationParamsResult.resolution,
         }
       : undefined;
-    const turnConfig = this.modelService.toOrchestratorTurnConfig(requestedTurnConfig);
 
     return {
       mode: args.mode,
@@ -368,13 +415,17 @@ export class PreparedPromptArtifactsBuilder {
       materialized,
       conversationInputSnapshot,
       historyNormalization: conversationState.historyNormalization,
-      inspection,
+      inspection: inspectionWithToolTransport,
       tokenEstimate: execution.tokenEstimate ?? 0,
       availableForReply: execution.availableForReply ?? 0,
       preprocessedUserMessage: execution.preprocessedUserMessage,
       promptSnapshot: execution.promptSnapshotPreview,
       promptSnapshotRecord: execution.promptSnapshotRecord,
       runtimeTrace,
+      toolTransport,
+      toolTransportSelection,
+      toolRegistry: toolRuntime.toolRegistry,
+      toolPermissions: toolRuntime.toolPermissions,
       generationParams: generationParamsResult.params,
       requestedTurnConfig,
       turnConfig,

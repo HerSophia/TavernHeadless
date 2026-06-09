@@ -169,6 +169,46 @@ export function mapPromptRuntimeMemoryTraceToSnakeCase(
   };
 }
 
+export function mapPromptRuntimeToolTransportToSnakeCase(
+  toolTransport: NonNullable<PromptRuntimeTrace["toolTransport"]>,
+): Record<string, unknown> {
+  return {
+    selection: {
+      transport: toolTransport.selection.transport,
+      reason_code: toolTransport.selection.reasonCode,
+      ...(toolTransport.selection.reasonDetail !== undefined
+        ? { reason_detail: toolTransport.selection.reasonDetail }
+        : {}),
+    },
+    ...(toolTransport.toolList
+      ? {
+          tool_list: {
+            injected: toolTransport.toolList.injected,
+            ...(toolTransport.toolList.contributorId !== undefined
+              ? { contributor_id: toolTransport.toolList.contributorId }
+              : {}),
+            tool_count: toolTransport.toolList.toolCount,
+          },
+        }
+      : {}),
+    ...(toolTransport.parsing
+      ? {
+          parsing: {
+            block_count: toolTransport.parsing.blockCount,
+            accepted_count: toolTransport.parsing.acceptedCount,
+            rejected_count: toolTransport.parsing.rejectedCount,
+            diagnostics: toolTransport.parsing.diagnostics.map((diagnostic) => ({
+              call_id: diagnostic.callId,
+              tool_name: diagnostic.toolName,
+              reason: diagnostic.reason,
+              excerpt: diagnostic.excerpt,
+            })),
+          },
+        }
+      : {}),
+  };
+}
+
 export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<string, unknown> {
   return {
     ...(runtimeTrace.preset
@@ -325,6 +365,11 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
     ...(runtimeTrace.historyNormalization
       ? {
           history_normalization: mapPromptRuntimeHistoryNormalizationToSnakeCase(runtimeTrace.historyNormalization),
+        }
+      : {}),
+    ...(runtimeTrace.toolTransport
+      ? {
+          tool_transport: mapPromptRuntimeToolTransportToSnakeCase(runtimeTrace.toolTransport),
         }
       : {}),
     ...(runtimeTrace.generationParamsResolution
