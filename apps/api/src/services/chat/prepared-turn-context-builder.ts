@@ -97,11 +97,16 @@ export class PreparedTurnContextBuilder {
     );
     const memoryConsolidationRequested = this.modelService.shouldRequestMemoryConsolidation(requestedTurnConfig);
     const turnConfig = this.modelService.toOrchestratorTurnConfig(requestedTurnConfig);
-    const toolRuntime = await this.toolingService.resolveTurnToolingForTurn({
-      sessionId: args.sessionId,
-      accountId: args.accountId,
-      config: turnConfig,
-    });
+    const toolRuntime = artifacts.toolRegistry || artifacts.toolPermissions
+      ? {
+          toolRegistry: artifacts.toolRegistry,
+          toolPermissions: artifacts.toolPermissions,
+        }
+      : await this.toolingService.resolveTurnToolingForTurn({
+          sessionId: args.sessionId,
+          accountId: args.accountId,
+          config: turnConfig,
+        });
     const consolidationContext = await this.memoryService.buildConsolidationContext(
       args.sessionId,
       args.accountId,
@@ -127,6 +132,7 @@ export class PreparedTurnContextBuilder {
       generationParamsOverrides: this.modelService.buildGenerationParamsOverrides(args.resolvedTurnModels),
       toolRegistry: toolRuntime.toolRegistry,
       toolPermissions: toolRuntime.toolPermissions,
+      ...(artifacts.toolTransport ? { toolTransport: artifacts.toolTransport } : {}),
       runObserver: this.turnRunTracker.createTurnRunObserver(args.floorId),
       ...(args.onChunk ? { onChunk: args.onChunk } : {}),
       ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),

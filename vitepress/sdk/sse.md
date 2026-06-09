@@ -167,6 +167,8 @@ start → run? → (chunk | tool | run)* → summary? → done
 
 如果本轮 prompt 组装命中了宏系统，`runtimeTrace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
 
+如果本轮返回了工具调用 transport trace，`runtimeTrace.toolTransport` 还会说明当前请求选择了哪种 transport、是否注入了 tool list，以及 text protocol 的解析诊断。
+
 本版不会新增新的 SSE 事件类型。
 
 ### TavernRespondStreamEvent

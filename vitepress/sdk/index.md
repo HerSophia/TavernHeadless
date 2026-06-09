@@ -202,6 +202,8 @@ const blob = await response.blob();
 
 `promptRuntime.previewText(...)`、`inspect(...)` 和 `getFloorExplain(...)` 现在还会返回结构化记忆真相：分别对应 `preview.memory`、`inspect.preparedTurn.memory`、`explain.memory`。兼容字符串 `memorySummary` 仍然保留，但它不再是唯一真相。对于较旧的 explain snapshot 行，`explain.memory` 可能是 `null`。
 
+`promptRuntime.previewText(...)` 与 `inspect(...)` 的 runtime trace 现在也可能返回结构化 `toolTransport`。它会说明当前请求使用的是 `native_function_call`、`text_protocol` 还是 `none`，以及 text protocol 下的 tool list 注入摘要与解析诊断。
+
 `tools.listExecutions()` 对应新的主执行审计路由；`tools.listCallRecords()` 仍保留为兼容查询面。`imports.chat()` 会按 `format` 区分 `.thchat` 与 `sillytavern_jsonl` 的返回结构，`imports.character()` 会保留 `characterVersionId` 和可选 `session`。
 
 ```ts

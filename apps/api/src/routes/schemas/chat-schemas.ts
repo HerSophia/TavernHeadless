@@ -274,6 +274,24 @@ export const liveRuntimeTraceExample = {
     degrade_reasons: ["require_last_user"],
   },
   history_normalization: historyNormalizationExample,
+  tool_transport: {
+    selection: {
+      transport: "text_protocol",
+      reason_code: "explicit_override",
+      reason_detail: "Tool transport was explicitly overridden to 'text_protocol'.",
+    },
+    tool_list: {
+      injected: true,
+      contributor_id: "builtin:tool_list",
+      tool_count: 2,
+    },
+    parsing: {
+      block_count: 1,
+      accepted_count: 1,
+      rejected_count: 0,
+      diagnostics: [],
+    },
+  },
   generation_params_resolution: [
     {
       name: "temperature",
@@ -1473,6 +1491,86 @@ const runtimeTraceVisibilityJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeTraceToolTransportSelectionJsonSchema = {
+  type: "object",
+  required: ["transport", "reason_code"],
+  properties: {
+    transport: {
+      type: "string",
+      enum: ["native_function_call", "text_protocol", "none"],
+    },
+    reason_code: {
+      type: "string",
+      enum: [
+        "explicit_override",
+        "tools_disabled",
+        "instance_not_supports_function_call",
+        "default_native_function_call",
+      ],
+    },
+    reason_detail: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceToolTransportToolListJsonSchema = {
+  type: "object",
+  required: ["injected", "tool_count"],
+  properties: {
+    injected: { type: "boolean" },
+    contributor_id: { type: "string" },
+    tool_count: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceToolTransportDiagnosticJsonSchema = {
+  type: "object",
+  required: ["call_id", "tool_name", "reason", "excerpt"],
+  properties: {
+    call_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    tool_name: { anyOf: [{ type: "string" }, { type: "null" }] },
+    reason: {
+      type: "string",
+      enum: [
+        "tool_not_registered",
+        "json_parse_failed",
+        "missing_args_field",
+        "duplicate_call_id",
+        "malformed_block",
+      ],
+    },
+    excerpt: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceToolTransportParsingJsonSchema = {
+  type: "object",
+  required: ["block_count", "accepted_count", "rejected_count", "diagnostics"],
+  properties: {
+    block_count: { type: "integer", minimum: 0 },
+    accepted_count: { type: "integer", minimum: 0 },
+    rejected_count: { type: "integer", minimum: 0 },
+    diagnostics: {
+      type: "array",
+      items: runtimeTraceToolTransportDiagnosticJsonSchema,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceToolTransportJsonSchema = {
+  type: "object",
+  required: ["selection"],
+  properties: {
+    selection: runtimeTraceToolTransportSelectionJsonSchema,
+    tool_list: runtimeTraceToolTransportToolListJsonSchema,
+    parsing: runtimeTraceToolTransportParsingJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceGenerationParamResolutionJsonSchema = {
   type: "object",
   required: ["name", "final_state", "origin"],
@@ -1513,6 +1611,7 @@ const runtimeTraceBaseProperties = {
   macro: runtimeTraceMacroJsonSchema,
   delivery: runtimeTraceDeliveryJsonSchema,
   history_normalization: runtimeTraceHistoryNormalizationJsonSchema,
+  tool_transport: runtimeTraceToolTransportJsonSchema,
   generation_params_resolution: {
     type: "array",
     items: runtimeTraceGenerationParamResolutionJsonSchema,

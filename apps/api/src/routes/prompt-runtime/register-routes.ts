@@ -67,6 +67,7 @@ import {
   mapPromptRuntimeHistoryNormalizationToSnakeCase,
   mapMemoryInjectionResultToSnakeCase,
   mapPromptRuntimeMemoryTraceToSnakeCase,
+  mapPromptRuntimeToolTransportToSnakeCase,
 } from "../chat/presenters.js";
 import { sendPromptRuntimeInspectServiceError } from "./errors.js";
 import { ProjectAccessService, ProjectAccessServiceError } from "../../services/project-access-service.js";
@@ -981,6 +982,11 @@ function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewRes
               ...(item.detail ? { detail: item.detail } : {}),
             })),
           },
+        }
+      : {}),
+    ...(runtimeTrace.toolTransport
+      ? {
+          tool_transport: mapPromptRuntimeToolTransportToSnakeCase(runtimeTrace.toolTransport),
         }
       : {}),
   };
