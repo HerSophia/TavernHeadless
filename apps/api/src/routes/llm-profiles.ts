@@ -339,7 +339,7 @@ export async function registerLlmProfileRoutes(
           baseUrl: body.data.base_url,
           modelId: body.data.model_id,
           provider: body.data.provider,
-          reasoningEffort: body.data.reasoning_effort,
+          reasoningEffort: body.data.reasoning_effort ?? undefined,
         });
 
         return reply.send({ data: tested });

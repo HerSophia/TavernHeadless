@@ -37,15 +37,15 @@ export type TurnConfigBody = {
 };
 
 export type GenerationParamsBody = {
-  temperature?: number;
-  max_output_tokens?: number;
-  top_p?: number;
-  top_k?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  stop_sequences?: string[];
-  stream?: boolean;
-  reasoning_effort?: "low" | "medium" | "high";
+  temperature?: number | null;
+  max_output_tokens?: number | null;
+  top_p?: number | null;
+  top_k?: number | null;
+  frequency_penalty?: number | null;
+  presence_penalty?: number | null;
+  stop_sequences?: string[] | null;
+  stream?: boolean | null;
+  reasoning_effort?: "low" | "medium" | "high" | null;
 };
 
 export type PromptDeliveryBody = {

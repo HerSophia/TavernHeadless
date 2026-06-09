@@ -261,6 +261,33 @@ describe("LLM Instance Config Routes", () => {
     expect(getRes.json<ConfigListResponse>().data[0]!.params).toBeNull();
   });
 
+  it("keeps explicit null fields inside params objects", async () => {
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      payload: {
+        scope: "global",
+        enabled: true,
+        params: {
+          temperature: null,
+          max_output_tokens: 256,
+        },
+      },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json<ConfigResponse>().data.params).toEqual({
+      temperature: null,
+      max_output_tokens: 256,
+    });
+
+    const getRes = await app.inject({ method: "GET", url: "/llm-instances/narrator" });
+    expect(getRes.json<ConfigListResponse>().data[0]!.params).toEqual({
+      temperature: null,
+      max_output_tokens: 256,
+    });
+  });
+
   // ── DELETE ──
 
   it("deletes an existing config", async () => {

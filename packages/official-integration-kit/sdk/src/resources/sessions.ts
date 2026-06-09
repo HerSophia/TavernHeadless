@@ -44,15 +44,15 @@ export type RespondTurnConfig = {
 };
 
 export type RespondGenerationParams = {
-  frequencyPenalty?: number;
-  maxOutputTokens?: number;
-  presencePenalty?: number;
-  reasoningEffort?: "low" | "medium" | "high";
-  stopSequences?: string[];
-  stream?: boolean;
-  temperature?: number;
-  topK?: number;
-  topP?: number;
+  frequencyPenalty?: number | null;
+  maxOutputTokens?: number | null;
+  presencePenalty?: number | null;
+  reasoningEffort?: "low" | "medium" | "high" | null;
+  stopSequences?: string[] | null;
+  stream?: boolean | null;
+  temperature?: number | null;
+  topK?: number | null;
+  topP?: number | null;
 };
 
 export type TurnSessionStateWrite =

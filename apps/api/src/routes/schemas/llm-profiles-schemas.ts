@@ -237,17 +237,17 @@ export const runtimeQueryJsonSchema = {
 } as const;
 
 export const generationParamsJsonSchemaProperties = {
-  max_context_tokens: { type: "integer", minimum: 1 },
-  max_output_tokens: { type: "integer", minimum: 1 },
-  temperature: { type: "number", minimum: 0, maximum: 2 },
-  top_p: { type: "number", minimum: 0, maximum: 1 },
-  top_k: { type: "integer", minimum: 0 },
-  frequency_penalty: { type: "number", minimum: -2, maximum: 2 },
-  presence_penalty: { type: "number", minimum: -2, maximum: 2 },
-  stream: { type: "boolean" },
-  timeout_ms: { type: "integer", minimum: 1 },
-  max_retries: { type: "integer", minimum: 0, maximum: 10 },
-  reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
+  max_context_tokens: { type: ["integer", "null"], minimum: 1 },
+  max_output_tokens: { type: ["integer", "null"], minimum: 1 },
+  temperature: { type: ["number", "null"], minimum: 0, maximum: 2 },
+  top_p: { type: ["number", "null"], minimum: 0, maximum: 1 },
+  top_k: { type: ["integer", "null"], minimum: 0 },
+  frequency_penalty: { type: ["number", "null"], minimum: -2, maximum: 2 },
+  presence_penalty: { type: ["number", "null"], minimum: -2, maximum: 2 },
+  stream: { type: ["boolean", "null"] },
+  timeout_ms: { type: ["integer", "null"], minimum: 1 },
+  max_retries: { type: ["integer", "null"], minimum: 0, maximum: 10 },
+  reasoning_effort: { type: ["string", "null"], enum: ["low", "medium", "high", null] },
 } as const;
 
 export const llmGenerationParamsJsonSchema = {

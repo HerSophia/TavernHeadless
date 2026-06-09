@@ -88,8 +88,8 @@ export class PromptRuntimePreviewService {
     const narratorParams = this.modelService.getSlotGenerationParams(resolvedTurnModels, "narrator");
     const effectivePreviewBudget = resolveEffectivePromptBudget({
       budget: executionContext.effectivePolicy?.budget,
-      maxContextTokensOverride: narratorParams?.maxContextTokens,
-      maxOutputTokensOverride: narratorParams?.maxOutputTokens,
+      maxContextTokensOverride: this.modelService.resolveMaxContextTokensOverride(undefined, narratorParams),
+      maxOutputTokensOverride: this.modelService.resolveMaxOutputTokensOverride(undefined, narratorParams),
     });
     const sessionInfo = this.modelService.buildSessionPromptInfo(
       session,

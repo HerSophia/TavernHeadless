@@ -451,6 +451,26 @@ export const promptRuntimePreviewResponseExample = {
       ],
     },
     history_normalization: historyNormalizationExample,
+    generation_params_resolution: [
+      {
+        name: "temperature",
+        final_state: "sent",
+        origin: "default",
+        value_from: "default",
+      },
+      {
+        name: "maxOutputTokens",
+        final_state: "sent",
+        origin: "request",
+        value_from: "request",
+      },
+      {
+        name: "topP",
+        final_state: "cancelled",
+        origin: "request",
+        cancelled_at: "request",
+      },
+    ],
     visibility: {
       hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
       filtered_floor_nos: [1, 2],
@@ -1215,6 +1235,8 @@ const promptRuntimePreviewRuntimeTraceJsonSchema = {
   properties: {
     macro: dryRunRuntimeTraceJsonSchema.properties.macro,
     history_normalization: runtimeTraceHistoryNormalizationJsonSchema,
+    generation_params_resolution:
+      dryRunRuntimeTraceJsonSchema.properties.generation_params_resolution,
     visibility: {
       type: "object",
       required: ["filtered_floor_nos"],

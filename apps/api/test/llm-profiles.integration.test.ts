@@ -396,6 +396,59 @@ describe("LLM Profile Routes", () => {
     );
   });
 
+  it("keeps explicit null fields in activated profile params", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/llm-profiles",
+      payload: {
+        preset_name: "Runtime Param Null Profile",
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        api_key: "sk-test-runtime-null-params",
+      },
+    });
+    expect(createRes.statusCode).toBe(201);
+
+    const profileId = (createRes.json() as { data: { id: string } }).data.id;
+
+    const activateRes = await app.inject({
+      method: "POST",
+      url: `/llm-profiles/${profileId}/activate`,
+      payload: {
+        scope: "global",
+        instance_slot: "narrator",
+        params: {
+          temperature: null,
+          max_output_tokens: 256,
+        },
+      },
+    });
+    expect(activateRes.statusCode).toBe(200);
+    expect((activateRes.json() as { data: { params: Record<string, unknown> | null } }).data.params).toEqual({
+      temperature: null,
+      max_output_tokens: 256,
+    });
+
+    const runtimeRes = await app.inject({
+      method: "GET",
+      url: "/llm-profiles/runtime",
+    });
+    expect(runtimeRes.statusCode).toBe(200);
+
+    const runtimeBody = runtimeRes.json() as {
+      data: {
+        slots: Array<{ slot: string; profile_id: string | null; params: Record<string, unknown> | null }>;
+      };
+    };
+
+    const narrator = runtimeBody.data.slots.find((slot) => slot.slot === "narrator");
+    expect(narrator?.profile_id).toBe(profileId);
+    expect(narrator?.params).toEqual({
+      temperature: null,
+      max_output_tokens: 256,
+    });
+  });
+
   it("rejects invalid activate params", async () => {
     const createRes = await app.inject({
       method: "POST",

@@ -313,6 +313,49 @@ describe("chat routes", () => {
   });
 
 
+  it("keeps explicit null generation params when mapping /sessions/:id/respond", async () => {
+    const chatService = createChatService({
+      respond: vi.fn(async () => ({
+        floorId: "floor-1",
+        floorNo: 1,
+        branchId: "main",
+        generatedText: "ok",
+        summaries: [],
+        totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+        finalState: "committed",
+      })),
+    });
+
+    await mountChatRoutes(chatService);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/respond",
+      payload: {
+        message: "hello",
+        generation_params: {
+          temperature: null,
+          max_output_tokens: null,
+          reasoning_effort: null,
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(chatService.respond).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        generationParams: expect.objectContaining({
+          temperature: null,
+          maxOutputTokens: null,
+          reasoningEffort: null,
+        }),
+      }),
+      {},
+      "default-admin",
+    );
+  });
+
   it.each([
     {
       name: "session_archived",

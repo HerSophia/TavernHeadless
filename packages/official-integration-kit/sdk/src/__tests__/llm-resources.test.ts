@@ -44,6 +44,33 @@ describe("sdk llm resources", () => {
     }));
   });
 
+  it("preserves explicit null profile params in activate requests", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          activated: true,
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(
+      client.llmProfiles.activate({
+        params: { temperature: null, max_output_tokens: 256 },
+        profileId: "profile-1",
+        scope: "global",
+        slot: "narrator",
+      }),
+    ).resolves.toBe(true);
+
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(init?.body).toBe(JSON.stringify({
+      instance_slot: "narrator",
+      params: { temperature: null, max_output_tokens: 256 },
+      scope: "global",
+    }));
+  });
+
   it("unbinds a profile with query-string scope fields and reads boolean results", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

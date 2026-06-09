@@ -201,6 +201,9 @@ export function buildPromptRuntimePreviewTrace(runtimeTrace?: PromptRuntimeTrace
     ...(runtimeTrace.macro ? { macro: runtimeTrace.macro } : {}),
     ...(runtimeTrace.sourceSelection ? { sourceSelection: runtimeTrace.sourceSelection } : {}),
     ...(runtimeTrace.historyNormalization ? { historyNormalization: runtimeTrace.historyNormalization } : {}),
+    ...(runtimeTrace.generationParamsResolution
+      ? { generationParamsResolution: runtimeTrace.generationParamsResolution }
+      : {}),
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
   };
 }
