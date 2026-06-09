@@ -159,6 +159,36 @@ outline: [2, 3]
 
 它不改变 preview / inspect 的既有边界，只增加参数解析的可观察性。
 
+## tool_transport
+
+`preview` 的 `runtime_trace` 和 `inspect` 的
+`prepared_turn.runtime_trace` 现在也可能返回
+`tool_transport`。
+
+这组字段用于说明本次请求期工具调用走的是哪条 transport 路径，
+以及 text protocol 路径里的注入与解析事实。
+
+至少会返回：
+
+- `selection.transport`
+- `selection.reason_code`
+
+按情况还会返回：
+
+- `selection.reason_detail`
+- `tool_list`
+- `parsing`
+
+其中：
+
+- `tool_list.injected` 表示本次是否注入了工具目录文本
+- `tool_list.contributor_id` 表示注入来源 contributor
+- `tool_list.tool_count` 表示注入时的工具数量
+- `parsing.block_count` / `accepted_count` / `rejected_count` 表示 text protocol 解析统计
+- `parsing.diagnostics` 会给出 `call_id`、`tool_name`、`reason` 和 `excerpt`
+
+它不改变 preview / inspect 的既有边界，只增加工具调用 transport 的可观察性。
+
 ## capabilities 中对应的 inspect 能力声明
 
 `GET /prompt-runtime/capabilities` 的 `observability.inspect` 现在会明确声明：

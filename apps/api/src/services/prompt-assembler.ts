@@ -480,7 +480,7 @@ export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatc
 
 export type PromptRuntimePreviewTrace = Pick<
   PromptRuntimeTrace,
-  "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution"
+  "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution" | "toolTransport"
 >;
 
 export interface PromptRuntimeTraceSeed {

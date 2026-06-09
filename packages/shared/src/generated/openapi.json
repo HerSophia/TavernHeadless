@@ -20222,45 +20222,73 @@
                     },
                     "properties": {
                       "frequency_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "max_output_tokens": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "presence_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "reasoning_effort": {
                         "enum": [
                           "low",
                           "medium",
-                          "high"
+                          "high",
+                          null
                         ],
-                        "type": "string"
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       },
                       "stop_sequences": {
                         "items": {
                           "type": "string"
                         },
-                        "type": "array"
+                        "type": [
+                          "null",
+                          "array"
+                        ]
                       },
                       "stream": {
-                        "type": "boolean"
+                        "type": [
+                          "null",
+                          "boolean"
+                        ]
                       },
                       "temperature": {
                         "maximum": 2,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "top_k": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "top_p": {
                         "maximum": 1,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "type": "object"
@@ -20482,6 +20510,26 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "generation_params_resolution": [
+                        {
+                          "final_state": "sent",
+                          "name": "temperature",
+                          "origin": "default",
+                          "value_from": "default"
+                        },
+                        {
+                          "final_state": "sent",
+                          "name": "maxOutputTokens",
+                          "origin": "request",
+                          "value_from": "request"
+                        },
+                        {
+                          "cancelled_at": "request",
+                          "final_state": "cancelled",
+                          "name": "topP",
+                          "origin": "request"
+                        }
+                      ],
                       "history_normalization": {
                         "effective_turn_count": 2,
                         "merged_user_groups": [
@@ -20677,6 +20725,24 @@
                         "mode": "no_assistant",
                         "tail_assistant_detected": false
                       },
+                      "tool_transport": {
+                        "parsing": {
+                          "accepted_count": 1,
+                          "block_count": 1,
+                          "diagnostics": [],
+                          "rejected_count": 0
+                        },
+                        "selection": {
+                          "reason_code": "explicit_override",
+                          "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                          "transport": "text_protocol"
+                        },
+                        "tool_list": {
+                          "contributor_id": "builtin:tool_list",
+                          "injected": true,
+                          "tool_count": 2
+                        }
+                      },
                       "worldbook": {
                         "hit_count": 1
                       }
@@ -20798,6 +20864,26 @@
                             "no_assistant": false,
                             "require_last_user": true
                           },
+                          "generation_params_resolution": [
+                            {
+                              "final_state": "sent",
+                              "name": "temperature",
+                              "origin": "default",
+                              "value_from": "default"
+                            },
+                            {
+                              "final_state": "sent",
+                              "name": "maxOutputTokens",
+                              "origin": "request",
+                              "value_from": "request"
+                            },
+                            {
+                              "cancelled_at": "request",
+                              "final_state": "cancelled",
+                              "name": "topP",
+                              "origin": "request"
+                            }
+                          ],
                           "history_normalization": {
                             "effective_turn_count": 2,
                             "merged_user_groups": [
@@ -20992,6 +21078,24 @@
                             "merge_adjacent_same_role": false,
                             "mode": "no_assistant",
                             "tail_assistant_detected": false
+                          },
+                          "tool_transport": {
+                            "parsing": {
+                              "accepted_count": 1,
+                              "block_count": 1,
+                              "diagnostics": [],
+                              "rejected_count": 0
+                            },
+                            "selection": {
+                              "reason_code": "explicit_override",
+                              "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                              "transport": "text_protocol"
+                            },
+                            "tool_list": {
+                              "contributor_id": "builtin:tool_list",
+                              "injected": true,
+                              "tool_count": 2
+                            }
                           },
                           "worldbook": {
                             "hit_count": 1
@@ -21519,6 +21623,26 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "generation_params_resolution": [
+                              {
+                                "final_state": "sent",
+                                "name": "temperature",
+                                "origin": "default",
+                                "value_from": "default"
+                              },
+                              {
+                                "final_state": "sent",
+                                "name": "maxOutputTokens",
+                                "origin": "request",
+                                "value_from": "request"
+                              },
+                              {
+                                "cancelled_at": "request",
+                                "final_state": "cancelled",
+                                "name": "topP",
+                                "origin": "request"
+                              }
+                            ],
                             "history_normalization": {
                               "effective_turn_count": 2,
                               "merged_user_groups": [
@@ -21714,6 +21838,24 @@
                               "mode": "no_assistant",
                               "tail_assistant_detected": false
                             },
+                            "tool_transport": {
+                              "parsing": {
+                                "accepted_count": 1,
+                                "block_count": 1,
+                                "diagnostics": [],
+                                "rejected_count": 0
+                              },
+                              "selection": {
+                                "reason_code": "explicit_override",
+                                "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                "transport": "text_protocol"
+                              },
+                              "tool_list": {
+                                "contributor_id": "builtin:tool_list",
+                                "injected": true,
+                                "tool_count": 2
+                              }
+                            },
                             "worldbook": {
                               "hit_count": 1
                             }
@@ -21876,6 +22018,72 @@
                                 "degrade_reasons"
                               ],
                               "type": "object"
+                            },
+                            "generation_params_resolution": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cancelled_at": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "final_state": {
+                                    "enum": [
+                                      "sent",
+                                      "absent",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "enum": [
+                                      "maxContextTokens",
+                                      "maxOutputTokens",
+                                      "temperature",
+                                      "topP",
+                                      "topK",
+                                      "frequencyPenalty",
+                                      "presencePenalty",
+                                      "stopSequences",
+                                      "stream",
+                                      "timeoutMs",
+                                      "maxRetries",
+                                      "reasoningEffort"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default",
+                                      "absent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value_from": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "final_state",
+                                  "origin"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
                             },
                             "history_normalization": {
                               "additionalProperties": false,
@@ -22859,6 +23067,137 @@
                                 "assistant_rewrite_count",
                                 "assistant_rewrite_strategy",
                                 "tail_assistant_detected"
+                              ],
+                              "type": "object"
+                            },
+                            "tool_transport": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "parsing": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "accepted_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "diagnostics": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "call_id": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "excerpt": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "tool_not_registered",
+                                              "json_parse_failed",
+                                              "missing_args_field",
+                                              "duplicate_call_id",
+                                              "malformed_block"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tool_name": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "call_id",
+                                          "tool_name",
+                                          "reason",
+                                          "excerpt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "rejected_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "block_count",
+                                    "accepted_count",
+                                    "rejected_count",
+                                    "diagnostics"
+                                  ],
+                                  "type": "object"
+                                },
+                                "selection": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "reason_code": {
+                                      "enum": [
+                                        "explicit_override",
+                                        "tools_disabled",
+                                        "instance_not_supports_function_call",
+                                        "default_native_function_call"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "reason_detail": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "enum": [
+                                        "native_function_call",
+                                        "text_protocol",
+                                        "none"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "transport",
+                                    "reason_code"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_list": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "contributor_id": {
+                                      "type": "string"
+                                    },
+                                    "injected": {
+                                      "type": "boolean"
+                                    },
+                                    "tool_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "injected",
+                                    "tool_count"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "selection"
                               ],
                               "type": "object"
                             },
@@ -25747,54 +26086,88 @@
                                   "frequency_penalty": {
                                     "maximum": 2,
                                     "minimum": -2,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   },
                                   "max_context_tokens": {
                                     "minimum": 1,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "max_output_tokens": {
                                     "minimum": 1,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "max_retries": {
                                     "maximum": 10,
                                     "minimum": 0,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "presence_penalty": {
                                     "maximum": 2,
                                     "minimum": -2,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   },
                                   "reasoning_effort": {
                                     "enum": [
                                       "low",
                                       "medium",
-                                      "high"
+                                      "high",
+                                      null
                                     ],
-                                    "type": "string"
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
                                   },
                                   "stream": {
-                                    "type": "boolean"
+                                    "type": [
+                                      "boolean",
+                                      "null"
+                                    ]
                                   },
                                   "temperature": {
                                     "maximum": 2,
                                     "minimum": 0,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   },
                                   "timeout_ms": {
                                     "minimum": 1,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "top_k": {
                                     "minimum": 0,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "top_p": {
                                     "maximum": 1,
                                     "minimum": 0,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   }
                                 },
                                 "type": "object"
@@ -26138,54 +26511,88 @@
                                   "frequency_penalty": {
                                     "maximum": 2,
                                     "minimum": -2,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   },
                                   "max_context_tokens": {
                                     "minimum": 1,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "max_output_tokens": {
                                     "minimum": 1,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "max_retries": {
                                     "maximum": 10,
                                     "minimum": 0,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "presence_penalty": {
                                     "maximum": 2,
                                     "minimum": -2,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   },
                                   "reasoning_effort": {
                                     "enum": [
                                       "low",
                                       "medium",
-                                      "high"
+                                      "high",
+                                      null
                                     ],
-                                    "type": "string"
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
                                   },
                                   "stream": {
-                                    "type": "boolean"
+                                    "type": [
+                                      "boolean",
+                                      "null"
+                                    ]
                                   },
                                   "temperature": {
                                     "maximum": 2,
                                     "minimum": 0,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   },
                                   "timeout_ms": {
                                     "minimum": 1,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "top_k": {
                                     "minimum": 0,
-                                    "type": "integer"
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
                                   },
                                   "top_p": {
                                     "maximum": 1,
                                     "minimum": 0,
-                                    "type": "number"
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
                                   }
                                 },
                                 "type": "object"
@@ -26324,54 +26731,88 @@
                               "frequency_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "max_context_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_output_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_retries": {
                                 "maximum": 10,
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "presence_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "reasoning_effort": {
                                 "enum": [
                                   "low",
                                   "medium",
-                                  "high"
+                                  "high",
+                                  null
                                 ],
-                                "type": "string"
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "stream": {
-                                "type": "boolean"
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
                               },
                               "temperature": {
                                 "maximum": 2,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "timeout_ms": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_k": {
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_p": {
                                 "maximum": 1,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               }
                             },
                             "type": "object"
@@ -26419,54 +26860,88 @@
                               "frequency_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "max_context_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_output_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_retries": {
                                 "maximum": 10,
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "presence_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "reasoning_effort": {
                                 "enum": [
                                   "low",
                                   "medium",
-                                  "high"
+                                  "high",
+                                  null
                                 ],
-                                "type": "string"
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "stream": {
-                                "type": "boolean"
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
                               },
                               "temperature": {
                                 "maximum": 2,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "timeout_ms": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_k": {
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_p": {
                                 "maximum": 1,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               }
                             },
                             "type": "object"
@@ -26564,54 +27039,88 @@
                                 "frequency_penalty": {
                                   "maximum": 2,
                                   "minimum": -2,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "max_context_tokens": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "max_output_tokens": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "max_retries": {
                                   "maximum": 10,
                                   "minimum": 0,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "presence_penalty": {
                                   "maximum": 2,
                                   "minimum": -2,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "reasoning_effort": {
                                   "enum": [
                                     "low",
                                     "medium",
-                                    "high"
+                                    "high",
+                                    null
                                   ],
-                                  "type": "string"
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 },
                                 "stream": {
-                                  "type": "boolean"
+                                  "type": [
+                                    "boolean",
+                                    "null"
+                                  ]
                                 },
                                 "temperature": {
                                   "maximum": 2,
                                   "minimum": 0,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "timeout_ms": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "top_k": {
                                   "minimum": 0,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "top_p": {
                                   "maximum": 1,
                                   "minimum": 0,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 }
                               },
                               "type": "object"
@@ -26785,54 +27294,88 @@
                                       "frequency_penalty": {
                                         "maximum": 2,
                                         "minimum": -2,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       },
                                       "max_context_tokens": {
                                         "minimum": 1,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "max_output_tokens": {
                                         "minimum": 1,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "max_retries": {
                                         "maximum": 10,
                                         "minimum": 0,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "presence_penalty": {
                                         "maximum": 2,
                                         "minimum": -2,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       },
                                       "reasoning_effort": {
                                         "enum": [
                                           "low",
                                           "medium",
-                                          "high"
+                                          "high",
+                                          null
                                         ],
-                                        "type": "string"
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
                                       },
                                       "stream": {
-                                        "type": "boolean"
+                                        "type": [
+                                          "boolean",
+                                          "null"
+                                        ]
                                       },
                                       "temperature": {
                                         "maximum": 2,
                                         "minimum": 0,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       },
                                       "timeout_ms": {
                                         "minimum": 1,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "top_k": {
                                         "minimum": 0,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "top_p": {
                                         "maximum": 1,
                                         "minimum": 0,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       }
                                     },
                                     "type": "object"
@@ -28249,54 +28792,88 @@
                               "frequency_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "max_context_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_output_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_retries": {
                                 "maximum": 10,
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "presence_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "reasoning_effort": {
                                 "enum": [
                                   "low",
                                   "medium",
-                                  "high"
+                                  "high",
+                                  null
                                 ],
-                                "type": "string"
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "stream": {
-                                "type": "boolean"
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
                               },
                               "temperature": {
                                 "maximum": 2,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "timeout_ms": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_k": {
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_p": {
                                 "maximum": 1,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               }
                             },
                             "type": "object"
@@ -28340,54 +28917,88 @@
                               "frequency_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "max_context_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_output_tokens": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "max_retries": {
                                 "maximum": 10,
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "presence_penalty": {
                                 "maximum": 2,
                                 "minimum": -2,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "reasoning_effort": {
                                 "enum": [
                                   "low",
                                   "medium",
-                                  "high"
+                                  "high",
+                                  null
                                 ],
-                                "type": "string"
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "stream": {
-                                "type": "boolean"
+                                "type": [
+                                  "boolean",
+                                  "null"
+                                ]
                               },
                               "temperature": {
                                 "maximum": 2,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               },
                               "timeout_ms": {
                                 "minimum": 1,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_k": {
                                 "minimum": 0,
-                                "type": "integer"
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ]
                               },
                               "top_p": {
                                 "maximum": 1,
                                 "minimum": 0,
-                                "type": "number"
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
                               }
                             },
                             "type": "object"
@@ -28459,54 +29070,88 @@
                                 "frequency_penalty": {
                                   "maximum": 2,
                                   "minimum": -2,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "max_context_tokens": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "max_output_tokens": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "max_retries": {
                                   "maximum": 10,
                                   "minimum": 0,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "presence_penalty": {
                                   "maximum": 2,
                                   "minimum": -2,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "reasoning_effort": {
                                   "enum": [
                                     "low",
                                     "medium",
-                                    "high"
+                                    "high",
+                                    null
                                   ],
-                                  "type": "string"
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
                                 },
                                 "stream": {
-                                  "type": "boolean"
+                                  "type": [
+                                    "boolean",
+                                    "null"
+                                  ]
                                 },
                                 "temperature": {
                                   "maximum": 2,
                                   "minimum": 0,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 },
                                 "timeout_ms": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "top_k": {
                                   "minimum": 0,
-                                  "type": "integer"
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ]
                                 },
                                 "top_p": {
                                   "maximum": 1,
                                   "minimum": 0,
-                                  "type": "number"
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ]
                                 }
                               },
                               "type": "object"
@@ -29260,54 +29905,88 @@
                                       "frequency_penalty": {
                                         "maximum": 2,
                                         "minimum": -2,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       },
                                       "max_context_tokens": {
                                         "minimum": 1,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "max_output_tokens": {
                                         "minimum": 1,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "max_retries": {
                                         "maximum": 10,
                                         "minimum": 0,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "presence_penalty": {
                                         "maximum": 2,
                                         "minimum": -2,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       },
                                       "reasoning_effort": {
                                         "enum": [
                                           "low",
                                           "medium",
-                                          "high"
+                                          "high",
+                                          null
                                         ],
-                                        "type": "string"
+                                        "type": [
+                                          "string",
+                                          "null"
+                                        ]
                                       },
                                       "stream": {
-                                        "type": "boolean"
+                                        "type": [
+                                          "boolean",
+                                          "null"
+                                        ]
                                       },
                                       "temperature": {
                                         "maximum": 2,
                                         "minimum": 0,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       },
                                       "timeout_ms": {
                                         "minimum": 1,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "top_k": {
                                         "minimum": 0,
-                                        "type": "integer"
+                                        "type": [
+                                          "integer",
+                                          "null"
+                                        ]
                                       },
                                       "top_p": {
                                         "maximum": 1,
                                         "minimum": 0,
-                                        "type": "number"
+                                        "type": [
+                                          "number",
+                                          "null"
+                                        ]
                                       }
                                     },
                                     "type": "object"
@@ -39669,45 +40348,73 @@
                     },
                     "properties": {
                       "frequency_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "max_output_tokens": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "presence_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "reasoning_effort": {
                         "enum": [
                           "low",
                           "medium",
-                          "high"
+                          "high",
+                          null
                         ],
-                        "type": "string"
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       },
                       "stop_sequences": {
                         "items": {
                           "type": "string"
                         },
-                        "type": "array"
+                        "type": [
+                          "null",
+                          "array"
+                        ]
                       },
                       "stream": {
-                        "type": "boolean"
+                        "type": [
+                          "null",
+                          "boolean"
+                        ]
                       },
                       "temperature": {
                         "maximum": 2,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "top_k": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "top_p": {
                         "maximum": 1,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "type": "object"
@@ -39932,6 +40639,26 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "generation_params_resolution": [
+                        {
+                          "final_state": "sent",
+                          "name": "temperature",
+                          "origin": "default",
+                          "value_from": "default"
+                        },
+                        {
+                          "final_state": "sent",
+                          "name": "maxOutputTokens",
+                          "origin": "request",
+                          "value_from": "request"
+                        },
+                        {
+                          "cancelled_at": "request",
+                          "final_state": "cancelled",
+                          "name": "topP",
+                          "origin": "request"
+                        }
+                      ],
                       "history_normalization": {
                         "effective_turn_count": 2,
                         "merged_user_groups": [
@@ -40127,6 +40854,24 @@
                         "mode": "no_assistant",
                         "tail_assistant_detected": false
                       },
+                      "tool_transport": {
+                        "parsing": {
+                          "accepted_count": 1,
+                          "block_count": 1,
+                          "diagnostics": [],
+                          "rejected_count": 0
+                        },
+                        "selection": {
+                          "reason_code": "explicit_override",
+                          "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                          "transport": "text_protocol"
+                        },
+                        "tool_list": {
+                          "contributor_id": "builtin:tool_list",
+                          "injected": true,
+                          "tool_count": 2
+                        }
+                      },
                       "worldbook": {
                         "hit_count": 1
                       }
@@ -40250,6 +40995,26 @@
                             "no_assistant": false,
                             "require_last_user": true
                           },
+                          "generation_params_resolution": [
+                            {
+                              "final_state": "sent",
+                              "name": "temperature",
+                              "origin": "default",
+                              "value_from": "default"
+                            },
+                            {
+                              "final_state": "sent",
+                              "name": "maxOutputTokens",
+                              "origin": "request",
+                              "value_from": "request"
+                            },
+                            {
+                              "cancelled_at": "request",
+                              "final_state": "cancelled",
+                              "name": "topP",
+                              "origin": "request"
+                            }
+                          ],
                           "history_normalization": {
                             "effective_turn_count": 2,
                             "merged_user_groups": [
@@ -40444,6 +41209,24 @@
                             "merge_adjacent_same_role": false,
                             "mode": "no_assistant",
                             "tail_assistant_detected": false
+                          },
+                          "tool_transport": {
+                            "parsing": {
+                              "accepted_count": 1,
+                              "block_count": 1,
+                              "diagnostics": [],
+                              "rejected_count": 0
+                            },
+                            "selection": {
+                              "reason_code": "explicit_override",
+                              "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                              "transport": "text_protocol"
+                            },
+                            "tool_list": {
+                              "contributor_id": "builtin:tool_list",
+                              "injected": true,
+                              "tool_count": 2
+                            }
                           },
                           "worldbook": {
                             "hit_count": 1
@@ -40973,6 +41756,26 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "generation_params_resolution": [
+                              {
+                                "final_state": "sent",
+                                "name": "temperature",
+                                "origin": "default",
+                                "value_from": "default"
+                              },
+                              {
+                                "final_state": "sent",
+                                "name": "maxOutputTokens",
+                                "origin": "request",
+                                "value_from": "request"
+                              },
+                              {
+                                "cancelled_at": "request",
+                                "final_state": "cancelled",
+                                "name": "topP",
+                                "origin": "request"
+                              }
+                            ],
                             "history_normalization": {
                               "effective_turn_count": 2,
                               "merged_user_groups": [
@@ -41168,6 +41971,24 @@
                               "mode": "no_assistant",
                               "tail_assistant_detected": false
                             },
+                            "tool_transport": {
+                              "parsing": {
+                                "accepted_count": 1,
+                                "block_count": 1,
+                                "diagnostics": [],
+                                "rejected_count": 0
+                              },
+                              "selection": {
+                                "reason_code": "explicit_override",
+                                "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                "transport": "text_protocol"
+                              },
+                              "tool_list": {
+                                "contributor_id": "builtin:tool_list",
+                                "injected": true,
+                                "tool_count": 2
+                              }
+                            },
                             "worldbook": {
                               "hit_count": 1
                             }
@@ -41330,6 +42151,72 @@
                                 "degrade_reasons"
                               ],
                               "type": "object"
+                            },
+                            "generation_params_resolution": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cancelled_at": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "final_state": {
+                                    "enum": [
+                                      "sent",
+                                      "absent",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "enum": [
+                                      "maxContextTokens",
+                                      "maxOutputTokens",
+                                      "temperature",
+                                      "topP",
+                                      "topK",
+                                      "frequencyPenalty",
+                                      "presencePenalty",
+                                      "stopSequences",
+                                      "stream",
+                                      "timeoutMs",
+                                      "maxRetries",
+                                      "reasoningEffort"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default",
+                                      "absent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value_from": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "final_state",
+                                  "origin"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
                             },
                             "history_normalization": {
                               "additionalProperties": false,
@@ -42313,6 +43200,137 @@
                                 "assistant_rewrite_count",
                                 "assistant_rewrite_strategy",
                                 "tail_assistant_detected"
+                              ],
+                              "type": "object"
+                            },
+                            "tool_transport": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "parsing": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "accepted_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "diagnostics": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "call_id": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "excerpt": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "tool_not_registered",
+                                              "json_parse_failed",
+                                              "missing_args_field",
+                                              "duplicate_call_id",
+                                              "malformed_block"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tool_name": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "call_id",
+                                          "tool_name",
+                                          "reason",
+                                          "excerpt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "rejected_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "block_count",
+                                    "accepted_count",
+                                    "rejected_count",
+                                    "diagnostics"
+                                  ],
+                                  "type": "object"
+                                },
+                                "selection": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "reason_code": {
+                                      "enum": [
+                                        "explicit_override",
+                                        "tools_disabled",
+                                        "instance_not_supports_function_call",
+                                        "default_native_function_call"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "reason_detail": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "enum": [
+                                        "native_function_call",
+                                        "text_protocol",
+                                        "none"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "transport",
+                                    "reason_code"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_list": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "contributor_id": {
+                                      "type": "string"
+                                    },
+                                    "injected": {
+                                      "type": "boolean"
+                                    },
+                                    "tool_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "injected",
+                                    "tool_count"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "selection"
                               ],
                               "type": "object"
                             },
@@ -68791,45 +69809,73 @@
                     },
                     "properties": {
                       "frequency_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "max_output_tokens": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "presence_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "reasoning_effort": {
                         "enum": [
                           "low",
                           "medium",
-                          "high"
+                          "high",
+                          null
                         ],
-                        "type": "string"
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       },
                       "stop_sequences": {
                         "items": {
                           "type": "string"
                         },
-                        "type": "array"
+                        "type": [
+                          "null",
+                          "array"
+                        ]
                       },
                       "stream": {
-                        "type": "boolean"
+                        "type": [
+                          "null",
+                          "boolean"
+                        ]
                       },
                       "temperature": {
                         "maximum": 2,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "top_k": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "top_p": {
                         "maximum": 1,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "type": "object"
@@ -69455,6 +70501,26 @@
                         "enable_verifier": false
                       },
                       "runtime_trace": {
+                        "generation_params_resolution": [
+                          {
+                            "final_state": "sent",
+                            "name": "temperature",
+                            "origin": "default",
+                            "value_from": "default"
+                          },
+                          {
+                            "final_state": "sent",
+                            "name": "maxOutputTokens",
+                            "origin": "request",
+                            "value_from": "request"
+                          },
+                          {
+                            "cancelled_at": "request",
+                            "final_state": "cancelled",
+                            "name": "topP",
+                            "origin": "request"
+                          }
+                        ],
                         "history_normalization": {
                           "effective_turn_count": 2,
                           "merged_user_groups": [
@@ -69519,6 +70585,24 @@
                               "source": "examples"
                             }
                           ]
+                        },
+                        "tool_transport": {
+                          "parsing": {
+                            "accepted_count": 1,
+                            "block_count": 1,
+                            "diagnostics": [],
+                            "rejected_count": 0
+                          },
+                          "selection": {
+                            "reason_code": "explicit_override",
+                            "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                            "transport": "text_protocol"
+                          },
+                          "tool_list": {
+                            "contributor_id": "builtin:tool_list",
+                            "injected": true,
+                            "tool_count": 2
+                          }
                         },
                         "visibility": {
                           "filtered_floor_nos": [
@@ -70362,45 +71446,73 @@
                               },
                               "properties": {
                                 "frequency_penalty": {
-                                  "type": "number"
+                                  "type": [
+                                    "null",
+                                    "number"
+                                  ]
                                 },
                                 "max_output_tokens": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "null",
+                                    "integer"
+                                  ]
                                 },
                                 "presence_penalty": {
-                                  "type": "number"
+                                  "type": [
+                                    "null",
+                                    "number"
+                                  ]
                                 },
                                 "reasoning_effort": {
                                   "enum": [
                                     "low",
                                     "medium",
-                                    "high"
+                                    "high",
+                                    null
                                   ],
-                                  "type": "string"
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
                                 },
                                 "stop_sequences": {
                                   "items": {
                                     "type": "string"
                                   },
-                                  "type": "array"
+                                  "type": [
+                                    "null",
+                                    "array"
+                                  ]
                                 },
                                 "stream": {
-                                  "type": "boolean"
+                                  "type": [
+                                    "null",
+                                    "boolean"
+                                  ]
                                 },
                                 "temperature": {
                                   "maximum": 2,
                                   "minimum": 0,
-                                  "type": "number"
+                                  "type": [
+                                    "null",
+                                    "number"
+                                  ]
                                 },
                                 "top_k": {
                                   "minimum": 1,
-                                  "type": "integer"
+                                  "type": [
+                                    "null",
+                                    "integer"
+                                  ]
                                 },
                                 "top_p": {
                                   "maximum": 1,
                                   "minimum": 0,
-                                  "type": "number"
+                                  "type": [
+                                    "null",
+                                    "number"
+                                  ]
                                 }
                               },
                               "type": "object"
@@ -71647,6 +72759,72 @@
                                       ],
                                       "type": "object"
                                     },
+                                    "generation_params_resolution": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "cancelled_at": {
+                                            "enum": [
+                                              "profile",
+                                              "instance",
+                                              "request"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "final_state": {
+                                            "enum": [
+                                              "sent",
+                                              "absent",
+                                              "cancelled"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "name": {
+                                            "enum": [
+                                              "maxContextTokens",
+                                              "maxOutputTokens",
+                                              "temperature",
+                                              "topP",
+                                              "topK",
+                                              "frequencyPenalty",
+                                              "presencePenalty",
+                                              "stopSequences",
+                                              "stream",
+                                              "timeoutMs",
+                                              "maxRetries",
+                                              "reasoningEffort"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "origin": {
+                                            "enum": [
+                                              "profile",
+                                              "instance",
+                                              "request",
+                                              "default",
+                                              "absent"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "value_from": {
+                                            "enum": [
+                                              "profile",
+                                              "instance",
+                                              "request",
+                                              "default"
+                                            ],
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "name",
+                                          "final_state",
+                                          "origin"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
                                     "history_normalization": {
                                       "additionalProperties": false,
                                       "examples": [
@@ -72633,6 +73811,137 @@
                                         "assistant_rewrite_count",
                                         "assistant_rewrite_strategy",
                                         "tail_assistant_detected"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "tool_transport": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "parsing": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "accepted_count": {
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "block_count": {
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "diagnostics": {
+                                              "items": {
+                                                "additionalProperties": false,
+                                                "properties": {
+                                                  "call_id": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  },
+                                                  "excerpt": {
+                                                    "type": "string"
+                                                  },
+                                                  "reason": {
+                                                    "enum": [
+                                                      "tool_not_registered",
+                                                      "json_parse_failed",
+                                                      "missing_args_field",
+                                                      "duplicate_call_id",
+                                                      "malformed_block"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  "tool_name": {
+                                                    "anyOf": [
+                                                      {
+                                                        "type": "string"
+                                                      },
+                                                      {
+                                                        "type": "null"
+                                                      }
+                                                    ]
+                                                  }
+                                                },
+                                                "required": [
+                                                  "call_id",
+                                                  "tool_name",
+                                                  "reason",
+                                                  "excerpt"
+                                                ],
+                                                "type": "object"
+                                              },
+                                              "type": "array"
+                                            },
+                                            "rejected_count": {
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "block_count",
+                                            "accepted_count",
+                                            "rejected_count",
+                                            "diagnostics"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "selection": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "reason_code": {
+                                              "enum": [
+                                                "explicit_override",
+                                                "tools_disabled",
+                                                "instance_not_supports_function_call",
+                                                "default_native_function_call"
+                                              ],
+                                              "type": "string"
+                                            },
+                                            "reason_detail": {
+                                              "type": "string"
+                                            },
+                                            "transport": {
+                                              "enum": [
+                                                "native_function_call",
+                                                "text_protocol",
+                                                "none"
+                                              ],
+                                              "type": "string"
+                                            }
+                                          },
+                                          "required": [
+                                            "transport",
+                                            "reason_code"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "tool_list": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "contributor_id": {
+                                              "type": "string"
+                                            },
+                                            "injected": {
+                                              "type": "boolean"
+                                            },
+                                            "tool_count": {
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            }
+                                          },
+                                          "required": [
+                                            "injected",
+                                            "tool_count"
+                                          ],
+                                          "type": "object"
+                                        }
+                                      },
+                                      "required": [
+                                        "selection"
                                       ],
                                       "type": "object"
                                     },
@@ -76523,6 +77832,26 @@
                       }
                     },
                     "runtime_trace": {
+                      "generation_params_resolution": [
+                        {
+                          "final_state": "sent",
+                          "name": "temperature",
+                          "origin": "default",
+                          "value_from": "default"
+                        },
+                        {
+                          "final_state": "sent",
+                          "name": "maxOutputTokens",
+                          "origin": "request",
+                          "value_from": "request"
+                        },
+                        {
+                          "cancelled_at": "request",
+                          "final_state": "cancelled",
+                          "name": "topP",
+                          "origin": "request"
+                        }
+                      ],
                       "history_normalization": {
                         "effective_turn_count": 2,
                         "merged_user_groups": [
@@ -76587,6 +77916,24 @@
                             "source": "examples"
                           }
                         ]
+                      },
+                      "tool_transport": {
+                        "parsing": {
+                          "accepted_count": 1,
+                          "block_count": 1,
+                          "diagnostics": [],
+                          "rejected_count": 0
+                        },
+                        "selection": {
+                          "reason_code": "explicit_override",
+                          "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                          "transport": "text_protocol"
+                        },
+                        "tool_list": {
+                          "contributor_id": "builtin:tool_list",
+                          "injected": true,
+                          "tool_count": 2
+                        }
                       },
                       "visibility": {
                         "filtered_floor_nos": [
@@ -77461,6 +78808,72 @@
                         "runtime_trace": {
                           "additionalProperties": false,
                           "properties": {
+                            "generation_params_resolution": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cancelled_at": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "final_state": {
+                                    "enum": [
+                                      "sent",
+                                      "absent",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "enum": [
+                                      "maxContextTokens",
+                                      "maxOutputTokens",
+                                      "temperature",
+                                      "topP",
+                                      "topK",
+                                      "frequencyPenalty",
+                                      "presencePenalty",
+                                      "stopSequences",
+                                      "stream",
+                                      "timeoutMs",
+                                      "maxRetries",
+                                      "reasoningEffort"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default",
+                                      "absent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value_from": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "final_state",
+                                  "origin"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
                             "history_normalization": {
                               "additionalProperties": false,
                               "example": {
@@ -77837,6 +79250,137 @@
                               },
                               "required": [
                                 "excluded_sources"
+                              ],
+                              "type": "object"
+                            },
+                            "tool_transport": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "parsing": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "accepted_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "diagnostics": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "call_id": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "excerpt": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "tool_not_registered",
+                                              "json_parse_failed",
+                                              "missing_args_field",
+                                              "duplicate_call_id",
+                                              "malformed_block"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tool_name": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "call_id",
+                                          "tool_name",
+                                          "reason",
+                                          "excerpt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "rejected_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "block_count",
+                                    "accepted_count",
+                                    "rejected_count",
+                                    "diagnostics"
+                                  ],
+                                  "type": "object"
+                                },
+                                "selection": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "reason_code": {
+                                      "enum": [
+                                        "explicit_override",
+                                        "tools_disabled",
+                                        "instance_not_supports_function_call",
+                                        "default_native_function_call"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "reason_detail": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "enum": [
+                                        "native_function_call",
+                                        "text_protocol",
+                                        "none"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "transport",
+                                    "reason_code"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_list": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "contributor_id": {
+                                      "type": "string"
+                                    },
+                                    "injected": {
+                                      "type": "boolean"
+                                    },
+                                    "tool_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "injected",
+                                    "tool_count"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "selection"
                               ],
                               "type": "object"
                             },
@@ -78531,45 +80075,73 @@
                     },
                     "properties": {
                       "frequency_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "max_output_tokens": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "presence_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "reasoning_effort": {
                         "enum": [
                           "low",
                           "medium",
-                          "high"
+                          "high",
+                          null
                         ],
-                        "type": "string"
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       },
                       "stop_sequences": {
                         "items": {
                           "type": "string"
                         },
-                        "type": "array"
+                        "type": [
+                          "null",
+                          "array"
+                        ]
                       },
                       "stream": {
-                        "type": "boolean"
+                        "type": [
+                          "null",
+                          "boolean"
+                        ]
                       },
                       "temperature": {
                         "maximum": 2,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "top_k": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "top_p": {
                         "maximum": 1,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "type": "object"
@@ -78791,6 +80363,26 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "generation_params_resolution": [
+                        {
+                          "final_state": "sent",
+                          "name": "temperature",
+                          "origin": "default",
+                          "value_from": "default"
+                        },
+                        {
+                          "final_state": "sent",
+                          "name": "maxOutputTokens",
+                          "origin": "request",
+                          "value_from": "request"
+                        },
+                        {
+                          "cancelled_at": "request",
+                          "final_state": "cancelled",
+                          "name": "topP",
+                          "origin": "request"
+                        }
+                      ],
                       "history_normalization": {
                         "effective_turn_count": 2,
                         "merged_user_groups": [
@@ -78986,6 +80578,24 @@
                         "mode": "no_assistant",
                         "tail_assistant_detected": false
                       },
+                      "tool_transport": {
+                        "parsing": {
+                          "accepted_count": 1,
+                          "block_count": 1,
+                          "diagnostics": [],
+                          "rejected_count": 0
+                        },
+                        "selection": {
+                          "reason_code": "explicit_override",
+                          "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                          "transport": "text_protocol"
+                        },
+                        "tool_list": {
+                          "contributor_id": "builtin:tool_list",
+                          "injected": true,
+                          "tool_count": 2
+                        }
+                      },
                       "worldbook": {
                         "hit_count": 1
                       }
@@ -79107,6 +80717,26 @@
                             "no_assistant": false,
                             "require_last_user": true
                           },
+                          "generation_params_resolution": [
+                            {
+                              "final_state": "sent",
+                              "name": "temperature",
+                              "origin": "default",
+                              "value_from": "default"
+                            },
+                            {
+                              "final_state": "sent",
+                              "name": "maxOutputTokens",
+                              "origin": "request",
+                              "value_from": "request"
+                            },
+                            {
+                              "cancelled_at": "request",
+                              "final_state": "cancelled",
+                              "name": "topP",
+                              "origin": "request"
+                            }
+                          ],
                           "history_normalization": {
                             "effective_turn_count": 2,
                             "merged_user_groups": [
@@ -79301,6 +80931,24 @@
                             "merge_adjacent_same_role": false,
                             "mode": "no_assistant",
                             "tail_assistant_detected": false
+                          },
+                          "tool_transport": {
+                            "parsing": {
+                              "accepted_count": 1,
+                              "block_count": 1,
+                              "diagnostics": [],
+                              "rejected_count": 0
+                            },
+                            "selection": {
+                              "reason_code": "explicit_override",
+                              "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                              "transport": "text_protocol"
+                            },
+                            "tool_list": {
+                              "contributor_id": "builtin:tool_list",
+                              "injected": true,
+                              "tool_count": 2
+                            }
                           },
                           "worldbook": {
                             "hit_count": 1
@@ -79828,6 +81476,26 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "generation_params_resolution": [
+                              {
+                                "final_state": "sent",
+                                "name": "temperature",
+                                "origin": "default",
+                                "value_from": "default"
+                              },
+                              {
+                                "final_state": "sent",
+                                "name": "maxOutputTokens",
+                                "origin": "request",
+                                "value_from": "request"
+                              },
+                              {
+                                "cancelled_at": "request",
+                                "final_state": "cancelled",
+                                "name": "topP",
+                                "origin": "request"
+                              }
+                            ],
                             "history_normalization": {
                               "effective_turn_count": 2,
                               "merged_user_groups": [
@@ -80023,6 +81691,24 @@
                               "mode": "no_assistant",
                               "tail_assistant_detected": false
                             },
+                            "tool_transport": {
+                              "parsing": {
+                                "accepted_count": 1,
+                                "block_count": 1,
+                                "diagnostics": [],
+                                "rejected_count": 0
+                              },
+                              "selection": {
+                                "reason_code": "explicit_override",
+                                "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                "transport": "text_protocol"
+                              },
+                              "tool_list": {
+                                "contributor_id": "builtin:tool_list",
+                                "injected": true,
+                                "tool_count": 2
+                              }
+                            },
                             "worldbook": {
                               "hit_count": 1
                             }
@@ -80185,6 +81871,72 @@
                                 "degrade_reasons"
                               ],
                               "type": "object"
+                            },
+                            "generation_params_resolution": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cancelled_at": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "final_state": {
+                                    "enum": [
+                                      "sent",
+                                      "absent",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "enum": [
+                                      "maxContextTokens",
+                                      "maxOutputTokens",
+                                      "temperature",
+                                      "topP",
+                                      "topK",
+                                      "frequencyPenalty",
+                                      "presencePenalty",
+                                      "stopSequences",
+                                      "stream",
+                                      "timeoutMs",
+                                      "maxRetries",
+                                      "reasoningEffort"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default",
+                                      "absent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value_from": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "final_state",
+                                  "origin"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
                             },
                             "history_normalization": {
                               "additionalProperties": false,
@@ -81168,6 +82920,137 @@
                                 "assistant_rewrite_count",
                                 "assistant_rewrite_strategy",
                                 "tail_assistant_detected"
+                              ],
+                              "type": "object"
+                            },
+                            "tool_transport": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "parsing": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "accepted_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "diagnostics": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "call_id": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "excerpt": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "tool_not_registered",
+                                              "json_parse_failed",
+                                              "missing_args_field",
+                                              "duplicate_call_id",
+                                              "malformed_block"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tool_name": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "call_id",
+                                          "tool_name",
+                                          "reason",
+                                          "excerpt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "rejected_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "block_count",
+                                    "accepted_count",
+                                    "rejected_count",
+                                    "diagnostics"
+                                  ],
+                                  "type": "object"
+                                },
+                                "selection": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "reason_code": {
+                                      "enum": [
+                                        "explicit_override",
+                                        "tools_disabled",
+                                        "instance_not_supports_function_call",
+                                        "default_native_function_call"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "reason_detail": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "enum": [
+                                        "native_function_call",
+                                        "text_protocol",
+                                        "none"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "transport",
+                                    "reason_code"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_list": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "contributor_id": {
+                                      "type": "string"
+                                    },
+                                    "injected": {
+                                      "type": "boolean"
+                                    },
+                                    "tool_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "injected",
+                                    "tool_count"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "selection"
                               ],
                               "type": "object"
                             },
@@ -81851,45 +83734,73 @@
                     },
                     "properties": {
                       "frequency_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "max_output_tokens": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "presence_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "reasoning_effort": {
                         "enum": [
                           "low",
                           "medium",
-                          "high"
+                          "high",
+                          null
                         ],
-                        "type": "string"
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       },
                       "stop_sequences": {
                         "items": {
                           "type": "string"
                         },
-                        "type": "array"
+                        "type": [
+                          "null",
+                          "array"
+                        ]
                       },
                       "stream": {
-                        "type": "boolean"
+                        "type": [
+                          "null",
+                          "boolean"
+                        ]
                       },
                       "temperature": {
                         "maximum": 2,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "top_k": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "top_p": {
                         "maximum": 1,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "type": "object"
@@ -82133,6 +84044,26 @@
                         "no_assistant": false,
                         "require_last_user": true
                       },
+                      "generation_params_resolution": [
+                        {
+                          "final_state": "sent",
+                          "name": "temperature",
+                          "origin": "default",
+                          "value_from": "default"
+                        },
+                        {
+                          "final_state": "sent",
+                          "name": "maxOutputTokens",
+                          "origin": "request",
+                          "value_from": "request"
+                        },
+                        {
+                          "cancelled_at": "request",
+                          "final_state": "cancelled",
+                          "name": "topP",
+                          "origin": "request"
+                        }
+                      ],
                       "history_normalization": {
                         "effective_turn_count": 2,
                         "merged_user_groups": [
@@ -82328,6 +84259,24 @@
                         "mode": "no_assistant",
                         "tail_assistant_detected": false
                       },
+                      "tool_transport": {
+                        "parsing": {
+                          "accepted_count": 1,
+                          "block_count": 1,
+                          "diagnostics": [],
+                          "rejected_count": 0
+                        },
+                        "selection": {
+                          "reason_code": "explicit_override",
+                          "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                          "transport": "text_protocol"
+                        },
+                        "tool_list": {
+                          "contributor_id": "builtin:tool_list",
+                          "injected": true,
+                          "tool_count": 2
+                        }
+                      },
                       "worldbook": {
                         "hit_count": 1
                       }
@@ -82449,6 +84398,26 @@
                             "no_assistant": false,
                             "require_last_user": true
                           },
+                          "generation_params_resolution": [
+                            {
+                              "final_state": "sent",
+                              "name": "temperature",
+                              "origin": "default",
+                              "value_from": "default"
+                            },
+                            {
+                              "final_state": "sent",
+                              "name": "maxOutputTokens",
+                              "origin": "request",
+                              "value_from": "request"
+                            },
+                            {
+                              "cancelled_at": "request",
+                              "final_state": "cancelled",
+                              "name": "topP",
+                              "origin": "request"
+                            }
+                          ],
                           "history_normalization": {
                             "effective_turn_count": 2,
                             "merged_user_groups": [
@@ -82643,6 +84612,24 @@
                             "merge_adjacent_same_role": false,
                             "mode": "no_assistant",
                             "tail_assistant_detected": false
+                          },
+                          "tool_transport": {
+                            "parsing": {
+                              "accepted_count": 1,
+                              "block_count": 1,
+                              "diagnostics": [],
+                              "rejected_count": 0
+                            },
+                            "selection": {
+                              "reason_code": "explicit_override",
+                              "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                              "transport": "text_protocol"
+                            },
+                            "tool_list": {
+                              "contributor_id": "builtin:tool_list",
+                              "injected": true,
+                              "tool_count": 2
+                            }
                           },
                           "worldbook": {
                             "hit_count": 1
@@ -83170,6 +85157,26 @@
                               "no_assistant": false,
                               "require_last_user": true
                             },
+                            "generation_params_resolution": [
+                              {
+                                "final_state": "sent",
+                                "name": "temperature",
+                                "origin": "default",
+                                "value_from": "default"
+                              },
+                              {
+                                "final_state": "sent",
+                                "name": "maxOutputTokens",
+                                "origin": "request",
+                                "value_from": "request"
+                              },
+                              {
+                                "cancelled_at": "request",
+                                "final_state": "cancelled",
+                                "name": "topP",
+                                "origin": "request"
+                              }
+                            ],
                             "history_normalization": {
                               "effective_turn_count": 2,
                               "merged_user_groups": [
@@ -83365,6 +85372,24 @@
                               "mode": "no_assistant",
                               "tail_assistant_detected": false
                             },
+                            "tool_transport": {
+                              "parsing": {
+                                "accepted_count": 1,
+                                "block_count": 1,
+                                "diagnostics": [],
+                                "rejected_count": 0
+                              },
+                              "selection": {
+                                "reason_code": "explicit_override",
+                                "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                "transport": "text_protocol"
+                              },
+                              "tool_list": {
+                                "contributor_id": "builtin:tool_list",
+                                "injected": true,
+                                "tool_count": 2
+                              }
+                            },
                             "worldbook": {
                               "hit_count": 1
                             }
@@ -83527,6 +85552,72 @@
                                 "degrade_reasons"
                               ],
                               "type": "object"
+                            },
+                            "generation_params_resolution": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cancelled_at": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "final_state": {
+                                    "enum": [
+                                      "sent",
+                                      "absent",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "enum": [
+                                      "maxContextTokens",
+                                      "maxOutputTokens",
+                                      "temperature",
+                                      "topP",
+                                      "topK",
+                                      "frequencyPenalty",
+                                      "presencePenalty",
+                                      "stopSequences",
+                                      "stream",
+                                      "timeoutMs",
+                                      "maxRetries",
+                                      "reasoningEffort"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default",
+                                      "absent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value_from": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "final_state",
+                                  "origin"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
                             },
                             "history_normalization": {
                               "additionalProperties": false,
@@ -84510,6 +86601,137 @@
                                 "assistant_rewrite_count",
                                 "assistant_rewrite_strategy",
                                 "tail_assistant_detected"
+                              ],
+                              "type": "object"
+                            },
+                            "tool_transport": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "parsing": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "accepted_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "diagnostics": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "call_id": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "excerpt": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "tool_not_registered",
+                                              "json_parse_failed",
+                                              "missing_args_field",
+                                              "duplicate_call_id",
+                                              "malformed_block"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tool_name": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "call_id",
+                                          "tool_name",
+                                          "reason",
+                                          "excerpt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "rejected_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "block_count",
+                                    "accepted_count",
+                                    "rejected_count",
+                                    "diagnostics"
+                                  ],
+                                  "type": "object"
+                                },
+                                "selection": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "reason_code": {
+                                      "enum": [
+                                        "explicit_override",
+                                        "tools_disabled",
+                                        "instance_not_supports_function_call",
+                                        "default_native_function_call"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "reason_detail": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "enum": [
+                                        "native_function_call",
+                                        "text_protocol",
+                                        "none"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "transport",
+                                    "reason_code"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_list": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "contributor_id": {
+                                      "type": "string"
+                                    },
+                                    "injected": {
+                                      "type": "boolean"
+                                    },
+                                    "tool_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "injected",
+                                    "tool_count"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "selection"
                               ],
                               "type": "object"
                             },
@@ -87481,6 +89703,72 @@
                               ],
                               "type": "object"
                             },
+                            "generation_params_resolution": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "cancelled_at": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "final_state": {
+                                    "enum": [
+                                      "sent",
+                                      "absent",
+                                      "cancelled"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "enum": [
+                                      "maxContextTokens",
+                                      "maxOutputTokens",
+                                      "temperature",
+                                      "topP",
+                                      "topK",
+                                      "frequencyPenalty",
+                                      "presencePenalty",
+                                      "stopSequences",
+                                      "stream",
+                                      "timeoutMs",
+                                      "maxRetries",
+                                      "reasoningEffort"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "origin": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default",
+                                      "absent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  "value_from": {
+                                    "enum": [
+                                      "profile",
+                                      "instance",
+                                      "request",
+                                      "default"
+                                    ],
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "final_state",
+                                  "origin"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
                             "history_normalization": {
                               "additionalProperties": false,
                               "example": {
@@ -88466,6 +90754,137 @@
                               ],
                               "type": "object"
                             },
+                            "tool_transport": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "parsing": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "accepted_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "diagnostics": {
+                                      "items": {
+                                        "additionalProperties": false,
+                                        "properties": {
+                                          "call_id": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "excerpt": {
+                                            "type": "string"
+                                          },
+                                          "reason": {
+                                            "enum": [
+                                              "tool_not_registered",
+                                              "json_parse_failed",
+                                              "missing_args_field",
+                                              "duplicate_call_id",
+                                              "malformed_block"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          "tool_name": {
+                                            "anyOf": [
+                                              {
+                                                "type": "string"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "call_id",
+                                          "tool_name",
+                                          "reason",
+                                          "excerpt"
+                                        ],
+                                        "type": "object"
+                                      },
+                                      "type": "array"
+                                    },
+                                    "rejected_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "block_count",
+                                    "accepted_count",
+                                    "rejected_count",
+                                    "diagnostics"
+                                  ],
+                                  "type": "object"
+                                },
+                                "selection": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "reason_code": {
+                                      "enum": [
+                                        "explicit_override",
+                                        "tools_disabled",
+                                        "instance_not_supports_function_call",
+                                        "default_native_function_call"
+                                      ],
+                                      "type": "string"
+                                    },
+                                    "reason_detail": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "enum": [
+                                        "native_function_call",
+                                        "text_protocol",
+                                        "none"
+                                      ],
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "transport",
+                                    "reason_code"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_list": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "contributor_id": {
+                                      "type": "string"
+                                    },
+                                    "injected": {
+                                      "type": "boolean"
+                                    },
+                                    "tool_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "injected",
+                                    "tool_count"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "selection"
+                              ],
+                              "type": "object"
+                            },
                             "visibility": {
                               "additionalProperties": false,
                               "properties": {
@@ -89051,45 +91470,73 @@
                     },
                     "properties": {
                       "frequency_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "max_output_tokens": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "presence_penalty": {
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "reasoning_effort": {
                         "enum": [
                           "low",
                           "medium",
-                          "high"
+                          "high",
+                          null
                         ],
-                        "type": "string"
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       },
                       "stop_sequences": {
                         "items": {
                           "type": "string"
                         },
-                        "type": "array"
+                        "type": [
+                          "null",
+                          "array"
+                        ]
                       },
                       "stream": {
-                        "type": "boolean"
+                        "type": [
+                          "null",
+                          "boolean"
+                        ]
                       },
                       "temperature": {
                         "maximum": 2,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       },
                       "top_k": {
                         "minimum": 1,
-                        "type": "integer"
+                        "type": [
+                          "null",
+                          "integer"
+                        ]
                       },
                       "top_p": {
                         "maximum": 1,
                         "minimum": 0,
-                        "type": "number"
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "type": "object"

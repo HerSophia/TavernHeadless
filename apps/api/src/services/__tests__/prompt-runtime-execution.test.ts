@@ -191,85 +191,95 @@ describe("prompt-runtime-execution", () => {
     });
   });
 
-  it("projects preview runtime trace down to macro, visibility, source selection, and generation param resolution", () => {
-    const trace = buildPromptRuntimePreviewTrace({
-      macro: {
-        warnings: [],
-        usedNames: ["lastUserMessage"],
-        mutationPreview: [],
-        stagedMutations: [],
-        traces: [],
-      },
-      sourceSelection: {
-        excludedSources: [{
-          source: "history",
-          reason: "visibility_filtered",
-        }],
-      },
-      historyNormalization: {
-        rawEntryCount: 2,
-        effectiveTurnCount: 2,
-        selectedTurnCount: 2,
-        trailingUserSourceFloorIds: ["floor-2"],
-        mergedUserGroups: [],
-        violations: [],
-      },
-      generationParamsResolution: [
-        { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
-        { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
-        { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
-      ],
-      visibility: {
-        filteredFloorNos: [1, 2],
-      },
-      structure: {
-        mode: "flattened",
-        mergeAdjacentSameRole: false,
-        assistantRewriteCount: 0,
-        tailAssistantDetected: false,
-      },
-      delivery: {
-        assistantPrefillRequested: false,
-        assistantPrefillApplied: false,
-        allowAssistantPrefill: true,
-        requireLastUser: false,
-        noAssistant: false,
-        lastMessageRole: null,
-        endsWithUser: false,
-        degraded: false,
-        degradeReasons: [],
+  it("includes toolTransport in the execution trace when present on inspection", () => {
+    const trace = buildPromptRuntimeExecutionTrace({
+      inspection: {
+        scope: {
+          sessionId: "session-1",
+          targetBranchId: "main",
+          branchExists: true,
+          sourceFloorId: null,
+          historySourceBranchId: "main",
+          historySourceMode: "existing_branch",
+        },
+        assets: {
+          preset: null,
+          characterCard: null,
+          worldbook: null,
+          regexProfile: null,
+        },
+        resolvedPolicy: {
+          structure: {
+            mode: "default",
+            mergeAdjacentSameRole: true,
+            preserveSystemMessages: true,
+          },
+          delivery: {
+            allowAssistantPrefill: true,
+            requireLastUser: false,
+            noAssistant: false,
+          },
+          debug: {
+            includePromptSnapshot: false,
+            includeRuntimeTrace: false,
+            includeWorldbookMatches: false,
+          },
+          budget: {},
+          visibility: { mode: "allow_all_except_hidden" },
+          sourceSelection: {
+            history: { mode: "full" },
+            memory: { enabled: true },
+            worldbook: { enabled: true },
+            examples: { enabled: true },
+          },
+        },
+        sourceMap: {},
+        diagnostics: [],
+        trimReasons: [],
+        excludedSources: [],
+        sectionStats: [],
+        toolTransport: {
+          selection: {
+            transport: "text_protocol",
+            reasonCode: "explicit_override",
+          },
+          toolList: {
+            injected: true,
+            contributorId: "builtin:tool_list",
+            toolCount: 2,
+          },
+        },
+        limitations: [],
       },
     });
 
-    expect(trace).toEqual({
-      macro: {
-        warnings: [],
-        usedNames: ["lastUserMessage"],
-        mutationPreview: [],
-        stagedMutations: [],
-        traces: [],
+    expect(trace?.toolTransport).toEqual({
+      selection: {
+        transport: "text_protocol",
+        reasonCode: "explicit_override",
       },
-      sourceSelection: {
-        excludedSources: [{
-          source: "history",
-          reason: "visibility_filtered",
-        }],
+      toolList: {
+        injected: true,
+        contributorId: "builtin:tool_list",
+        toolCount: 2,
       },
-      historyNormalization: {
-        rawEntryCount: 2,
-        effectiveTurnCount: 2,
-        selectedTurnCount: 2,
-        trailingUserSourceFloorIds: ["floor-2"],
-        mergedUserGroups: [],
-        violations: [],
+    });
+  });
+
+  it("projects toolTransport into preview traces", () => {
+    expect(buildPromptRuntimePreviewTrace({
+      toolTransport: {
+        selection: {
+          transport: "text_protocol",
+          reasonCode: "explicit_override",
+        },
       },
-      generationParamsResolution: [
-        { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
-        { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
-        { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
-      ],
-      visibility: {
-        filteredFloorNos: [1, 2],
+    })).toEqual({
+      toolTransport: {
+        selection: {
+          transport: "text_protocol",
+          reasonCode: "explicit_override",
+        },
       },
     });
   });

@@ -57,6 +57,7 @@ export type {
   PromptRuntimeGenerationParamOrigin,
   PromptRuntimeGenerationParamLayer,
   PromptRuntimeGenerationParamResolution,
+  PromptRuntimeToolTransportTrace,
   PromptRuntimeGovernanceRetention,
   PromptRuntimeGovernancePolicy,
   PromptRuntimeGovernanceSeedEntry,

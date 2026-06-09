@@ -408,6 +408,7 @@ export interface PromptRuntimeInspectionResult {
   sectionStats: PromptRuntimeSectionStat[];
   governance?: PromptRuntimeGovernanceView;
   memory?: PromptRuntimeTrace["memory"];
+  toolTransport?: PromptRuntimeTrace["toolTransport"];
   limitations: string[];
 }
 

@@ -1,3 +1,6 @@
+import type { ToolCallTransportKind, ToolDefinition } from "@tavern/core";
+import { TextProtocolToolListRenderer } from "@tavern/core";
+
 import type { PromptRuntimeTrace } from "../prompt-assembler.js";
 
 import type {
@@ -9,6 +12,8 @@ import {
   resolveContributorModeScope,
   type PromptRuntimeBuiltinContributorResult,
 } from "./prompt-runtime-contributors.js";
+
+const toolListRenderer = new TextProtocolToolListRenderer();
 
 export function buildMemoryProjectionContributor(args: {
   promptMode: "compat_plus" | "native";
@@ -100,4 +105,41 @@ export function buildStateProjectionContributor(args: {
   };
 
   return { kind: "state_projection", contributor };
+}
+
+export function buildToolListContributor(args: {
+  promptMode: "compat_plus" | "native";
+  transport: ToolCallTransportKind;
+  toolsForSlot: ToolDefinition[];
+}): PromptRuntimeBuiltinContributorResult {
+  if (args.transport !== "text_protocol" || args.toolsForSlot.length === 0) {
+    return { kind: "tool_list" };
+  }
+
+  const rendered = toolListRenderer.render({ tools: args.toolsForSlot });
+  if (!rendered.content) {
+    return { kind: "tool_list" };
+  }
+
+  const modeScope = resolveContributorModeScope(args.promptMode);
+  const contributor: PromptRuntimeContributorOutput = {
+    id: "builtin:tool_list",
+    kind: "tool_list",
+    sourceKind: "tool_list",
+    modeScope,
+    payload: {
+      transport: "text_protocol",
+      toolNames: rendered.renderedToolNames,
+    },
+    promptRenderable: {
+      title: "Tool list",
+      content: rendered.content,
+    },
+    trace: {
+      deterministic: true,
+      cacheScope: "floor",
+    },
+  };
+
+  return { kind: "tool_list", contributor };
 }
