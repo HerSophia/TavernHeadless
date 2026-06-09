@@ -274,6 +274,26 @@ export const liveRuntimeTraceExample = {
     degrade_reasons: ["require_last_user"],
   },
   history_normalization: historyNormalizationExample,
+  generation_params_resolution: [
+    {
+      name: "temperature",
+      final_state: "sent",
+      origin: "default",
+      value_from: "default",
+    },
+    {
+      name: "maxOutputTokens",
+      final_state: "sent",
+      origin: "request",
+      value_from: "request",
+    },
+    {
+      name: "topP",
+      final_state: "cancelled",
+      origin: "request",
+      cancelled_at: "request",
+    },
+  ],
 } as const;
 
 export const respondBodyExample = {
@@ -770,18 +790,18 @@ export const turnConfigJsonSchema = {
 export const generationParamsJsonSchema = {
   type: "object",
   properties: {
-    temperature: { type: "number", minimum: 0, maximum: 2 },
-    max_output_tokens: { type: "integer", minimum: 1 },
-    top_p: { type: "number", minimum: 0, maximum: 1 },
-    top_k: { type: "integer", minimum: 1 },
-    frequency_penalty: { type: "number" },
-    presence_penalty: { type: "number" },
+    temperature: { type: ["number", "null"], minimum: 0, maximum: 2 },
+    max_output_tokens: { type: ["integer", "null"], minimum: 1 },
+    top_p: { type: ["number", "null"], minimum: 0, maximum: 1 },
+    top_k: { type: ["integer", "null"], minimum: 1 },
+    frequency_penalty: { type: ["number", "null"] },
+    presence_penalty: { type: ["number", "null"] },
     stop_sequences: {
-      type: "array",
+      type: ["array", "null"],
       items: { type: "string" },
     },
-    stream: { type: "boolean" },
-    reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
+    stream: { type: ["boolean", "null"] },
+    reasoning_effort: { type: ["string", "null"], enum: ["low", "medium", "high", null] },
   },
   examples: [generationParamsExample],
   additionalProperties: false,
@@ -1453,6 +1473,35 @@ const runtimeTraceVisibilityJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const runtimeTraceGenerationParamResolutionJsonSchema = {
+  type: "object",
+  required: ["name", "final_state", "origin"],
+  properties: {
+    name: {
+      type: "string",
+      enum: [
+        "maxContextTokens",
+        "maxOutputTokens",
+        "temperature",
+        "topP",
+        "topK",
+        "frequencyPenalty",
+        "presencePenalty",
+        "stopSequences",
+        "stream",
+        "timeoutMs",
+        "maxRetries",
+        "reasoningEffort",
+      ],
+    },
+    final_state: { type: "string", enum: ["sent", "absent", "cancelled"] },
+    origin: { type: "string", enum: ["profile", "instance", "request", "default", "absent"] },
+    cancelled_at: { type: "string", enum: ["profile", "instance", "request"] },
+    value_from: { type: "string", enum: ["profile", "instance", "request", "default"] },
+  },
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceBaseProperties = {
   preset: runtimeTracePresetJsonSchema,
   worldbook: runtimeTraceWorldbookJsonSchema,
@@ -1464,6 +1513,10 @@ const runtimeTraceBaseProperties = {
   macro: runtimeTraceMacroJsonSchema,
   delivery: runtimeTraceDeliveryJsonSchema,
   history_normalization: runtimeTraceHistoryNormalizationJsonSchema,
+  generation_params_resolution: {
+    type: "array",
+    items: runtimeTraceGenerationParamResolutionJsonSchema,
+  },
 } as const;
 
 const dryRunRuntimeTraceProperties = {

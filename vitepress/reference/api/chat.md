@@ -751,12 +751,12 @@ POST /messages/:id/edit-and-regenerate
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `temperature` | number | 温度，0-2 |
-| `max_output_tokens` | integer | 最大输出 token 数 |
-| `top_p` | number | Top-P，0-1 |
-| `top_k` | integer | Top-K，>=1 |
-| `frequency_penalty` | number | 频率惩罚 |
-| `presence_penalty` | number | 存在惩罚 |
-| `stop_sequences` | string[] | 停止序列 |
-| `stream` | boolean | 是否流式 |
-| `reasoning_effort` | string | 推理力度：`low` / `medium` / `high` |
+| `temperature` | number \| null | 温度，0-2。传 `null` 表示显式取消该参数 |
+| `max_output_tokens` | integer \| null | 最大输出 token 数。传 `null` 表示显式取消该参数 |
+| `top_p` | number \| null | Top-P，0-1。传 `null` 表示显式取消该参数 |
+| `top_k` | integer \| null | Top-K，>=1。传 `null` 表示显式取消该参数 |
+| `frequency_penalty` | number \| null | 频率惩罚。传 `null` 表示显式取消该参数 |
+| `presence_penalty` | number \| null | 存在惩罚。传 `null` 表示显式取消该参数 |
+| `stop_sequences` | string[] \| null | 停止序列。传 `null` 表示显式取消该参数 |
+| `stream` | boolean \| null | 是否流式。传 `null` 表示显式取消该参数 |
+| `reasoning_effort` | string \| null | 推理力度：`low` / `medium` / `high`。传 `null` 表示显式取消该参数 |

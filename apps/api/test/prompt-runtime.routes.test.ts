@@ -762,6 +762,11 @@ describe("prompt runtime routes", () => {
               { macroName: "getvar", rawText: "{{getvar::资产.金币}}", resolvedText: "3", phase: "preview", sourceKind: "macro" },
             ],
           },
+          generationParamsResolution: [
+            { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
+            { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
+            { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+          ],
           visibility: {
             hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
             filteredFloorNos: [1, 2],
@@ -842,6 +847,11 @@ describe("prompt runtime routes", () => {
               { macro_name: "getvar", raw_text: "{{getvar::资产.金币}}", resolved_text: "3", phase: "preview", source_kind: "macro" },
             ],
           },
+          generation_params_resolution: [
+            { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
+            { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
+            { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+          ],
           visibility: {
             hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
             filtered_floor_nos: [1, 2],
@@ -1123,6 +1133,11 @@ describe("prompt runtime routes", () => {
             budgets: {
               byGroup: [{ group: "history", tokenCount: 256 }],
             },
+            generationParamsResolution: [
+              { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
+              { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
+              { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+            ],
           },
           memorySummary: "Remember the promise.",
           generationParams: { maxOutputTokens: 256, temperature: 0.7 },
@@ -1201,6 +1216,16 @@ describe("prompt runtime routes", () => {
       violations: [],
     });
     expect(body.data.prepared_turn.messages).toEqual([{ role: "system", content: "System prompt" }, { role: "user", content: "Hello there" }]);
+    expect(body.data.prepared_turn.runtime_trace).toEqual({
+      budgets: {
+        by_group: [{ group: "history", token_count: 256 }],
+      },
+      generation_params_resolution: [
+        { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
+        { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
+        { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+      ],
+    });
     expect(body.data.prepared_turn.session_state_writes).toEqual({ total: 1, writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }] });
     expect(body.data.prepared_turn.contributors).toEqual([
       {

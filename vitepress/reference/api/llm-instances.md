@@ -173,23 +173,24 @@ PUT /llm-instances/:slot
 - `enabled=false` 且 `slot=director` / `verifier` / `memory` 时，对应子流程会在本轮 turn 中被强制跳过。
 - `preset_id` 在当前实现中作为 narrator Prompt 组装阶段的显式覆盖值；当它为非空字符串时，优先于 `session.presetId`。
 - `params` 采用浅层 merge，同名键覆盖。当前槽位原有参数（包括 Profile 绑定参数和默认运行参数）先建立基线，再由 `llm_instance_config.params` 覆盖同名字段。
+- `params` 内部某个字段传 `null` 时，表示显式取消该字段，不再沿用上游同名参数，也不会再套用该字段的默认填充值。
 - 如果你需要查看“Profile 解析结果”，使用 `/llm-profiles/runtime`；如果你需要查看“实例侧 enabled / preset_id / params 的最终解析结果”，应使用 `/llm-instances/resolved`。
 
 `params` 可覆盖的字段：
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `max_context_tokens` | integer | 最大上下文 token |
-| `max_output_tokens` | integer | 最大输出 token |
-| `temperature` | number | 温度 0-2 |
-| `top_p` | number | 0-1 |
-| `top_k` | integer | >=0 |
-| `frequency_penalty` | number | -2 到 2 |
-| `presence_penalty` | number | -2 到 2 |
-| `stream` | boolean | 是否流式 |
-| `timeout_ms` | integer | 超时毫秒 |
-| `max_retries` | integer | 最大重试 0-10 |
-| `reasoning_effort` | string | `low` / `medium` / `high` |
+| `max_context_tokens` | integer \| null | 最大上下文 token。传 `null` 表示显式取消 |
+| `max_output_tokens` | integer \| null | 最大输出 token。传 `null` 表示显式取消 |
+| `temperature` | number \| null | 温度 0-2。传 `null` 表示显式取消 |
+| `top_p` | number \| null | 0-1。传 `null` 表示显式取消 |
+| `top_k` | integer \| null | >=0。传 `null` 表示显式取消 |
+| `frequency_penalty` | number \| null | -2 到 2。传 `null` 表示显式取消 |
+| `presence_penalty` | number \| null | -2 到 2。传 `null` 表示显式取消 |
+| `stream` | boolean \| null | 是否流式。传 `null` 表示显式取消 |
+| `timeout_ms` | integer \| null | 超时毫秒。传 `null` 表示显式取消 |
+| `max_retries` | integer \| null | 最大重试 0-10。传 `null` 表示显式取消 |
+| `reasoning_effort` | string \| null | `low` / `medium` / `high`。传 `null` 表示显式取消 |
 
 ### 请求示例
 

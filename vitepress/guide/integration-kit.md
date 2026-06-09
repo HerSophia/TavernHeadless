@@ -49,6 +49,19 @@ TavernHeadless 提供了一套官方维护的第一方接入层，用来统一�
 | Project Event、Derived Output、Inbox、Agent Type、Agent Binding、Project Settings 和 effective-config 资源包装 | Project CRUD 管理界面 |
 | 保留底层请求能力 | |
 
+另外，`@tavern/sdk` 现在会把 Prompt Runtime trace 里的
+`generationParamsResolution` 作为稳定字段暴露出来。
+如果你需要直接消费这组字段，根导出也提供：
+
+- `PromptRuntimeGenerationParamName`
+- `PromptRuntimeGenerationParamFinalState`
+- `PromptRuntimeGenerationParamOrigin`
+- `PromptRuntimeGenerationParamLayer`
+- `PromptRuntimeGenerationParamResolution`
+
+这些类型用于表达每个生成参数最终是被发送、缺省，还是被显式取消，
+以及这个结果来自哪一层。
+
 ### `@tavern/client-helpers`
 
 语义层。

@@ -7,11 +7,15 @@ import { z } from "zod";
  * 不追求完整实现所有 JSON Schema 语义。
  */
 export type SupportedJsonSchema =
-  | { type: "boolean" }
-  | { type: "number"; minimum?: number; maximum?: number }
-  | { type: "integer"; minimum?: number; maximum?: number }
-  | { type: "string"; minLength?: number; maxLength?: number; enum?: readonly string[] }
-  | { type: "array"; items: SupportedJsonSchema }
+  | { type: "null" }
+  | { type: "boolean" | readonly ["boolean", "null"] | readonly ["null", "boolean"] }
+  | { type: "number" | readonly ["number", "null"] | readonly ["null", "number"]; minimum?: number; maximum?: number }
+  | { type: "integer" | readonly ["integer", "null"] | readonly ["null", "integer"]; minimum?: number; maximum?: number }
+  | { type: "string" | readonly ["string", "null"] | readonly ["null", "string"]; minLength?: number; maxLength?: number;enum?: readonly (string | null)[] }
+  | { type: "array" | readonly ["array", "null"] | readonly ["null", "array"]; items: SupportedJsonSchema }
+  | {
+    anyOf: readonly [SupportedJsonSchema, SupportedJsonSchema, ...SupportedJsonSchema[]];
+  }
   | {
     type: "object";
     properties: Record<string, SupportedJsonSchema>;
@@ -31,7 +35,35 @@ export interface BuildZodObjectSchemaOptions {
  * 根据受支持的 JSON Schema 子集构造对应的 Zod Schema。
  */
 export function buildZodSchemaFromJsonSchema(schema: SupportedJsonSchema): z.ZodTypeAny {
+  if ("anyOf" in schema) {
+    const includesNull = schema.anyOf.some((item) => "type" in item && item.type === "null");
+    const primarySchema = schema.anyOf.find((item) => !("type" in item && item.type === "null"));
+
+    if (!primarySchema) {
+      return z.null();
+    }
+
+    const built = buildZodSchemaFromJsonSchema(primarySchema);
+    return includesNull ? built.nullable() : built;
+  }
+
+  if (Array.isArray(schema.type)) {
+    const includesNull = schema.type.includes("null");
+    const primaryType = schema.type.find((item) => item !== "null");
+    if (!primaryType) {
+      return z.null();
+    }
+
+    const built = buildZodSchemaFromJsonSchema({
+      ...(schema as Record<string, unknown>),
+      type: primaryType,
+    } as SupportedJsonSchema);
+    return includesNull ? built.nullable() : built;
+  }
+
   switch (schema.type) {
+    case "null":
+      return z.null();
     case "boolean":
       return z.boolean();
     case "number": {
@@ -48,7 +80,12 @@ export function buildZodSchemaFromJsonSchema(schema: SupportedJsonSchema): z.Zod
     }
     case "string": {
       if (schema.enum && schema.enum.length > 0) {
-        return z.enum([...schema.enum] as [string, ...string[]]);
+        const stringValues = schema.enum.filter((item): item is string => typeof item === "string");
+        if (stringValues.length === 0) {
+          return z.null();
+        }
+        const stringSchema = z.enum([...stringValues] as [string, ...string[]]);
+        return schema.enum.includes(null) ? stringSchema.or(z.null()) : stringSchema;
       }
       let stringSchema = z.string();
       if (schema.minLength !== undefined) stringSchema = stringSchema.min(schema.minLength);
@@ -59,6 +96,8 @@ export function buildZodSchemaFromJsonSchema(schema: SupportedJsonSchema): z.Zod
       return z.array(buildZodSchemaFromJsonSchema(schema.items));
     case "object":
       return buildZodObjectSchema<Record<string, unknown>>(schema);
+    default:
+      return z.never();
   }
 }
 
@@ -78,12 +117,17 @@ export function buildZodObjectSchema<T>(
   for (const [key, propertySchema] of Object.entries(schema.properties)) {
     let fieldSchema: z.ZodTypeAny;
 
-    if (propertySchema.type === "string" && trimStringFields.has(key) && !propertySchema.enum) {
+    if (
+      "type" in propertySchema
+      && propertySchema.type === "string"
+      && trimStringFields.has(key)
+      && !propertySchema.enum
+    ) {
       let stringSchema = z.string().trim();
       if (propertySchema.minLength !== undefined) stringSchema = stringSchema.min(propertySchema.minLength);
       if (propertySchema.maxLength !== undefined) stringSchema = stringSchema.max(propertySchema.maxLength);
       fieldSchema = stringSchema;
-    } else if (propertySchema.type === "boolean" && coerceBooleanFields.has(key)) {
+    } else if ("type" in propertySchema && propertySchema.type === "boolean" && coerceBooleanFields.has(key)) {
       fieldSchema = z.coerce.boolean();
     } else {
       fieldSchema = buildZodSchemaFromJsonSchema(propertySchema);

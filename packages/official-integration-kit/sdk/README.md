@@ -117,6 +117,26 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 
 - `memoryInjection`
 - `memory`
+- `runtimeTrace.generationParamsResolution`
+
+`client.promptRuntime.inspect(...)` 与 `preparedTurn.runtimeTrace` 现在也会把
+`generationParamsResolution` 暴露为稳定字段。
+
+每个 resolution 项会说明：
+
+- 参数名 `name`
+- 最终状态 `finalState`
+- 最终来源 `origin`
+- 如果是显式取消，还会给出 `cancelledAt`
+- 如果最终有值，还会给出 `valueFrom`
+
+如需直接写类型，SDK 根导出现在也提供：
+
+- `PromptRuntimeGenerationParamName`
+- `PromptRuntimeGenerationParamFinalState`
+- `PromptRuntimeGenerationParamOrigin`
+- `PromptRuntimeGenerationParamLayer`
+- `PromptRuntimeGenerationParamResolution`
 
 `client.sessions.respondDryRun(...)` 现在会返回：
 

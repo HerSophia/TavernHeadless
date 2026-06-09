@@ -6,6 +6,7 @@ import type {
 } from "@tavern/core";
 
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
+import type { GenerationParamsInput } from "../../lib/llm-params.js";
 import type {
   PromptBudgetPolicy,
   PromptDeliveryPolicy,
@@ -60,15 +61,15 @@ export interface PromptRuntimeInspectionPreparedTurn {
   messages: ChatMessage[];
   tokenEstimate: number;
   availableForReply: number;
-  preprocessedUserMessage?: string;
-  promptSnapshot?: PromptSnapshotPreview;
-  runtimeTrace?: PromptRuntimeTrace;
+  preprocessedUserMessage?: string | null;
+  promptSnapshot?: PromptSnapshotPreview | null;
+  runtimeTrace?: PromptRuntimeTrace | null;
   memoryInjection?: import("@tavern/core").MemoryInjectionResult;
   memory?: PromptRuntimeTrace["memory"];
-  memorySummary?: string;
+  memorySummary?: string | null;
   generationParams: GenerationParams;
-  requestedTurnConfig?: TurnConfig;
-  turnConfig?: TurnConfig;
+  requestedTurnConfig?: TurnConfig | null;
+  turnConfig?: TurnConfig | null;
   sessionStateWrites: PromptRuntimeSessionStateWritesSummary;
   contributors: PromptRuntimeContributorView[];
   preparePhaseTrace: PromptRuntimeInspectionPreparePhaseTraceEntry[];
@@ -76,7 +77,7 @@ export interface PromptRuntimeInspectionPreparedTurn {
 
 export interface PromptRuntimeInspectionPreparePhaseTraceEntry {
   phase: PreparedPromptArtifactsPhaseTraceEntry["phase"];
-  detail?: Record<string, unknown>;
+  detail?: Record<string, unknown> | null;
 }
 
 export interface PromptRuntimeInspectRequest {
@@ -85,7 +86,7 @@ export interface PromptRuntimeInspectRequest {
   sourceFloorId?: string;
   promptIntent?: PromptRunIntent;
   config?: TurnConfig;
-  generationParams?: Partial<GenerationParams>;
+  generationParams?: GenerationParamsInput;
   sessionStateWrites?: TurnSessionStateWriteRequest[];
   debugOptions?: PromptLiveDebugOptions;
   visibility?: PromptVisibilityPolicy;
