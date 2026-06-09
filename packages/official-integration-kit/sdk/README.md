@@ -119,8 +119,18 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 - `memory`
 - `runtimeTrace.generationParamsResolution`
 
-`client.promptRuntime.inspect(...)` 与 `preparedTurn.runtimeTrace` 现在也会把
-`generationParamsResolution` 暴露为稳定字段。
+`client.promptRuntime.previewText(...)` 与 `inspect(...)` 的 runtime trace
+现在也可能返回 `toolTransport`。
+
+这组字段用于表达：
+
+- 当前请求选择了哪种工具调用 transport
+- 为什么会选中这条 transport 路径
+- text protocol 路径下是否注入了 `toolList`
+- text protocol 解析时的 block 统计和拒绝诊断
+
+`client.promptRuntime.inspect(...)` 的 `preparedTurn.runtimeTrace` 现在也会把
+`generationParamsResolution` 与 `toolTransport` 暴露为稳定字段。
 
 每个 resolution 项会说明：
 
@@ -137,6 +147,12 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 - `PromptRuntimeGenerationParamOrigin`
 - `PromptRuntimeGenerationParamLayer`
 - `PromptRuntimeGenerationParamResolution`
+- `PromptRuntimeToolTransportKind`
+- `PromptRuntimeToolTransportReasonCode`
+- `PromptRuntimeToolTransportSelection`
+- `PromptRuntimeToolTransportDiagnosticReason`
+- `PromptRuntimeToolTransportDiagnostic`
+- `PromptRuntimeToolTransportTrace`
 
 `client.sessions.respondDryRun(...)` 现在会返回：
 

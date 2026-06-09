@@ -10,6 +10,7 @@ import type { ConsolidationResult } from '../memory/memory-consolidator.js';
 import type { MemoryInjectionResult } from '../memory/types.js';
 import type {
   ExecutedToolCallRecord,
+  ToolDefinition,
   ToolExecutionContext,
   ToolExecutionLifecycleState,
   ToolExecutionProviderType,
@@ -24,6 +25,10 @@ import {
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { LLMToolEntry } from '../tools/tool-executor.js';
 import { ToolExecutor } from '../tools/tool-executor.js';
+import {
+  TextProtocolToolCallParser,
+  TextProtocolToolResultFormatter,
+} from '../tools/transport/index.js';
 import type { Director } from './director.js';
 import type { DirectorResult } from './director.js';
 import type { Verifier } from './verifier.js';
@@ -198,6 +203,12 @@ function resolveSlotGenerationParams(
   return fromOverrides;
 }
 
+interface ToolTransportGenerationResult {
+  generation: GenerationOutput;
+  toolResultWritebackText?: TurnExecutionResult['toolResultWritebackText'];
+  toolTransport?: TurnExecutionResult['toolTransport'];
+}
+
 // ── TurnOrchestrator ──────────────────────────────────
 
 /**
@@ -235,11 +246,15 @@ export class TurnOrchestrator {
     let totalUsage = zeroUsage();
     let toolExecutor: ToolExecutor | undefined;
     let narratorLLMTools: Record<string, LLMToolEntry> | undefined;
+    let narratorTools: ToolDefinition[] | undefined;
+    let narratorToolContext: ToolExecutionContext | undefined;
     let directorResult: DirectorResult | undefined;
     let verifierResult: VerifierResult | undefined;
     let memoryInjection: MemoryInjectionResult | undefined;
     let consolidationResult: ConsolidationResult | undefined;
     let generation: GenerationOutput | undefined;
+    let toolResultWritebackText: TurnExecutionResult['toolResultWritebackText'];
+    let toolTransport: TurnExecutionResult['toolTransport'] = input.toolTransport;
 
     try {
       // ── 1. draft → generating ──
@@ -262,15 +277,19 @@ export class TurnOrchestrator {
           );
           toolExecutor.resetTurnCounter(input.toolExecutionRunId);
 
-          const narratorTools = await input.toolRegistry.listForSlot(
+          narratorTools = await input.toolRegistry.listForSlot(
             'narrator',
             input.toolPermissions,
           );
-          if (narratorTools.length > 0) {
-            const toolContext = this.buildToolContext(input, 'narrator');
+          narratorToolContext = this.buildToolContext(input, 'narrator');
+          if (
+            narratorTools.length > 0
+            && input.toolTransport?.selection.transport !== 'text_protocol'
+            && input.toolTransport?.selection.transport !== 'none'
+          ) {
             narratorLLMTools = toolExecutor.buildLLMTools(
               narratorTools,
-              toolContext,
+              narratorToolContext,
               input.toolPermissions,
             );
           }
@@ -289,9 +308,18 @@ export class TurnOrchestrator {
       }
 
       // ── 4 & 5. 生成 + Verifier（含重试逻辑 + 工具注入） ──
-      const genResult = await this.runGenerationWithVerifier(input, cfg, narratorLLMTools, toolExecutor);
+      const genResult = await this.runGenerationWithVerifier(
+        input,
+        cfg,
+        narratorLLMTools,
+        toolExecutor,
+        narratorTools,
+        narratorToolContext,
+      );
       generation = genResult.generation;
       verifierResult = genResult.verifierResult;
+      toolResultWritebackText = genResult.toolResultWritebackText;
+      toolTransport = genResult.toolTransport ?? toolTransport;
       totalUsage = addUsage(totalUsage, generation.usage);
       if (verifierResult) {
         totalUsage = addUsage(totalUsage, verifierResult.usage);
@@ -320,6 +348,8 @@ export class TurnOrchestrator {
         memoryInjection,
         consolidationResult,
         totalUsage,
+        ...(toolResultWritebackText ? { toolResultWritebackText } : {}),
+        ...(toolTransport ? { toolTransport } : {}),
         ...(toolExecutionRecords && toolExecutionRecords.length > 0
           ? { toolExecutionRecords }
           : {}),
@@ -458,7 +488,10 @@ export class TurnOrchestrator {
     input: TurnInput,
     attemptNo = 1,
     narratorLLMTools?: Record<string, LLMToolEntry>,
-  ): Promise<GenerationOutput> {
+    toolExecutor?: ToolExecutor,
+    narratorTools?: ToolDefinition[],
+    narratorToolContext?: ToolExecutionContext,
+  ): Promise<ToolTransportGenerationResult> {
     try {
       await this.notifyRunPhaseChange(input, 'page_generating', attemptNo);
       await this.notifyPendingOutputUpdate(input, { text: '', state: 'draft', attemptNo, force: true });
@@ -499,23 +532,31 @@ export class TurnOrchestrator {
         },
       );
 
+      const finalResult = await this.applyToolTransportToGeneration({
+        input,
+        generation: result,
+        toolExecutor,
+        narratorTools,
+        narratorToolContext,
+      });
+
       // 发出 generation.completed 事件
       await this.deps.eventBus.emit('generation.completed', {
         floorId: input.floorId,
-        text: result.text,
-        usage: result.usage,
-        finishReason: result.finishReason,
-        summaries: result.summaries,
+        text: finalResult.generation.text,
+        usage: finalResult.generation.usage,
+        finishReason: finalResult.generation.finishReason,
+        summaries: finalResult.generation.summaries,
       });
 
       await this.notifyPendingOutputUpdate(input, {
-        text: result.text,
+        text: finalResult.generation.text,
         state: 'generated',
         attemptNo,
         force: true,
       });
 
-      return result;
+      return finalResult;
     } catch (error) {
       const normalizedError = error instanceof Error ? error : new Error(String(error));
 
@@ -568,7 +609,14 @@ export class TurnOrchestrator {
     cfg: Required<TurnConfig>,
     narratorLLMTools?: Record<string, LLMToolEntry>,
     toolExecutor?: ToolExecutor,
-  ): Promise<{ generation: GenerationOutput; verifierResult?: VerifierResult }> {
+    narratorTools?: ToolDefinition[],
+    narratorToolContext?: ToolExecutionContext,
+  ): Promise<{
+    generation: GenerationOutput;
+    verifierResult?: VerifierResult;
+    toolResultWritebackText?: TurnExecutionResult['toolResultWritebackText'];
+    toolTransport?: TurnExecutionResult['toolTransport'];
+  }> {
     const maxAttempts = cfg.enableVerifier && cfg.verifierFailStrategy === 'retry'
       ? 1 + cfg.maxRetries
       : 1;
@@ -576,18 +624,34 @@ export class TurnOrchestrator {
     let lastGeneration: GenerationOutput | undefined;
     let lastVerifierResult: VerifierResult | undefined;
     let lastGenerationAttemptNo: number | undefined;
+    let lastToolResultWritebackText: TurnExecutionResult['toolResultWritebackText'];
+    let lastToolTransport: TurnExecutionResult['toolTransport'] = input.toolTransport;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       lastGenerationAttemptNo = toolExecutor?.beginGenerationAttempt();
       const runAttemptNo = attempt + 1;
       const attemptExecutionStart = toolExecutor?.getExecutionRecordCount() ?? 0;
-      lastGeneration = await this.runGeneration(input, runAttemptNo, narratorLLMTools);
+      const generationResult = await this.runGeneration(
+        input,
+        runAttemptNo,
+        narratorLLMTools,
+        toolExecutor,
+        narratorTools,
+        narratorToolContext,
+      );
+      lastGeneration = generationResult.generation;
+      lastToolResultWritebackText = generationResult.toolResultWritebackText;
+      lastToolTransport = generationResult.toolTransport ?? lastToolTransport;
       await this.notifyRunPhaseChange(input, 'candidate_generated', runAttemptNo);
 
       if (!cfg.enableVerifier || !input.verifierInput) {
         await this.notifyVerifierResult(input, { status: 'skipped' });
         await this.notifyRunPhaseChange(input, 'verifier_checked', runAttemptNo);
-        return { generation: lastGeneration };
+        return {
+          generation: lastGeneration,
+          ...(lastToolResultWritebackText ? { toolResultWritebackText: lastToolResultWritebackText } : {}),
+          ...(lastToolTransport ? { toolTransport: lastToolTransport } : {}),
+        };
       }
 
       lastVerifierResult = await this.runVerifier(input, lastGeneration.text);
@@ -603,13 +667,23 @@ export class TurnOrchestrator {
       await this.notifyRunPhaseChange(input, 'verifier_checked', runAttemptNo);
 
       if (lastVerifierResult.output.passed) {
-        return { generation: lastGeneration, verifierResult: lastVerifierResult };
+        return {
+          generation: lastGeneration,
+          verifierResult: lastVerifierResult,
+          ...(lastToolResultWritebackText ? { toolResultWritebackText: lastToolResultWritebackText } : {}),
+          ...(lastToolTransport ? { toolTransport: lastToolTransport } : {}),
+        };
       }
 
       // Verifier 不通过
       if (cfg.verifierFailStrategy === 'warn') {
         // warn: 继续，不阻断
-        return { generation: lastGeneration, verifierResult: lastVerifierResult };
+        return {
+          generation: lastGeneration,
+          verifierResult: lastVerifierResult,
+          ...(lastToolResultWritebackText ? { toolResultWritebackText: lastToolResultWritebackText } : {}),
+          ...(lastToolTransport ? { toolTransport: lastToolTransport } : {}),
+        };
       }
 
       if (cfg.verifierFailStrategy === 'block') {
@@ -666,7 +740,73 @@ export class TurnOrchestrator {
       );
     }
 
-    return { generation: lastGeneration!, verifierResult: lastVerifierResult };
+    return {
+      generation: lastGeneration!,
+      verifierResult: lastVerifierResult,
+      ...(lastToolResultWritebackText ? { toolResultWritebackText: lastToolResultWritebackText } : {}),
+      ...(lastToolTransport ? { toolTransport: lastToolTransport } : {}),
+    };
+  }
+
+  private async applyToolTransportToGeneration(args: {
+    input: TurnInput;
+    generation: GenerationOutput;
+    toolExecutor?: ToolExecutor;
+    narratorTools?: ToolDefinition[];
+    narratorToolContext?: ToolExecutionContext;
+  }): Promise<ToolTransportGenerationResult> {
+    const baseTransport = args.input.toolTransport;
+    if (!baseTransport || baseTransport.selection.transport !== 'text_protocol') {
+      return {
+        generation: args.generation,
+        ...(baseTransport ? { toolTransport: baseTransport } : {}),
+      };
+    }
+
+    const parser = new TextProtocolToolCallParser();
+    const parseOutput = parser.parse({
+      modelOutputText: args.generation.rawText,
+      allowedToolNames: new Set((args.narratorTools ?? []).map((tool) => tool.name)),
+    });
+
+    const strippedText = parser.stripToolCallBlocks(args.generation.text);
+    const formatter = new TextProtocolToolResultFormatter();
+    const writebackBlocks: string[] = [];
+
+    if (args.toolExecutor && args.narratorToolContext && args.input.toolPermissions) {
+      for (const call of parseOutput.calls) {
+        const result = await args.toolExecutor.execute(
+          call.toolName,
+          call.args,
+          args.narratorToolContext,
+          args.input.toolPermissions,
+        );
+        writebackBlocks.push(
+          formatter.format({
+            callId: call.callId,
+            toolName: call.toolName,
+            result,
+          }).content,
+        );
+      }
+    }
+
+    return {
+      generation: {
+        ...args.generation,
+        text: strippedText,
+      },
+      ...(writebackBlocks.length > 0
+        ? { toolResultWritebackText: writebackBlocks.join('\n\n') }
+        : {}),
+      toolTransport: {
+        ...baseTransport,
+        parsing: {
+          ...parseOutput.stats,
+          diagnostics: parseOutput.diagnostics,
+        },
+      },
+    };
   }
 
   private async runConsolidation(

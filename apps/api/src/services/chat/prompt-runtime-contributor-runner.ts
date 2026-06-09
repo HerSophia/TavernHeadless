@@ -1,3 +1,5 @@
+import type { ToolCallTransportKind, ToolDefinition } from "@tavern/core";
+
 import type { PromptRuntimeTrace } from "../prompt-assembler.js";
 
 import type {
@@ -8,6 +10,7 @@ import { isContributorModeEnabled } from "./prompt-runtime-contributors.js";
 import {
   buildMemoryProjectionContributor,
   buildStateProjectionContributor,
+  buildToolListContributor,
 } from "./prompt-runtime-builtin-contributors.js";
 
 export interface PromptRuntimeContributorResolveArgs {
@@ -15,6 +18,8 @@ export interface PromptRuntimeContributorResolveArgs {
   memorySummary?: string;
   memoryTrace?: PromptRuntimeTrace["memory"];
   firstPartyStateContext?: FirstPartyStateContext;
+  transport?: ToolCallTransportKind;
+  toolsForSlot?: ToolDefinition[];
 }
 
 export interface PromptRuntimeContributorResolveResult {
@@ -44,6 +49,15 @@ export class PromptRuntimeContributorRunner {
     });
     if (state.contributor) {
       contributors.push(state.contributor);
+    }
+
+    const toolList = buildToolListContributor({
+      promptMode,
+      transport: args.transport ?? "none",
+      toolsForSlot: args.toolsForSlot ?? [],
+    });
+    if (toolList.contributor) {
+      contributors.push(toolList.contributor);
     }
 
     return { contributors };

@@ -147,6 +147,7 @@ export type {
   PromptRuntimeGenerationParamOrigin,
   PromptRuntimeGenerationParamLayer,
   PromptRuntimeGenerationParamResolution,
+  PromptRuntimeToolTransportTrace,
   PromptRuntimeGovernanceRetention,
   PromptRuntimeGovernancePolicy,
   PromptRuntimeGovernanceSeedEntry,
@@ -359,6 +360,11 @@ export { ToolExecutor } from './tools/tool-executor.js';
 export { BuiltinToolProvider } from './tools/builtin-provider.js';
 export { PresetToolProvider } from './tools/preset-provider.js';
 export { ToolMutationBuffer } from './tools/tool-mutation-buffer.js';
+export {
+  TextProtocolToolCallParser,
+  TextProtocolToolListRenderer,
+  TextProtocolToolResultFormatter,
+} from './tools/transport/index.js';
 export type {
   ToolDefinition,
   ToolSideEffectLevel,
@@ -392,7 +398,21 @@ export type {
   ToolReplaySafetyEvaluation,
   ToolExecutionProviderType,
   McpToolProviderConfig,
-} from './tools/types.js';
+  ParsedToolCall,
+  ToolCallParseDiagnostic,
+  ToolCallParseDiagnosticReason,
+  ToolCallParseInput,
+  ToolCallParseOutput,
+  ToolCallParseStats,
+  ToolCallTransport,
+  ToolCallTransportKind,
+  ToolCallTransportReasonCode,
+  ToolCallTransportSelection,
+  ToolListRenderInput,
+  ToolListRenderOutput,
+  ToolResultFormatInput,
+  ToolResultFormatOutput,
+} from './tools/index.js';
 export type { PresetToolInput } from './tools/preset-provider.js';
 export {
   evaluateToolReplaySafety,

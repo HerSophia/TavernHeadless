@@ -139,6 +139,24 @@ describe("prompt-runtime preview and inspect routes", () => {
             { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
             { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
           ],
+          tool_transport: {
+            selection: {
+              transport: "text_protocol",
+              reason_code: "explicit_override",
+              reason_detail: "Tool transport was explicitly overridden to 'text_protocol'.",
+            },
+            tool_list: {
+              injected: true,
+              contributor_id: "builtin:tool_list",
+              tool_count: 2,
+            },
+            parsing: {
+              block_count: 1,
+              accepted_count: 1,
+              rejected_count: 0,
+              diagnostics: [],
+            },
+          },
         },
       },
     });
@@ -211,6 +229,24 @@ describe("prompt-runtime preview and inspect routes", () => {
               { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
               { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
             ],
+            tool_transport: {
+              selection: {
+                transport: "text_protocol",
+                reason_code: "explicit_override",
+                reason_detail: "Tool transport was explicitly overridden to 'text_protocol'.",
+              },
+              tool_list: {
+                injected: true,
+                contributor_id: "builtin:tool_list",
+                tool_count: 2,
+              },
+              parsing: {
+                block_count: 1,
+                accepted_count: 1,
+                rejected_count: 0,
+                diagnostics: [],
+              },
+            },
           },
           memory_injection: {
             items: [
@@ -500,6 +536,27 @@ function createMemoryTrace() {
   };
 }
 
+function createToolTransportTrace() {
+  return {
+    selection: {
+      transport: "text_protocol" as const,
+      reasonCode: "explicit_override" as const,
+      reasonDetail: "Tool transport was explicitly overridden to 'text_protocol'.",
+    },
+    toolList: {
+      injected: true,
+      contributorId: "builtin:tool_list",
+      toolCount: 2,
+    },
+    parsing: {
+      blockCount: 1,
+      acceptedCount: 1,
+      rejectedCount: 0,
+      diagnostics: [],
+    },
+  };
+}
+
 function createPreviewResult(): PromptRuntimePreviewResult {
   return {
     scope: createScope(),
@@ -540,6 +597,7 @@ function createPreviewResult(): PromptRuntimePreviewResult {
         { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
         { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
       ],
+      toolTransport: createToolTransportTrace(),
       visibility: {
         hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
         filteredFloorNos: [2],
@@ -617,6 +675,7 @@ function createInspectResult(): PromptRuntimeInspectResult {
           { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
           { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
         ],
+        toolTransport: createToolTransportTrace(),
       },
       memoryInjection: createMemoryInjection(),
       memory: createMemoryTrace(),

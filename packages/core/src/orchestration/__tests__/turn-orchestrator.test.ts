@@ -795,46 +795,103 @@ describe('TurnOrchestrator — Tool Integration', () => {
     expect(deps.floorStateMachine.transition).not.toHaveBeenCalled();
   });
 
-  it('collects real toolExecutionRecords from ToolExecutor', async () => {
+  it('uses text_protocol transport without passing native tools and writes back tool results', async () => {
+    const provider = makeTestToolProvider();
     deps = makeDeps({
       generationPipeline: {
         run: vi.fn(async (runInput) => {
-          await runInput.tools?.roll_dice?.execute({ sides: 20 });
-          await runInput.tools?.get_variable?.execute({ key: 'hp' });
-          return makeGenOutput();
+          expect(runInput.tools).toBeUndefined();
+          expect(runInput.maxSteps).toBeUndefined();
+          return makeGenOutput({
+            text: [
+              'Narration before call.',
+              '<tool_call id="call-1" name="roll_dice">',
+              '{"args":{"sides":20}}',
+              '</tool_call>',
+              'Narration after call.',
+            ].join('\n'),
+            rawText: [
+              'Narration before call.',
+              '<tool_call id="call-1" name="roll_dice">',
+              '{"args":{"sides":20}}',
+              '</tool_call>',
+              'Narration after call.',
+            ].join('\n'),
+          });
         }),
       } as any,
     });
     orchestrator = new TurnOrchestrator(deps);
 
     const registry = new ToolRegistry();
-    registry.register(makeTestToolProvider());
+    registry.register(provider);
 
-    const input = makeInput({
+    const result = await orchestrator.executeTurn(makeInput({
+      pageId: 'input-page-1',
       config: { enableTools: true, toolMode: 'inline' },
       toolRegistry: registry,
       toolPermissions: makeToolPermissions(),
-      pageId: 'input-page-1',
-    });
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+        toolList: {
+          injected: true,
+          contributorId: 'builtin:tool_list',
+          toolCount: 2,
+        },
+      },
+    }));
 
-    const result = await orchestrator.executeTurn(input);
+    expect(result.generatedText).toBe('Narration before call.\n\nNarration after call.');
+    expect(result.toolResultWritebackText).toContain('<tool_result id="call-1" name="roll_dice" status="success">');
+    expect(result.toolTransport?.parsing).toEqual({
+      blockCount: 1,
+      acceptedCount: 1,
+      rejectedCount: 0,
+      diagnostics: [],
+    });
+    expect(result.toolExecutionRecords).toHaveLength(1);
+    expect((provider.executeTool as any).mock.calls[0][0]).toBe('roll_dice');
+  });
 
-    expect(result.toolExecutionRecords).toBeDefined();
-    expect(result.toolExecutionRecords).toHaveLength(2);
-    expect(result.toolExecutionRecords![0]).toMatchObject({
-      floorId: 'floor-1',
-      pageId: 'input-page-1',
-      callerSlot: 'narrator',
-      providerId: 'test-builtin',
-      toolName: 'roll_dice',
-      status: 'success',
+  it('captures parser diagnostics for invalid text_protocol calls without executing tools', async () => {
+    const provider = makeTestToolProvider();
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async () => makeGenOutput({
+          text: '<tool_call id="bad" name="missing">{"args":{}}</tool_call>',
+          rawText: '<tool_call id="bad" name="missing">{"args":{}}</tool_call>',
+        })),
+      } as any,
     });
-    expect(result.toolExecutionRecords![1]).toMatchObject({
-      toolName: 'get_variable',
-      status: 'success',
-    });
-    expect(JSON.parse(result.toolExecutionRecords![0]!.argsJson)).toEqual({ sides: 20 });
-    expect(JSON.parse(result.toolExecutionRecords![0]!.resultJson)).toEqual({ result: 42 });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(provider);
+
+    const result = await orchestrator.executeTurn(makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+      },
+    }));
+
+    expect(result.toolTransport?.parsing?.diagnostics).toEqual([
+      expect.objectContaining({
+        callId: 'bad',
+        toolName: 'missing',
+        reason: 'tool_not_registered',
+      }),
+    ]);
+    expect(result.toolExecutionRecords).toBeUndefined();
+    expect((provider.executeTool as any).mock.calls).toHaveLength(0);
   });
 
   it('returns pendingToolJobs when a tool is configured for deferred async delivery', async () => {

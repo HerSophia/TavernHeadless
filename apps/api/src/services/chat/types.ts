@@ -2,6 +2,10 @@ import type {
   ChatMessage,
   FloorRunType,
   GenerationParams,
+  PromptRuntimeToolTransportTrace,
+  ToolCallTransportSelection,
+  ToolPermissions,
+  ToolRegistry,
   TurnConfig,
   TurnInput,
 } from "@tavern/core";
@@ -56,7 +60,8 @@ export type PromptRuntimeContributorKind =
   | "scene_state"
   | "worldbook_focus"
   | "memory_selection"
-  | "verifier_hint";
+  | "verifier_hint"
+  | "tool_list";
 
 export interface PromptRuntimeContributorRenderable {
   title: string;
@@ -176,6 +181,10 @@ export interface PreparedPromptArtifacts {
   promptSnapshot?: PromptSnapshotPreview;
   promptSnapshotRecord?: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
   runtimeTrace?: PromptRuntimeTrace;
+  toolTransport?: PromptRuntimeToolTransportTrace;
+  toolTransportSelection?: ToolCallTransportSelection;
+  toolRegistry?: ToolRegistry;
+  toolPermissions?: ToolPermissions;
   generationParams: GenerationParams;
   requestedTurnConfig?: TurnConfig;
   turnConfig?: TurnConfig;
