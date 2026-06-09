@@ -429,6 +429,41 @@ describe("sdk core resources", () => {
     }));
   });
 
+  it("keeps explicit null generation params in respond requests", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          branch_id: "branch-1",
+          final_state: "committed",
+          floor_id: "floor-1",
+          floor_no: 1,
+          generated_text: "ok",
+          summaries: [],
+          total_usage: {},
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await client.sessions.respond({
+      generationParams: {
+        maxOutputTokens: null,
+        temperature: null,
+      },
+      message: "hello",
+      sessionId: "session-1",
+    });
+
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect(init?.body).toBe(JSON.stringify({
+      generation_params: {
+        max_output_tokens: null,
+        temperature: null,
+      },
+      message: "hello",
+    }));
+  });
+
   it("throws TavernApiError when respond payload misses required floor metadata", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

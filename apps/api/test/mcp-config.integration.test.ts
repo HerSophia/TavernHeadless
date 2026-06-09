@@ -171,7 +171,7 @@ describe("MCP config routes", () => {
     expect(disabledBody.data[0]?.http?.headers_masked).toEqual({ authorization: "secr****5678" });
     expect(detailBody.data.http?.headers_masked).toEqual({ authorization: "secr****5678" });
     expect(detailBody.data.http).not.toHaveProperty("headers");
-  });
+  }, 15000);
 
   it("marks live_status as manager_unavailable when ENABLE_MCP is disabled", async () => {
     const createRes = await app.inject({

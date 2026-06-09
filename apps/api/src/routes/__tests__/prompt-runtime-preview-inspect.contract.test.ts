@@ -133,6 +133,13 @@ describe("prompt-runtime preview and inspect routes", () => {
             fallback_reason: null,
           },
         },
+        runtime_trace: {
+          generation_params_resolution: [
+            { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
+            { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
+            { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+          ],
+        },
       },
     });
   });
@@ -198,14 +205,20 @@ describe("prompt-runtime preview and inspect routes", () => {
         },
         prepared_turn: {
           prompt_snapshot: null,
-          runtime_trace: null,
+          runtime_trace: {
+            generation_params_resolution: [
+              { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
+              { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
+              { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+            ],
+          },
           memory_injection: {
             items: [
               {
                 id: "memory-branch-fact-1",
                 scope: "branch",
                 scope_id: "memscope:session-1:main",
-                type: "fact",
+                             type: "fact",
                 content: "Bob still holds the vault key.",
               },
             ],
@@ -522,6 +535,11 @@ function createPreviewResult(): PromptRuntimePreviewResult {
         ],
       },
       historyNormalization: createHistoryNormalization(),
+      generationParamsResolution: [
+        { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
+        { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
+        { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+      ],
       visibility: {
         hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
         filteredFloorNos: [2],
@@ -592,6 +610,14 @@ function createInspectResult(): PromptRuntimeInspectResult {
       tokenEstimate: 512,
       availableForReply: 1536,
       preprocessedUserMessage: "Please continue the campfire scene.",
+      promptSnapshot: null,
+      runtimeTrace: {
+        generationParamsResolution: [
+          { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
+          { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
+          { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+        ],
+      },
       memoryInjection: createMemoryInjection(),
       memory: createMemoryTrace(),
       memorySummary: "The party recently agreed to search the northern pass.",

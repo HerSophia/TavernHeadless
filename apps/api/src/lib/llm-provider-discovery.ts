@@ -37,17 +37,17 @@ export function resolveAssistantPrefillStrategy(provider?: ProviderValue): Assis
 // ── Types ─────────────────────────────────────────────
 
 export type RuntimeParamsResponse = {
-  max_context_tokens?: number;
-  max_output_tokens?: number;
-  temperature?: number;
-  top_p?: number;
-  top_k?: number;
-  frequency_penalty?: number;
-  presence_penalty?: number;
-  stream?: boolean;
-  timeout_ms?: number;
-  max_retries?: number;
-  reasoning_effort?: "low" | "medium" | "high";
+  max_context_tokens?: number | null;
+  max_output_tokens?: number | null;
+  temperature?: number | null;
+  top_p?: number | null;
+  top_k?: number | null;
+  frequency_penalty?: number | null;
+  presence_penalty?: number | null;
+  stream?: boolean | null;
+  timeout_ms?: number | null;
+  max_retries?: number | null;
+  reasoning_effort?: "low" | "medium" | "high" | null;
 };
 
 export type RuntimeSlotResponse = {
