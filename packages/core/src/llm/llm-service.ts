@@ -147,15 +147,15 @@ function normalizeFinishReason(finishReason: unknown): string {
 function mapParams(params: GenerationParams): Record<string, unknown> {
   const mapped: Record<string, unknown> = {};
 
-  if (params.maxOutputTokens !== undefined) mapped.maxOutputTokens = params.maxOutputTokens;
-  if (params.temperature !== undefined) mapped.temperature = params.temperature;
-  if (params.topP !== undefined) mapped.topP = params.topP;
-  if (params.topK !== undefined) mapped.topK = params.topK;
-  if (params.frequencyPenalty !== undefined) mapped.frequencyPenalty = params.frequencyPenalty;
-  if (params.presencePenalty !== undefined) mapped.presencePenalty = params.presencePenalty;
-  if (params.stopSequences !== undefined) mapped.stopSequences = params.stopSequences;
-  if (params.maxRetries !== undefined) mapped.maxRetries = params.maxRetries;
-  if (params.reasoningEffort !== undefined) {
+  if (params.maxOutputTokens !== undefined && params.maxOutputTokens !== null) mapped.maxOutputTokens = params.maxOutputTokens;
+  if (params.temperature !== undefined && params.temperature !== null) mapped.temperature = params.temperature;
+  if (params.topP !== undefined && params.topP !== null) mapped.topP = params.topP;
+  if (params.topK !== undefined && params.topK !== null) mapped.topK = params.topK;
+  if (params.frequencyPenalty !== undefined && params.frequencyPenalty !== null) mapped.frequencyPenalty = params.frequencyPenalty;
+  if (params.presencePenalty !== undefined && params.presencePenalty !== null) mapped.presencePenalty = params.presencePenalty;
+  if (params.stopSequences !== undefined && params.stopSequences !== null) mapped.stopSequences = params.stopSequences;
+  if (params.maxRetries !== undefined && params.maxRetries !== null) mapped.maxRetries = params.maxRetries;
+  if (params.reasoningEffort !== undefined && params.reasoningEffort !== null) {
     mapped.providerOptions = {
       openai: {
         reasoningEffort: params.reasoningEffort,

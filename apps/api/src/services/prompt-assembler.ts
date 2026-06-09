@@ -478,7 +478,10 @@ export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatc
   historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
 }
 
-export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization">;
+export type PromptRuntimePreviewTrace = Pick<
+  PromptRuntimeTrace,
+  "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution"
+>;
 
 export interface PromptRuntimeTraceSeed {
   worldbookHits: number;

@@ -21,6 +21,7 @@ import type {
   PromptVisibilityTrace,
 } from "../chat-history-loader.js";
 import type { AppDb } from "../../db/client.js";
+import type { GenerationParamsInput } from "../../lib/llm-params.js";
 import type { PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
 import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
 
@@ -67,7 +68,7 @@ interface PreparedPromptArtifactsSessionShape {
 
 interface PreparedPromptArtifactsRequestShape {
   config?: TurnConfig;
-  generationParams?: Partial<GenerationParams>;
+  generationParams?: GenerationParamsInput;
   promptIntent?: PromptRunIntent;
   debugOptions?: PromptLiveDebugOptions;
 }
@@ -102,6 +103,7 @@ export interface PreparePromptArtifactsArgs {
   extraDiagnostics?: PromptRuntimeDiagnostic[];
   includeRuntimeTrace?: boolean;
   baseRuntimeTrace?: PromptRuntimeTrace;
+  stream?: boolean;
 }
 
 export class PreparedPromptArtifactsBuilder {
@@ -329,11 +331,19 @@ export class PreparedPromptArtifactsBuilder {
       },
     });
 
-    const generationParams = this.modelService.buildGenerationParams({
+    const generationParamsResult = this.modelService.buildGenerationParamsResult({
       requestParams: args.request.generationParams,
       narratorParams,
+      narratorParamOrigins: this.modelService.getSlotGenerationParamOrigins(args.resolvedTurnModels, "narrator"),
       availableForReply: execution.availableForReply ?? 0,
+      stream: args.stream,
     });
+    const runtimeTrace = execution.runtimeTrace
+      ? {
+          ...execution.runtimeTrace,
+          generationParamsResolution: generationParamsResult.resolution,
+        }
+      : undefined;
     const turnConfig = this.modelService.toOrchestratorTurnConfig(requestedTurnConfig);
 
     return {
@@ -364,8 +374,8 @@ export class PreparedPromptArtifactsBuilder {
       preprocessedUserMessage: execution.preprocessedUserMessage,
       promptSnapshot: execution.promptSnapshotPreview,
       promptSnapshotRecord: execution.promptSnapshotRecord,
-      runtimeTrace: execution.runtimeTrace,
-      generationParams,
+      runtimeTrace,
+      generationParams: generationParamsResult.params,
       requestedTurnConfig,
       turnConfig,
       preparePhaseTrace,

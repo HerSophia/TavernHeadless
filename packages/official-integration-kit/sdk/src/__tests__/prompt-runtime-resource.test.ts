@@ -92,6 +92,48 @@ const previewMemoryTrace = {
   scopeResolution: { mode: "branch_aware", requestedScopes: ["global", "branch"], resolvedScopes: ["global", "branch"], requestedBranchId: "alt-preview", resolvedBranchId: "main", fallbackReason: null },
 } as const;
 
+const generationParamsResolutionPayload = [
+  {
+    name: "temperature",
+    final_state: "sent",
+    origin: "default",
+    value_from: "default",
+  },
+  {
+    name: "maxOutputTokens",
+    final_state: "sent",
+    origin: "request",
+    value_from: "request",
+  },
+  {
+    name: "topP",
+    final_state: "cancelled",
+    origin: "request",
+    cancelled_at: "request",
+  },
+] as const;
+
+const generationParamsResolution = [
+  {
+    name: "temperature",
+    finalState: "sent",
+    origin: "default",
+    valueFrom: "default",
+  },
+  {
+    name: "maxOutputTokens",
+    finalState: "sent",
+    origin: "request",
+    valueFrom: "request",
+  },
+  {
+    name: "topP",
+    finalState: "cancelled",
+    origin: "request",
+    cancelledAt: "request",
+  },
+] as const;
+
 const committedMemoryTracePayload = {
   summary_injected: true,
   runtime_mode: "async_primary",
@@ -1185,6 +1227,7 @@ describe("sdk prompt runtime resource", () => {
                   { group: "history", token_count: 256 },
                 ],
               },
+              generation_params_resolution: generationParamsResolutionPayload,
             },
             memory_injection: committedMemoryInjectionPayload,
             memory: committedMemoryTracePayload,
@@ -1295,7 +1338,7 @@ describe("sdk prompt runtime resource", () => {
         availableForReply: 704,
         preprocessedUserMessage: "Hello there",
         promptSnapshot: { characterId: "char-1", characterVersionId: "charver-1", characterImportedFormat: "tavern_card_v2", characterContentHash: "char-hash-1", worldbookActivatedEntries: [{ uid: 7, activationKey: "worldbook:worldbook-1:5:entry:7", source: { kind: "session_worldbook", worldbookId: null, worldbookName: "Inspect Worldbook", assetScopeId: "worldbook:worldbook-1:5" }, insertion: { position: "before" } }] },
-        runtimeTrace: { budgets: { byGroup: [{ group: "history", tokenCount: 256 }] }, memory: committedMemoryTrace },
+        runtimeTrace: { budgets: { byGroup: [{ group: "history", tokenCount: 256 }] }, memory: committedMemoryTrace, generationParamsResolution },
         memoryInjection: committedMemoryInjection,
         memory: committedMemoryTrace,
         memorySummary: "Remember the promise.",
@@ -1578,6 +1621,7 @@ describe("sdk prompt runtime resource", () => {
                 },
               ],
             },
+            generation_params_resolution: generationParamsResolutionPayload,
             visibility: {
               hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
               filtered_floor_nos: [1, 2],
@@ -1668,6 +1712,7 @@ describe("sdk prompt runtime resource", () => {
             },
           ],
         },
+        generationParamsResolution,
         visibility: {
           hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
           filteredFloorNos: [1, 2],

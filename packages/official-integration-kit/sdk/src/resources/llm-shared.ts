@@ -5,16 +5,17 @@ export type LlmProvider = "anthropic" | "deepseek" | "google" | "openai" | "open
 export type LlmProfileStatus = "active" | "deleted" | "disabled";
 
 export type LlmGenerationParams = {
-  frequency_penalty?: number;
-  max_context_tokens?: number;
-  max_output_tokens?: number;
-  max_retries?: number;
-  presence_penalty?: number;
-  stream?: boolean;
-  temperature?: number;
-  timeout_ms?: number;
-  top_k?: number;
-  top_p?: number;
+  frequency_penalty?: number | null;
+  max_context_tokens?: number | null;
+  max_output_tokens?: number | null;
+  max_retries?: number | null;
+  presence_penalty?: number | null;
+  reasoning_effort?: "low" | "medium" | "high" | null;
+  stream?: boolean | null;
+  temperature?: number | null;
+  timeout_ms?: number | null;
+  top_k?: number | null;
+  top_p?: number | null;
 };
 
 export type LlmInstanceScope = "global" | "session";

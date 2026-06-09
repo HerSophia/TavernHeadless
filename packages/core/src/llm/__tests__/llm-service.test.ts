@@ -103,6 +103,41 @@ describe('LLMService', () => {
       });
     });
 
+    it('omits null-valued generation params from the final sdk settings', async () => {
+      let capturedSettings: any;
+
+      const model = new MockLanguageModelV3({
+        doGenerate: async (options) => {
+          capturedSettings = options;
+          return {
+            content: [{ type: 'text', text: 'ok' }],
+            finishReason: { unified: 'stop', raw: undefined },
+            usage: {
+              inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+              raw: { totalTokens: 2 },
+            },
+            warnings: [],
+          };
+        },
+      });
+
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+
+      await service.generate({
+        messages: [{ role: 'user', content: 'test' }],
+        params: {
+          temperature: null as any,
+          topP: 0.9,
+        },
+      });
+
+      expect(capturedSettings).toBeDefined();
+      expect(capturedSettings.temperature).toBeUndefined();
+      expect(capturedSettings.topP).toBe(0.9);
+    });
+
     it('wraps errors as LLMServiceError', async () => {
       const model = new MockLanguageModelV3({
         doGenerate: async () => {

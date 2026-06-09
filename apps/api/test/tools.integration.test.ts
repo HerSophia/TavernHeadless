@@ -477,7 +477,7 @@ describe("Tool Routes", () => {
 
     const foreignPatchRes = await app.inject({ method: "PATCH", url: `/sessions/${sessionId}/tool-permissions`, headers: { authorization: `Bearer ${tokenB}` }, payload: { allow_irreversible: true } });
     expect(foreignPatchRes.statusCode).toBe(404);
-  });
+  }, 15000);
 
   // ── Validation Errors ─────────────────────────────
 

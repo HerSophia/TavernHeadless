@@ -935,7 +935,7 @@ export class ChatService {
       branchId?: string;
       sourceFloorId?: string;
       config?: import("@tavern/core").TurnConfig;
-      generationParams?: Partial<import("@tavern/core").GenerationParams>;
+      generationParams?: import("../../lib/llm-params.js").GenerationParamsInput;
       promptIntent?: import("@tavern/core").PromptRunIntent;
       debugOptions?: import("./contracts.js").PromptLiveDebugOptions;
       sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
@@ -1161,7 +1161,7 @@ export class ChatService {
     baseRuntimeTrace?: import("../prompt-assembler.js").PromptRuntimeTrace;
     request: {
       config?: import("@tavern/core").TurnConfig;
-      generationParams?: Partial<import("@tavern/core").GenerationParams>;
+      generationParams?: import("../../lib/llm-params.js").GenerationParamsInput;
       promptIntent?: import("@tavern/core").PromptRunIntent;
       debugOptions?: import("./contracts.js").PromptLiveDebugOptions;
       sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
