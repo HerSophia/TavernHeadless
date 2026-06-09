@@ -220,6 +220,14 @@ function normalizeTokenUsage(usage: TokenUsage): TokenUsage {
   };
 }
 
+function composeAssistantOutputText(execution: Pick<TurnExecutionResult, "generatedText" | "toolResultWritebackText">): string {
+  const parts = [execution.generatedText, execution.toolResultWritebackText]
+    .map((value) => value?.trim())
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+  return parts.join("\n\n");
+}
+
 function toFloorEntity(row: FloorRow): FloorEntity {
   return {
     id: row.id,
@@ -624,6 +632,7 @@ export class TurnCommitService {
     const pendingEvents: PendingCoreEvent[] = [];
     const variableMutationBatch = this.variableCommitService.beginBatch();
     const effectiveBranchId = input.branchId ?? "main";
+    const assistantOutputText = composeAssistantOutputText(input.execution);
 
     this.variableCommitService.stageBufferedMutations(variableMutationBatch, {
       mutations: macroBufferedVariableMutations,
@@ -665,7 +674,7 @@ export class TurnCommitService {
         const assistantMessage = this.messagePersistence.saveAssistantMessageWithExecutor(
           tx,
           input.floorId,
-          input.execution.generatedText,
+          assistantOutputText,
           committedAt
         );
 
@@ -941,7 +950,7 @@ export class TurnCommitService {
               floorId: input.floorId,
               outputPageId: assistantMessage.pageId,
               assistantMessageId: assistantMessage.messageId,
-              generatedText: input.execution.generatedText,
+              generatedText: assistantOutputText,
               summaries: input.execution.summaries,
               usage,
               verifierResult: input.execution.verifierResult,
@@ -953,7 +962,7 @@ export class TurnCommitService {
             set: {
               outputPageId: assistantMessage.pageId,
               assistantMessageId: assistantMessage.messageId,
-              generatedText: input.execution.generatedText,
+              generatedText: assistantOutputText,
               summariesJson: JSON.stringify(input.execution.summaries),
               usageJson: JSON.stringify(usage),
               verifierJson: input.execution.verifierResult

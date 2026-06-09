@@ -21,7 +21,7 @@ TavernHeadless 是一个没有内置界面的 AI 角色扮演后端引擎。你�
 - 会话管理、分支治理、重试、编辑再生成、时间线查询。
 - SillyTavern 生态导入：预设、世界书、正则、角色卡。
 - 流式输出（SSE）、提示词调试（dry-run）、Prompt Runtime 单段文本 preview、接口文档（OpenAPI）、类型化 SDK。
-- 官方集成层两个包：`@tavern/sdk` 和 `@tavern/client-helpers`，覆盖会话、内容结构、Prompt Runtime、Session State 公共 API、变量、记忆、导出、工具调用、MCP 等主要功能，并同步暴露结构化 Prompt Runtime memory truth。
+- 官方集成层两个包：`@tavern/sdk` 和 `@tavern/client-helpers`，覆盖会话、内容结构、Prompt Runtime、Session State 公共 API、变量、记忆、导出、工具调用、MCP 等主要功能，并同步暴露结构化 Prompt Runtime memory truth 与 tool transport trace。
 - 核心资产备份 v1：支持 `characters`、`worldbooks`、`sessions` 的 `.thbackup` 导出、restore preview、异步恢复与作业查询。
 - 三种认证模式（`off` / `api_key` / `jwt`）、多账号隔离、LLM 密钥加密存储。
 - 记忆系统（摘要提取、衰减排序、自动维护）、变量系统（五级级联）。

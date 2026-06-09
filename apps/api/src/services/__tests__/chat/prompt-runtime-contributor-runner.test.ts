@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 
 import { PromptRuntimeContributorRunner } from "../../chat/prompt-runtime-contributor-runner.js";
 
+function makeTool(name: string) {
+  return {
+    name,
+    description: `${name} description`,
+    parameters: {
+      type: "object" as const,
+      properties: {
+        value: { type: "string" },
+      },
+      required: ["value"],
+    },
+    sideEffectLevel: "none" as const,
+    allowedSlots: [],
+    source: "builtin" as const,
+  };
+}
+
 describe("PromptRuntimeContributorRunner", () => {
   it("returns no contributors for compat_strict", () => {
     const runner = new PromptRuntimeContributorRunner();
@@ -16,6 +33,8 @@ describe("PromptRuntimeContributorRunner", () => {
         scene: null,
         world: null,
       },
+      transport: "text_protocol",
+      toolsForSlot: [makeTool("roll_dice")],
     })).toEqual({ contributors: [] });
   });
 
@@ -113,6 +132,28 @@ describe("PromptRuntimeContributorRunner", () => {
       summary: null,
       memoryTrace: {
         strategy: "direct_items",
+      },
+    });
+  });
+
+  it("appends tool_list when text_protocol transport is selected", () => {
+    const runner = new PromptRuntimeContributorRunner();
+
+    const result = runner.resolve({
+      promptMode: "native",
+      firstPartyStateContext: { scene: null, world: null },
+      transport: "text_protocol",
+      toolsForSlot: [makeTool("roll_dice")],
+    });
+
+    expect(result.contributors.map((contributor) => contributor.kind)).toEqual(["tool_list"]);
+    expect(result.contributors[0]).toMatchObject({
+      id: "builtin:tool_list",
+      sourceKind: "tool_list",
+      modeScope: "native",
+      payload: {
+        transport: "text_protocol",
+        toolNames: ["roll_dice"],
       },
     });
   });

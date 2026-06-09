@@ -141,6 +141,8 @@ POST /sessions/:id/respond
 
 当 `structure.mode=flattened` 时，`runtime_trace.structure` 还会附带 `transcriptized`、`transcript_message_count` 与 `assistant_prefill_transcriptized`。如果 assistant prefill 被转写进 transcript，`runtime_trace.delivery.assistant_prefill_strategy` 会返回 `transcript_append`。
 
+`runtime_trace.tool_transport` 现在也可能返回工具调用 transport 选择、tool list 注入摘要，以及 text protocol 解析诊断。
+
 这两个字段默认都关闭。未打开时，同步成功响应保持兼容。
 
 当 live 生成成功并越过 commit 边界后，服务端还会在同一同步事务内写入 `prompt_runtime_explain_snapshot`。后续 `GET /floors/:id/prompt-runtime/explain` 和 `POST /sessions/:id/prompt-runtime/compare` 都以这份 committed snapshot 为主，不会事后重算 prompt 组装、宏展开、budget 或 source selection。
@@ -424,6 +426,10 @@ dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot
 | `runtime_trace.macro.traces` | `runtime_trace` | array | 宏求值 trace 列表 |
 | `runtime_trace.budgets.trim_reasons` | `runtime_trace` | array | 结构化 trim 原因。当前首轮主要覆盖 token budget 裁剪 |
 | `runtime_trace.source_selection.excluded_sources` | `runtime_trace` | array | 结构化 source exclusion 原因。当前首轮覆盖 history / memory / worldbook / examples 级说明 |
+| `runtime_trace.tool_transport.selection.transport` | `runtime_trace` | string | 本轮工具调用 transport 选择 |
+| `runtime_trace.tool_transport.selection.reason_code` | `runtime_trace` | string | transport 选择原因 |
+| `runtime_trace.tool_transport.tool_list` | `runtime_trace` | object | text protocol 工具目录注入摘要，按情况返回 |
+| `runtime_trace.tool_transport.parsing` | `runtime_trace` | object | text protocol tool block 解析统计与诊断，按情况返回 |
 
 当前 `runtime_trace.macro.traces` 中已经包含最小调试元数据，典型字段包括：
 

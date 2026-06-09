@@ -62,6 +62,24 @@ TavernHeadless 提供了一套官方维护的第一方接入层，用来统一�
 这些类型用于表达每个生成参数最终是被发送、缺省，还是被显式取消，
 以及这个结果来自哪一层。
 
+另外，`@tavern/sdk` 现在也会把 Prompt Runtime trace 里的
+`toolTransport` 作为稳定字段暴露出来。
+如果你需要直接消费这组字段，根导出也提供：
+
+- `PromptRuntimeToolTransportKind`
+- `PromptRuntimeToolTransportReasonCode`
+- `PromptRuntimeToolTransportSelection`
+- `PromptRuntimeToolTransportDiagnosticReason`
+- `PromptRuntimeToolTransportDiagnostic`
+- `PromptRuntimeToolTransportTrace`
+
+这组字段用于表达：
+
+- 当前请求选择了哪种工具调用 transport
+- transport 选择原因
+- text protocol 下的 tool list 注入摘要
+- text protocol 解析统计与诊断
+
 ### `@tavern/client-helpers`
 
 语义层。
