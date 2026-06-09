@@ -120,6 +120,45 @@ outline: [2, 3]
 
 它不是 persisted explain truth，也不是可恢复执行检查点。
 
+## generation_params_resolution
+
+`preview` 的 `runtime_trace` 和 `inspect` 的
+`prepared_turn.runtime_trace` 现在都可能返回
+`generation_params_resolution`。
+
+这组字段用于解释每个生成参数在本次请求里的最终去向。
+
+每个条目至少包含：
+
+- `name`
+- `final_state`
+- `origin`
+
+按情况还会包含：
+
+- `cancelled_at`
+- `value_from`
+
+你可以这样理解：
+
+- `final_state="sent"`：这个参数最终进入了运行期结果
+- `final_state="absent"`：这个参数最终没有值
+- `final_state="cancelled"`：某一层显式传入了 `null`，把它取消了
+
+其中：
+
+- `origin` 表示最终结果来自哪一层，或表示它最终缺省
+- `cancelled_at` 表示是哪一层执行了显式取消
+- `value_from` 表示最终值来自哪一层
+
+这组字段主要用于排查下面这类问题：
+
+- profile 已经配了参数，为什么本次请求没有生效
+- instance 覆盖后，为什么最后仍然缺省
+- request 里传了 `null` 之后，为什么默认值没有再补回
+
+它不改变 preview / inspect 的既有边界，只增加参数解析的可观察性。
+
 ## capabilities 中对应的 inspect 能力声明
 
 `GET /prompt-runtime/capabilities` 的 `observability.inspect` 现在会明确声明：

@@ -3,6 +3,7 @@ import type {
   GenerationParams,
   InstanceSlot,
   ModelConfig,
+  PromptRuntimeGenerationParamResolution,
   ProviderType,
   TurnConfig,
 } from "@tavern/core";
@@ -13,6 +14,7 @@ import type {
 } from "../prompt-assembler.js";
 
 import { resolveAssistantPrefillStrategy } from "../../lib/llm-provider-discovery.js";
+import type { GenerationParamKey, GenerationParamsInput } from "../../lib/llm-params.js";
 import { normalizeNonNegativeInt, normalizePositiveInt } from "../../lib/utils.js";
 
 import type {
@@ -127,44 +129,274 @@ export class TurnModelService {
   }
 
   buildGenerationParams(args: {
-    requestParams?: Partial<GenerationParams>;
-    narratorParams?: Partial<GenerationParams>;
+    requestParams?: GenerationParamsInput;
+    narratorParams?: GenerationParamsInput;
     availableForReply: number;
     stream?: boolean;
   }): GenerationParams {
+    return this.buildGenerationParamsResult(args).params;
+  }
+
+  buildGenerationParamsResolution(args: {
+    requestParams?: GenerationParamsInput;
+    narratorParams?: GenerationParamsInput;
+    narratorParamOrigins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
+    availableForReply: number;
+    stream?: boolean;
+  }): PromptRuntimeGenerationParamResolution[] {
+    return this.buildGenerationParamsResult(args).resolution;
+  }
+
+  buildGenerationParamsResult(args: {
+    requestParams?: GenerationParamsInput;
+    narratorParams?: GenerationParamsInput;
+    narratorParamOrigins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
+    availableForReply: number;
+    stream?: boolean;
+  }): { params: GenerationParams; resolution: PromptRuntimeGenerationParamResolution[] } {
     const narratorParams = this.stripMaxContextTokens(args.narratorParams);
     const requestParams = this.stripMaxContextTokens(args.requestParams);
-    const timeoutMs = normalizePositiveInt(requestParams?.timeoutMs)
-      ?? normalizePositiveInt(narratorParams?.timeoutMs)
-      ?? this.options.executionTimeoutMs;
-    const maxRetries = normalizeNonNegativeInt(requestParams?.maxRetries)
-      ?? normalizeNonNegativeInt(narratorParams?.maxRetries);
+    const params: GenerationParams = {};
+    const resolution: PromptRuntimeGenerationParamResolution[] = [];
 
-    return {
-      temperature: 0.7,
-      maxOutputTokens: args.availableForReply || 1000,
-      ...(args.stream !== undefined ? { stream: args.stream } : {}),
-      ...narratorParams,
-      ...requestParams,
-      timeoutMs,
-      ...(maxRetries !== undefined ? { maxRetries } : {}),
-    };
+    const temperature = this.resolveGenerationParam(requestParams, narratorParams, "temperature");
+    if (temperature === undefined) {
+      params.temperature = 0.7;
+      resolution.push({
+        name: "temperature",
+        finalState: "sent",
+        origin: "default",
+        valueFrom: "default",
+      });
+    } else if (temperature === null) {
+      const origin = this.resolveParamOrigin(args.narratorParamOrigins, requestParams, "temperature");
+      resolution.push({
+        name: "temperature",
+        finalState: "cancelled",
+        origin,
+        cancelledAt: origin === "request" ? "request" : origin,
+      });
+    } else {
+      params.temperature = temperature;
+      const origin = this.resolveParamOrigin(args.narratorParamOrigins, requestParams, "temperature");
+      resolution.push({
+        name: "temperature",
+        finalState: "sent",
+        origin,
+        valueFrom: origin,
+      });
+    }
+
+    const maxOutputTokensValue = this.resolveGenerationParam(requestParams, narratorParams, "maxOutputTokens");
+    if (maxOutputTokensValue === undefined) {
+      params.maxOutputTokens = args.availableForReply || 1000;
+      resolution.push({
+        name: "maxOutputTokens",
+        finalState: "sent",
+        origin: "default",
+        valueFrom: "default",
+      });
+    } else if (maxOutputTokensValue === null) {
+      const origin = this.resolveParamOrigin(args.narratorParamOrigins, requestParams, "maxOutputTokens");
+      resolution.push({
+        name: "maxOutputTokens",
+        finalState: "cancelled",
+        origin,
+        cancelledAt: origin === "request" ? "request" : origin,
+      });
+    } else {
+      const maxOutputTokens = normalizePositiveInt(maxOutputTokensValue);
+      if (maxOutputTokens !== undefined) {
+        params.maxOutputTokens = maxOutputTokens;
+      }
+      const origin = this.resolveParamOrigin(args.narratorParamOrigins, requestParams, "maxOutputTokens");
+      resolution.push({
+        name: "maxOutputTokens",
+        finalState: "sent",
+        origin,
+        valueFrom: origin,
+      });
+    }
+
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "topP",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "topK",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "frequencyPenalty",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "presencePenalty",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "stopSequences",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "reasoningEffort",
+    );
+
+    if (args.stream !== undefined) {
+      params.stream = args.stream;
+      resolution.push({
+        name: "stream",
+        finalState: "sent",
+        origin: "default",
+        valueFrom: "default",
+      });
+    } else {
+      this.applyOptionalParam(
+        params,
+        resolution,
+        requestParams,
+        narratorParams,
+        args.narratorParamOrigins,
+        "stream",
+      );
+    }
+
+    if (this.isDeclaredGenerationParam(requestParams, "timeoutMs")) {
+      const timeoutMs = normalizePositiveInt(requestParams?.timeoutMs);
+      if (timeoutMs !== undefined) {
+        params.timeoutMs = timeoutMs;
+        resolution.push({
+          name: "timeoutMs",
+          finalState: "sent",
+          origin: "request",
+          valueFrom: "request",
+        });
+      } else {
+        resolution.push({
+          name: "timeoutMs",
+          finalState: "cancelled",
+          origin: "request",
+          cancelledAt: "request",
+        });
+      }
+    } else if (this.isDeclaredGenerationParam(narratorParams, "timeoutMs")) {
+      const timeoutMs = normalizePositiveInt(narratorParams?.timeoutMs);
+      const origin = args.narratorParamOrigins?.timeoutMs ?? "profile";
+      if (timeoutMs !== undefined) {
+        params.timeoutMs = timeoutMs;
+        resolution.push({
+          name: "timeoutMs",
+          finalState: "sent",
+          origin,
+          valueFrom: origin,
+        });
+      } else {
+        resolution.push({
+          name: "timeoutMs",
+          finalState: "cancelled",
+          origin,
+          cancelledAt: origin,
+        });
+      }
+    } else {
+      params.timeoutMs = this.options.executionTimeoutMs;
+      resolution.push({
+        name: "timeoutMs",
+        finalState: "sent",
+        origin: "default",
+        valueFrom: "default",
+      });
+    }
+
+    if (this.isDeclaredGenerationParam(requestParams, "maxRetries")) {
+      const maxRetries = normalizeNonNegativeInt(requestParams?.maxRetries);
+      if (maxRetries !== undefined) {
+        params.maxRetries = maxRetries;
+        resolution.push({
+          name: "maxRetries",
+          finalState: "sent",
+          origin: "request",
+          valueFrom: "request",
+        });
+      } else {
+        resolution.push({
+          name: "maxRetries",
+          finalState: "cancelled",
+          origin: "request",
+          cancelledAt: "request",
+        });
+      }
+    } else if (this.isDeclaredGenerationParam(narratorParams, "maxRetries")) {
+      const maxRetries = normalizeNonNegativeInt(narratorParams?.maxRetries);
+      const origin = args.narratorParamOrigins?.maxRetries ?? "profile";
+      if (maxRetries !== undefined) {
+        params.maxRetries = maxRetries;
+        resolution.push({
+          name: "maxRetries",
+          finalState: "sent",
+          origin,
+          valueFrom: origin,
+        });
+      } else {
+        resolution.push({
+          name: "maxRetries",
+          finalState: "cancelled",
+          origin,
+          cancelledAt: origin,
+        });
+      }
+    } else {
+      resolution.push({
+        name: "maxRetries",
+        finalState: "absent",
+        origin: "absent",
+      });
+    }
+
+    return { params, resolution };
   }
 
   resolveMaxContextTokensOverride(
-    requestParams?: Partial<GenerationParams>,
-    narratorParams?: Partial<GenerationParams>,
+    requestParams?: GenerationParamsInput,
+    narratorParams?: GenerationParamsInput,
   ): number | undefined {
-    return normalizePositiveInt(requestParams?.maxContextTokens)
-      ?? normalizePositiveInt(narratorParams?.maxContextTokens);
+    return normalizePositiveInt(
+      this.resolveGenerationParam(requestParams, narratorParams, "maxContextTokens"),
+    );
   }
 
   resolveMaxOutputTokensOverride(
-    requestParams?: Partial<GenerationParams>,
-    narratorParams?: Partial<GenerationParams>,
+    requestParams?: GenerationParamsInput,
+    narratorParams?: GenerationParamsInput,
   ): number | undefined {
-    return normalizePositiveInt(requestParams?.maxOutputTokens)
-      ?? normalizePositiveInt(narratorParams?.maxOutputTokens);
+    return normalizePositiveInt(
+      this.resolveGenerationParam(requestParams, narratorParams, "maxOutputTokens"),
+    );
   }
 
   resolvePromptRunKind(runType: FloorRunType | "dry_run"): PromptMacroRunKind {
@@ -314,7 +546,7 @@ export class TurnModelService {
         return;
       }
 
-      overrides[slot] = params;
+      overrides[slot] = params as GenerationParams;
     });
 
     return Object.keys(overrides).length > 0 ? overrides : undefined;
@@ -323,12 +555,23 @@ export class TurnModelService {
   getSlotGenerationParams(
     models: ResolvedTurnModels,
     slot: InstanceSlot,
-  ): Partial<GenerationParams> | undefined {
+  ): GenerationParamsInput | undefined {
     if (models[slot]?.enabled === false) {
       return undefined;
     }
 
     return models[slot]?.generationParams;
+  }
+
+  getSlotGenerationParamOrigins(
+    models: ResolvedTurnModels,
+    slot: InstanceSlot,
+  ): Partial<Record<GenerationParamKey, "profile" | "instance">> | undefined {
+    if (models[slot]?.enabled === false) {
+      return undefined;
+    }
+
+    return models[slot]?.generationParamOrigins;
   }
 
   async markTurnModelUsed(model: ResolvedTurnModel | ResolvedTurnModels | undefined, accountId: string): Promise<void> {
@@ -358,14 +601,89 @@ export class TurnModelService {
     return models[slot]?.enabled === false;
   }
 
+  private applyOptionalParam<K extends GenerationParamKey>(
+    params: GenerationParams,
+    resolution: PromptRuntimeGenerationParamResolution[],
+    requestParams: GenerationParamsInput | undefined,
+    narratorParams: GenerationParamsInput | undefined,
+    narratorParamOrigins: Partial<Record<GenerationParamKey, "profile" | "instance">> | undefined,
+    key: K,
+  ): void {
+    const value = this.resolveGenerationParam(requestParams, narratorParams, key);
+    if (value === undefined) {
+      resolution.push({
+        name: key,
+        finalState: "absent",
+        origin: "absent",
+      });
+      return;
+    }
+
+    const origin = this.resolveParamOrigin(narratorParamOrigins, requestParams, key);
+    if (value === null) {
+      resolution.push({
+        name: key,
+        finalState: "cancelled",
+        origin,
+        cancelledAt: origin === "request" ? "request" : origin,
+      });
+      return;
+    }
+
+    params[key] = value as GenerationParams[K];
+    resolution.push({
+      name: key,
+      finalState: "sent",
+      origin,
+      valueFrom: origin,
+    });
+  }
+
+  private isDeclaredGenerationParam<K extends keyof GenerationParams>(
+    params: GenerationParamsInput | undefined,
+    key: K,
+  ): boolean {
+    return params !== undefined
+      && Object.prototype.hasOwnProperty.call(params, key)
+      && params[key] !== undefined;
+  }
+
+  private resolveGenerationParam<K extends keyof GenerationParams>(
+    requestParams: GenerationParamsInput | undefined,
+    narratorParams: GenerationParamsInput | undefined,
+    key: K,
+  ): GenerationParamsInput[K] {
+    if (this.isDeclaredGenerationParam(requestParams, key)) {
+      return requestParams?.[key];
+    }
+
+    if (this.isDeclaredGenerationParam(narratorParams, key)) {
+      return narratorParams?.[key];
+    }
+
+    return undefined;
+  }
+
+  private resolveParamOrigin<K extends GenerationParamKey>(
+    narratorParamOrigins: Partial<Record<GenerationParamKey, "profile" | "instance">> | undefined,
+    requestParams: GenerationParamsInput | undefined,
+    key: K,
+  ): Exclude<PromptRuntimeGenerationParamResolution["origin"], "default" | "absent"> {
+    if (this.isDeclaredGenerationParam(requestParams, key)) {
+      return "request";
+    }
+
+    return narratorParamOrigins?.[key] ?? "profile";
+  }
+
   private stripMaxContextTokens(
-    params?: Partial<GenerationParams>,
-  ): Partial<GenerationParams> | undefined {
+    params?: GenerationParamsInput,
+  ): GenerationParamsInput | undefined {
     if (!params) {
       return undefined;
     }
 
     const { maxContextTokens: _, ...rest } = params;
-    return rest;
+    return Object.keys(rest).length > 0 ? rest : undefined;
   }
 }

@@ -39,6 +39,76 @@ describe("TurnModelService", () => {
     });
   });
 
+  it("buildGenerationParams does not fill defaults when upper layers explicitly cancel them", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: false,
+      enableAsyncMemoryIngest: false,
+      memoryStoreEnabled: false,
+      executionTimeoutMs: 60_000,
+    });
+
+    const params = service.buildGenerationParams({
+      narratorParams: {
+        temperature: null,
+        maxOutputTokens: null,
+        timeoutMs: null,
+        maxRetries: null,
+      },
+      availableForReply: 256,
+    });
+
+    expect(params.temperature).toBeUndefined();
+    expect(params.maxOutputTokens).toBeUndefined();
+    expect(params.timeoutMs).toBeUndefined();
+    expect(params.maxRetries).toBeUndefined();
+  });
+
+  it("buildGenerationParams lets request cancellations override narrator values", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: false,
+      enableAsyncMemoryIngest: false,
+      memoryStoreEnabled: false,
+      executionTimeoutMs: 60_000,
+    });
+
+    const params = service.buildGenerationParams({
+      narratorParams: {
+        temperature: 0.4,
+        maxOutputTokens: 400,
+        topP: 0.9,
+        timeoutMs: 30_000,
+      },
+      requestParams: {
+        temperature: null,
+        maxOutputTokens: null,
+        topP: null,
+        timeoutMs: null,
+      },
+      availableForReply: 256,
+    });
+
+    expect(params.temperature).toBeUndefined();
+    expect(params.maxOutputTokens).toBeUndefined();
+    expect(params.topP).toBeUndefined();
+    expect(params.timeoutMs).toBeUndefined();
+  });
+
+  it("resolveMaxOutputTokensOverride honors explicit request cancellations", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: false,
+      enableAsyncMemoryIngest: false,
+      memoryStoreEnabled: false,
+      executionTimeoutMs: 60_000,
+    });
+
+    expect(
+      service.resolveMaxOutputTokensOverride(
+        { maxOutputTokens: null },
+        { maxOutputTokens: 512 },
+      ),
+    ).toBeUndefined();
+  });
+
   it("resolveRequestedTurnConfig disables slots that are not available", () => {
     const service = new TurnModelService({
       enableMemoryConsolidationByDefault: true,

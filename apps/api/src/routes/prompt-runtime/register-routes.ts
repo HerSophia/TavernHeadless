@@ -946,6 +946,17 @@ function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewRes
           history_normalization: mapPromptRuntimeHistoryNormalizationToSnakeCase(runtimeTrace.historyNormalization),
         }
       : {}),
+    ...(runtimeTrace.generationParamsResolution
+      ? {
+          generation_params_resolution: runtimeTrace.generationParamsResolution.map((item) => ({
+            name: item.name,
+            final_state: item.finalState,
+            origin: item.origin,
+            ...(item.cancelledAt ? { cancelled_at: item.cancelledAt } : {}),
+            ...(item.valueFrom ? { value_from: item.valueFrom } : {}),
+          })),
+        }
+      : {}),
     ...(runtimeTrace.visibility
       ? {
           visibility: {
