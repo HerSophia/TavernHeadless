@@ -453,9 +453,38 @@ export type PromptRuntimeHistoryNormalizationTrace = {
   violations: PromptRuntimeHistoryNormalizationViolation[];
 };
 
+export type PromptRuntimeGenerationParamName =
+  | "maxContextTokens"
+  | "maxOutputTokens"
+  | "temperature"
+  | "topP"
+  | "topK"
+  | "frequencyPenalty"
+  | "presencePenalty"
+  | "stopSequences"
+  | "stream"
+  | "timeoutMs"
+  | "maxRetries"
+  | "reasoningEffort";
+
+export type PromptRuntimeGenerationParamFinalState = "sent" | "absent" | "cancelled";
+
+export type PromptRuntimeGenerationParamOrigin = "profile" | "instance" | "request" | "default" | "absent";
+
+export type PromptRuntimeGenerationParamLayer = "profile" | "instance" | "request";
+
+export type PromptRuntimeGenerationParamResolution = {
+  name: PromptRuntimeGenerationParamName;
+  finalState: PromptRuntimeGenerationParamFinalState;
+  origin: PromptRuntimeGenerationParamOrigin;
+  cancelledAt?: PromptRuntimeGenerationParamLayer;
+  valueFrom?: Exclude<PromptRuntimeGenerationParamOrigin, "absent">;
+};
+
 export type PromptRuntimeTrace = {
   budgets?: PromptRuntimeBudgetTrace;
   delivery?: PromptRuntimeDeliveryTrace;
+  generationParamsResolution?: PromptRuntimeGenerationParamResolution[];
   macro?: PromptRuntimeMacroTrace;
   memory?: PromptRuntimeMemoryTrace;
   sourceSelection?: PromptRuntimeSourceSelectionTrace;
@@ -467,7 +496,7 @@ export type PromptRuntimeTrace = {
   worldbook?: PromptRuntimeWorldbookTrace;
 };
 
-export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization">;
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution">;
 
 export type PromptDebugPayload = {
   promptSnapshot?: PromptSnapshotPreview;
@@ -590,6 +619,7 @@ export function mapPromptRuntimePreviewTracePayload(value: unknown): PromptRunti
     ...(runtimeTrace.sourceSelection ? { sourceSelection: runtimeTrace.sourceSelection } : {}),
     ...(runtimeTrace.historyNormalization ? { historyNormalization: runtimeTrace.historyNormalization } : {}),
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
+    ...(runtimeTrace.generationParamsResolution ? { generationParamsResolution: runtimeTrace.generationParamsResolution } : {}),
   };
 }
 
@@ -610,6 +640,20 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   const delivery = readRecord(record.delivery);
   const visibility = readRecord(record.visibility);
   const historyNormalization = mapPromptRuntimeHistoryNormalization(record.history_normalization);
+  const generationParamsResolution = readArray(record.generation_params_resolution)
+    .map((item) => readRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .map((item) => ({
+      name: readString(item.name) as PromptRuntimeGenerationParamName,
+      finalState: readString(item.final_state) as PromptRuntimeGenerationParamFinalState,
+      origin: readString(item.origin) as PromptRuntimeGenerationParamOrigin,
+      ...(readOptionalString(item.cancelled_at)
+        ? { cancelledAt: readOptionalString(item.cancelled_at) as PromptRuntimeGenerationParamLayer }
+        : {}),
+      ...(readOptionalString(item.value_from)
+        ? { valueFrom: readOptionalString(item.value_from) as Exclude<PromptRuntimeGenerationParamOrigin, "absent"> }
+        : {}),
+    }));
 
   const runtimeTrace: PromptRuntimeTrace = {
     ...(preset
@@ -754,6 +798,11 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
     ...(historyNormalization
       ? {
           historyNormalization,
+        }
+      : {}),
+    ...(generationParamsResolution.length > 0
+      ? {
+          generationParamsResolution,
         }
       : {}),
   };

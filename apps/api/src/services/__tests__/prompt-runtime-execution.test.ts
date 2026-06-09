@@ -191,7 +191,7 @@ describe("prompt-runtime-execution", () => {
     });
   });
 
-  it("projects preview runtime trace down to macro, visibility, and source selection", () => {
+  it("projects preview runtime trace down to macro, visibility, source selection, and generation param resolution", () => {
     const trace = buildPromptRuntimePreviewTrace({
       macro: {
         warnings: [],
@@ -214,6 +214,11 @@ describe("prompt-runtime-execution", () => {
         mergedUserGroups: [],
         violations: [],
       },
+      generationParamsResolution: [
+        { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
+        { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
+        { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+      ],
       visibility: {
         filteredFloorNos: [1, 2],
       },
@@ -258,6 +263,11 @@ describe("prompt-runtime-execution", () => {
         mergedUserGroups: [],
         violations: [],
       },
+      generationParamsResolution: [
+        { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
+        { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
+        { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+      ],
       visibility: {
         filteredFloorNos: [1, 2],
       },

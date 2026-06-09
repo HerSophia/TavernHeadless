@@ -270,15 +270,15 @@ export type PromptRuntimeInspectTurnConfig = {
 };
 
 export type PromptRuntimeInspectGenerationParams = {
-  temperature?: number;
-  maxOutputTokens?: number;
-  topP?: number;
-  topK?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-  stopSequences?: string[];
-  stream?: boolean;
-  reasoningEffort?: "low" | "medium" | "high";
+  temperature?: number | null;
+  maxOutputTokens?: number | null;
+  topP?: number | null;
+  topK?: number | null;
+  frequencyPenalty?: number | null;
+  presencePenalty?: number | null;
+  stopSequences?: string[] | null;
+  stream?: boolean | null;
+  reasoningEffort?: "low" | "medium" | "high" | null;
 };
 
 export type PromptRuntimeResolvedState = {

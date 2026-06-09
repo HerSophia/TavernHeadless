@@ -17,6 +17,7 @@
 } from "@tavern/core";
 
 import type { EffectiveToolPolicyResolution } from "../tooling/shared/tool-policy-resolution.js";
+import type { GenerationParamKey, GenerationParamsInput } from "../../lib/llm-params.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
 import type {
   PromptAssemblyCompat,
@@ -81,7 +82,7 @@ interface TurnSessionStateWritesRequest extends TurnOperationLogRequest {
 export interface RespondRequest extends TurnSessionStateWritesRequest {
   message: string;
   config?: TurnConfig;
-  generationParams?: Partial<GenerationParams>;
+  generationParams?: GenerationParamsInput;
   branchId?: string;
   sourceFloorId?: string;
   promptIntent?: PromptRunIntent;
@@ -159,7 +160,7 @@ interface ReplayConfirmationRequest {
 
 export interface RegenerateRequest extends ReplayConfirmationRequest, TurnSessionStateWritesRequest {
   config?: TurnConfig;
-  generationParams?: Partial<GenerationParams>;
+  generationParams?: GenerationParamsInput;
   structure?: PromptStructurePolicy;
   delivery?: PromptDeliveryPolicy;
   debugOptions?: PromptLiveDebugOptions;
@@ -229,7 +230,8 @@ export interface ResolvedTurnModel {
   source: "env" | "global_profile" | "session_profile";
   profileId?: string;
   providerType?: ProviderType;
-  generationParams?: Partial<GenerationParams>;
+  generationParams?: GenerationParamsInput;
+  generationParamOrigins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
   enabled?: boolean;
   presetId?: string;
 }

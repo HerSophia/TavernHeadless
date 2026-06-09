@@ -407,51 +407,51 @@ export function useWorkspaceLlmManagerDialog(options: UseWorkspaceLlmManagerDial
 
   function validateSlotParamsDraft(params: WorkspaceLlmGenerationParams): string | null {
     if (
-      params.temperature !== undefined &&
+      params.temperature != null &&
       (!Number.isFinite(params.temperature) || params.temperature < 0 || params.temperature > 2)
     ) {
       return options.t("dialogs.llmManagerParamValidationTemperature");
     }
 
-    if (params.max_output_tokens !== undefined && (!Number.isInteger(params.max_output_tokens) || params.max_output_tokens < 1)) {
+    if (params.max_output_tokens != null && (!Number.isInteger(params.max_output_tokens) || params.max_output_tokens < 1)) {
       return options.t("dialogs.llmManagerParamValidationMaxOutputTokens");
     }
 
-    if (params.max_context_tokens !== undefined && (!Number.isInteger(params.max_context_tokens) || params.max_context_tokens < 1)) {
+    if (params.max_context_tokens != null && (!Number.isInteger(params.max_context_tokens) || params.max_context_tokens < 1)) {
       return options.t("dialogs.llmManagerParamValidationMaxContextTokens");
     }
 
-    if (params.top_p !== undefined && (!Number.isFinite(params.top_p) || params.top_p < 0 || params.top_p > 1)) {
+    if (params.top_p != null && (!Number.isFinite(params.top_p) || params.top_p < 0 || params.top_p > 1)) {
       return options.t("dialogs.llmManagerParamValidationTopP");
     }
 
-    if (params.top_k !== undefined && (!Number.isInteger(params.top_k) || params.top_k < 0)) {
+    if (params.top_k != null && (!Number.isInteger(params.top_k) || params.top_k < 0)) {
       return options.t("dialogs.llmManagerParamValidationTopK");
     }
 
     if (
-      params.frequency_penalty !== undefined &&
+      params.frequency_penalty != null &&
       (!Number.isFinite(params.frequency_penalty) || params.frequency_penalty < -2 || params.frequency_penalty > 2)
     ) {
       return options.t("dialogs.llmManagerParamValidationFrequencyPenalty");
     }
 
     if (
-      params.presence_penalty !== undefined &&
+      params.presence_penalty != null &&
       (!Number.isFinite(params.presence_penalty) || params.presence_penalty < -2 || params.presence_penalty > 2)
     ) {
       return options.t("dialogs.llmManagerParamValidationPresencePenalty");
     }
 
-    if (params.timeout_ms !== undefined && (!Number.isInteger(params.timeout_ms) || params.timeout_ms < 1)) {
+    if (params.timeout_ms != null && (!Number.isInteger(params.timeout_ms) || params.timeout_ms < 1)) {
       return options.t("dialogs.llmManagerParamValidationTimeoutMs");
     }
 
-    if (params.max_retries !== undefined && (!Number.isInteger(params.max_retries) || params.max_retries < 0 || params.max_retries > 10)) {
+    if (params.max_retries != null && (!Number.isInteger(params.max_retries) || params.max_retries < 0 || params.max_retries > 10)) {
       return options.t("dialogs.llmManagerParamValidationMaxRetries");
     }
 
-    if (params.stream !== undefined && typeof params.stream !== "boolean") {
+    if (params.stream != null && typeof params.stream !== "boolean") {
       return options.t("dialogs.llmManagerParamValidationStream");
     }
 

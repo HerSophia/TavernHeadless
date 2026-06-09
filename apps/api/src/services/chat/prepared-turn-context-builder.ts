@@ -7,6 +7,7 @@ import type {
 } from "@tavern/core";
 
 import type { PromptLiveDebugOptions, ResolvedTurnModels } from "./contracts.js";
+import type { GenerationParamsInput } from "../../lib/llm-params.js";
 import type { FirstPartyStateContext, PreparedTurnContext } from "./types.js";
 import type { PromptRuntimeConversationWindow } from "./prompt-preparation-service.js";
 import { PreparedPromptArtifactsBuilder } from "./prepared-prompt-artifacts-builder.js";
@@ -49,7 +50,7 @@ export class PreparedTurnContextBuilder {
     baseRuntimeTrace?: import("../prompt-assembler.js").PromptRuntimeTrace;
     request: {
       config?: TurnConfig;
-      generationParams?: Partial<GenerationParams>;
+      generationParams?: GenerationParamsInput;
       promptIntent?: PromptRunIntent;
       debugOptions?: PromptLiveDebugOptions;
     };
@@ -81,6 +82,7 @@ export class PreparedTurnContextBuilder {
       firstPartyStateContext: args.firstPartyStateContext,
       includeRuntimeTrace: args.request.debugOptions?.includeRuntimeTrace === true,
       baseRuntimeTrace: args.baseRuntimeTrace,
+      stream: args.stream,
     });
     const inspection = {
       ...artifacts.inspection,
@@ -88,12 +90,7 @@ export class PreparedTurnContextBuilder {
     };
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "prompt_assembled");
 
-    const generationParams = this.modelService.buildGenerationParams({
-      requestParams: args.request.generationParams,
-      narratorParams: this.modelService.getSlotGenerationParams(args.resolvedTurnModels, "narrator"),
-      availableForReply: artifacts.availableForReply,
-      stream: args.stream,
-    });
+    const generationParams = artifacts.generationParams;
     const requestedTurnConfig = this.modelService.resolveRequestedTurnConfig(
       args.request.config,
       args.resolvedTurnModels,

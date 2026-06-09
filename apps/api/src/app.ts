@@ -8,6 +8,7 @@ import type { GenerationParams, MemoryInjectionOptions } from "@tavern/core";
 
 import { createDatabase, type DatabaseConnection } from "./db/client";
 import { sendError, zodIssues } from "./lib/http";
+import { GENERATION_PARAM_KEYS, mergeGenerationParamInputs, type GenerationParamKey, type GenerationParamsInput } from "./lib/llm-params.js";
 import { registerCrudRoutes } from "./routes";
 import { isSqliteBusyError, ResourceBusyError } from "./lib/retry.js";
 import { registerChatRoutes } from "./routes/chat";
@@ -298,15 +299,29 @@ export async function listMemoryMaintenanceScopes(
 }
 
 function mergeTurnGenerationParams(
-  base?: Partial<GenerationParams> | null,
-  override?: Partial<GenerationParams> | null,
-): Partial<GenerationParams> | undefined {
-  const merged = { ...(base ?? {}), ...(override ?? {}) };
-  if (Object.keys(merged).length === 0) {
-    return undefined;
+  base?: GenerationParamsInput | null,
+  override?: GenerationParamsInput | null,
+): {
+  params?: GenerationParamsInput;
+  origins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
+} {
+  const params = mergeGenerationParamInputs(base, override);
+  const origins: Partial<Record<GenerationParamKey, "profile" | "instance">> = {};
+
+  for (const key of GENERATION_PARAM_KEYS) {
+    if (override && Object.prototype.hasOwnProperty.call(override, key)) {
+      origins[key] = "instance";
+      continue;
+    }
+    if (base && Object.prototype.hasOwnProperty.call(base, key)) {
+      origins[key] = "profile";
+    }
   }
 
-  return merged;
+  return {
+    ...(params ? { params } : {}),
+    ...(Object.keys(origins).length > 0 ? { origins } : {}),
+  };
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppResult> {
@@ -768,21 +783,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
             for (const slot of resolvedSlots) {
               const activeProfile = activeProfiles[slot.slot as keyof typeof activeProfiles] ?? activeProfiles["*" as keyof typeof activeProfiles];
               if (slot.enabled !== true) {
+                const mergedGenerationParams = mergeTurnGenerationParams(undefined, slot.params);
                 result[slot.slot] = {
                   enabled: false,
                   source: slot.source,
                   presetId: slot.presetId ?? undefined,
-                  generationParams: slot.params ?? undefined,
+                  generationParams: mergedGenerationParams.params,
+                  generationParamOrigins: mergedGenerationParams.origins,
                 };
                 continue;
               }
 
               if (!activeProfile) {
+                const mergedGenerationParams = mergeTurnGenerationParams(undefined, slot.params);
                 result[slot.slot] = {
                   enabled: slot.enabled,
                   source: "env",
                   presetId: slot.presetId ?? undefined,
-                  generationParams: slot.params ?? undefined,
+                  generationParams: mergedGenerationParams.params,
+                  generationParamOrigins: mergedGenerationParams.origins,
                 };
                 continue;
               }
@@ -795,12 +814,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
                 baseURL: activeProfile.baseUrl ?? undefined,
               }, activeProfile.modelId);
 
+              const mergedGenerationParams = mergeTurnGenerationParams(
+                activeProfile.params,
+                slot.params,
+              );
+
               result[slot.slot] = {
                 ...activeProfile,
                 enabled: slot.enabled,
                 presetId: slot.presetId ?? undefined,
                 source: activeProfile.source === "session" ? "session_profile" : "global_profile",
-                generationParams: { ...(activeProfile.params ?? {}), ...(slot.params ?? {}) },
+                generationParams: mergedGenerationParams.params,
+                generationParamOrigins: mergedGenerationParams.origins,
                 providerType: activeProfile.provider,
                 model: {
                   providerId,

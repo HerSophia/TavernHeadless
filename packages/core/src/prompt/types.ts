@@ -1,5 +1,6 @@
 // ── Chat Role ─────────────────────────────────────────
 
+import type { GenerationParams } from '../llm/types.js';
 import type { MemoryRuntimeMode } from '../memory/types.js';
 
 /** LLM 消息角色 */
@@ -528,6 +529,22 @@ export interface PromptRuntimeDiffEntry<TValue = unknown> {
   right?: TValue;
 }
 
+export type PromptRuntimeGenerationParamName = keyof GenerationParams;
+
+export type PromptRuntimeGenerationParamFinalState = 'sent' | 'absent' | 'cancelled';
+
+export type PromptRuntimeGenerationParamOrigin = 'profile' | 'instance' | 'request' | 'default' | 'absent';
+
+export type PromptRuntimeGenerationParamLayer = 'profile' | 'instance' | 'request';
+
+export interface PromptRuntimeGenerationParamResolution {
+  name: PromptRuntimeGenerationParamName;
+  finalState: PromptRuntimeGenerationParamFinalState;
+  origin: PromptRuntimeGenerationParamOrigin;
+  cancelledAt?: PromptRuntimeGenerationParamLayer;
+  valueFrom?: Exclude<PromptRuntimeGenerationParamOrigin, 'absent'>;
+}
+
 export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   preset?: PromptRuntimePresetTrace;
   worldbook?: PromptRuntimeWorldbookTrace<TWorldbookMatch>;
@@ -539,6 +556,7 @@ export interface PromptRuntimeTrace<TWorldbookMatch = unknown> {
   structure?: PromptRuntimeStructureTrace;
   delivery?: PromptRuntimeDeliveryTrace;
   visibility?: PromptRuntimeVisibilityTrace;
+  generationParamsResolution?: PromptRuntimeGenerationParamResolution[];
 }
 
 export interface PromptRuntimeDebugView<TWorldbookMatch = unknown> {

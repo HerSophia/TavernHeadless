@@ -207,20 +207,21 @@ POST /llm-profiles/:id/activate
 
 - 省略 `params`：保留已有 binding 的 `params`
 - 显式传 `params: null`：清空已有 binding 的 `params`
+- `params` 内部某个字段传 `null`：显式取消该字段，不再沿用上游同名参数
 
 | 字段 | 类型 | 说明 |
 | ---- | ---- | ---- |
-| `max_context_tokens` | integer | 最大上下文 token |
-| `max_output_tokens` | integer | 最大输出 token |
-| `temperature` | number | 温度 0-2 |
-| `top_p` | number | 0-1 |
-| `top_k` | integer | >=0 |
-| `frequency_penalty` | number | -2 到 2 |
-| `presence_penalty` | number | -2 到 2 |
-| `stream` | boolean | 是否流式 |
-| `timeout_ms` | integer | 超时毫秒 |
-| `max_retries` | integer | 最大重试 0-10 |
-| `reasoning_effort` | string | `low` / `medium` / `high` |
+| `max_context_tokens` | integer \| null | 最大上下文 token。传 `null` 表示显式取消 |
+| `max_output_tokens` | integer \| null | 最大输出 token。传 `null` 表示显式取消 |
+| `temperature` | number \| null | 温度 0-2。传 `null` 表示显式取消 |
+| `top_p` | number \| null | 0-1。传 `null` 表示显式取消 |
+| `top_k` | integer \| null | >=0。传 `null` 表示显式取消 |
+| `frequency_penalty` | number \| null | -2 到 2。传 `null` 表示显式取消 |
+| `presence_penalty` | number \| null | -2 到 2。传 `null` 表示显式取消 |
+| `stream` | boolean \| null | 是否流式。传 `null` 表示显式取消 |
+| `timeout_ms` | integer \| null | 超时毫秒。传 `null` 表示显式取消 |
+| `max_retries` | integer \| null | 最大重试 0-10。传 `null` 表示显式取消 |
+| `reasoning_effort` | string \| null | `low` / `medium` / `high`。传 `null` 表示显式取消 |
 
 ### 响应 `200`
 
