@@ -481,6 +481,49 @@ export type PromptRuntimeGenerationParamResolution = {
   valueFrom?: Exclude<PromptRuntimeGenerationParamOrigin, "absent">;
 };
 
+export type PromptRuntimeToolTransportKind = "native_function_call" | "text_protocol" | "none";
+
+export type PromptRuntimeToolTransportReasonCode =
+  | "explicit_override"
+  | "tools_disabled"
+  | "instance_not_supports_function_call"
+  | "default_native_function_call";
+
+export type PromptRuntimeToolTransportSelection = {
+  transport: PromptRuntimeToolTransportKind;
+  reasonCode: PromptRuntimeToolTransportReasonCode;
+  reasonDetail?: string;
+};
+
+export type PromptRuntimeToolTransportDiagnosticReason =
+  | "tool_not_registered"
+  | "json_parse_failed"
+  | "missing_args_field"
+  | "duplicate_call_id"
+  | "malformed_block";
+
+export type PromptRuntimeToolTransportDiagnostic = {
+  callId: string | null;
+  toolName: string | null;
+  reason: PromptRuntimeToolTransportDiagnosticReason;
+  excerpt: string;
+};
+
+export type PromptRuntimeToolTransportTrace = {
+  selection: PromptRuntimeToolTransportSelection;
+  toolList?: {
+    injected: boolean;
+    contributorId?: string;
+    toolCount: number;
+  };
+  parsing?: {
+    blockCount: number;
+    acceptedCount: number;
+    rejectedCount: number;
+    diagnostics: PromptRuntimeToolTransportDiagnostic[];
+  };
+};
+
 export type PromptRuntimeTrace = {
   budgets?: PromptRuntimeBudgetTrace;
   delivery?: PromptRuntimeDeliveryTrace;
@@ -491,12 +534,13 @@ export type PromptRuntimeTrace = {
   preset?: PromptRuntimePresetTrace;
   regex?: PromptRuntimeRegexTrace;
   structure?: PromptRuntimeStructureTrace;
+  toolTransport?: PromptRuntimeToolTransportTrace;
   visibility?: PromptRuntimeVisibilityTrace;
   historyNormalization?: PromptRuntimeHistoryNormalizationTrace;
   worldbook?: PromptRuntimeWorldbookTrace;
 };
 
-export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution">;
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution" | "toolTransport">;
 
 export type PromptDebugPayload = {
   promptSnapshot?: PromptSnapshotPreview;
@@ -620,6 +664,104 @@ export function mapPromptRuntimePreviewTracePayload(value: unknown): PromptRunti
     ...(runtimeTrace.historyNormalization ? { historyNormalization: runtimeTrace.historyNormalization } : {}),
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
     ...(runtimeTrace.generationParamsResolution ? { generationParamsResolution: runtimeTrace.generationParamsResolution } : {}),
+    ...(runtimeTrace.toolTransport ? { toolTransport: runtimeTrace.toolTransport } : {}),
+  };
+}
+
+function readPromptRuntimeToolTransportKind(value: unknown): PromptRuntimeToolTransportKind | undefined {
+  const transport = readOptionalString(value);
+  return transport === "native_function_call" || transport === "text_protocol" || transport === "none"
+    ? transport
+    : undefined;
+}
+
+function readPromptRuntimeToolTransportReasonCode(value: unknown): PromptRuntimeToolTransportReasonCode | undefined {
+  const reason = readOptionalString(value);
+  return reason === "explicit_override"
+    || reason === "tools_disabled"
+    || reason === "instance_not_supports_function_call"
+    || reason === "default_native_function_call"
+    ? reason
+    : undefined;
+}
+
+function readPromptRuntimeToolTransportDiagnosticReason(
+  value: unknown,
+): PromptRuntimeToolTransportDiagnosticReason | undefined {
+  const reason = readOptionalString(value);
+  return reason === "tool_not_registered"
+    || reason === "json_parse_failed"
+    || reason === "missing_args_field"
+    || reason === "duplicate_call_id"
+    || reason === "malformed_block"
+    ? reason
+    : undefined;
+}
+
+function mapPromptRuntimeToolTransportPayload(value: unknown): PromptRuntimeToolTransportTrace | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const selectionRecord = readRecord(record.selection);
+  const transport = readPromptRuntimeToolTransportKind(selectionRecord?.transport);
+  const reasonCode = readPromptRuntimeToolTransportReasonCode(selectionRecord?.reason_code);
+  if (!transport || !reasonCode) {
+    return undefined;
+  }
+
+  const toolList = readRecord(record.tool_list);
+  const parsing = readRecord(record.parsing);
+
+  return {
+    selection: {
+      transport,
+      reasonCode,
+      ...(readOptionalString(selectionRecord?.reason_detail)
+        ? { reasonDetail: readOptionalString(selectionRecord?.reason_detail) }
+        : {}),
+    },
+    ...(toolList
+      ? {
+          toolList: {
+            injected: readBoolean(toolList.injected),
+            ...(readOptionalString(toolList.contributor_id)
+              ? { contributorId: readOptionalString(toolList.contributor_id) }
+              : {}),
+            toolCount: readNumber(toolList.tool_count),
+          },
+        }
+      : {}),
+    ...(parsing
+      ? {
+          parsing: {
+            blockCount: readNumber(parsing.block_count),
+            acceptedCount: readNumber(parsing.accepted_count),
+            rejectedCount: readNumber(parsing.rejected_count),
+            diagnostics: readArray(parsing.diagnostics)
+              .map((item) => {
+                const diagnostic = readRecord(item);
+                if (!diagnostic) {
+                  return null;
+                }
+
+                const reason = readPromptRuntimeToolTransportDiagnosticReason(diagnostic.reason);
+                if (!reason) {
+                  return null;
+                }
+
+                return {
+                  callId: diagnostic.call_id === null ? null : readNullableString(diagnostic.call_id),
+                  toolName: diagnostic.tool_name === null ? null : readNullableString(diagnostic.tool_name),
+                  reason,
+                  excerpt: readString(diagnostic.excerpt),
+                };
+              })
+              .filter((item): item is PromptRuntimeToolTransportDiagnostic => item !== null),
+          },
+        }
+      : {}),
   };
 }
 
@@ -639,6 +781,7 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   const macro = readRecord(record.macro);
   const delivery = readRecord(record.delivery);
   const visibility = readRecord(record.visibility);
+  const toolTransport = mapPromptRuntimeToolTransportPayload(record.tool_transport);
   const historyNormalization = mapPromptRuntimeHistoryNormalization(record.history_normalization);
   const generationParamsResolution = readArray(record.generation_params_resolution)
     .map((item) => readRecord(item))
@@ -784,6 +927,11 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
                 }
               : {}),
           },
+        }
+      : {}),
+    ...(toolTransport
+      ? {
+          toolTransport,
         }
       : {}),
     ...(readRecord(record.source_selection)

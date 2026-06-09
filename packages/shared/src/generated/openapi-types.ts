@@ -5201,16 +5201,16 @@ export interface paths {
                          *     }
                          */
                         generation_params?: {
-                            frequency_penalty?: number;
-                            max_output_tokens?: number;
-                            presence_penalty?: number;
-                            /** @enum {string} */
-                            reasoning_effort?: "low" | "medium" | "high";
-                            stop_sequences?: string[];
-                            stream?: boolean;
-                            temperature?: number;
-                            top_k?: number;
-                            top_p?: number;
+                            frequency_penalty?: null | number;
+                            max_output_tokens?: null | number;
+                            presence_penalty?: null | number;
+                            /** @enum {null|string} */
+                            reasoning_effort?: "low" | "medium" | "high" | null;
+                            stop_sequences?: null | string[];
+                            stream?: null | boolean;
+                            temperature?: null | number;
+                            top_k?: null | number;
+                            top_p?: null | number;
                         };
                         /**
                          * @example [
@@ -5360,6 +5360,26 @@ export interface paths {
                          *             "no_assistant": false,
                          *             "require_last_user": true
                          *           },
+                         *           "generation_params_resolution": [
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "temperature",
+                         *               "origin": "default",
+                         *               "value_from": "default"
+                         *             },
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "maxOutputTokens",
+                         *               "origin": "request",
+                         *               "value_from": "request"
+                         *             },
+                         *             {
+                         *               "cancelled_at": "request",
+                         *               "final_state": "cancelled",
+                         *               "name": "topP",
+                         *               "origin": "request"
+                         *             }
+                         *           ],
                          *           "history_normalization": {
                          *             "effective_turn_count": 2,
                          *             "merged_user_groups": [
@@ -5555,6 +5575,24 @@ export interface paths {
                          *             "mode": "no_assistant",
                          *             "tail_assistant_detected": false
                          *           },
+                         *           "tool_transport": {
+                         *             "parsing": {
+                         *               "accepted_count": 1,
+                         *               "block_count": 1,
+                         *               "diagnostics": [],
+                         *               "rejected_count": 0
+                         *             },
+                         *             "selection": {
+                         *               "reason_code": "explicit_override",
+                         *               "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                         *               "transport": "text_protocol"
+                         *             },
+                         *             "tool_list": {
+                         *               "contributor_id": "builtin:tool_list",
+                         *               "injected": true,
+                         *               "tool_count": 2
+                         *             }
+                         *           },
                          *           "worldbook": {
                          *             "hit_count": 1
                          *           }
@@ -5674,6 +5712,26 @@ export interface paths {
                              *           "no_assistant": false,
                              *           "require_last_user": true
                              *         },
+                             *         "generation_params_resolution": [
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "temperature",
+                             *             "origin": "default",
+                             *             "value_from": "default"
+                             *           },
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "maxOutputTokens",
+                             *             "origin": "request",
+                             *             "value_from": "request"
+                             *           },
+                             *           {
+                             *             "cancelled_at": "request",
+                             *             "final_state": "cancelled",
+                             *             "name": "topP",
+                             *             "origin": "request"
+                             *           }
+                             *         ],
                              *         "history_normalization": {
                              *           "effective_turn_count": 2,
                              *           "merged_user_groups": [
@@ -5869,6 +5927,24 @@ export interface paths {
                              *           "mode": "no_assistant",
                              *           "tail_assistant_detected": false
                              *         },
+                             *         "tool_transport": {
+                             *           "parsing": {
+                             *             "accepted_count": 1,
+                             *             "block_count": 1,
+                             *             "diagnostics": [],
+                             *             "rejected_count": 0
+                             *           },
+                             *           "selection": {
+                             *             "reason_code": "explicit_override",
+                             *             "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                             *             "transport": "text_protocol"
+                             *           },
+                             *           "tool_list": {
+                             *             "contributor_id": "builtin:tool_list",
+                             *             "injected": true,
+                             *             "tool_count": 2
+                             *           }
+                             *         },
                              *         "worldbook": {
                              *           "hit_count": 1
                              *         }
@@ -6045,6 +6121,26 @@ export interface paths {
                                  *         "no_assistant": false,
                                  *         "require_last_user": true
                                  *       },
+                                 *       "generation_params_resolution": [
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "temperature",
+                                 *           "origin": "default",
+                                 *           "value_from": "default"
+                                 *         },
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "maxOutputTokens",
+                                 *           "origin": "request",
+                                 *           "value_from": "request"
+                                 *         },
+                                 *         {
+                                 *           "cancelled_at": "request",
+                                 *           "final_state": "cancelled",
+                                 *           "name": "topP",
+                                 *           "origin": "request"
+                                 *         }
+                                 *       ],
                                  *       "history_normalization": {
                                  *         "effective_turn_count": 2,
                                  *         "merged_user_groups": [
@@ -6240,6 +6336,24 @@ export interface paths {
                                  *         "mode": "no_assistant",
                                  *         "tail_assistant_detected": false
                                  *       },
+                                 *       "tool_transport": {
+                                 *         "parsing": {
+                                 *           "accepted_count": 1,
+                                 *           "block_count": 1,
+                                 *           "diagnostics": [],
+                                 *           "rejected_count": 0
+                                 *         },
+                                 *         "selection": {
+                                 *           "reason_code": "explicit_override",
+                                 *           "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                 *           "transport": "text_protocol"
+                                 *         },
+                                 *         "tool_list": {
+                                 *           "contributor_id": "builtin:tool_list",
+                                 *           "injected": true,
+                                 *           "tool_count": 2
+                                 *         }
+                                 *       },
                                  *       "worldbook": {
                                  *         "hit_count": 1
                                  *       }
@@ -6276,6 +6390,18 @@ export interface paths {
                                         no_assistant: boolean;
                                         require_last_user: boolean;
                                     };
+                                    generation_params_resolution?: {
+                                        /** @enum {string} */
+                                        cancelled_at?: "profile" | "instance" | "request";
+                                        /** @enum {string} */
+                                        final_state: "sent" | "absent" | "cancelled";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        /** @enum {string} */
+                                        origin: "profile" | "instance" | "request" | "default" | "absent";
+                                        /** @enum {string} */
+                                        value_from?: "profile" | "instance" | "request" | "default";
+                                    }[];
                                     /**
                                      * @example {
                                      *       "effective_turn_count": 2,
@@ -6517,6 +6643,32 @@ export interface paths {
                                         tail_assistant_detected: boolean;
                                         transcript_message_count?: number;
                                         transcriptized?: boolean;
+                                    };
+                                    tool_transport?: {
+                                        parsing?: {
+                                            accepted_count: number;
+                                            block_count: number;
+                                            diagnostics: {
+                                                call_id: string | null;
+                                                excerpt: string;
+                                                /** @enum {string} */
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                tool_name: string | null;
+                                            }[];
+                                            rejected_count: number;
+                                        };
+                                        selection: {
+                                            /** @enum {string} */
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_detail?: string;
+                                            /** @enum {string} */
+                                            transport: "native_function_call" | "text_protocol" | "none";
+                                        };
+                                        tool_list?: {
+                                            contributor_id?: string;
+                                            injected: boolean;
+                                            tool_count: number;
+                                        };
                                     };
                                     worldbook?: {
                                         hit_count: number;
@@ -9840,16 +9992,16 @@ export interface paths {
                          *     }
                          */
                         generation_params?: {
-                            frequency_penalty?: number;
-                            max_output_tokens?: number;
-                            presence_penalty?: number;
-                            /** @enum {string} */
-                            reasoning_effort?: "low" | "medium" | "high";
-                            stop_sequences?: string[];
-                            stream?: boolean;
-                            temperature?: number;
-                            top_k?: number;
-                            top_p?: number;
+                            frequency_penalty?: null | number;
+                            max_output_tokens?: null | number;
+                            presence_penalty?: null | number;
+                            /** @enum {null|string} */
+                            reasoning_effort?: "low" | "medium" | "high" | null;
+                            stop_sequences?: null | string[];
+                            stream?: null | boolean;
+                            temperature?: null | number;
+                            top_k?: null | number;
+                            top_p?: null | number;
                         };
                         /**
                          * @example [
@@ -9999,6 +10151,26 @@ export interface paths {
                          *             "no_assistant": false,
                          *             "require_last_user": true
                          *           },
+                         *           "generation_params_resolution": [
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "temperature",
+                         *               "origin": "default",
+                         *               "value_from": "default"
+                         *             },
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "maxOutputTokens",
+                         *               "origin": "request",
+                         *               "value_from": "request"
+                         *             },
+                         *             {
+                         *               "cancelled_at": "request",
+                         *               "final_state": "cancelled",
+                         *               "name": "topP",
+                         *               "origin": "request"
+                         *             }
+                         *           ],
                          *           "history_normalization": {
                          *             "effective_turn_count": 2,
                          *             "merged_user_groups": [
@@ -10194,6 +10366,24 @@ export interface paths {
                          *             "mode": "no_assistant",
                          *             "tail_assistant_detected": false
                          *           },
+                         *           "tool_transport": {
+                         *             "parsing": {
+                         *               "accepted_count": 1,
+                         *               "block_count": 1,
+                         *               "diagnostics": [],
+                         *               "rejected_count": 0
+                         *             },
+                         *             "selection": {
+                         *               "reason_code": "explicit_override",
+                         *               "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                         *               "transport": "text_protocol"
+                         *             },
+                         *             "tool_list": {
+                         *               "contributor_id": "builtin:tool_list",
+                         *               "injected": true,
+                         *               "tool_count": 2
+                         *             }
+                         *           },
                          *           "worldbook": {
                          *             "hit_count": 1
                          *           }
@@ -10315,6 +10505,26 @@ export interface paths {
                              *           "no_assistant": false,
                              *           "require_last_user": true
                              *         },
+                             *         "generation_params_resolution": [
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "temperature",
+                             *             "origin": "default",
+                             *             "value_from": "default"
+                             *           },
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "maxOutputTokens",
+                             *             "origin": "request",
+                             *             "value_from": "request"
+                             *           },
+                             *           {
+                             *             "cancelled_at": "request",
+                             *             "final_state": "cancelled",
+                             *             "name": "topP",
+                             *             "origin": "request"
+                             *           }
+                             *         ],
                              *         "history_normalization": {
                              *           "effective_turn_count": 2,
                              *           "merged_user_groups": [
@@ -10510,6 +10720,24 @@ export interface paths {
                              *           "mode": "no_assistant",
                              *           "tail_assistant_detected": false
                              *         },
+                             *         "tool_transport": {
+                             *           "parsing": {
+                             *             "accepted_count": 1,
+                             *             "block_count": 1,
+                             *             "diagnostics": [],
+                             *             "rejected_count": 0
+                             *           },
+                             *           "selection": {
+                             *             "reason_code": "explicit_override",
+                             *             "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                             *             "transport": "text_protocol"
+                             *           },
+                             *           "tool_list": {
+                             *             "contributor_id": "builtin:tool_list",
+                             *             "injected": true,
+                             *             "tool_count": 2
+                             *           }
+                             *         },
                              *         "worldbook": {
                              *           "hit_count": 1
                              *         }
@@ -10688,6 +10916,26 @@ export interface paths {
                                  *         "no_assistant": false,
                                  *         "require_last_user": true
                                  *       },
+                                 *       "generation_params_resolution": [
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "temperature",
+                                 *           "origin": "default",
+                                 *           "value_from": "default"
+                                 *         },
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "maxOutputTokens",
+                                 *           "origin": "request",
+                                 *           "value_from": "request"
+                                 *         },
+                                 *         {
+                                 *           "cancelled_at": "request",
+                                 *           "final_state": "cancelled",
+                                 *           "name": "topP",
+                                 *           "origin": "request"
+                                 *         }
+                                 *       ],
                                  *       "history_normalization": {
                                  *         "effective_turn_count": 2,
                                  *         "merged_user_groups": [
@@ -10883,6 +11131,24 @@ export interface paths {
                                  *         "mode": "no_assistant",
                                  *         "tail_assistant_detected": false
                                  *       },
+                                 *       "tool_transport": {
+                                 *         "parsing": {
+                                 *           "accepted_count": 1,
+                                 *           "block_count": 1,
+                                 *           "diagnostics": [],
+                                 *           "rejected_count": 0
+                                 *         },
+                                 *         "selection": {
+                                 *           "reason_code": "explicit_override",
+                                 *           "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                 *           "transport": "text_protocol"
+                                 *         },
+                                 *         "tool_list": {
+                                 *           "contributor_id": "builtin:tool_list",
+                                 *           "injected": true,
+                                 *           "tool_count": 2
+                                 *         }
+                                 *       },
                                  *       "worldbook": {
                                  *         "hit_count": 1
                                  *       }
@@ -10919,6 +11185,18 @@ export interface paths {
                                         no_assistant: boolean;
                                         require_last_user: boolean;
                                     };
+                                    generation_params_resolution?: {
+                                        /** @enum {string} */
+                                        cancelled_at?: "profile" | "instance" | "request";
+                                        /** @enum {string} */
+                                        final_state: "sent" | "absent" | "cancelled";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        /** @enum {string} */
+                                        origin: "profile" | "instance" | "request" | "default" | "absent";
+                                        /** @enum {string} */
+                                        value_from?: "profile" | "instance" | "request" | "default";
+                                    }[];
                                     /**
                                      * @example {
                                      *       "effective_turn_count": 2,
@@ -11160,6 +11438,32 @@ export interface paths {
                                         tail_assistant_detected: boolean;
                                         transcript_message_count?: number;
                                         transcriptized?: boolean;
+                                    };
+                                    tool_transport?: {
+                                        parsing?: {
+                                            accepted_count: number;
+                                            block_count: number;
+                                            diagnostics: {
+                                                call_id: string | null;
+                                                excerpt: string;
+                                                /** @enum {string} */
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                tool_name: string | null;
+                                            }[];
+                                            rejected_count: number;
+                                        };
+                                        selection: {
+                                            /** @enum {string} */
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_detail?: string;
+                                            /** @enum {string} */
+                                            transport: "native_function_call" | "text_protocol" | "none";
+                                        };
+                                        tool_list?: {
+                                            contributor_id?: string;
+                                            injected: boolean;
+                                            tool_count: number;
+                                        };
                                     };
                                     worldbook?: {
                                         hit_count: number;
@@ -16361,16 +16665,16 @@ export interface paths {
                          *     }
                          */
                         generation_params?: {
-                            frequency_penalty?: number;
-                            max_output_tokens?: number;
-                            presence_penalty?: number;
-                            /** @enum {string} */
-                            reasoning_effort?: "low" | "medium" | "high";
-                            stop_sequences?: string[];
-                            stream?: boolean;
-                            temperature?: number;
-                            top_k?: number;
-                            top_p?: number;
+                            frequency_penalty?: null | number;
+                            max_output_tokens?: null | number;
+                            presence_penalty?: null | number;
+                            /** @enum {null|string} */
+                            reasoning_effort?: "low" | "medium" | "high" | null;
+                            stop_sequences?: null | string[];
+                            stream?: null | boolean;
+                            temperature?: null | number;
+                            top_k?: null | number;
+                            top_p?: null | number;
                         };
                         /**
                          * @example [
@@ -16520,6 +16824,26 @@ export interface paths {
                          *             "no_assistant": false,
                          *             "require_last_user": true
                          *           },
+                         *           "generation_params_resolution": [
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "temperature",
+                         *               "origin": "default",
+                         *               "value_from": "default"
+                         *             },
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "maxOutputTokens",
+                         *               "origin": "request",
+                         *               "value_from": "request"
+                         *             },
+                         *             {
+                         *               "cancelled_at": "request",
+                         *               "final_state": "cancelled",
+                         *               "name": "topP",
+                         *               "origin": "request"
+                         *             }
+                         *           ],
                          *           "history_normalization": {
                          *             "effective_turn_count": 2,
                          *             "merged_user_groups": [
@@ -16715,6 +17039,24 @@ export interface paths {
                          *             "mode": "no_assistant",
                          *             "tail_assistant_detected": false
                          *           },
+                         *           "tool_transport": {
+                         *             "parsing": {
+                         *               "accepted_count": 1,
+                         *               "block_count": 1,
+                         *               "diagnostics": [],
+                         *               "rejected_count": 0
+                         *             },
+                         *             "selection": {
+                         *               "reason_code": "explicit_override",
+                         *               "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                         *               "transport": "text_protocol"
+                         *             },
+                         *             "tool_list": {
+                         *               "contributor_id": "builtin:tool_list",
+                         *               "injected": true,
+                         *               "tool_count": 2
+                         *             }
+                         *           },
                          *           "worldbook": {
                          *             "hit_count": 1
                          *           }
@@ -16834,6 +17176,26 @@ export interface paths {
                              *           "no_assistant": false,
                              *           "require_last_user": true
                              *         },
+                             *         "generation_params_resolution": [
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "temperature",
+                             *             "origin": "default",
+                             *             "value_from": "default"
+                             *           },
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "maxOutputTokens",
+                             *             "origin": "request",
+                             *             "value_from": "request"
+                             *           },
+                             *           {
+                             *             "cancelled_at": "request",
+                             *             "final_state": "cancelled",
+                             *             "name": "topP",
+                             *             "origin": "request"
+                             *           }
+                             *         ],
                              *         "history_normalization": {
                              *           "effective_turn_count": 2,
                              *           "merged_user_groups": [
@@ -17029,6 +17391,24 @@ export interface paths {
                              *           "mode": "no_assistant",
                              *           "tail_assistant_detected": false
                              *         },
+                             *         "tool_transport": {
+                             *           "parsing": {
+                             *             "accepted_count": 1,
+                             *             "block_count": 1,
+                             *             "diagnostics": [],
+                             *             "rejected_count": 0
+                             *           },
+                             *           "selection": {
+                             *             "reason_code": "explicit_override",
+                             *             "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                             *             "transport": "text_protocol"
+                             *           },
+                             *           "tool_list": {
+                             *             "contributor_id": "builtin:tool_list",
+                             *             "injected": true,
+                             *             "tool_count": 2
+                             *           }
+                             *         },
                              *         "worldbook": {
                              *           "hit_count": 1
                              *         }
@@ -17205,6 +17585,26 @@ export interface paths {
                                  *         "no_assistant": false,
                                  *         "require_last_user": true
                                  *       },
+                                 *       "generation_params_resolution": [
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "temperature",
+                                 *           "origin": "default",
+                                 *           "value_from": "default"
+                                 *         },
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "maxOutputTokens",
+                                 *           "origin": "request",
+                                 *           "value_from": "request"
+                                 *         },
+                                 *         {
+                                 *           "cancelled_at": "request",
+                                 *           "final_state": "cancelled",
+                                 *           "name": "topP",
+                                 *           "origin": "request"
+                                 *         }
+                                 *       ],
                                  *       "history_normalization": {
                                  *         "effective_turn_count": 2,
                                  *         "merged_user_groups": [
@@ -17400,6 +17800,24 @@ export interface paths {
                                  *         "mode": "no_assistant",
                                  *         "tail_assistant_detected": false
                                  *       },
+                                 *       "tool_transport": {
+                                 *         "parsing": {
+                                 *           "accepted_count": 1,
+                                 *           "block_count": 1,
+                                 *           "diagnostics": [],
+                                 *           "rejected_count": 0
+                                 *         },
+                                 *         "selection": {
+                                 *           "reason_code": "explicit_override",
+                                 *           "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                 *           "transport": "text_protocol"
+                                 *         },
+                                 *         "tool_list": {
+                                 *           "contributor_id": "builtin:tool_list",
+                                 *           "injected": true,
+                                 *           "tool_count": 2
+                                 *         }
+                                 *       },
                                  *       "worldbook": {
                                  *         "hit_count": 1
                                  *       }
@@ -17436,6 +17854,18 @@ export interface paths {
                                         no_assistant: boolean;
                                         require_last_user: boolean;
                                     };
+                                    generation_params_resolution?: {
+                                        /** @enum {string} */
+                                        cancelled_at?: "profile" | "instance" | "request";
+                                        /** @enum {string} */
+                                        final_state: "sent" | "absent" | "cancelled";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        /** @enum {string} */
+                                        origin: "profile" | "instance" | "request" | "default" | "absent";
+                                        /** @enum {string} */
+                                        value_from?: "profile" | "instance" | "request" | "default";
+                                    }[];
                                     /**
                                      * @example {
                                      *       "effective_turn_count": 2,
@@ -17677,6 +18107,32 @@ export interface paths {
                                         tail_assistant_detected: boolean;
                                         transcript_message_count?: number;
                                         transcriptized?: boolean;
+                                    };
+                                    tool_transport?: {
+                                        parsing?: {
+                                            accepted_count: number;
+                                            block_count: number;
+                                            diagnostics: {
+                                                call_id: string | null;
+                                                excerpt: string;
+                                                /** @enum {string} */
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                tool_name: string | null;
+                                            }[];
+                                            rejected_count: number;
+                                        };
+                                        selection: {
+                                            /** @enum {string} */
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_detail?: string;
+                                            /** @enum {string} */
+                                            transport: "native_function_call" | "text_protocol" | "none";
+                                        };
+                                        tool_list?: {
+                                            contributor_id?: string;
+                                            injected: boolean;
+                                            tool_count: number;
+                                        };
                                     };
                                     worldbook?: {
                                         hit_count: number;
@@ -17994,16 +18450,16 @@ export interface paths {
                          *     }
                          */
                         generation_params?: {
-                            frequency_penalty?: number;
-                            max_output_tokens?: number;
-                            presence_penalty?: number;
-                            /** @enum {string} */
-                            reasoning_effort?: "low" | "medium" | "high";
-                            stop_sequences?: string[];
-                            stream?: boolean;
-                            temperature?: number;
-                            top_k?: number;
-                            top_p?: number;
+                            frequency_penalty?: null | number;
+                            max_output_tokens?: null | number;
+                            presence_penalty?: null | number;
+                            /** @enum {null|string} */
+                            reasoning_effort?: "low" | "medium" | "high" | null;
+                            stop_sequences?: null | string[];
+                            stream?: null | boolean;
+                            temperature?: null | number;
+                            top_k?: null | number;
+                            top_p?: null | number;
                         };
                         message: string;
                         /** @enum {string} */
@@ -18157,6 +18613,26 @@ export interface paths {
                          *             "no_assistant": false,
                          *             "require_last_user": true
                          *           },
+                         *           "generation_params_resolution": [
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "temperature",
+                         *               "origin": "default",
+                         *               "value_from": "default"
+                         *             },
+                         *             {
+                         *               "final_state": "sent",
+                         *               "name": "maxOutputTokens",
+                         *               "origin": "request",
+                         *               "value_from": "request"
+                         *             },
+                         *             {
+                         *               "cancelled_at": "request",
+                         *               "final_state": "cancelled",
+                         *               "name": "topP",
+                         *               "origin": "request"
+                         *             }
+                         *           ],
                          *           "history_normalization": {
                          *             "effective_turn_count": 2,
                          *             "merged_user_groups": [
@@ -18352,6 +18828,24 @@ export interface paths {
                          *             "mode": "no_assistant",
                          *             "tail_assistant_detected": false
                          *           },
+                         *           "tool_transport": {
+                         *             "parsing": {
+                         *               "accepted_count": 1,
+                         *               "block_count": 1,
+                         *               "diagnostics": [],
+                         *               "rejected_count": 0
+                         *             },
+                         *             "selection": {
+                         *               "reason_code": "explicit_override",
+                         *               "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                         *               "transport": "text_protocol"
+                         *             },
+                         *             "tool_list": {
+                         *               "contributor_id": "builtin:tool_list",
+                         *               "injected": true,
+                         *               "tool_count": 2
+                         *             }
+                         *           },
                          *           "worldbook": {
                          *             "hit_count": 1
                          *           }
@@ -18471,6 +18965,26 @@ export interface paths {
                              *           "no_assistant": false,
                              *           "require_last_user": true
                              *         },
+                             *         "generation_params_resolution": [
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "temperature",
+                             *             "origin": "default",
+                             *             "value_from": "default"
+                             *           },
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "maxOutputTokens",
+                             *             "origin": "request",
+                             *             "value_from": "request"
+                             *           },
+                             *           {
+                             *             "cancelled_at": "request",
+                             *             "final_state": "cancelled",
+                             *             "name": "topP",
+                             *             "origin": "request"
+                             *           }
+                             *         ],
                              *         "history_normalization": {
                              *           "effective_turn_count": 2,
                              *           "merged_user_groups": [
@@ -18666,6 +19180,24 @@ export interface paths {
                              *           "mode": "no_assistant",
                              *           "tail_assistant_detected": false
                              *         },
+                             *         "tool_transport": {
+                             *           "parsing": {
+                             *             "accepted_count": 1,
+                             *             "block_count": 1,
+                             *             "diagnostics": [],
+                             *             "rejected_count": 0
+                             *           },
+                             *           "selection": {
+                             *             "reason_code": "explicit_override",
+                             *             "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                             *             "transport": "text_protocol"
+                             *           },
+                             *           "tool_list": {
+                             *             "contributor_id": "builtin:tool_list",
+                             *             "injected": true,
+                             *             "tool_count": 2
+                             *           }
+                             *         },
                              *         "worldbook": {
                              *           "hit_count": 1
                              *         }
@@ -18842,6 +19374,26 @@ export interface paths {
                                  *         "no_assistant": false,
                                  *         "require_last_user": true
                                  *       },
+                                 *       "generation_params_resolution": [
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "temperature",
+                                 *           "origin": "default",
+                                 *           "value_from": "default"
+                                 *         },
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "maxOutputTokens",
+                                 *           "origin": "request",
+                                 *           "value_from": "request"
+                                 *         },
+                                 *         {
+                                 *           "cancelled_at": "request",
+                                 *           "final_state": "cancelled",
+                                 *           "name": "topP",
+                                 *           "origin": "request"
+                                 *         }
+                                 *       ],
                                  *       "history_normalization": {
                                  *         "effective_turn_count": 2,
                                  *         "merged_user_groups": [
@@ -19037,6 +19589,24 @@ export interface paths {
                                  *         "mode": "no_assistant",
                                  *         "tail_assistant_detected": false
                                  *       },
+                                 *       "tool_transport": {
+                                 *         "parsing": {
+                                 *           "accepted_count": 1,
+                                 *           "block_count": 1,
+                                 *           "diagnostics": [],
+                                 *           "rejected_count": 0
+                                 *         },
+                                 *         "selection": {
+                                 *           "reason_code": "explicit_override",
+                                 *           "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                 *           "transport": "text_protocol"
+                                 *         },
+                                 *         "tool_list": {
+                                 *           "contributor_id": "builtin:tool_list",
+                                 *           "injected": true,
+                                 *           "tool_count": 2
+                                 *         }
+                                 *       },
                                  *       "worldbook": {
                                  *         "hit_count": 1
                                  *       }
@@ -19073,6 +19643,18 @@ export interface paths {
                                         no_assistant: boolean;
                                         require_last_user: boolean;
                                     };
+                                    generation_params_resolution?: {
+                                        /** @enum {string} */
+                                        cancelled_at?: "profile" | "instance" | "request";
+                                        /** @enum {string} */
+                                        final_state: "sent" | "absent" | "cancelled";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        /** @enum {string} */
+                                        origin: "profile" | "instance" | "request" | "default" | "absent";
+                                        /** @enum {string} */
+                                        value_from?: "profile" | "instance" | "request" | "default";
+                                    }[];
                                     /**
                                      * @example {
                                      *       "effective_turn_count": 2,
@@ -19314,6 +19896,32 @@ export interface paths {
                                         tail_assistant_detected: boolean;
                                         transcript_message_count?: number;
                                         transcriptized?: boolean;
+                                    };
+                                    tool_transport?: {
+                                        parsing?: {
+                                            accepted_count: number;
+                                            block_count: number;
+                                            diagnostics: {
+                                                call_id: string | null;
+                                                excerpt: string;
+                                                /** @enum {string} */
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                tool_name: string | null;
+                                            }[];
+                                            rejected_count: number;
+                                        };
+                                        selection: {
+                                            /** @enum {string} */
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_detail?: string;
+                                            /** @enum {string} */
+                                            transport: "native_function_call" | "text_protocol" | "none";
+                                        };
+                                        tool_list?: {
+                                            contributor_id?: string;
+                                            injected: boolean;
+                                            tool_count: number;
+                                        };
                                     };
                                     worldbook?: {
                                         hit_count: number;
@@ -20810,6 +21418,18 @@ export interface paths {
                                         no_assistant: boolean;
                                         require_last_user: boolean;
                                     };
+                                    generation_params_resolution?: {
+                                        /** @enum {string} */
+                                        cancelled_at?: "profile" | "instance" | "request";
+                                        /** @enum {string} */
+                                        final_state: "sent" | "absent" | "cancelled";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        /** @enum {string} */
+                                        origin: "profile" | "instance" | "request" | "default" | "absent";
+                                        /** @enum {string} */
+                                        value_from?: "profile" | "instance" | "request" | "default";
+                                    }[];
                                     /**
                                      * @example {
                                      *       "effective_turn_count": 2,
@@ -21051,6 +21671,32 @@ export interface paths {
                                         tail_assistant_detected: boolean;
                                         transcript_message_count?: number;
                                         transcriptized?: boolean;
+                                    };
+                                    tool_transport?: {
+                                        parsing?: {
+                                            accepted_count: number;
+                                            block_count: number;
+                                            diagnostics: {
+                                                call_id: string | null;
+                                                excerpt: string;
+                                                /** @enum {string} */
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                tool_name: string | null;
+                                            }[];
+                                            rejected_count: number;
+                                        };
+                                        selection: {
+                                            /** @enum {string} */
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_detail?: string;
+                                            /** @enum {string} */
+                                            transport: "native_function_call" | "text_protocol" | "none";
+                                        };
+                                        tool_list?: {
+                                            contributor_id?: string;
+                                            injected: boolean;
+                                            tool_count: number;
+                                        };
                                     };
                                     visibility?: {
                                         filtered_floor_nos: number[];
@@ -21312,16 +21958,16 @@ export interface paths {
                          *     }
                          */
                         generation_params?: {
-                            frequency_penalty?: number;
-                            max_output_tokens?: number;
-                            presence_penalty?: number;
-                            /** @enum {string} */
-                            reasoning_effort?: "low" | "medium" | "high";
-                            stop_sequences?: string[];
-                            stream?: boolean;
-                            temperature?: number;
-                            top_k?: number;
-                            top_p?: number;
+                            frequency_penalty?: null | number;
+                            max_output_tokens?: null | number;
+                            presence_penalty?: null | number;
+                            /** @enum {null|string} */
+                            reasoning_effort?: "low" | "medium" | "high" | null;
+                            stop_sequences?: null | string[];
+                            stream?: null | boolean;
+                            temperature?: null | number;
+                            top_k?: null | number;
+                            top_p?: null | number;
                         };
                         message: string;
                         /** @enum {string} */
@@ -28222,18 +28868,18 @@ export interface operations {
                             /** @enum {string} */
                             instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
                             params?: {
-                                frequency_penalty?: number;
-                                max_context_tokens?: number;
-                                max_output_tokens?: number;
-                                max_retries?: number;
-                                presence_penalty?: number;
-                                /** @enum {string} */
-                                reasoning_effort?: "low" | "medium" | "high";
-                                stream?: boolean;
-                                temperature?: number;
-                                timeout_ms?: number;
-                                top_k?: number;
-                                top_p?: number;
+                                frequency_penalty?: number | null;
+                                max_context_tokens?: number | null;
+                                max_output_tokens?: number | null;
+                                max_retries?: number | null;
+                                presence_penalty?: number | null;
+                                /** @enum {string|null} */
+                                reasoning_effort?: "low" | "medium" | "high" | null;
+                                stream?: boolean | null;
+                                temperature?: number | null;
+                                timeout_ms?: number | null;
+                                top_k?: number | null;
+                                top_p?: number | null;
                             } | null;
                             preset_id?: string | null;
                             /** @enum {string} */
@@ -28312,18 +28958,18 @@ export interface operations {
                             /** @enum {string} */
                             instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
                             params?: {
-                                frequency_penalty?: number;
-                                max_context_tokens?: number;
-                                max_output_tokens?: number;
-                                max_retries?: number;
-                                presence_penalty?: number;
-                                /** @enum {string} */
-                                reasoning_effort?: "low" | "medium" | "high";
-                                stream?: boolean;
-                                temperature?: number;
-                                timeout_ms?: number;
-                                top_k?: number;
-                                top_p?: number;
+                                frequency_penalty?: number | null;
+                                max_context_tokens?: number | null;
+                                max_output_tokens?: number | null;
+                                max_retries?: number | null;
+                                presence_penalty?: number | null;
+                                /** @enum {string|null} */
+                                reasoning_effort?: "low" | "medium" | "high" | null;
+                                stream?: boolean | null;
+                                temperature?: number | null;
+                                timeout_ms?: number | null;
+                                top_k?: number | null;
+                                top_p?: number | null;
                             } | null;
                             preset_id?: string | null;
                             /** @enum {string} */
@@ -28379,18 +29025,18 @@ export interface operations {
                 "application/json": {
                     enabled?: boolean;
                     params?: {
-                        frequency_penalty?: number;
-                        max_context_tokens?: number;
-                        max_output_tokens?: number;
-                        max_retries?: number;
-                        presence_penalty?: number;
-                        /** @enum {string} */
-                        reasoning_effort?: "low" | "medium" | "high";
-                        stream?: boolean;
-                        temperature?: number;
-                        timeout_ms?: number;
-                        top_k?: number;
-                        top_p?: number;
+                        frequency_penalty?: number | null;
+                        max_context_tokens?: number | null;
+                        max_output_tokens?: number | null;
+                        max_retries?: number | null;
+                        presence_penalty?: number | null;
+                        /** @enum {string|null} */
+                        reasoning_effort?: "low" | "medium" | "high" | null;
+                        stream?: boolean | null;
+                        temperature?: number | null;
+                        timeout_ms?: number | null;
+                        top_k?: number | null;
+                        top_p?: number | null;
                     } | null;
                     preset_id?: string | null;
                     /** @enum {string} */
@@ -28399,18 +29045,18 @@ export interface operations {
                 } | {
                     enabled?: boolean;
                     params?: {
-                        frequency_penalty?: number;
-                        max_context_tokens?: number;
-                        max_output_tokens?: number;
-                        max_retries?: number;
-                        presence_penalty?: number;
-                        /** @enum {string} */
-                        reasoning_effort?: "low" | "medium" | "high";
-                        stream?: boolean;
-                        temperature?: number;
-                        timeout_ms?: number;
-                        top_k?: number;
-                        top_p?: number;
+                        frequency_penalty?: number | null;
+                        max_context_tokens?: number | null;
+                        max_output_tokens?: number | null;
+                        max_retries?: number | null;
+                        presence_penalty?: number | null;
+                        /** @enum {string|null} */
+                        reasoning_effort?: "low" | "medium" | "high" | null;
+                        stream?: boolean | null;
+                        temperature?: number | null;
+                        timeout_ms?: number | null;
+                        top_k?: number | null;
+                        top_p?: number | null;
                     } | null;
                     preset_id?: string | null;
                     /** @enum {string} */
@@ -28452,18 +29098,18 @@ export interface operations {
                             /** @enum {string} */
                             instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
                             params?: {
-                                frequency_penalty?: number;
-                                max_context_tokens?: number;
-                                max_output_tokens?: number;
-                                max_retries?: number;
-                                presence_penalty?: number;
-                                /** @enum {string} */
-                                reasoning_effort?: "low" | "medium" | "high";
-                                stream?: boolean;
-                                temperature?: number;
-                                timeout_ms?: number;
-                                top_k?: number;
-                                top_p?: number;
+                                frequency_penalty?: number | null;
+                                max_context_tokens?: number | null;
+                                max_output_tokens?: number | null;
+                                max_retries?: number | null;
+                                presence_penalty?: number | null;
+                                /** @enum {string|null} */
+                                reasoning_effort?: "low" | "medium" | "high" | null;
+                                stream?: boolean | null;
+                                temperature?: number | null;
+                                timeout_ms?: number | null;
+                                top_k?: number | null;
+                                top_p?: number | null;
                             } | null;
                             preset_id?: string | null;
                             /** @enum {string} */
@@ -28614,18 +29260,18 @@ export interface operations {
                                 config_id?: string | null;
                                 enabled: boolean;
                                 params?: {
-                                    frequency_penalty?: number;
-                                    max_context_tokens?: number;
-                                    max_output_tokens?: number;
-                                    max_retries?: number;
-                                    presence_penalty?: number;
-                                    /** @enum {string} */
-                                    reasoning_effort?: "low" | "medium" | "high";
-                                    stream?: boolean;
-                                    temperature?: number;
-                                    timeout_ms?: number;
-                                    top_k?: number;
-                                    top_p?: number;
+                                    frequency_penalty?: number | null;
+                                    max_context_tokens?: number | null;
+                                    max_output_tokens?: number | null;
+                                    max_retries?: number | null;
+                                    presence_penalty?: number | null;
+                                    /** @enum {string|null} */
+                                    reasoning_effort?: "low" | "medium" | "high" | null;
+                                    stream?: boolean | null;
+                                    temperature?: number | null;
+                                    timeout_ms?: number | null;
+                                    top_k?: number | null;
+                                    top_p?: number | null;
                                 } | null;
                                 preset_id?: string | null;
                                 scope?: ("global" | "session") | null;
@@ -29249,18 +29895,18 @@ export interface operations {
                     /** @enum {string} */
                     instance_slot?: "*" | "narrator" | "director" | "verifier" | "memory";
                     params?: {
-                        frequency_penalty?: number;
-                        max_context_tokens?: number;
-                        max_output_tokens?: number;
-                        max_retries?: number;
-                        presence_penalty?: number;
-                        /** @enum {string} */
-                        reasoning_effort?: "low" | "medium" | "high";
-                        stream?: boolean;
-                        temperature?: number;
-                        timeout_ms?: number;
-                        top_k?: number;
-                        top_p?: number;
+                        frequency_penalty?: number | null;
+                        max_context_tokens?: number | null;
+                        max_output_tokens?: number | null;
+                        max_retries?: number | null;
+                        presence_penalty?: number | null;
+                        /** @enum {string|null} */
+                        reasoning_effort?: "low" | "medium" | "high" | null;
+                        stream?: boolean | null;
+                        temperature?: number | null;
+                        timeout_ms?: number | null;
+                        top_k?: number | null;
+                        top_p?: number | null;
                     } | null;
                     /** @enum {string} */
                     scope?: "global";
@@ -29269,18 +29915,18 @@ export interface operations {
                     /** @enum {string} */
                     instance_slot?: "*" | "narrator" | "director" | "verifier" | "memory";
                     params?: {
-                        frequency_penalty?: number;
-                        max_context_tokens?: number;
-                        max_output_tokens?: number;
-                        max_retries?: number;
-                        presence_penalty?: number;
-                        /** @enum {string} */
-                        reasoning_effort?: "low" | "medium" | "high";
-                        stream?: boolean;
-                        temperature?: number;
-                        timeout_ms?: number;
-                        top_k?: number;
-                        top_p?: number;
+                        frequency_penalty?: number | null;
+                        max_context_tokens?: number | null;
+                        max_output_tokens?: number | null;
+                        max_retries?: number | null;
+                        presence_penalty?: number | null;
+                        /** @enum {string|null} */
+                        reasoning_effort?: "low" | "medium" | "high" | null;
+                        stream?: boolean | null;
+                        temperature?: number | null;
+                        timeout_ms?: number | null;
+                        top_k?: number | null;
+                        top_p?: number | null;
                     } | null;
                     /** @enum {string} */
                     scope: "session";
@@ -29317,18 +29963,18 @@ export interface operations {
                             activated: boolean;
                             instance_slot: string;
                             params: {
-                                frequency_penalty?: number;
-                                max_context_tokens?: number;
-                                max_output_tokens?: number;
-                                max_retries?: number;
-                                presence_penalty?: number;
-                                /** @enum {string} */
-                                reasoning_effort?: "low" | "medium" | "high";
-                                stream?: boolean;
-                                temperature?: number;
-                                timeout_ms?: number;
-                                top_k?: number;
-                                top_p?: number;
+                                frequency_penalty?: number | null;
+                                max_context_tokens?: number | null;
+                                max_output_tokens?: number | null;
+                                max_retries?: number | null;
+                                presence_penalty?: number | null;
+                                /** @enum {string|null} */
+                                reasoning_effort?: "low" | "medium" | "high" | null;
+                                stream?: boolean | null;
+                                temperature?: number | null;
+                                timeout_ms?: number | null;
+                                top_k?: number | null;
+                                top_p?: number | null;
                             } | null;
                             profile_id: string;
                             /** @enum {string} */
@@ -29693,18 +30339,18 @@ export interface operations {
                             slots: {
                                 model_id: string;
                                 params: {
-                                    frequency_penalty?: number;
-                                    max_context_tokens?: number;
-                                    max_output_tokens?: number;
-                                    max_retries?: number;
-                                    presence_penalty?: number;
-                                    /** @enum {string} */
-                                    reasoning_effort?: "low" | "medium" | "high";
-                                    stream?: boolean;
-                                    temperature?: number;
-                                    timeout_ms?: number;
-                                    top_k?: number;
-                                    top_p?: number;
+                                    frequency_penalty?: number | null;
+                                    max_context_tokens?: number | null;
+                                    max_output_tokens?: number | null;
+                                    max_retries?: number | null;
+                                    presence_penalty?: number | null;
+                                    /** @enum {string|null} */
+                                    reasoning_effort?: "low" | "medium" | "high" | null;
+                                    stream?: boolean | null;
+                                    temperature?: number | null;
+                                    timeout_ms?: number | null;
+                                    top_k?: number | null;
+                                    top_p?: number | null;
                                 } | null;
                                 preset_name: string | null;
                                 profile_id: string | null;
@@ -37782,16 +38428,16 @@ export interface operations {
                      *     }
                      */
                     generation_params?: {
-                        frequency_penalty?: number;
-                        max_output_tokens?: number;
-                        presence_penalty?: number;
-                        /** @enum {string} */
-                        reasoning_effort?: "low" | "medium" | "high";
-                        stop_sequences?: string[];
-                        stream?: boolean;
-                        temperature?: number;
-                        top_k?: number;
-                        top_p?: number;
+                        frequency_penalty?: null | number;
+                        max_output_tokens?: null | number;
+                        presence_penalty?: null | number;
+                        /** @enum {null|string} */
+                        reasoning_effort?: "low" | "medium" | "high" | null;
+                        stop_sequences?: null | string[];
+                        stream?: null | boolean;
+                        temperature?: null | number;
+                        top_k?: null | number;
+                        top_p?: null | number;
                     };
                     message: string;
                     /** @enum {string} */
@@ -38251,6 +38897,26 @@ export interface operations {
                      *             "enable_verifier": false
                      *           },
                      *           "runtime_trace": {
+                     *             "generation_params_resolution": [
+                     *               {
+                     *                 "final_state": "sent",
+                     *                 "name": "temperature",
+                     *                 "origin": "default",
+                     *                 "value_from": "default"
+                     *               },
+                     *               {
+                     *                 "final_state": "sent",
+                     *                 "name": "maxOutputTokens",
+                     *                 "origin": "request",
+                     *                 "value_from": "request"
+                     *               },
+                     *               {
+                     *                 "cancelled_at": "request",
+                     *                 "final_state": "cancelled",
+                     *                 "name": "topP",
+                     *                 "origin": "request"
+                     *               }
+                     *             ],
                      *             "history_normalization": {
                      *               "effective_turn_count": 2,
                      *               "merged_user_groups": [
@@ -38315,6 +38981,24 @@ export interface operations {
                      *                   "source": "examples"
                      *                 }
                      *               ]
+                     *             },
+                     *             "tool_transport": {
+                     *               "parsing": {
+                     *                 "accepted_count": 1,
+                     *                 "block_count": 1,
+                     *                 "diagnostics": [],
+                     *                 "rejected_count": 0
+                     *               },
+                     *               "selection": {
+                     *                 "reason_code": "explicit_override",
+                     *                 "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                     *                 "transport": "text_protocol"
+                     *               },
+                     *               "tool_list": {
+                     *                 "contributor_id": "builtin:tool_list",
+                     *                 "injected": true,
+                     *                 "tool_count": 2
+                     *               }
                      *             },
                      *             "visibility": {
                      *               "filtered_floor_nos": [
@@ -38593,16 +39277,16 @@ export interface operations {
                                  *     }
                                  */
                                 generation_params: {
-                                    frequency_penalty?: number;
-                                    max_output_tokens?: number;
-                                    presence_penalty?: number;
-                                    /** @enum {string} */
-                                    reasoning_effort?: "low" | "medium" | "high";
-                                    stop_sequences?: string[];
-                                    stream?: boolean;
-                                    temperature?: number;
-                                    top_k?: number;
-                                    top_p?: number;
+                                    frequency_penalty?: null | number;
+                                    max_output_tokens?: null | number;
+                                    presence_penalty?: null | number;
+                                    /** @enum {null|string} */
+                                    reasoning_effort?: "low" | "medium" | "high" | null;
+                                    stop_sequences?: null | string[];
+                                    stream?: null | boolean;
+                                    temperature?: null | number;
+                                    top_k?: null | number;
+                                    top_p?: null | number;
                                 };
                                 memory?: {
                                     effective_write?: boolean;
@@ -38798,6 +39482,18 @@ export interface operations {
                                         no_assistant: boolean;
                                         require_last_user: boolean;
                                     };
+                                    generation_params_resolution?: {
+                                        /** @enum {string} */
+                                        cancelled_at?: "profile" | "instance" | "request";
+                                        /** @enum {string} */
+                                        final_state: "sent" | "absent" | "cancelled";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        /** @enum {string} */
+                                        origin: "profile" | "instance" | "request" | "default" | "absent";
+                                        /** @enum {string} */
+                                        value_from?: "profile" | "instance" | "request" | "default";
+                                    }[];
                                     /**
                                      * @example {
                                      *       "effective_turn_count": 2,
@@ -39039,6 +39735,32 @@ export interface operations {
                                         tail_assistant_detected: boolean;
                                         transcript_message_count?: number;
                                         transcriptized?: boolean;
+                                    };
+                                    tool_transport?: {
+                                        parsing?: {
+                                            accepted_count: number;
+                                            block_count: number;
+                                            diagnostics: {
+                                                call_id: string | null;
+                                                excerpt: string;
+                                                /** @enum {string} */
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                tool_name: string | null;
+                                            }[];
+                                            rejected_count: number;
+                                        };
+                                        selection: {
+                                            /** @enum {string} */
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_detail?: string;
+                                            /** @enum {string} */
+                                            transport: "native_function_call" | "text_protocol" | "none";
+                                        };
+                                        tool_list?: {
+                                            contributor_id?: string;
+                                            injected: boolean;
+                                            tool_count: number;
+                                        };
                                     };
                                     visibility?: {
                                         filtered_floor_nos: number[];
@@ -40572,6 +41294,26 @@ export interface operations {
                      *           }
                      *         },
                      *         "runtime_trace": {
+                     *           "generation_params_resolution": [
+                     *             {
+                     *               "final_state": "sent",
+                     *               "name": "temperature",
+                     *               "origin": "default",
+                     *               "value_from": "default"
+                     *             },
+                     *             {
+                     *               "final_state": "sent",
+                     *               "name": "maxOutputTokens",
+                     *               "origin": "request",
+                     *               "value_from": "request"
+                     *             },
+                     *             {
+                     *               "cancelled_at": "request",
+                     *               "final_state": "cancelled",
+                     *               "name": "topP",
+                     *               "origin": "request"
+                     *             }
+                     *           ],
                      *           "history_normalization": {
                      *             "effective_turn_count": 2,
                      *             "merged_user_groups": [
@@ -40636,6 +41378,24 @@ export interface operations {
                      *                 "source": "examples"
                      *               }
                      *             ]
+                     *           },
+                     *           "tool_transport": {
+                     *             "parsing": {
+                     *               "accepted_count": 1,
+                     *               "block_count": 1,
+                     *               "diagnostics": [],
+                     *               "rejected_count": 0
+                     *             },
+                     *             "selection": {
+                     *               "reason_code": "explicit_override",
+                     *               "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                     *               "transport": "text_protocol"
+                     *             },
+                     *             "tool_list": {
+                     *               "contributor_id": "builtin:tool_list",
+                     *               "injected": true,
+                     *               "tool_count": 2
+                     *             }
                      *           },
                      *           "visibility": {
                      *             "filtered_floor_nos": [
@@ -40857,6 +41617,18 @@ export interface operations {
                                 };
                             };
                             runtime_trace: {
+                                generation_params_resolution?: {
+                                    /** @enum {string} */
+                                    cancelled_at?: "profile" | "instance" | "request";
+                                    /** @enum {string} */
+                                    final_state: "sent" | "absent" | "cancelled";
+                                    /** @enum {string} */
+                                    name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                    /** @enum {string} */
+                                    origin: "profile" | "instance" | "request" | "default" | "absent";
+                                    /** @enum {string} */
+                                    value_from?: "profile" | "instance" | "request" | "default";
+                                }[];
                                 /**
                                  * @example {
                                  *       "effective_turn_count": 2,
@@ -40997,6 +41769,32 @@ export interface operations {
                                         /** @enum {string} */
                                         source: "history" | "memory" | "worldbook" | "examples";
                                     }[];
+                                };
+                                tool_transport?: {
+                                    parsing?: {
+                                        accepted_count: number;
+                                        block_count: number;
+                                        diagnostics: {
+                                            call_id: string | null;
+                                            excerpt: string;
+                                            /** @enum {string} */
+                                            reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                            tool_name: string | null;
+                                        }[];
+                                        rejected_count: number;
+                                    };
+                                    selection: {
+                                        /** @enum {string} */
+                                        reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                        reason_detail?: string;
+                                        /** @enum {string} */
+                                        transport: "native_function_call" | "text_protocol" | "none";
+                                    };
+                                    tool_list?: {
+                                        contributor_id?: string;
+                                        injected: boolean;
+                                        tool_count: number;
+                                    };
                                 };
                                 visibility?: {
                                     filtered_floor_nos: number[];

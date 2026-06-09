@@ -227,6 +227,7 @@ export class ChatService {
       this.memoryService,
       this.regexInputService,
       this.firstPartyStateContextService,
+      this.toolingService,
     );
     this.preparedTurnContextBuilder = new PreparedTurnContextBuilder(
       this.preparedPromptArtifactsBuilder,
@@ -429,7 +430,7 @@ export class ChatService {
           return {
             floorId,
             floorNo: nextFloorNo,
-            generatedText: execution.generatedText,
+            generatedText: this.composeAssistantOutputText(execution),
             summaries: execution.summaries,
             totalUsage: commit.usage,
             finalState: commit.finalState,
@@ -615,7 +616,7 @@ export class ChatService {
           floorId: newFloorId,
           floorNo: targetFloor.floorNo,
           previousFloorId: targetFloor.id,
-          generatedText: execution.generatedText,
+          generatedText: this.composeAssistantOutputText(execution),
           summaries: execution.summaries,
           totalUsage: commit.usage,
           finalState: commit.finalState,
@@ -736,7 +737,7 @@ export class ChatService {
             floorId: targetFloor.id,
             floorNo: targetFloor.floorNo,
             branchId: targetFloor.branchId,
-            generatedText: execution.generatedText,
+            generatedText: this.composeAssistantOutputText(execution),
             summaries: execution.summaries,
             totalUsage: commit.usage,
             memory: commit.memory,
@@ -912,7 +913,7 @@ export class ChatService {
           floorId: newFloorId,
           floorNo: source.floorNo + 1,
           branchId: newBranchId,
-          generatedText: execution.generatedText,
+          generatedText: this.composeAssistantOutputText(execution),
           summaries: execution.summaries,
           totalUsage: commit.usage,
           memory: commit.memory,
@@ -1062,7 +1063,7 @@ export class ChatService {
           return {
             floorId,
             floorNo: nextFloorNo,
-            generatedText: execution.generatedText,
+            generatedText: this.composeAssistantOutputText(execution),
             summaries: execution.summaries,
             totalUsage: commit.usage,
             finalState: commit.finalState,
@@ -1233,6 +1234,13 @@ export class ChatService {
       supersedeSourceFloor: args.supersedeSourceFloor,
     });
 
+    if (prepared.promptDebug.runtimeTrace && execution.toolTransport) {
+      prepared.promptDebug.runtimeTrace = {
+        ...prepared.promptDebug.runtimeTrace,
+        toolTransport: execution.toolTransport,
+      };
+    }
+
     if (prepared.promptDebug.runtimeTrace) {
       prepared.promptDebug.runtimeTrace = this.augmentRuntimeTraceWithAiOutputRegex({
         runtimeTrace: prepared.promptDebug.runtimeTrace,
@@ -1243,6 +1251,16 @@ export class ChatService {
     }
 
     return { prepared, execution, commit };
+  }
+
+  private composeAssistantOutputText(
+    execution: Pick<TurnExecutionResult, "generatedText" | "toolResultWritebackText">,
+  ): string {
+    const parts = [execution.generatedText, execution.toolResultWritebackText]
+      .map((value) => value?.trim())
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+    return parts.join("\n\n");
   }
 
   private augmentRuntimeTraceWithAiOutputRegex(args: {

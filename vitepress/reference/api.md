@@ -158,7 +158,7 @@ WebSocket 也遵循相同边界：
 | 资源 | 说明 | 文档 |
 | ---- | ---- | ---- |
 | Sessions | 会话管理、时间线、分支、分支重置与无冲突合并 | [Sessions](./api/sessions) |
-| Chat | 对话生成、SSE 流、Dry-run | [Chat](./api/chat) |
+| Chat | 对话生成、SSE 流、Dry-run 与 `runtime_trace` 观察字段 | [Chat](./api/chat) |
 | Floors | 楼层管理、分支操作 | [Floors](./api/floors) |
 | Pages | 消息页管理、激活切换 | [Pages](./api/pages) |
 | Messages | 消息管理、批量操作 | [Messages](./api/messages) |
@@ -166,7 +166,7 @@ WebSocket 也遵循相同边界：
 | Users | 用户卡管理 | [Users](./api/users) |
 | Variables | 五级变量系统 | [Variables](./api/variables) |
 | Macros | 宏展开规则、兼容边界，以及 dry-run / preview 能看到的结果 | [Macros](./api/macros) |
-| Prompt Runtime | 查看 Prompt Runtime 总览、mode、policy、assets、inspection 与 capabilities | [Prompt Runtime](./api/prompt-runtime) |
+| Prompt Runtime | 查看 Prompt Runtime 总览、mode、policy、assets、inspection、capabilities 与 `tool_transport` 等观察字段 | [Prompt Runtime](./api/prompt-runtime) |
 | Memories | 记忆条目、边、后台任务与 scope 状态 | [Memories](./api/memories) |
 | Imports | SillyTavern 兼容导入 | [Imports](./api/imports) |
 | Exports | 资源导出 | [Exports](./api/exports) |
