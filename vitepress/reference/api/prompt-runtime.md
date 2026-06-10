@@ -6,6 +6,8 @@ outline: [2, 3]
 
 Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什么规则组装提示词。**
 
+I1 现在还新增了一条请求级 Prompt Runtime Injection 观测面：客户端可以在 chat / preview / inspect 请求里临时提交 `prompt_runtime_injections`，并通过 inspect / preview / runtime trace 回看解析结果。
+
 这一组接口现在按稳定的子路由族拆开：总览、mode、policy、assets、inspection、capabilities。
 
 如果你只是正常发消息，请先看 [Chat（对话生成）](./chat)。只有在你需要排查提示词组装、确认当前模式来源、查看资源绑定、做只读检查或回看历史快照时，才需要看这里。
@@ -26,7 +28,7 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 | mode | `/prompt-runtime/mode` | 显式读取或写入 session 级 `prompt_mode`。 | [Mode](./prompt-runtime-mode) |
 | policy | `/prompt-runtime/policy` | 查看和修改 Prompt Runtime policy。 | [Policy](./prompt-runtime-policy) |
 | assets | `/prompt-runtime/assets` | 查看当前绑定的 Prompt Assets。 | [Assets](./prompt-runtime-assets) |
-| inspection | `preview` / `inspect` / `explain` / `compare` | 做只读预览、请求期检查、历史解释和 committed truth 比较。 | [Inspection](./prompt-runtime-inspection) |
+| inspection | `preview` / `inspect` / `explain` / `compare` | 做只读预览、请求期检查、历史解释和 committed truth 比较。`preview` / `inspect` 现在还能回显 `prompt_runtime_injections` 的解析结果。 | [Inspection](./prompt-runtime-inspection) |
 | capabilities | `GET /prompt-runtime/capabilities` | 查看能力边界、默认值和公开 mode 目录。 | [Capabilities](./prompt-runtime-capabilities) |
 
 具体接口如下：

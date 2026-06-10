@@ -1,16 +1,22 @@
 import type { PromptMode } from "../../services/prompt-assembler.js";
 import type { PromptRuntimeInspectRequest } from "../../services/prompt-runtime/types.js";
 import type { PromptRuntimeModeView } from "../../services/prompt-runtime-control-service.js";
+import type { PromptRuntimeClientInjectionInput } from "../../services/prompt-runtime-injection-types.js";
 
 import type { PromptRuntimePreviewRequest } from "../../services/chat/contracts.js";
 import type { RespondRequest } from "../../services/chat/contracts.js";
-import type { PromptRuntimeInspectBody, PromptRuntimeModePatchBody } from "./schemas.js";
+import type {
+  PromptRuntimeInspectBody,
+  PromptRuntimeInjectionBody,
+  PromptRuntimeModePatchBody,
+} from "./schemas.js";
 import {
   mapGenerationParams,
   mapLiveDebugOptionsRequest,
   mapPromptBudgetRequest,
   mapPromptDeliveryRequest,
   mapPromptSourceSelectionRequest,
+  mapPromptRuntimeInjectionsRequest,
   mapPromptStructureRequest,
   mapTurnSessionStateWritesRequest,
   mapDryRunVisibilityRequest,
@@ -46,6 +52,7 @@ interface PromptRuntimePreviewBody {
   delivery?: PromptRuntimeInspectBody["delivery"];
   budget?: PromptRuntimeInspectBody["budget"];
   source_selection?: PromptRuntimeInspectBody["source_selection"];
+  prompt_runtime_injections?: PromptRuntimeInjectionBody[];
 }
 
 export function mapPromptRuntimeInspectBodyToCamelCase(
@@ -67,6 +74,7 @@ export function mapPromptRuntimeInspectBodyToCamelCase(
     delivery: mapPromptDeliveryRequest(body.delivery),
     budget: mapPromptBudgetRequest(body.budget),
     sourceSelection: mapPromptSourceSelectionRequest(body.source_selection),
+    promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(body.prompt_runtime_injections),
   };
 }
 
@@ -82,6 +90,7 @@ export function mapPromptRuntimePreviewBodyToCamelCase(
     delivery: mapPromptDeliveryRequest(body.delivery),
     budget: mapPromptBudgetRequest(body.budget),
     sourceSelection: mapPromptSourceSelectionRequest(body.source_selection),
+    promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(body.prompt_runtime_injections),
   };
 }
 
@@ -101,5 +110,6 @@ export function mapPromptRuntimeLiveRequestBodyToCamelCase(
     delivery: mapPromptDeliveryRequest(body.delivery),
     sessionStateWrites: mapTurnSessionStateWritesRequest(body.session_state_writes),
     debugOptions: mapLiveDebugOptionsRequest(body.debug_options),
+    promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(body.prompt_runtime_injections),
   };
 }

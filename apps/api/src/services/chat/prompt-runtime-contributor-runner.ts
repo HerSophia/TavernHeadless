@@ -3,6 +3,9 @@ import type { ToolCallTransportKind, ToolDefinition } from "@tavern/core";
 import type { PromptRuntimeTrace } from "../prompt-assembler.js";
 
 import type {
+  PromptRuntimeInjectionPromptMode,
+} from "../prompt-runtime-injection-types.js";
+import type {
   FirstPartyStateContext,
   PromptRuntimeContributorOutput,
 } from "./types.js";
@@ -14,7 +17,7 @@ import {
 } from "./prompt-runtime-builtin-contributors.js";
 
 export interface PromptRuntimeContributorResolveArgs {
-  promptMode: "compat_strict" | "compat_plus" | "native";
+  promptMode: PromptRuntimeInjectionPromptMode;
   memorySummary?: string;
   memoryTrace?: PromptRuntimeTrace["memory"];
   firstPartyStateContext?: FirstPartyStateContext;
