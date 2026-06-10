@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type {
+  PromptRuntimeInjectionInput,
+  PromptRuntimeInjectionResult,
+} from "../prompt-runtime.js";
 import { createTransportClient } from "../client/transport.js";
 import { createPromptRuntimeResource } from "../resources/prompt-runtime.js";
 
@@ -91,6 +95,39 @@ const previewMemoryTrace = {
   tokenStats: { budget: 500, used: 22, microSummary: 0, macroSummary: 22, directItems: 0 },
   scopeResolution: { mode: "branch_aware", requestedScopes: ["global", "branch"], resolvedScopes: ["global", "branch"], requestedBranchId: "alt-preview", resolvedBranchId: "main", fallbackReason: null },
 } as const;
+
+const promptRuntimeInjectionRequest: PromptRuntimeInjectionInput = {
+  sourceKind: "client_injection",
+  title: "Client guide",
+  content: "Keep the north pass in focus.",
+  placement: "before_history",
+  order: 30,
+  scope: "request",
+};
+
+const promptRuntimeInjectionPayload = {
+  request_index: 0,
+  source_kind: "client_injection",
+  scope: "request",
+  placement_requested: "before_history",
+  order_requested: 30,
+  title: "Client guide",
+  content_length: 29,
+  applied: true,
+  placement_resolved: "history.before",
+} as const;
+
+const promptRuntimeInjectionResult: PromptRuntimeInjectionResult = {
+  requestIndex: 0,
+  sourceKind: "client_injection",
+  scope: "request",
+  placementRequested: "before_history",
+  orderRequested: 30,
+  title: "Client guide",
+  contentLength: 29,
+  applied: true,
+  placementResolved: "history.before",
+};
 
 const generationParamsResolutionPayload = [
   {
@@ -1266,6 +1303,9 @@ describe("sdk prompt runtime resource", () => {
                 ],
               },
               generation_params_resolution: generationParamsResolutionPayload,
+              injection: {
+                items: [promptRuntimeInjectionPayload],
+              },
               tool_transport: toolTransportPayload,
             },
             memory_injection: committedMemoryInjectionPayload,
@@ -1307,6 +1347,7 @@ describe("sdk prompt runtime resource", () => {
             prepare_phase_trace: [
               { phase: "conversation_resolve", detail: { historyCount: 2 } },
               { phase: "source_resolve", detail: { memorySummaryInjected: true } },
+              { phase: "injection", detail: { requestedCount: 1, appliedCount: 1, notAppliedCount: 0 } },
               {
                 phase: "pre_response",
                 detail: {
@@ -1338,6 +1379,7 @@ describe("sdk prompt runtime resource", () => {
             mismatches: [],
             limitations: [],
           },
+          injections: [promptRuntimeInjectionPayload],
         },
       }),
     );
@@ -1345,24 +1387,25 @@ describe("sdk prompt runtime resource", () => {
     const transport = createTransportClient({ baseUrl, fetchImpl });
     const promptRuntime = createPromptRuntimeResource(transport);
 
-    await expect(
-      promptRuntime.inspect({
-        accountId: "acc-1",
-        sessionId: "session 1",
-        message: "Hello there",
-        branchId: "alt-1",
-        sourceFloorId: "floor-1",
-        promptIntent: "continue",
-        config: { enableTools: true, toolMode: "both" },
-        generationParams: { maxOutputTokens: 256, temperature: 0.7, reasoningEffort: "medium" },
-        sessionStateWrites: [{ namespace: "quest_flags", slot: "companion", value: { mood: "ally" } }],
-        debugOptions: { includeRuntimeTrace: true, includeWorldbookMatches: true },
-        visibility: { mode: "allow_all_except_hidden", hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }] },
-        delivery: { noAssistant: true },
-        budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
-        sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
-      }),
-    ).resolves.toMatchObject({
+    const inspectResult = await promptRuntime.inspect({
+      accountId: "acc-1",
+      sessionId: "session 1",
+      message: "Hello there",
+      branchId: "alt-1",
+      sourceFloorId: "floor-1",
+      promptIntent: "continue",
+      config: { enableTools: true, toolMode: "both" },
+      generationParams: { maxOutputTokens: 256, temperature: 0.7, reasoningEffort: "medium" },
+      sessionStateWrites: [{ namespace: "quest_flags", slot: "companion", value: { mood: "ally" } }],
+      debugOptions: { includeRuntimeTrace: true, includeWorldbookMatches: true },
+      promptRuntimeInjections: [promptRuntimeInjectionRequest],
+      visibility: { mode: "allow_all_except_hidden", hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }] },
+      delivery: { noAssistant: true },
+      budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
+      sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+    });
+
+    expect(inspectResult).toMatchObject({
       scope: { sessionId: "session 1", targetBranchId: "alt-inspect", branchExists: false, sourceFloorId: "floor-1", historySourceBranchId: "fork-branch", historySourceMode: "source_floor_branch" },
       mode: { promptMode: "native", sessionPromptMode: null, effectivePromptMode: "native", defaultPromptMode: "compat_strict", legacyFallback: true, source: "legacy_metadata" },
       sourceMap: { delivery: { noAssistant: "request_override" }, history: { sourceBranchId: "fork-branch", sourceMode: "source_floor_branch" } },
@@ -1371,18 +1414,18 @@ describe("sdk prompt runtime resource", () => {
       excludedSources: [{ source: "history", reason: "visibility_filtered", detail: "Visibility filtered 2 floor(s) from the available history window." }],
       sectionStats: [{ sectionName: "history", tokenCount: 256 }],
       limitations: ["inspect is read-only"],
+      injections: [promptRuntimeInjectionResult],
+      governance: {
+        entries: [{ sourceKind: "memory", declaredLevel: "soft_required", registered: true, effectiveRetention: "soft_required", pinned: false, prunable: false, budgetGroups: ["memory"], sectionNames: ["memory"], tokenCount: 64, retainedTokenCount: 64, prunedTokenCount: 0 }],
+        mismatches: [],
+        limitations: [],
+      },
       preparedTurn: {
         messages: [{ role: "system", content: "System prompt" }, { role: "user", content: "Hello there" }],
         tokenEstimate: 320,
         availableForReply: 704,
         preprocessedUserMessage: "Hello there",
         promptSnapshot: { characterId: "char-1", characterVersionId: "charver-1", characterImportedFormat: "tavern_card_v2", characterContentHash: "char-hash-1", worldbookActivatedEntries: [{ uid: 7, activationKey: "worldbook:worldbook-1:5:entry:7", source: { kind: "session_worldbook", worldbookId: null, worldbookName: "Inspect Worldbook", assetScopeId: "worldbook:worldbook-1:5" }, insertion: { position: "before" } }] },
-        runtimeTrace: {
-          budgets: { byGroup: [{ group: "history", tokenCount: 256 }] },
-          memory: committedMemoryTrace,
-          generationParamsResolution,
-          toolTransport,
-        },
         memoryInjection: committedMemoryInjection,
         memory: committedMemoryTrace,
         memorySummary: "Remember the promise.",
@@ -1404,26 +1447,20 @@ describe("sdk prompt runtime resource", () => {
             cacheScope: "floor",
           },
         ],
-        preparePhaseTrace: [
-          { phase: "conversation_resolve", detail: { historyCount: 2 } },
-          { phase: "source_resolve", detail: { memorySummaryInjected: true } },
-          {
-            phase: "pre_response",
-            detail: {
-              contributorCount: 1,
-              contributorKinds: ["state_projection"],
-            },
-          },
-          { phase: "assemble", detail: { messageCount: 2, tokenEstimate: 320 } },
-          { phase: "materialize", detail: { messageCount: 2 } },
-          { phase: "inspect", detail: { diagnosticsCount: 1 } },
-        ],
       },
-      governance: {
-        entries: [{ sourceKind: "memory", declaredLevel: "soft_required", registered: true, effectiveRetention: "soft_required", pinned: false, prunable: false, budgetGroups: ["memory"], sectionNames: ["memory"], tokenCount: 64, retainedTokenCount: 64, prunedTokenCount: 0 }],
-        mismatches: [],
-        limitations: [],
-      },
+    });
+
+    expect(inspectResult.preparedTurn.runtimeTrace?.injection).toEqual({
+      items: [promptRuntimeInjectionResult],
+    });
+    expect(inspectResult.preparedTurn.runtimeTrace?.generationParamsResolution).toEqual(generationParamsResolution);
+    expect(inspectResult.preparedTurn.runtimeTrace?.toolTransport).toEqual(toolTransport);
+    expect(inspectResult.preparedTurn.runtimeTrace?.budgets).toEqual({
+      byGroup: [{ group: "history", tokenCount: 256 }],
+    });
+    expect(inspectResult.preparedTurn.preparePhaseTrace).toContainEqual({
+      phase: "injection",
+      detail: { requestedCount: 1, appliedCount: 1, notAppliedCount: 0 },
     });
 
     const [url, init] = fetchImpl.mock.calls[0]!;
@@ -1438,6 +1475,16 @@ describe("sdk prompt runtime resource", () => {
       generation_params: { max_output_tokens: 256, temperature: 0.7, reasoning_effort: "medium" },
       session_state_writes: [{ namespace: "quest_flags", slot: "companion", value: { mood: "ally" } }],
       debug_options: { include_runtime_trace: true, include_worldbook_matches: true },
+      prompt_runtime_injections: [
+        {
+          source_kind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        },
+      ],
       visibility: { mode: "allow_all_except_hidden", hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }] },
       delivery: { no_assistant: true },
       budget: { max_input_tokens: 4096, reserved_completion_tokens: 1024 },
@@ -1679,6 +1726,9 @@ describe("sdk prompt runtime resource", () => {
                 },
               ],
             },
+            injection: {
+              items: [promptRuntimeInjectionPayload],
+            },
             tool_transport: toolTransportPayload,
           },
         },
@@ -1688,24 +1738,25 @@ describe("sdk prompt runtime resource", () => {
     const transport = createTransportClient({ baseUrl, fetchImpl });
     const promptRuntime = createPromptRuntimeResource(transport);
 
-    await expect(
-      promptRuntime.previewText({
-        accountId: "acc-1",
-        sessionId: "session 1",
-        branchId: "alt-1",
-        budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
-        sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
-        sourceFloorId: "floor-1",
-        delivery: { noAssistant: true },
-        text: '{{setvar::资产.金币::3}}{{getvar::资产}}/{{getvar::装备["剑.名"]}}',
-        visibility: {
-          hiddenFloorIds: ["floor-hidden"],
-          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
-          mode: "allow_all_except_hidden",
-          visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
-        },
-      }),
-    ).resolves.toEqual({
+    const previewResult = await promptRuntime.previewText({
+      accountId: "acc-1",
+      sessionId: "session 1",
+      branchId: "alt-1",
+      budget: { maxInputTokens: 4096, reservedCompletionTokens: 1024 },
+      promptRuntimeInjections: [promptRuntimeInjectionRequest],
+      sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
+      sourceFloorId: "floor-1",
+      delivery: { noAssistant: true },
+      text: '{{setvar::资产.金币::3}}{{getvar::资产}}/{{getvar::装备["剑.名"]}}',
+      visibility: {
+        hiddenFloorIds: ["floor-hidden"],
+        hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+        mode: "allow_all_except_hidden",
+        visibleFloorRanges: [{ startFloorNo: 3, endFloorNo: 4 }],
+      },
+    });
+
+    expect(previewResult).toMatchObject({
       scope: {
         sessionId: "session 1",
         targetBranchId: "alt-preview",
@@ -1728,52 +1779,26 @@ describe("sdk prompt runtime resource", () => {
       memoryInjection: previewMemoryInjection,
       memory: previewMemoryTrace,
       text: '{"金币":3}/霜刃',
-      runtimeTrace: {
-        macro: {
-          warnings: [
-            {
-              code: "macro_preview_side_effect_suppressed",
-              message: "Macro setvar side effect was previewed but not committed.",
-              macroName: "setvar",
-            },
-          ],
-          usedNames: ["setvar", "getvar"],
-          mutationPreview: [
-            {
-              kind: "set",
-              scope: "branch",
-              key: "资产",
-              value: '{"金币":3}',
-            },
-          ],
-          stagedMutations: [],
-          traces: [
-            {
-              macroName: "setvar",
-              rawText: "{{setvar::资产.金币::3}}",
-              resolvedText: "",
-              phase: "preview",
-              sourceKind: "macro",
-            },
-          ],
-        },
-        generationParamsResolution,
-        visibility: {
-          hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
-          filteredFloorNos: [1, 2],
-        },
-        sourceSelection: {
-          excludedSources: [
-            {
-              source: "history",
-              reason: "visibility_filtered",
-              detail: "Visibility filtered 2 floor(s) from the available history window.",
-            },
-          ],
-        },
-        toolTransport,
-      },
     });
+
+    expect(previewResult.runtimeTrace.injection).toEqual({
+      items: [promptRuntimeInjectionResult],
+    });
+    expect(previewResult.runtimeTrace.generationParamsResolution).toEqual(generationParamsResolution);
+    expect(previewResult.runtimeTrace.visibility).toEqual({
+      hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
+      filteredFloorNos: [1, 2],
+    });
+    expect(previewResult.runtimeTrace.sourceSelection).toEqual({
+      excludedSources: [
+        {
+          source: "history",
+          reason: "visibility_filtered",
+          detail: "Visibility filtered 2 floor(s) from the available history window.",
+        },
+      ],
+    });
+    expect(previewResult.runtimeTrace.toolTransport).toEqual(toolTransport);
 
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(String(url)).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/preview");
@@ -1794,6 +1819,16 @@ describe("sdk prompt runtime resource", () => {
         worldbook: { enabled: true },
         examples: { enabled: false },
       },
+      prompt_runtime_injections: [
+        {
+          source_kind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        },
+      ],
       source_floor_id: "floor-1",
       visibility: {
         hidden_floor_ids: ["floor-hidden"],

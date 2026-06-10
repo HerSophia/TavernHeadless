@@ -27,6 +27,19 @@ import {
 } from "../chat/schemas.js";
 import { promptIntentValues } from "../schemas/chat-schemas.js";
 
+import type {
+  PromptRuntimeClientInjectionInput,
+} from "../../services/prompt-runtime-injection-types.js";
+
+export type PromptRuntimeInjectionBody = {
+  source_kind: PromptRuntimeClientInjectionInput["sourceKind"];
+  title: string;
+  content: string;
+  placement: string;
+  order?: number;
+  scope?: PromptRuntimeClientInjectionInput["scope"];
+};
+
 export type PromptRuntimeInspectBody = {
   message: string;
   branch_id?: string;
@@ -41,7 +54,17 @@ export type PromptRuntimeInspectBody = {
   delivery?: PromptDeliveryBody;
   budget?: PromptBudgetBody;
   source_selection?: PromptSourceSelectionBody;
+  prompt_runtime_injections?: PromptRuntimeInjectionBody[];
 };
+
+export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionBody> = z.object({
+  source_kind: z.literal("client_injection"),
+  title: z.string(),
+  content: z.string(),
+  placement: z.string().min(1),
+  order: z.number().int().optional(),
+  scope: z.literal("request").optional(),
+}).strict();
 
 export const promptRuntimeInspectBodySchema: z.ZodType<PromptRuntimeInspectBody> = z.object({
   message: z.string().min(1),
@@ -57,6 +80,7 @@ export const promptRuntimeInspectBodySchema: z.ZodType<PromptRuntimeInspectBody>
   delivery: promptDeliveryBodySchema.optional(),
   budget: promptBudgetBodySchema.optional(),
   source_selection: promptSourceSelectionBodySchema.optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
 }).strict();
 
 export type PromptRuntimeModePatchBody = {

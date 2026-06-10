@@ -167,6 +167,14 @@ const promptRuntimePreviewBodySchema = z.object({
     worldbook: z.object({ enabled: z.boolean().optional() }).strict().optional(),
     examples: z.object({ enabled: z.boolean().optional() }).strict().optional(),
   }).strict().optional(),
+  prompt_runtime_injections: z.array(z.object({
+    source_kind: z.literal("client_injection"),
+    title: z.string(),
+    content: z.string(),
+    placement: z.string().min(1),
+    order: z.number().int().optional(),
+    scope: z.literal("request").optional(),
+  }).strict()).optional(),
 }).strict();
 
 interface RegisterPromptRuntimeRoutesOptions {
@@ -863,6 +871,18 @@ function mapPreviewBodyToCamelCase(body: z.infer<typeof promptRuntimePreviewBody
           },
         }
       : {}),
+    ...(body.prompt_runtime_injections !== undefined
+      ? {
+          promptRuntimeInjections: body.prompt_runtime_injections.map((injection) => ({
+            sourceKind: injection.source_kind,
+            title: injection.title,
+            content: injection.content,
+            placement: injection.placement,
+            order: injection.order,
+            scope: injection.scope,
+          })),
+        }
+      : {}),
   };
 }
 
@@ -987,6 +1007,24 @@ function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewRes
     ...(runtimeTrace.toolTransport
       ? {
           tool_transport: mapPromptRuntimeToolTransportToSnakeCase(runtimeTrace.toolTransport),
+        }
+      : {}),
+    ...(runtimeTrace.injection
+      ? {
+          injection: {
+            items: runtimeTrace.injection.items.map((item) => ({
+              request_index: item.requestIndex,
+              source_kind: item.sourceKind,
+              scope: item.scope,
+              placement_requested: item.placementRequested,
+              order_requested: item.orderRequested,
+              title: item.title,
+              content_length: item.contentLength,
+              applied: item.applied,
+              placement_resolved: item.placementResolved ?? null,
+              not_applied_reason: item.notAppliedReason ?? null,
+            })),
+          },
         }
       : {}),
   };

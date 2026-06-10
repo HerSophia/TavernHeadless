@@ -325,6 +325,11 @@ export type AssistantPrefillExecutionStrategy =
   | "unsupported"
   | "none";
 
+import type {
+  PromptRuntimeAssemblyContributor,
+  PromptRuntimeInjectionTrace,
+  PromptRuntimeInjectionTraceItem,
+} from "./prompt-runtime-injection-types.js";
 export type PromptRuntimePresetTrace = CorePromptRuntimePresetTrace;
 
 export type PromptRuntimeWorldbookTrace = CorePromptRuntimeWorldbookTrace<WorldbookMatchDetail>;
@@ -476,11 +481,12 @@ export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatc
   regex?: PromptRuntimeRegexTrace;
   macro?: PromptRuntimeMacroTrace;
   historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
+  injection?: PromptRuntimeInjectionTrace;
 }
 
 export type PromptRuntimePreviewTrace = Pick<
   PromptRuntimeTrace,
-  "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution" | "toolTransport"
+  "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution" | "toolTransport" | "injection"
 >;
 
 export interface PromptRuntimeTraceSeed {
@@ -510,6 +516,7 @@ export interface PromptRuntimeTraceSeed {
   macroMutationPreview?: StMacroMutationPreview[];
   macroStagedMutations?: StMacroStagedMutation[];
   macroTraces?: StMacroTraceEntry[];
+  injectionItems?: PromptRuntimeInjectionTraceItem[];
 }
 
 export interface PromptAssemblyCompatSeed {
@@ -634,7 +641,8 @@ export interface AssemblePromptOptions {
   budget?: PromptBudgetPolicyV5;
   sourceSelection?: PromptSourceSelectionPolicy;
   memoryRuntimeTrace?: Omit<CorePromptRuntimeMemoryTrace, "summaryInjected">;
-  contributors?: Array<{ sourceKind: string; title: string; content: string }>;
+  contributors?: PromptRuntimeAssemblyContributor[];
+  injectionItems?: PromptRuntimeInjectionTraceItem[];
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -863,6 +871,24 @@ export async function assemblePrompt(
   let allocatorTokenUsage: AssembleResult["tokenUsage"]["allocator"] | undefined;
   let governance: PromptRuntimeGovernanceSeed | undefined;
   let memorySummaryHandledInPromptIR = false;
+  let finalInjectionTraceItems = (options.injectionItems ?? []).map((item) => ({ ...item }));
+
+  const assemblyContributors = options.contributors ?? [];
+  const legacyContributorRenderables = assemblyContributors
+    .filter((contributor) => !isStructuredPromptRuntimeInjectionContributor(contributor))
+    .map((contributor) => ({
+      sourceKind: contributor.sourceKind,
+      title: contributor.title.trim(),
+      content: contributor.content.trim(),
+    }))
+    .filter((contributor) => contributor.title.length > 0 && contributor.content.length > 0);
+  const structuredPromptRuntimeInjectionContributors = assemblyContributors
+    .filter((contributor): contributor is PromptRuntimeAssemblyContributor & {
+      internalPlacementKey: string;
+      requestIndex: number;
+      requestedPlacement: string;
+      requestedOrder: number;
+    } => isStructuredPromptRuntimeInjectionContributor(contributor));
 
   const presetData = promptSnapshot.preset?.preset ?? null;
   const sendDirectives = buildPromptSendDirectives(presetData, promptIntent);
@@ -873,13 +899,6 @@ export async function assemblePrompt(
     : "none";
 
   if (presetData) {
-    const contributorRenderableInjections = (options.contributors ?? [])
-      .map((contributor) => ({
-        sourceKind: contributor.sourceKind,
-        title: contributor.title.trim(),
-        content: contributor.content.trim(),
-      }))
-      .filter((contributor) => contributor.title.length > 0 && contributor.content.length > 0);
     const runtimeWorldbooks = collectPromptWorldbooks(promptSnapshot.worldbook, promptSnapshot.character, {
       characterId: promptSnapshot.characterId,
       characterVersionId: promptSnapshot.characterVersionId,
@@ -948,7 +967,7 @@ export async function assemblePrompt(
     characterOverridesHandledInPromptIR = useNativePipeline;
     memorySummaryHandledInPromptIR = useNativePipeline || compatPlusMemoryInjection !== undefined;
 
-    const promptIR = useNativePipeline
+    let promptIR = useNativePipeline
       ? compilePromptGraph(
           appendNativeContributorNodes(
             buildImportedPresetPromptGraph(presetData, {
@@ -957,7 +976,7 @@ export async function assemblePrompt(
               outletNames: collectWorldbookOutletNames(worldBookResults),
             }),
             buildNativeContributorNodes(
-              contributorRenderableInjections.map((contributor, index) => ({ ...contributor, order: 27.5 + index * 0.01 }))
+              legacyContributorRenderables.map((contributor, index) => ({ ...contributor, order: 27.5 + index * 0.01 }))
             )
           ),
           {
@@ -988,9 +1007,18 @@ export async function assemblePrompt(
             ...compatInput,
             chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }>,
             memoryInjection: compatPlusMemoryInjection,
-            renderableInjections: contributorRenderableInjections as CompatPlusRenderableInjection[],
+            renderableInjections: legacyContributorRenderables as CompatPlusRenderableInjection[],
           })
         : assembleCompat({ ...compatInput, chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }> });
+
+    const appliedPromptRuntimeInjections = applyPromptRuntimeInjectionSections({
+      promptIr: promptIR,
+      contributors: structuredPromptRuntimeInjectionContributors,
+      traceItems: finalInjectionTraceItems,
+    });
+    promptIR = appliedPromptRuntimeInjections.promptIr;
+    finalInjectionTraceItems = appliedPromptRuntimeInjections.traceItems;
+    const deferredPromptRuntimeInjectionContributors = appliedPromptRuntimeInjections.deferredContributors;
 
     const builder = new MessageBuilder(tokenCounter, {
       mergeAdjacentSameRole: true,
@@ -1013,6 +1041,14 @@ export async function assemblePrompt(
     };
 
     messages = assembled.messages;
+    const deferredInjectionApplication = applyDeferredPromptRuntimeInjections({
+      messages,
+      contributors: deferredPromptRuntimeInjectionContributors,
+      traceItems: finalInjectionTraceItems,
+      assistantPrefillRequested,
+    });
+    messages = deferredInjectionApplication.messages;
+    finalInjectionTraceItems = deferredInjectionApplication.traceItems;
     maxPromptTokens = budgetedPromptIr.metadata.maxTokens;
     tokenUsageBySection = assembledBudgetUsage.bySection;
     tokenUsageByGroup = assembledBudgetUsage.byGroup;
@@ -1026,7 +1062,14 @@ export async function assemblePrompt(
     mode = "preset";
   } else {
     maxPromptTokens = effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens;
-    messages = buildFallbackMessages(fullHistory, promptSnapshot.character, persona);
+    const deferredInjectionApplication = applyDeferredPromptRuntimeInjections({
+      messages: buildFallbackMessages(fullHistory, promptSnapshot.character, persona),
+      contributors: structuredPromptRuntimeInjectionContributors,
+      traceItems: finalInjectionTraceItems,
+      assistantPrefillRequested,
+    });
+    messages = deferredInjectionApplication.messages;
+    finalInjectionTraceItems = deferredInjectionApplication.traceItems;
   }
 
   if (options.includeWorldbookMatchTrace) {
@@ -1139,6 +1182,7 @@ export async function assemblePrompt(
     macroMutationPreview: aggregatedMacroMutationPreview,
     macroStagedMutations: aggregatedMacroStagedMutations,
     macroTraces: aggregatedMacroTraces,
+    ...(finalInjectionTraceItems.length > 0 ? { injectionItems: finalInjectionTraceItems } : {}),
   };
 
   const assemblyCompatSeed: PromptAssemblyCompatSeed = {
@@ -1381,6 +1425,337 @@ function createCompatPlusMemoryInjection(
     items: [],
     formattedText: memorySummary,
     tokenCount: tokenCounter.count(memorySummary),
+  };
+}
+
+function isStructuredPromptRuntimeInjectionContributor(
+  contributor: PromptRuntimeAssemblyContributor,
+): contributor is PromptRuntimeAssemblyContributor & {
+  internalPlacementKey: string;
+  requestIndex: number;
+  requestedPlacement: string;
+  requestedOrder: number;
+} {
+  return typeof contributor.internalPlacementKey === "string"
+    && typeof contributor.requestIndex === "number"
+    && typeof contributor.requestedPlacement === "string"
+    && typeof contributor.requestedOrder === "number";
+}
+
+function formatPromptRuntimeInjectionMessageContent(contributor: PromptRuntimeAssemblyContributor): string {
+  const title = contributor.title.trim();
+  const content = contributor.content.trim();
+  if (!title) {
+    return content;
+  }
+  if (!content) {
+    return `[${title}]`;
+  }
+  return `[${title}]\n${content}`;
+}
+
+function isPromptRuntimeCharacterSection(section: { name: string; messages: Array<{ source?: string }> }): boolean {
+  if (section.name === "charDescription" || section.name === "charPersonality" || section.name === "scenario") {
+    return true;
+  }
+  if (section.name.startsWith("Character ")) {
+    return true;
+  }
+  return section.messages.some((message) => typeof message.source === "string" && message.source.startsWith("character:"));
+}
+
+function isPromptRuntimePersonaSection(section: { name: string }): boolean {
+  return section.name === "personaDescription" || section.name === "Persona Description";
+}
+
+function isPromptRuntimeWorldbookSection(section: { name: string; budgetGroup?: string }): boolean {
+  return section.budgetGroup === "worldbook"
+    || section.name.startsWith("worldInfo")
+    || section.name.startsWith("Worldbook ");
+}
+
+function isPromptRuntimeMemorySection(section: { name: string; budgetGroup?: string }): boolean {
+  return section.budgetGroup === "memory"
+    || section.name === "memory"
+    || section.name === "Memory Summary";
+}
+
+function isPromptRuntimeExamplesSection(section: { name: string; budgetGroup?: string }): boolean {
+  return section.budgetGroup === "examples"
+    || section.name === "dialogueExamples"
+    || section.name === "Example Dialogue";
+}
+
+function isPromptRuntimeOutputInstructionSection(section: { name: string; messages: Array<{ source?: string }> }): boolean {
+  return section.name === "Character Post-History"
+    || section.messages.some((message) => message.source === "character:post_history_instructions");
+}
+
+function buildPromptRuntimeRelativeOrders(
+  anchorOrder: number,
+  direction: "before" | "after",
+  count: number,
+): number[] {
+  const step = 0.0001;
+  if (direction === "before") {
+    return Array.from({ length: count }, (_, index) => anchorOrder - 0.5 - (count - index) * step);
+  }
+  return Array.from({ length: count }, (_, index) => anchorOrder + (index + 1) * step);
+}
+
+function createPromptRuntimeInjectionSection(args: {
+  contributor: PromptRuntimeAssemblyContributor & {
+    internalPlacementKey: string;
+    requestIndex: number;
+    requestedPlacement: string;
+    requestedOrder: number;
+  };
+  order: number;
+  insertion?: {
+    kind: "in_chat";
+    depth: number;
+    order: number;
+  };
+}): import("@tavern/core").IRSection {
+  return {
+    name: `clientInjection:${args.contributor.requestedPlacement}:${args.contributor.requestIndex + 1}`,
+    order: args.order,
+    budgetGroup: "section:client_injection",
+    pinned: false,
+    ...(args.insertion ? { insertion: args.insertion } : {}),
+    messages: [{
+      role: "system",
+      content: formatPromptRuntimeInjectionMessageContent(args.contributor),
+      source: `client_injection:${args.contributor.requestedPlacement}`,
+      prunable: false,
+    }],
+  };
+}
+
+function applyPromptRuntimeInjectionSections(args: {
+  promptIr: import("@tavern/core").PromptIR;
+  contributors: Array<PromptRuntimeAssemblyContributor & {
+    internalPlacementKey: string;
+    requestIndex: number;
+    requestedPlacement: string;
+    requestedOrder: number;
+  }>;
+  traceItems: PromptRuntimeInjectionTraceItem[];
+}): {
+  promptIr: import("@tavern/core").PromptIR;
+  traceItems: PromptRuntimeInjectionTraceItem[];
+  deferredContributors: Array<PromptRuntimeAssemblyContributor & {
+    internalPlacementKey: string;
+    requestIndex: number;
+    requestedPlacement: string;
+    requestedOrder: number;
+  }>;
+} {
+  const sortedSections = [...args.promptIr.sections].sort((left, right) => left.order - right.order);
+  const nextSections = [...args.promptIr.sections];
+  const nextTraceItems = args.traceItems.map((item) => ({ ...item }));
+  const traceItemByRequestIndex = new Map(nextTraceItems.map((item) => [item.requestIndex, item]));
+  const grouped = new Map<string, typeof args.contributors>();
+
+  for (const contributor of args.contributors) {
+    const bucket = grouped.get(contributor.internalPlacementKey) ?? [];
+    bucket.push(contributor);
+    grouped.set(contributor.internalPlacementKey, bucket);
+  }
+
+  const deferredContributors: typeof args.contributors = [];
+  const historySection = sortedSections.find((section) => section.semantic === "chat_history");
+  const firstSection = sortedSections[0];
+  const characterSections = sortedSections.filter((section) => isPromptRuntimeCharacterSection(section));
+  const personaSections = sortedSections.filter((section) => isPromptRuntimePersonaSection(section));
+  const worldbookSections = sortedSections.filter((section) => isPromptRuntimeWorldbookSection(section));
+  const memorySections = sortedSections.filter((section) => isPromptRuntimeMemorySection(section));
+  const exampleSections = sortedSections.filter((section) => isPromptRuntimeExamplesSection(section));
+  const outputInstructionSections = sortedSections.filter((section) => isPromptRuntimeOutputInstructionSection(section));
+
+  const resolveRelativeAnchor = (internalPlacementKey: string): { anchorOrder: number; direction: "before" | "after" } | null => {
+    switch (internalPlacementKey) {
+      case "system_prompt.before":
+        return firstSection ? { anchorOrder: firstSection.order, direction: "before" } : null;
+      case "system_prompt.after":
+        return firstSection ? { anchorOrder: firstSection.order, direction: "after" } : null;
+      case "character.before":
+        return characterSections[0] ? { anchorOrder: characterSections[0].order, direction: "before" } : null;
+      case "character.after":
+        return characterSections[characterSections.length - 1]
+          ? { anchorOrder: characterSections[characterSections.length - 1]!.order, direction: "after" }
+          : null;
+      case "persona.before":
+        return personaSections[0] ? { anchorOrder: personaSections[0].order, direction: "before" } : null;
+      case "persona.after":
+        return personaSections[personaSections.length - 1]
+          ? { anchorOrder: personaSections[personaSections.length - 1]!.order, direction: "after" }
+          : null;
+      case "worldbook.before":
+        return worldbookSections[0] ? { anchorOrder: worldbookSections[0].order, direction: "before" } : null;
+      case "worldbook.after":
+        return worldbookSections[worldbookSections.length - 1]
+          ? { anchorOrder: worldbookSections[worldbookSections.length - 1]!.order, direction: "after" }
+          : null;
+      case "memory.before":
+        return memorySections[0] ? { anchorOrder: memorySections[0].order, direction: "before" } : null;
+      case "memory.after":
+        return memorySections[memorySections.length - 1]
+          ? { anchorOrder: memorySections[memorySections.length - 1]!.order, direction: "after" }
+          : null;
+      case "examples.before":
+        return exampleSections[0] ? { anchorOrder: exampleSections[0].order, direction: "before" } : null;
+      case "examples.after":
+        return exampleSections[exampleSections.length - 1]
+          ? { anchorOrder: exampleSections[exampleSections.length - 1]!.order, direction: "after" }
+          : null;
+      case "history.before":
+        return historySection ? { anchorOrder: historySection.order, direction: "before" } : null;
+      case "history.after":
+        return historySection ? { anchorOrder: historySection.order, direction: "after" } : null;
+      case "output_instruction.before":
+        return outputInstructionSections[0]
+          ? { anchorOrder: outputInstructionSections[0].order, direction: "before" }
+          : null;
+      default:
+        return null;
+    }
+  };
+
+  for (const [internalPlacementKey, contributors] of grouped) {
+    if (internalPlacementKey === "assistant_prefill.before") {
+      deferredContributors.push(...contributors);
+      continue;
+    }
+
+    if (internalPlacementKey === "current_user_input.before" || internalPlacementKey === "current_user_input.after") {
+      if (!historySection) {
+        for (const contributor of contributors) {
+          const item = traceItemByRequestIndex.get(contributor.requestIndex);
+          if (item) {
+            item.applied = false;
+            item.notAppliedReason = "prompt_section_absent";
+          }
+        }
+        continue;
+      }
+
+      const depth = internalPlacementKey === "current_user_input.before" ? 1 : 0;
+      contributors.forEach((contributor, index) => {
+        nextSections.push(createPromptRuntimeInjectionSection({
+          contributor,
+          order: historySection.order + 0.0001 + index * 0.00001,
+          insertion: {
+            kind: "in_chat",
+            depth,
+            order: index + 1,
+          },
+        }));
+        const item = traceItemByRequestIndex.get(contributor.requestIndex);
+        if (item) {
+          item.applied = true;
+          delete item.notAppliedReason;
+        }
+      });
+        continue;
+    }
+
+    const relativeAnchor = resolveRelativeAnchor(internalPlacementKey);
+    if (!relativeAnchor) {
+      if (internalPlacementKey === "output_instruction.before") {
+        deferredContributors.push(...contributors);
+        continue;
+      }
+      for (const contributor of contributors) {
+        const item = traceItemByRequestIndex.get(contributor.requestIndex);
+        if (item) {
+          item.applied = false;
+          item.notAppliedReason = "prompt_section_absent";
+        }
+      }
+      continue;
+    }
+
+    const relativeOrders = buildPromptRuntimeRelativeOrders(
+      relativeAnchor.anchorOrder,
+      relativeAnchor.direction,
+      contributors.length,
+    );
+    contributors.forEach((contributor, index) => {
+      nextSections.push(createPromptRuntimeInjectionSection({
+        contributor,
+        order: relativeOrders[index]!,
+      }));
+      const item = traceItemByRequestIndex.get(contributor.requestIndex);
+      if (item) {
+        item.applied = true;
+        delete item.notAppliedReason;
+      }
+    });
+  }
+
+  return {
+    promptIr: {
+      ...args.promptIr,
+      sections: nextSections,
+    },
+    traceItems: nextTraceItems,
+    deferredContributors,
+  };
+}
+
+function applyDeferredPromptRuntimeInjections(args: {
+  messages: ChatMessage[];
+  contributors: Array<PromptRuntimeAssemblyContributor & {
+    internalPlacementKey: string;
+    requestIndex: number;
+    requestedPlacement: string;
+    requestedOrder: number;
+  }>;
+  traceItems: PromptRuntimeInjectionTraceItem[];
+  assistantPrefillRequested: boolean;
+}): { messages: ChatMessage[]; traceItems: PromptRuntimeInjectionTraceItem[] } {
+  const nextMessages = [...args.messages];
+  const nextTraceItems = args.traceItems.map((item) => ({ ...item }));
+  const traceItemByRequestIndex = new Map(nextTraceItems.map((item) => [item.requestIndex, item]));
+
+  const tailContributors = args.contributors.filter((contributor) => contributor.internalPlacementKey === "output_instruction.before");
+  for (const contributor of tailContributors) {
+    nextMessages.push({
+      role: "system",
+      content: formatPromptRuntimeInjectionMessageContent(contributor),
+    });
+    const item = traceItemByRequestIndex.get(contributor.requestIndex);
+    if (item) {
+      item.applied = true;
+      delete item.notAppliedReason;
+    }
+  }
+
+  const prefillContributors = args.contributors.filter((contributor) => contributor.internalPlacementKey === "assistant_prefill.before");
+  for (const contributor of prefillContributors) {
+    const item = traceItemByRequestIndex.get(contributor.requestIndex);
+    if (!args.assistantPrefillRequested) {
+      if (item) {
+        item.applied = false;
+        item.notAppliedReason = "prompt_section_absent";
+      }
+      continue;
+    }
+
+    nextMessages.push({
+      role: "system",
+      content: formatPromptRuntimeInjectionMessageContent(contributor),
+    });
+    if (item) {
+      item.applied = true;
+      delete item.notAppliedReason;
+    }
+  }
+
+  return {
+    messages: nextMessages,
+    traceItems: nextTraceItems,
   };
 }
 
@@ -2455,6 +2830,13 @@ export function buildPromptRuntimeTrace(args: {
       hitCount: args.traceSeed.worldbookHits,
       ...(args.traceSeed.worldbookMatches ? { matches: args.traceSeed.worldbookMatches } : {}),
     },
+    ...(args.traceSeed.injectionItems && args.traceSeed.injectionItems.length > 0
+      ? {
+          injection: {
+            items: args.traceSeed.injectionItems,
+          },
+        }
+      : {}),
     ...(regex ? { regex } : {}),
     memory: buildPromptRuntimeMemoryTrace({
       summaryInjected: args.traceSeed.memorySummaryInjected,

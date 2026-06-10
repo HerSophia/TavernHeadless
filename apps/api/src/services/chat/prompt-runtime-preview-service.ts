@@ -1,4 +1,6 @@
 import { previewPromptMacroText, resolveEffectivePromptBudget } from "../prompt-assembler.js";
+import { PromptRuntimeInjectionContributorBuilder } from "./prompt-runtime-injection-contributor-builder.js";
+import { resolvePreparedPromptArtifactsPromptMode } from "./prompt-runtime-contributors.js";
 import {
   buildPromptRuntimeExecutionTrace,
   buildPromptRuntimePreviewTrace,
@@ -97,6 +99,13 @@ export class PromptRuntimePreviewService {
       undefined,
       branchContext.assetBinding,
     );
+    const injectionBuild = new PromptRuntimeInjectionContributorBuilder().build({
+      promptMode: resolvePreparedPromptArtifactsPromptMode({
+        mode: "dry_run",
+        session,
+      }),
+      injections: request.promptRuntimeInjections,
+    });
 
     let variableState: Awaited<ReturnType<PromptRuntimePreviewService["resolvePromptRuntimePreviewVariables"]>>;
     try {
@@ -143,6 +152,7 @@ export class PromptRuntimePreviewService {
             source: "branch",
             phase: "preview",
           } satisfies PromptRuntimeDiagnostic],
+      injections: injectionBuild.items,
     });
     const runtimeTrace = buildPromptRuntimePreviewTrace(
       buildPromptRuntimeExecutionTrace({

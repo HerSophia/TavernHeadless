@@ -5,6 +5,10 @@ import type {
   TurnConfig,
 } from "@tavern/core";
 
+import type {
+  PromptRuntimeClientInjectionInput,
+} from "../prompt-runtime-injection-types.js";
+
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
 import type { GenerationParamsInput } from "../../lib/llm-params.js";
 import type {
@@ -94,6 +98,7 @@ export interface PromptRuntimeInspectRequest {
   delivery?: PromptDeliveryPolicy;
   budget?: PromptBudgetPolicy;
   sourceSelection?: PromptSourceSelectionPolicy;
+  promptRuntimeInjections?: PromptRuntimeClientInjectionInput[];
 }
 
 export interface PromptRuntimeInspectResult {
@@ -107,6 +112,7 @@ export interface PromptRuntimeInspectResult {
   historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   sectionStats: PromptRuntimeSectionStat[];
   limitations: string[];
+  injections?: import("../prompt-runtime-injection-types.js").PromptRuntimeInjectionTrace["items"];
   preparedTurn: PromptRuntimeInspectionPreparedTurn;
   governance: PromptRuntimeGovernanceViewModel;
 }

@@ -69,6 +69,7 @@ import {
   mapLiveDebugOptionsRequest,
   mapPromptBudgetRequest,
   mapPromptDeliveryRequest,
+  mapPromptRuntimeInjectionsRequest,
   mapPromptSourceSelectionRequest,
   mapPromptStructureRequest,
   mapTurnSessionStateWritesRequest,
@@ -272,6 +273,7 @@ export async function registerChatRoutes(
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       budget: mapPromptBudgetRequest(parsedBody.data.budget),
       sourceSelection: mapPromptSourceSelectionRequest(parsedBody.data.source_selection),
+      promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(parsedBody.data.prompt_runtime_injections),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -369,6 +371,7 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(parsedBody.data.prompt_runtime_injections),
       sessionStateOperationLog: buildSessionStateOperationLogContext(
         request,
         "POST /sessions/:id/respond/stream",
@@ -524,6 +527,7 @@ export async function registerChatRoutes(
       structure: mapPromptStructureRequest(parsedBody.data.structure),
       delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
       sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(parsedBody.data.prompt_runtime_injections),
       sessionStateOperationLog: buildSessionStateOperationLogContext(
         request,
         "POST /sessions/:id/respond",
@@ -606,6 +610,7 @@ export async function registerChatRoutes(
       ),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
       turnOperationLog: buildTurnOperationLogContext(request, "POST /sessions/:id/regenerate"),
+      promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(parsedBody.data.prompt_runtime_injections),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
@@ -686,6 +691,7 @@ export async function registerChatRoutes(
       ),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
       turnOperationLog: buildTurnOperationLogContext(request, "POST /floors/:id/retry"),
+      promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(parsedBody.data.prompt_runtime_injections),
     };
 
     const accountId = getRequestAuthContext(request).accountId;
@@ -762,6 +768,7 @@ export async function registerChatRoutes(
       ),
       confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
       turnOperationLog: buildTurnOperationLogContext(request, "POST /messages/:id/edit-and-regenerate"),
+      promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(parsedBody.data.prompt_runtime_injections),
     };
     const accountId = getRequestAuthContext(request).accountId;
 
