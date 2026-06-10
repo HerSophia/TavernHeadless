@@ -110,7 +110,7 @@ POST /sessions/:id/respond
 
 它用于在本次请求的 Prompt Runtime 组装阶段，临时加入一组客户端提示。
 
-I1 的边界固定为：
+它的边界固定为：
 
 - 只对当前请求生效
 - 不写入 session / branch
