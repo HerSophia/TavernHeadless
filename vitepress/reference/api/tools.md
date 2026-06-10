@@ -646,7 +646,7 @@ GET /tools/call-records
 
 它只表示 **session 级基础权限**。
 它不是未来 run / node / step overlay 的最终权限模型。
-本轮也没有新增 overlay 公开 API。
+当前也没有 overlay 公开 API。
 
 ## SDK 对应方法
 

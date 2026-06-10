@@ -365,7 +365,7 @@ POST /import/character
 - 支持 legacy 扁平角色卡导入
 - 支持 `spec === "chara_card_v2"` 的 TavernCard V2 导入
 - 支持 `spec === "chara_card_v3"` 的最小导入兼容
-- 当前 V3 导入会保留基础字段、多 greeting、关键提示字段、`character_book` 和 `extensions` 等数据，但本轮文档承诺仍以最小兼容为边界
+- 当前 V3 导入会保留基础字段、多 greeting、关键提示字段、`character_book` 和 `extensions` 等数据，但文档承诺仍以最小兼容为边界
 
 ### 错误
 

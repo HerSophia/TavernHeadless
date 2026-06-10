@@ -61,13 +61,18 @@ WebSocket 也遵循相同边界：
 
 ### 成功响应
 
-所有成功响应都包裹在 `data` 字段中：
+除非某一页另有说明，成功响应都包裹在 `data` 字段中：
 
 ```json
 {
   "data": {}
 }
 ```
+
+两类已知例外，以各自页面的说明为准：
+
+- Workspace / Project 路由族（含 Projects、Agent Types、Agent Bindings、Project Settings、Derived Outputs、Inbox）不使用 `data` 包裹，而是返回 `items` / `item` 或直接返回对象。
+- [Effective Config](./api/effective-config) 不使用 `data` 包裹，且响应字段使用 `camelCase`。
 
 列表接口额外包含 `meta` 字段：
 
@@ -117,30 +122,20 @@ WebSocket 也遵循相同边界：
 | `503` | 服务不可用或暂时繁忙 |
 | `504` | 上游生成超时 |
 
-## Workspace / Project 兼容与 observer 规则
+## Workspace / Project 兼容与角色规则
 
-服务端已经在数据库和服务层为新数据补齐 Workspace / Project 归属，并加入 Project Event、observer、deriver、Derived Output 和 Project Inbox。旧 API 仍保持兼容：
+服务端已经在数据库和服务层为新数据补齐 Workspace / Project 归属。旧 API 仍保持兼容：
 
 - 普通客户端创建和使用会话时，不需要传 `workspace_id` 或 `project_id`。
 - `POST /sessions` 支持可选请求字段 `project_id`。这是高级字段，只在调用方已经知道目标 Project 时使用。
 - 如果 `POST /sessions` 不传 `project_id`，服务端会使用当前账号默认 Workspace，并为该 Session 创建 `session_default` Project。
-- Session 的默认响应不新增 `workspace_id` 和 `project_id` 字段。
-- `GET /sessions/:id/scope` 用于显式读取 Session 的 `workspace_id` 和 `project_id`。
-- `GET /projects`、`GET /projects/:id`、`GET /projects/:id/sessions`、`GET /projects/:id/events` 和 `GET /projects/:id/events/stream` 用于读取当前账号可访问的 Project、Project 会话和 Project Event。
-- `GET /projects/:id/members`、`POST /projects/:id/members`、`DELETE /projects/:id/members/:account_id` 用于查看或维护 observer 和 deriver 成员。
-- `/projects/:id/derived-outputs` 用于保存 Project 派生结果。
-- `/projects/:id/inbox` 用于保存待 owner 决策的 Inbox 条目。接受条目不会自动合并进主 Session。
+- Session 的默认响应不新增 `workspace_id` 和 `project_id` 字段。`GET /sessions/:id/scope` 用于显式读取归属。
 - owner 可以读写 Project 下资源；observer 只能读取可读资源；deriver 可以写入 Derived Output、创建 Inbox 条目，但不能修改主 Session。
-- 非成员访问 Project 下资源时，服务端继续隐藏资源存在性。Project API 通常返回 `404 project_not_found`，旧资源路由通常返回 `404 not_found`。
-- 阶段一不开放 `GET /sessions?workspace_id=...`、`GET /sessions?project_id=...` 或 `include=workspace,project`。
-- 旧的 `global` 配置语义在阶段一表示“当前账号默认 Workspace 的默认配置”。
+- 非成员访问 Project 下资源时，服务端隐藏资源存在性。Project API 通常返回 `404 project_not_found`，旧资源路由通常返回 `404 not_found`。
+- 当前不开放 `GET /sessions?workspace_id=...`、`GET /sessions?project_id=...` 或 `include=workspace,project`。
+- 旧的 `global` 配置语义保持不变，表示“当前账号默认 Workspace 的默认配置”。
 
-阶段五新增：
-
-- `/workspaces/:id/agent-types*`：Workspace 级 Agent Type 管理
-- `/projects/:id/agent-bindings*`：Project 级 Agent 启用与手动 run
-- `/projects/:id/settings/*`：Project 级 LLM / MCP / Tool Policy 覆盖
-- `/projects/:id/effective-config` 与 `/sessions/:id/effective-config`：只读生效配置视图
+这一族资源的完整路由清单、角色矩阵和详细文档入口，统一见 [Workspace / Project 总览](./api/workspace-project)。
 
 ## 分页
 
@@ -184,13 +179,15 @@ WebSocket 也遵循相同边界：
 | Client Data | 为应用或插件保存自己的结构化数据 | [Client Data](./api/client-data) |
 | Session State | 管理会话内受治理状态：注册、写入、读取和比较 | [Session State](./api/session-state) |
 | Operation Logs | 用户、LLM 和系统操作的审计日志 | [Operation Logs](./api/operation-logs) |
-| Workspace / Project | 工作区、项目、Project Event、observer 和 deriver | [Workspace / Project](./api/workspace-project) |
+| Workspace / Project | 工作区与项目路由族总览 | [Workspace / Project](./api/workspace-project) |
+| Projects | Project 列表、会话、事件、SSE 订阅与成员管理 | [Projects](./api/projects) |
 | Agent Types | Workspace 级 Agent 类型 | [Agent Types](./api/agent-types) |
 | Project Agent Bindings | Project 级 Agent 启用与手动触发 | [Project Agent Bindings](./api/project-agent-bindings) |
 | Project Settings | Project 级 LLM、MCP、Tool Policy 覆盖 | [Project Settings](./api/project-settings) |
 | Effective Config | Project / Session 生效配置视图 | [Effective Config](./api/effective-config) |
 | Project Derived Outputs | Project 派生结果 | [Project Derived Outputs](./api/projects-derived-outputs) |
 | Project Inbox | Project 收件箱与 owner 决策 | [Project Inbox](./api/projects-inbox) |
+| Clients | 同一账号下的程序调用入口与 Client API Key | [Clients](./api/clients) |
 | VC Tags | 给 Floor 和资产版本保存命名引用 | [VC Tags](./api/vc-tags) |
 
 ## 高级 API 资源
@@ -216,13 +213,15 @@ WebSocket 也遵循相同边界：
 - [Session State](./api/session-state)
 - [Session-State Observation（内部）](./api/session-state-observation)
 - [Operation Logs](./api/operation-logs)
-- [Workspace / Project](./api/workspace-project)
+- [Workspace / Project 总览](./api/workspace-project)
+- [Projects](./api/projects)
 - [Agent Types](./api/agent-types)
 - [Project Agent Bindings](./api/project-agent-bindings)
 - [Project Settings](./api/project-settings)
 - [Effective Config](./api/effective-config)
 - [Project Derived Outputs](./api/projects-derived-outputs)
 - [Project Inbox](./api/projects-inbox)
+- [Clients](./api/clients)
 - [VC Tags](./api/vc-tags)
 
 其中 `Client Data` 是一个独立的高级系统功能。它用于：
