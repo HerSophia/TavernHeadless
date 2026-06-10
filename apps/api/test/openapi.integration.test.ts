@@ -319,6 +319,7 @@ describe("OpenAPI integration", () => {
     expect(Object.keys(previewRuntimeTraceProperties ?? {}).sort()).toEqual([
       "generation_params_resolution",
       "history_normalization",
+      "injection",
       "macro",
       "source_selection",
       "tool_transport",

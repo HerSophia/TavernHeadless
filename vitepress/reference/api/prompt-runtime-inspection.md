@@ -39,6 +39,12 @@ outline: [2, 3]
 - contributor resolve
 - prepare phase trace
 
+但 I1 里的 `prompt_runtime_injections` 是一个例外：
+
+- `preview` 会接收 `prompt_runtime_injections`
+- `preview` 不会把这些 injection 注入 `text`
+- `preview` 只会在 `runtime_trace.injection` 里回显解析结果
+
 `inspect` 则继续表示一次真实 prepared turn 的只读视图。
 
 ## 结构化记忆真相边界
@@ -73,13 +79,18 @@ outline: [2, 3]
 
 ## inspect 中新增的 prepared turn 观测字段
 
-`inspect` 的 `prepared_turn` 现在还会返回两组新增字段：
+`inspect` 的 `prepared_turn` 现在还会返回三组新增字段：
 
 - `memory_injection`
 - `memory`
 - `memory_summary`
 - `contributors`
 - `prepare_phase_trace`
+- `runtime_trace.injection`
+
+同时，`inspect` 顶层还会返回：
+
+- `injections`
 
 ### `contributors`
 
@@ -111,6 +122,7 @@ outline: [2, 3]
 
 - `conversation_resolve`
 - `source_resolve`
+- `injection`
 - `pre_response`
 - `assemble`
 - `materialize`
@@ -119,6 +131,67 @@ outline: [2, 3]
 它用于说明这次 prepared turn 是如何被准备出来的。
 
 它不是 persisted explain truth，也不是可恢复执行检查点。
+
+### `runtime_trace.injection` 与顶层 `injections`
+
+I1 现在新增了请求级 Prompt Runtime Injection 观测面。
+
+这组字段只对应本次请求里的 `prompt_runtime_injections`，不做持久化。
+
+`preview`：
+
+- 只在 `runtime_trace.injection.items` 中回显解析结果
+- 不会把 injection 注入 `text`
+
+`inspect`：
+
+- 顶层 `injections` 返回完整条目列表
+- `prepared_turn.runtime_trace.injection.items` 返回同一组结构化结果
+- `prepared_turn.prepare_phase_trace` 里会新增 `phase="injection"`
+
+每个 injection 条目至少包含：
+
+- `request_index`
+- `source_kind`
+- `scope`
+- `placement_requested`
+- `order_requested`
+- `title`
+- `content_length`
+- `applied`
+- `placement_resolved`
+- `not_applied_reason`
+
+当前 I1 公开边界固定为：
+
+- `source_kind` 只允许 `client_injection`
+- `scope` 只允许 `request`
+- `order` 只影响同一 placement 内部顺序，默认 `100`
+
+`not_applied_reason` 当前可能为：
+
+- `placement_not_available_in_mode`
+- `unknown_placement`
+- `empty_title_or_content`
+- `prompt_section_absent`
+
+可用 placement 为：
+
+- `before_system_prompt` / `after_system_prompt`
+- `before_character` / `after_character`
+- `before_persona` / `after_persona`
+- `before_worldbook` / `after_worldbook`
+- `before_memory` / `after_memory`
+- `before_examples` / `after_examples`
+- `before_history` / `after_history`
+- `before_current_user_input` / `after_current_user_input`
+- `before_output_instruction`
+- `before_assistant_prefill`
+
+这组字段用于回答两个问题：
+
+1. 客户端请求里提交了哪些 injection
+2. 这些 injection 最终是否生效，落在了什么语义锚点上
 
 ## generation_params_resolution
 

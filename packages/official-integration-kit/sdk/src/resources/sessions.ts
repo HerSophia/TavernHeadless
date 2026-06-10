@@ -3,10 +3,12 @@ import { TavernApiError } from "../errors/tavern-api-error.js";
 import {
   mapPromptDebugPayload,
   mapPromptLiveDebugOptionsRequest,
+  mapPromptRuntimeInjectionsRequest,
   mapPromptRuntimeTraceMemoryPayload,
   mapPromptRuntimeTracePayload,
   mapPromptSnapshotPayload,
   type PromptLiveDebugOptions,
+  type PromptRuntimeInjectionInput,
   type PromptRuntimeTrace,
   type PromptRuntimeWorldbookFirstMatch,
   type PromptRuntimeWorldbookMatchActivation,
@@ -558,6 +560,7 @@ export type SessionsRespondBaseOptions = {
   promptIntent?: PromptIntent;
   sessionStateWrites?: TurnSessionStateWrite[];
   debugOptions?: PromptLiveDebugOptions;
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[];
 };
 
 export type SessionsRespondOptions = SessionsRespondBaseOptions & {
@@ -572,6 +575,7 @@ export type SessionsRespondDryRunOptions = {
   budget?: PromptRuntimeBudgetPolicy;
   message: string;
   promptIntent?: PromptIntent;
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[];
   sessionId: string;
   sourceSelection?: PromptRuntimeSourceSelectionPolicy;
 };
@@ -587,6 +591,7 @@ export type SessionsRegenerateOptions = {
   confirmedSessionStateMutationIds?: string[];
   config?: RespondTurnConfig;
   generationParams?: RespondGenerationParams;
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[];
   sessionId: string;
   sessionStateWrites?: TurnSessionStateWrite[];
   debugOptions?: PromptLiveDebugOptions;
@@ -973,6 +978,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
           config: options.config,
           debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
+          prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
           session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
         }),
         headers: buildAccountHeaders(options.accountId),
@@ -1201,6 +1207,7 @@ function mapRespondRequestBody(options: SessionsRespondOptions | SessionsRespond
     message: options.message,
     session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
     source_floor_id: options.sourceFloorId,
+    prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
   });
 }
 
@@ -1237,6 +1244,7 @@ function mapDryRunRequestBody(options: SessionsRespondDryRunOptions): Record<str
     message: options.message,
     prompt_intent: options.promptIntent,
     source_selection: mapPromptSourceSelectionPolicyRequestBody(options.sourceSelection),
+    prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
   });
 }
 

@@ -3,7 +3,9 @@ import { TavernApiError } from "../errors/tavern-api-error.js";
 import {
   mapPromptDebugPayload,
   mapPromptLiveDebugOptionsRequest,
+  mapPromptRuntimeInjectionsRequest,
   type PromptLiveDebugOptions,
+  type PromptRuntimeInjectionInput,
 } from "../prompt-runtime.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RegenerateResult } from "./messages.js";
@@ -176,6 +178,7 @@ export type FloorsRetryOptions = {
   floorId: string;
   generationParams?: RespondGenerationParams;
   debugOptions?: PromptLiveDebugOptions;
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[];
   sessionStateWrites?: TurnSessionStateWrite[];
 };
 
@@ -306,6 +309,7 @@ export function createFloorsResource(client: TransportClient): FloorsResource {
           debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
           generation_params: mapGenerationParams(options.generationParams),
           session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
+          prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
         }),
         headers: buildAccountHeaders(options.accountId),
         method: "POST",

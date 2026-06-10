@@ -3,7 +3,9 @@ import { TavernApiError } from "../errors/tavern-api-error.js";
 import {
   mapPromptDebugPayload,
   mapPromptLiveDebugOptionsRequest,
+  mapPromptRuntimeInjectionsRequest,
   type PromptLiveDebugOptions,
+  type PromptRuntimeInjectionInput,
 } from "../prompt-runtime.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RespondGenerationParams, RespondMemoryReceipt, RespondResult, RespondTurnConfig, TurnSessionStateWrite } from "./sessions.js";
@@ -139,6 +141,7 @@ export type MessagesEditAndRegenerateOptions = {
   generationParams?: RespondGenerationParams;
   messageId: string;
   debugOptions?: PromptLiveDebugOptions;
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[];
   sessionStateWrites?: TurnSessionStateWrite[];
 };
 
@@ -213,6 +216,7 @@ export function createMessagesResource(client: TransportClient): MessagesResourc
             content: options.content,
             debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
             generation_params: mapGenerationParams(options.generationParams),
+            prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
             session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
           }),
           headers: buildAccountHeaders(options.accountId),

@@ -237,6 +237,54 @@ export type PromptSourceExclusionReason = {
 };
 export type PromptRuntimeSourceSelectionTrace = { excludedSources: PromptSourceExclusionReason[] };
 
+export type PromptRuntimeInjectionPlacement =
+  | "before_system_prompt"
+  | "after_system_prompt"
+  | "before_character"
+  | "after_character"
+  | "before_persona"
+  | "after_persona"
+  | "before_worldbook"
+  | "after_worldbook"
+  | "before_memory"
+  | "after_memory"
+  | "before_examples"
+  | "after_examples"
+  | "before_history"
+  | "after_history"
+  | "before_current_user_input"
+  | "after_current_user_input"
+  | "before_output_instruction"
+  | "before_assistant_prefill";
+export type PromptRuntimeInjectionScope = "request";
+export type PromptRuntimeInjectionSourceKind = "client_injection";
+export type PromptRuntimeInjectionNotAppliedReason =
+  | "placement_not_available_in_mode"
+  | "unknown_placement"
+  | "empty_title_or_content"
+  | "prompt_section_absent";
+export type PromptRuntimeInjectionInput = {
+  sourceKind: PromptRuntimeInjectionSourceKind;
+  title: string;
+  content: string;
+  placement: PromptRuntimeInjectionPlacement;
+  order?: number;
+  scope?: PromptRuntimeInjectionScope;
+};
+export type PromptRuntimeInjectionResult = {
+  requestIndex: number;
+  sourceKind: string;
+  scope: PromptRuntimeInjectionScope;
+  placementRequested: string;
+  orderRequested: number;
+  title: string;
+  contentLength: number;
+  applied: boolean;
+  notAppliedReason?: PromptRuntimeInjectionNotAppliedReason;
+  placementResolved?: string;
+};
+export type PromptRuntimeInjectionTrace = { items: PromptRuntimeInjectionResult[] };
+
 export type PromptRuntimeStructureTrace = {
   assistantRewriteCount: number;
   assistantRewriteStrategy: "to_system" | "to_user_transcript" | null;
@@ -528,6 +576,7 @@ export type PromptRuntimeTrace = {
   budgets?: PromptRuntimeBudgetTrace;
   delivery?: PromptRuntimeDeliveryTrace;
   generationParamsResolution?: PromptRuntimeGenerationParamResolution[];
+  injection?: PromptRuntimeInjectionTrace;
   macro?: PromptRuntimeMacroTrace;
   memory?: PromptRuntimeMemoryTrace;
   sourceSelection?: PromptRuntimeSourceSelectionTrace;
@@ -540,7 +589,7 @@ export type PromptRuntimeTrace = {
   worldbook?: PromptRuntimeWorldbookTrace;
 };
 
-export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution" | "toolTransport">;
+export type PromptRuntimePreviewTrace = Pick<PromptRuntimeTrace, "macro" | "sourceSelection" | "visibility" | "historyNormalization" | "generationParamsResolution" | "toolTransport" | "injection">;
 
 export type PromptDebugPayload = {
   promptSnapshot?: PromptSnapshotPreview;
@@ -561,6 +610,23 @@ export function mapPromptLiveDebugOptionsRequest(
   });
 
   return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+export function mapPromptRuntimeInjectionsRequest(
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[],
+): Record<string, unknown>[] | undefined {
+  if (!promptRuntimeInjections || promptRuntimeInjections.length === 0) {
+    return undefined;
+  }
+
+  return promptRuntimeInjections.map((injection) => compactObject({
+    source_kind: injection.sourceKind,
+    title: injection.title,
+    content: injection.content,
+    placement: injection.placement,
+    order: injection.order,
+    scope: injection.scope,
+  }));
 }
 
 export function mapPromptSnapshotPayload(value: unknown): PromptSnapshotPreview | undefined {
@@ -665,7 +731,22 @@ export function mapPromptRuntimePreviewTracePayload(value: unknown): PromptRunti
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
     ...(runtimeTrace.generationParamsResolution ? { generationParamsResolution: runtimeTrace.generationParamsResolution } : {}),
     ...(runtimeTrace.toolTransport ? { toolTransport: runtimeTrace.toolTransport } : {}),
+    ...(runtimeTrace.injection ? { injection: runtimeTrace.injection } : {}),
   };
+}
+
+export function mapPromptRuntimeInjectionResultsPayload(value: unknown): PromptRuntimeInjectionResult[] | undefined {
+  const record = readRecord(value);
+  if (record) {
+    return readArray(record.items)
+      .map(mapPromptRuntimeInjectionResultPayload)
+      .filter((item): item is PromptRuntimeInjectionResult => item !== null);
+  }
+
+  const items = readArray(value)
+    .map(mapPromptRuntimeInjectionResultPayload)
+    .filter((item): item is PromptRuntimeInjectionResult => item !== null);
+  return items.length > 0 ? items : undefined;
 }
 
 function readPromptRuntimeToolTransportKind(value: unknown): PromptRuntimeToolTransportKind | undefined {
@@ -783,6 +864,7 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   const visibility = readRecord(record.visibility);
   const toolTransport = mapPromptRuntimeToolTransportPayload(record.tool_transport);
   const historyNormalization = mapPromptRuntimeHistoryNormalization(record.history_normalization);
+  const injection = mapPromptRuntimeInjectionTracePayload(record.injection);
   const generationParamsResolution = readArray(record.generation_params_resolution)
     .map((item) => readRecord(item))
     .filter((item): item is Record<string, unknown> => item !== null)
@@ -934,6 +1016,11 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
           toolTransport,
         }
       : {}),
+    ...(injection
+      ? {
+          injection,
+        }
+      : {}),
     ...(readRecord(record.source_selection)
       ? {
           sourceSelection: {
@@ -956,6 +1043,44 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
   };
 
   return Object.keys(runtimeTrace).length > 0 ? runtimeTrace : undefined;
+}
+
+function mapPromptRuntimeInjectionTracePayload(value: unknown): PromptRuntimeInjectionTrace | undefined {
+  const items = mapPromptRuntimeInjectionResultsPayload(value);
+  return items ? { items } : undefined;
+}
+
+function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeInjectionResult | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const scope = readString(record.scope, "request");
+  const notAppliedReason = readOptionalString(record.not_applied_reason);
+
+  return {
+    requestIndex: readNumber(record.request_index),
+    sourceKind: readString(record.source_kind),
+    scope: scope === "request" ? "request" : "request",
+    placementRequested: readString(record.placement_requested),
+    orderRequested: readNumber(record.order_requested),
+    title: readString(record.title),
+    contentLength: readNumber(record.content_length),
+    applied: readBoolean(record.applied),
+    ...(notAppliedReason
+      && (
+        notAppliedReason === "placement_not_available_in_mode"
+        || notAppliedReason === "unknown_placement"
+        || notAppliedReason === "empty_title_or_content"
+        || notAppliedReason === "prompt_section_absent"
+      )
+      ? { notAppliedReason }
+      : {}),
+    ...(readOptionalString(record.placement_resolved)
+      ? { placementResolved: readOptionalString(record.placement_resolved) }
+      : {}),
+  };
 }
 
 function mapPromptRuntimeHistoryNormalization(value: unknown): PromptRuntimeHistoryNormalizationTrace | undefined {

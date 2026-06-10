@@ -379,6 +379,14 @@ describe("sdk messages expanded resource", () => {
           includeRuntimeTrace: true,
           includeWorldbookMatches: false,
         },
+        promptRuntimeInjections: [{
+          sourceKind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        }],
         sessionStateWrites: [
           {
             namespace: "quest_flags",
@@ -464,6 +472,16 @@ describe("sdk messages expanded resource", () => {
         max_output_tokens: 128,
         reasoning_effort: "medium",
       },
+      prompt_runtime_injections: [
+        {
+          source_kind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        },
+      ],
       session_state_writes: [
         {
           namespace: "quest_flags",
