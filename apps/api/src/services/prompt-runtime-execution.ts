@@ -182,12 +182,26 @@ export function buildPromptRuntimeExecutionTrace(
     ...(artifacts.inspection.excludedSources.length > 0
       ? { sourceSelection: { excludedSources: artifacts.inspection.excludedSources } }
       : {}),
+    ...(artifacts.inspection.injections && artifacts.inspection.injections.length > 0
+      ? {
+          injection: {
+            items: artifacts.inspection.injections,
+          },
+        }
+      : {}),
     ...(assembledTrace ?? {}),
     ...(mergedRegexTrace ? { regex: mergedRegexTrace } : {}),
     ...(artifacts.materialized?.structureTrace ? { structure: artifacts.materialized.structureTrace } : {}),
     ...(artifacts.materialized?.deliveryTrace ? { delivery: artifacts.materialized.deliveryTrace } : {}),
     ...(artifacts.inspection.historyNormalization ? { historyNormalization: artifacts.inspection.historyNormalization } : {}),
     ...(visibilityTrace ? { visibility: visibilityTrace } : {}),
+    ...(artifacts.inspection.injections && artifacts.inspection.injections.length > 0
+      ? {
+          injection: {
+            items: artifacts.inspection.injections,
+          },
+        }
+      : {}),
     ...((artifacts.toolTransport ?? artifacts.inspection.toolTransport)
       ? { toolTransport: artifacts.toolTransport ?? artifacts.inspection.toolTransport }
       : {}),
@@ -210,6 +224,7 @@ export function buildPromptRuntimePreviewTrace(runtimeTrace?: PromptRuntimeTrace
       : {}),
     ...(runtimeTrace.visibility ? { visibility: runtimeTrace.visibility } : {}),
     ...(runtimeTrace.toolTransport ? { toolTransport: runtimeTrace.toolTransport } : {}),
+    ...(runtimeTrace.injection ? { injection: runtimeTrace.injection } : {}),
   };
 }
 

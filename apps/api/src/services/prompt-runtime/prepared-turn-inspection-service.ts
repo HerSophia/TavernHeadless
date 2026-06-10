@@ -136,6 +136,7 @@ export class PreparedTurnInspectionService {
       excludedSources: prepared.inspection.excludedSources,
       sectionStats: prepared.inspection.sectionStats,
       limitations: [...prepared.inspection.limitations],
+      injections: prepared.injections,
       preparedTurn: {
         messages: prepared.materialized.messages,
         tokenEstimate: prepared.tokenEstimate,

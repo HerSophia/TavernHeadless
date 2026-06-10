@@ -272,6 +272,14 @@ describe("sdk sessions expanded resource", () => {
         sourceSelection: { history: { mode: "windowed", maxMessages: 24 }, memory: { enabled: true }, worldbook: { enabled: true }, examples: { enabled: false } },
         message: "hello",
         promptIntent: "continue",
+        promptRuntimeInjections: [{
+          sourceKind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        }],
         sessionId: "session-1",
       }),
     ).resolves.toEqual({
@@ -433,6 +441,16 @@ describe("sdk sessions expanded resource", () => {
         worldbook: { enabled: true },
         examples: { enabled: false },
       },
+      prompt_runtime_injections: [
+        {
+          source_kind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        },
+      ],
     }));
   });
 
@@ -769,6 +787,14 @@ describe("sdk sessions expanded resource", () => {
     await expect(client.sessions.respond({
       message: "hello",
       sessionId: "session-1",
+      promptRuntimeInjections: [{
+        sourceKind: "client_injection",
+        title: "Client guide",
+        content: "Keep the north pass in focus.",
+        placement: "before_history",
+        order: 30,
+        scope: "request",
+      }],
       sessionStateWrites: [
         {
           namespace: "quest_flags",
@@ -802,6 +828,16 @@ describe("sdk sessions expanded resource", () => {
           namespace: "quest_flags",
           slot: "expired_hint",
           delete: true,
+        },
+      ],
+      prompt_runtime_injections: [
+        {
+          source_kind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
         },
       ],
     }));
@@ -889,6 +925,14 @@ describe("sdk sessions expanded resource", () => {
       confirmedExecutionIds: ["exec-3"],
       confirmedSessionStateMutationIds: ["mutation-3"],
       sessionId: "session-1",
+      promptRuntimeInjections: [{
+        sourceKind: "client_injection",
+        title: "Client guide",
+        content: "Keep the north pass in focus.",
+        placement: "before_history",
+        order: 30,
+        scope: "request",
+      }],
       sessionStateWrites: [
         {
           namespace: "quest_flags",
@@ -990,6 +1034,16 @@ describe("sdk sessions expanded resource", () => {
         include_runtime_trace: true,
         include_worldbook_matches: false,
       },
+      prompt_runtime_injections: [
+        {
+          source_kind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        },
+      ],
       session_state_writes: [
         {
           namespace: "quest_flags",

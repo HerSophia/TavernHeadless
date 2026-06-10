@@ -16,6 +16,9 @@
   ToolRegistry,
 } from "@tavern/core";
 
+import type {
+  PromptRuntimeClientInjectionInput,
+} from "../prompt-runtime-injection-types.js";
 import type { EffectiveToolPolicyResolution } from "../tooling/shared/tool-policy-resolution.js";
 import type { GenerationParamKey, GenerationParamsInput } from "../../lib/llm-params.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
@@ -89,6 +92,7 @@ export interface RespondRequest extends TurnSessionStateWritesRequest {
   structure?: PromptStructurePolicy;
   delivery?: PromptDeliveryPolicy;
   debugOptions?: PromptLiveDebugOptions;
+  promptRuntimeInjections?: PromptRuntimeClientInjectionInput[];
 }
 
 export interface RespondResult {
@@ -117,6 +121,7 @@ export interface DryRunRequest {
   delivery?: PromptDeliveryPolicy;
   budget?: PromptBudgetPolicy;
   sourceSelection?: PromptSourceSelectionPolicy;
+  promptRuntimeInjections?: PromptRuntimeClientInjectionInput[];
 }
 
 export interface DryRunResult {
@@ -139,6 +144,7 @@ export interface PromptRuntimePreviewRequest {
   delivery?: PromptDeliveryPolicy;
   budget?: PromptBudgetPolicy;
   sourceSelection?: PromptSourceSelectionPolicy;
+  promptRuntimeInjections?: PromptRuntimeClientInjectionInput[];
 }
 
 export interface PromptRuntimePreviewResult {
@@ -164,6 +170,7 @@ export interface RegenerateRequest extends ReplayConfirmationRequest, TurnSessio
   structure?: PromptStructurePolicy;
   delivery?: PromptDeliveryPolicy;
   debugOptions?: PromptLiveDebugOptions;
+  promptRuntimeInjections?: PromptRuntimeClientInjectionInput[];
 }
 
 export interface RegenerateResult {

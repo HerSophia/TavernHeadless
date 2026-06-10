@@ -1600,6 +1600,62 @@ const runtimeTraceGenerationParamResolutionJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const promptRuntimeInjectionTraceItemJsonSchema = {
+  type: "object",
+  required: [
+    "request_index",
+    "source_kind",
+    "scope",
+    "placement_requested",
+    "order_requested",
+    "title",
+    "content_length",
+    "applied",
+    "placement_resolved",
+    "not_applied_reason",
+  ],
+  properties: {
+    request_index: { type: "integer", minimum: 0 },
+    source_kind: { type: "string" },
+    scope: { type: "string", enum: ["request"] },
+    placement_requested: { type: "string" },
+    order_requested: { type: "integer" },
+    title: { type: "string" },
+    content_length: { type: "integer", minimum: 0 },
+    applied: { type: "boolean" },
+    placement_resolved: { anyOf: [{ type: "string" }, { type: "null" }] },
+    not_applied_reason: {
+      anyOf: [
+        {
+          type: "string",
+          enum: [
+            "placement_not_available_in_mode",
+            "unknown_placement",
+            "empty_title_or_content",
+            "prompt_section_absent",
+          ],
+        },
+        { type: "null" },
+      ],
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimeInjectionJsonSchema = {
+  type: "object",
+  required: ["source_kind", "title", "content", "placement"],
+  properties: {
+    source_kind: { type: "string", enum: ["client_injection"] },
+    title: { type: "string" },
+    content: { type: "string" },
+    placement: { type: "string", minLength: 1 },
+    order: { type: "integer" },
+    scope: { type: "string", enum: ["request"] },
+  },
+  additionalProperties: false,
+} as const;
+
 const runtimeTraceBaseProperties = {
   preset: runtimeTracePresetJsonSchema,
   worldbook: runtimeTraceWorldbookJsonSchema,
@@ -1612,6 +1668,14 @@ const runtimeTraceBaseProperties = {
   delivery: runtimeTraceDeliveryJsonSchema,
   history_normalization: runtimeTraceHistoryNormalizationJsonSchema,
   tool_transport: runtimeTraceToolTransportJsonSchema,
+  injection: {
+    type: "object",
+    required: ["items"],
+    properties: {
+      items: { type: "array", items: promptRuntimeInjectionTraceItemJsonSchema },
+    },
+    additionalProperties: false,
+  },
   generation_params_resolution: {
     type: "array",
     items: runtimeTraceGenerationParamResolutionJsonSchema,
@@ -1699,6 +1763,7 @@ export const editAndRegenerateBodyJsonSchema = {
       items: { type: "string", minLength: 1 },
     },
     session_state_writes: turnSessionStateWritesJsonSchema,
+    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
   },
   examples: [editAndRegenerateBodyExample],
   additionalProperties: false,
@@ -1718,6 +1783,7 @@ export const respondBodyJsonSchema = {
     debug_options: liveDebugOptionsJsonSchema,
     source_floor_id: { type: "string", minLength: 1 },
     session_state_writes: turnSessionStateWritesJsonSchema,
+    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
   },
   examples: [respondBodyExample],
   additionalProperties: false,
@@ -1735,6 +1801,7 @@ export const dryRunBodyJsonSchema = {
     delivery: promptDeliveryJsonSchema,
     budget: promptBudgetJsonSchema,
     source_selection: promptSourceSelectionJsonSchema,
+    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
   },
   examples: [dryRunBodyExample],
   additionalProperties: false,
@@ -1757,6 +1824,7 @@ export const regenerateBodyJsonSchema = {
       items: { type: "string", minLength: 1 },
     },
     session_state_writes: turnSessionStateWritesJsonSchema,
+    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,
@@ -1773,6 +1841,7 @@ export const retryFloorBodyJsonSchema = {
     confirmed_execution_ids: regenerateBodyJsonSchema.properties.confirmed_execution_ids,
     confirmed_session_state_mutation_ids: regenerateBodyJsonSchema.properties.confirmed_session_state_mutation_ids,
     session_state_writes: turnSessionStateWritesJsonSchema,
+    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,

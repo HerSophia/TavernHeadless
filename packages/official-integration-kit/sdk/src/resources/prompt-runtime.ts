@@ -1,6 +1,8 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
 import {
   mapPromptRuntimeMemoryInjectionPayload,
+  mapPromptRuntimeInjectionResultsPayload,
+  mapPromptRuntimeInjectionsRequest,
   mapPromptLiveDebugOptionsRequest,
   mapPromptSnapshotPayload,
   mapPromptRuntimeTraceMemoryPayload,
@@ -456,6 +458,12 @@ export type PromptRuntimeGetCapabilitiesOptions = {
 };
 
 export type PromptRuntimePreviewVisibilityMode = PromptRuntimeVisibilityMode;
+export type PromptRuntimeInjectionPlacement = import("../prompt-runtime.js").PromptRuntimeInjectionPlacement;
+export type PromptRuntimeInjectionScope = import("../prompt-runtime.js").PromptRuntimeInjectionScope;
+export type PromptRuntimeInjectionSourceKind = import("../prompt-runtime.js").PromptRuntimeInjectionSourceKind;
+export type PromptRuntimeInjectionNotAppliedReason = import("../prompt-runtime.js").PromptRuntimeInjectionNotAppliedReason;
+export type PromptRuntimeInjectionInput = import("../prompt-runtime.js").PromptRuntimeInjectionInput;
+export type PromptRuntimeInjectionResult = import("../prompt-runtime.js").PromptRuntimeInjectionResult;
 
 export type PromptRuntimePreviewVisibility = PromptRuntimeVisibilityPolicy;
 
@@ -463,6 +471,7 @@ export type PromptRuntimePreviewOptions = PromptRuntimeGetSessionOptions & {
   branchId?: string;
   budget?: PromptRuntimeBudgetPolicy;
   delivery?: PromptRuntimePersistentDeliveryPolicy;
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[];
   sourceSelection?: PromptRuntimeSourceSelectionPolicy;
   sourceFloorId?: string;
   structure?: PromptRuntimePersistentStructurePolicy;
@@ -538,7 +547,7 @@ export type PromptRuntimeContributorView = {
   cacheScope: "floor" | "page" | "none";
 };
 
-export type PromptRuntimePreparePhase = "conversation_resolve" | "source_resolve" | "pre_response" | "assemble" | "materialize" | "inspect";
+export type PromptRuntimePreparePhase = "conversation_resolve" | "source_resolve" | "injection" | "pre_response" | "assemble" | "materialize" | "inspect";
 
 export type PromptRuntimeInspectPreparePhaseTraceEntry = {
   phase: PromptRuntimePreparePhase;
@@ -593,8 +602,9 @@ export type PromptRuntimeInspectOptions = PromptRuntimeGetSessionOptions & {
   visibility?: PromptRuntimeVisibilityPolicy;
   structure?: PromptRuntimePersistentStructurePolicy;
   delivery?: PromptRuntimePersistentDeliveryPolicy;
-  budget?: PromptRuntimeBudgetPolicy;
+  budget?:PromptRuntimeBudgetPolicy;
   sourceSelection?: PromptRuntimeSourceSelectionPolicy;
+  promptRuntimeInjections?: PromptRuntimeInjectionInput[];
 };
 
 export type PromptRuntimeInspectResult = {
@@ -608,6 +618,7 @@ export type PromptRuntimeInspectResult = {
   excludedSources: NonNullable<PromptRuntimeTrace["sourceSelection"]>["excludedSources"];
   sectionStats: Array<{ sectionName: string; tokenCount: number }>;
   limitations: string[];
+  injections: PromptRuntimeInjectionResult[];
   preparedTurn: PromptRuntimeInspectPreparedTurn;
   governance: PromptRuntimeGovernanceView;
 };
@@ -910,6 +921,7 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
             source_selection: mapPromptRuntimeSourceSelectionPolicyRequest(options.sourceSelection),
             source_floor_id: options.sourceFloorId,
             visibility: mapPromptRuntimeVisibilityPolicyRequest(options.visibility),
+            prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
           }),
           headers: buildAccountHeaders(options.accountId),
           method: "POST",
@@ -1461,6 +1473,7 @@ function mapPromptRuntimeInspectRequestBody(options: PromptRuntimeInspectOptions
     delivery: mapPromptRuntimePersistentDeliveryPolicyRequest(options.delivery),
     budget: mapPromptRuntimeBudgetPolicyRequest(options.budget),
     source_selection: mapPromptRuntimeSourceSelectionPolicyRequest(options.sourceSelection),
+    prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
   });
 }
 
@@ -1619,6 +1632,7 @@ function mapPromptRuntimeInspectResult(value: unknown): PromptRuntimeInspectResu
       .filter((item): item is Record<string, unknown> => item !== null)
       .map((item) => ({ sectionName: readString(item.section_name), tokenCount: readNumber(item.token_count) })),
     limitations: mapStringArray(record.limitations),
+    injections: mapPromptRuntimeInjectionResultsPayload(record.injections) ?? [],
     ...(historyNormalization ? { historyNormalization } : {}),
     preparedTurn,
     governance,
@@ -2264,6 +2278,7 @@ function readPromptRuntimePreparePhase(value: unknown): PromptRuntimePreparePhas
   switch (parsed) {
     case "conversation_resolve":
     case "source_resolve":
+    case "injection":
     case "pre_response":
     case "materialize":
     case "inspect":

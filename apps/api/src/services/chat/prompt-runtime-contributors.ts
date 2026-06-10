@@ -7,6 +7,10 @@ import {
 } from "../prompt-assembler.js";
 
 import type {
+  PromptRuntimeAssemblyContributor,
+  PromptRuntimeInjectionPromptMode,
+} from "../prompt-runtime-injection-types.js";
+import type {
   FirstPartyStateContext,
   PreparedPromptArtifactsMode,
   PromptRuntimeContributorKind,
@@ -18,7 +22,7 @@ import type {
 export function resolvePreparedPromptArtifactsPromptMode(args: {
   mode: PreparedPromptArtifactsMode;
   session: { promptMode?: PromptMode | null; metadataJson: string | null };
-}): PromptMode {
+}): PromptRuntimeInjectionPromptMode {
   const metadata = parseJsonField(args.session.metadataJson);
   const sessionMetadata = metadata && typeof metadata === "object" && !Array.isArray(metadata)
     ? (metadata as SessionMetadata)
@@ -156,21 +160,21 @@ export interface PromptRuntimeBuiltinContributorResult {
 export function buildPromptRuntimeContributorRenderablesForAssembly(
   contributors: PromptRuntimeContributorOutput[],
   promptMode: PromptMode,
-): Array<{ sourceKind: string; title: string; content: string }> {
-  if (promptMode === "compat_strict") {
-    return [];
-  }
-
+): PromptRuntimeAssemblyContributor[] {
   if (promptMode === "compat_plus") {
     return contributors.flatMap((contributor) => mapCompatPlusContributorRenderable(contributor));
   }
 
-  return contributors.flatMap((contributor) => mapNativeContributorRenderable(contributor));
+  if (promptMode === "native") {
+    return contributors.flatMap((contributor) => mapNativeContributorRenderable(contributor));
+  }
+
+  return [];
 }
 
 function mapCompatPlusContributorRenderable(
   contributor: PromptRuntimeContributorOutput,
-): Array<{ sourceKind: string; title: string; content: string }> {
+): PromptRuntimeAssemblyContributor[] {
   if (!contributor.promptRenderable) {
     return [];
   }
@@ -188,7 +192,7 @@ function mapCompatPlusContributorRenderable(
 
 function mapNativeContributorRenderable(
   contributor: PromptRuntimeContributorOutput,
-): Array<{ sourceKind: string; title: string; content: string }> {
+): PromptRuntimeAssemblyContributor[] {
   if (!contributor.promptRenderable) {
     return [];
   }
