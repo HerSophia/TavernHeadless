@@ -39,7 +39,7 @@ outline: [2, 3]
 - contributor resolve
 - prepare phase trace
 
-但 I1 里的 `prompt_runtime_injections` 是一个例外：
+但请求级 Prompt Runtime Injection（随请求临时提交的 `prompt_runtime_injections`）是一个例外：
 
 - `preview` 会接收 `prompt_runtime_injections`
 - `preview` 不会把这些 injection 注入 `text`
@@ -134,9 +134,7 @@ outline: [2, 3]
 
 ### `runtime_trace.injection` 与顶层 `injections`
 
-I1 现在新增了请求级 Prompt Runtime Injection 观测面。
-
-这组字段只对应本次请求里的 `prompt_runtime_injections`，不做持久化。
+这组字段是请求级 Prompt Runtime Injection 的观测面。它们只对应本次请求里的 `prompt_runtime_injections`，不做持久化。
 
 `preview`：
 
@@ -162,7 +160,7 @@ I1 现在新增了请求级 Prompt Runtime Injection 观测面。
 - `placement_resolved`
 - `not_applied_reason`
 
-当前 I1 公开边界固定为：
+当前公开边界固定为：
 
 - `source_kind` 只允许 `client_injection`
 - `scope` 只允许 `request`
@@ -295,8 +293,7 @@ I1 现在新增了请求级 Prompt Runtime Injection 观测面。
 
 `POST /sessions/:id/prompt-runtime/compare` 继续只比较 committed truth。
 
-本轮没有为 compare 新增新的 mode 专用字段。
-如果你要看当前会话的显式 mode，请回到 [Mode](./prompt-runtime-mode)。
+compare 没有 mode 专用字段。如果你要看当前会话的显式 mode，请回到 [Mode](./prompt-runtime-mode)。
 
 ## 相关页面
 
