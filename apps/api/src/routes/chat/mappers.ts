@@ -1,6 +1,7 @@
 import type { FastifyReply } from "fastify";
 
 import type { DryRunRequest, RespondRequest } from "../../services/chat/contracts.js";
+import type { PromptRuntimeClientInjectionInput } from "../../services/prompt-runtime-injection-types.js";
 
 import type {
   DryRunDebugOptionsBody,
@@ -10,6 +11,7 @@ import type {
   PromptBudgetBody,
   PromptDeliveryBody,
   PromptSourceSelectionBody,
+  PromptRuntimeInjectionBody,
   PromptStructureBody,
   TurnSessionStateWriteDeleteBody,
   TurnSessionStateWriteValueBody,
@@ -30,6 +32,19 @@ export function mapGenerationParams(
     stream: params.stream,
     reasoningEffort: params.reasoning_effort,
   };
+}
+
+export function mapPromptRuntimeInjectionsRequest(
+  injections: PromptRuntimeInjectionBody[] | undefined,
+): PromptRuntimeClientInjectionInput[] | undefined {
+  return injections?.map((injection) => ({
+    sourceKind: injection.source_kind,
+    title: injection.title,
+    content: injection.content,
+    placement: injection.placement,
+    order: injection.order,
+    scope: injection.scope,
+  }));
 }
 
 export function mapTurnSessionStateWritesRequest(

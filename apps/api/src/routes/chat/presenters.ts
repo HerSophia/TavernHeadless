@@ -209,6 +209,25 @@ export function mapPromptRuntimeToolTransportToSnakeCase(
   };
 }
 
+function mapPromptRuntimeInjectionTraceToSnakeCase(
+  injection: NonNullable<PromptRuntimeTrace["injection"]>,
+): Record<string, unknown> {
+  return {
+    items: injection.items.map((item: NonNullable<PromptRuntimeTrace["injection"]>["items"][number]) => ({
+      request_index: item.requestIndex,
+      source_kind: item.sourceKind,
+      scope: item.scope,
+      placement_requested: item.placementRequested,
+      order_requested: item.orderRequested,
+      title: item.title,
+      content_length: item.contentLength,
+      applied: item.applied,
+      placement_resolved: item.placementResolved ?? null,
+      not_applied_reason: item.notAppliedReason ?? null,
+    })),
+  };
+}
+
 export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<string, unknown> {
   return {
     ...(runtimeTrace.preset
@@ -365,6 +384,11 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
     ...(runtimeTrace.historyNormalization
       ? {
           history_normalization: mapPromptRuntimeHistoryNormalizationToSnakeCase(runtimeTrace.historyNormalization),
+        }
+      : {}),
+    ...(runtimeTrace.injection
+      ? {
+          injection: mapPromptRuntimeInjectionTraceToSnakeCase(runtimeTrace.injection),
         }
       : {}),
     ...(runtimeTrace.toolTransport

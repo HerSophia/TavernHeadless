@@ -97,6 +97,60 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 - `previewText(...)` 仍然对应 `macro_text_preview`
 - `inspect(...)` 仍然对应一次真实 prepared turn 的只读检查
 
+### Prompt Runtime Injection（I1）
+
+当前 `previewText(...)`、`inspect(...)`、`sessions.respond(...)`、`sessions.respondDryRun(...)`、`sessions.regenerate(...)`、`floors.retry(...)`、`messages.editAndRegenerate(...)` 都已经支持可选的 `promptRuntimeInjections`。
+
+它对应后端请求体字段 `prompt_runtime_injections`。
+
+I1 的公开边界固定为：
+
+- 只支持请求级注入，不做 session / branch 持久化
+- `sourceKind` 只允许 `"client_injection"`
+- `scope` 只允许 `"request"`
+- `order` 默认 `100`，只影响同一 placement 内部顺序
+
+示例：
+
+```ts
+const injection = {
+  sourceKind: "client_injection" as const,
+  title: "Client guide",
+  content: "Keep the north pass in focus.",
+  placement: "before_history" as const,
+  order: 30,
+  scope: "request" as const,
+};
+
+await client.sessions.respond({
+  sessionId: "sess_1",
+  message: "继续。",
+  promptRuntimeInjections: [injection],
+});
+
+const preview = await client.promptRuntime.previewText({
+  sessionId: "sess_1",
+  text: "{{lastMessage}}",
+  promptRuntimeInjections: [injection],
+});
+```
+
+其中：
+
+- `previewText(...)` 不会把 injection 注入返回的 `text`
+- `previewText(...)` 只会在 `runtimeTrace.injection` 中回显解析结果
+- `inspect(...)` 会在顶层 `injections` 和 `preparedTurn.runtimeTrace.injection` 中返回同一组结果
+- `inspect(...)` 的 `preparePhaseTrace` 会新增 `phase: "injection"`
+
+如需直接写类型，SDK 根导出现在还提供：
+
+- `PromptRuntimeInjectionInput`
+- `PromptRuntimeInjectionResult`
+- `PromptRuntimeInjectionPlacement`
+- `PromptRuntimeInjectionScope`
+- `PromptRuntimeInjectionSourceKind`
+- `PromptRuntimeInjectionNotAppliedReason`
+
 ### inspect 的新增返回字段
 
 `client.promptRuntime.inspect(...)` 的 `preparedTurn` 现在新增：
@@ -106,6 +160,11 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 - `memorySummary`
 - `contributors`
 - `preparePhaseTrace`
+- `runtimeTrace.injection`
+
+同时顶层还新增：
+
+- `injections`
 
 其中：
 
@@ -118,6 +177,7 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 - `memoryInjection`
 - `memory`
 - `runtimeTrace.generationParamsResolution`
+- `runtimeTrace.injection`
 
 `client.promptRuntime.previewText(...)` 与 `inspect(...)` 的 runtime trace
 现在也可能返回 `toolTransport`。
@@ -158,6 +218,7 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 
 - `memory`
 - `memorySummary`
+- `runtimeTrace.injection`
 
 同时 `client.promptRuntime.getCapabilities()` 的 `observability.inspect` 现在也会明确返回：
 

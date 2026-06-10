@@ -1,3 +1,4 @@
+import type { PromptRuntimeClientInjectionInput } from "../prompt-runtime-injection-types.js";
 import type { RegexExecutionChannel } from "@tavern/adapters-sillytavern";
 import type {
   ChatMessage,
@@ -59,6 +60,7 @@ import {
   buildPromptRuntimeContributorRenderablesForAssembly,
   resolvePreparedPromptArtifactsPromptMode,
 } from "./prompt-runtime-contributors.js";
+import { PromptRuntimeInjectionContributorBuilder } from "./prompt-runtime-injection-contributor-builder.js";
 import {
   ToolCallTransportResolver,
   readToolCallTransportOverride,
@@ -79,6 +81,7 @@ interface PreparedPromptArtifactsRequestShape {
   generationParams?: GenerationParamsInput;
   promptIntent?: PromptRunIntent;
   debugOptions?: PromptLiveDebugOptions;
+  promptRuntimeInjections?: PromptRuntimeClientInjectionInput[];
 }
 
 interface PreparedPromptArtifactsHistoryLoad {
@@ -118,6 +121,7 @@ export interface PreparePromptArtifactsArgs {
 
 export class PreparedPromptArtifactsBuilder {
   private readonly contributorRunner = new PromptRuntimeContributorRunner();
+  private readonly injectionContributorBuilder = new PromptRuntimeInjectionContributorBuilder();
   private readonly toolTransportResolver = new ToolCallTransportResolver();
 
   constructor(
@@ -249,6 +253,25 @@ export class PreparedPromptArtifactsBuilder {
       transport: toolTransportSelection.transport,
       toolsForSlot: narratorTools,
     }).contributors;
+    const injectionBuild = this.injectionContributorBuilder.build({
+      promptMode,
+      injections: args.request.promptRuntimeInjections,
+    });
+    const contributorRenderables = [
+      ...buildPromptRuntimeContributorRenderablesForAssembly(
+        contributors,
+        promptMode,
+      ),
+      ...injectionBuild.renderables,
+    ];
+    preparePhaseTrace.push({
+      phase: "injection",
+      detail: {
+        requestedCount: args.request.promptRuntimeInjections?.length ?? 0,
+        appliedCount: injectionBuild.items.filter((item) => item.applied).length,
+        notAppliedCount: injectionBuild.items.filter((item) => !item.applied).length,
+      },
+    });
     preparePhaseTrace.push({
       phase: "pre_response",
       detail: {
@@ -291,10 +314,8 @@ export class PreparedPromptArtifactsBuilder {
         includeWorldbookMatchTrace: args.request.debugOptions?.includeWorldbookMatches === true,
         assistantPrefillStrategy,
         budget: args.executionContext.effectivePolicy?.budget,
-        contributors: buildPromptRuntimeContributorRenderablesForAssembly(
-          contributors,
-          promptMode,
-        ),
+        contributors: contributorRenderables,
+        injectionItems: injectionBuild.items,
         sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
         memoryRuntimeTrace,
       },
@@ -410,6 +431,9 @@ export class PreparedPromptArtifactsBuilder {
       memorySummary: effectiveMemorySummary,
       memoryTrace,
       contributors,
+      injections: inspectionWithToolTransport.injections
+        ?? assembled.runtimeTraceSeed.injectionItems
+        ?? injectionBuild.items,
       resolvedTurnModels: args.resolvedTurnModels,
       assembled,
       materialized,

@@ -381,6 +381,14 @@ describe("sdk floors expanded resource", () => {
           includeRuntimeTrace: true,
           includeWorldbookMatches: false,
         },
+        promptRuntimeInjections: [{
+          sourceKind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        }],
         sessionStateWrites: [
           {
             namespace: "quest_flags",
@@ -471,6 +479,16 @@ describe("sdk floors expanded resource", () => {
           namespace: "quest_flags",
           slot: "expired_hint",
           delete: true,
+        },
+      ],
+      prompt_runtime_injections: [
+        {
+          source_kind: "client_injection",
+          title: "Client guide",
+          content: "Keep the north pass in focus.",
+          placement: "before_history",
+          order: 30,
+          scope: "request",
         },
       ],
 

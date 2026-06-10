@@ -154,6 +154,7 @@ export class PromptPreparationService {
     worldbookHitCount?: number;
     extraDiagnostics?: PromptRuntimeDiagnostic[];
     historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
+    injections?: import("../prompt-runtime-injection-types.js").PromptRuntimeInjectionTraceItem[];
   } | {
     accountId: string;
     sessionId: string;
@@ -177,6 +178,7 @@ export class PromptPreparationService {
     worldbookHitCount?: number;
     extraDiagnostics?: PromptRuntimeDiagnostic[];
     historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
+    injections?: import("../prompt-runtime-injection-types.js").PromptRuntimeInjectionTraceItem[];
   })): Promise<PromptRuntimeInspectionResult> {
     const context: PromptRuntimeResolvedContext = "context" in args
       ? args.context
@@ -261,6 +263,11 @@ export class PromptPreparationService {
       sectionStats: this.buildPromptRuntimeSectionStats(args.assembled?.tokenUsage.bySection),
       limitations: [...PROMPT_RUNTIME_LIMITATIONS],
       ...(args.memoryTrace ? { memory: args.memoryTrace } : {}),
+      ...(args.injections && args.injections.length > 0
+        ? { injections: args.injections }
+        : args.assembled?.runtimeTraceSeed.injectionItems
+          ? { injections: args.assembled.runtimeTraceSeed.injectionItems }
+          : {}),
     };
   }
 

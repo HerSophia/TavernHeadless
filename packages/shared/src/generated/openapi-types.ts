@@ -5212,6 +5212,16 @@ export interface paths {
                             top_k?: null | number;
                             top_p?: null | number;
                         };
+                        prompt_runtime_injections?: {
+                            content: string;
+                            order?: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope?: "request";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                        }[];
                         /**
                          * @example [
                          *       {
@@ -6446,6 +6456,21 @@ export interface paths {
                                             message: string;
                                             source_floor_ids: string[];
                                             source_message_ids: string[];
+                                        }[];
+                                    };
+                                    injection?: {
+                                        items: {
+                                            applied: boolean;
+                                            content_length: number;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            order_requested: number;
+                                            placement_requested: string;
+                                            placement_resolved: string | null;
+                                            request_index: number;
+                                            /** @enum {string} */
+                                            scope: "request";
+                                            source_kind: string;
+                                            title: string;
                                         }[];
                                     };
                                     /**
@@ -10003,6 +10028,16 @@ export interface paths {
                             top_k?: null | number;
                             top_p?: null | number;
                         };
+                        prompt_runtime_injections?: {
+                            content: string;
+                            order?: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope?: "request";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                        }[];
                         /**
                          * @example [
                          *       {
@@ -11241,6 +11276,21 @@ export interface paths {
                                             message: string;
                                             source_floor_ids: string[];
                                             source_message_ids: string[];
+                                        }[];
+                                    };
+                                    injection?: {
+                                        items: {
+                                            applied: boolean;
+                                            content_length: number;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            order_requested: number;
+                                            placement_requested: string;
+                                            placement_resolved: string | null;
+                                            request_index: number;
+                                            /** @enum {string} */
+                                            scope: "request";
+                                            source_kind: string;
+                                            title: string;
                                         }[];
                                     };
                                     /**
@@ -16676,6 +16726,16 @@ export interface paths {
                             top_k?: null | number;
                             top_p?: null | number;
                         };
+                        prompt_runtime_injections?: {
+                            content: string;
+                            order?: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope?: "request";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                        }[];
                         /**
                          * @example [
                          *       {
@@ -17912,6 +17972,21 @@ export interface paths {
                                             source_message_ids: string[];
                                         }[];
                                     };
+                                    injection?: {
+                                        items: {
+                                            applied: boolean;
+                                            content_length: number;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            order_requested: number;
+                                            placement_requested: string;
+                                            placement_resolved: string | null;
+                                            request_index: number;
+                                            /** @enum {string} */
+                                            scope: "request";
+                                            source_kind: string;
+                                            title: string;
+                                        }[];
+                                    };
                                     /**
                                      * @example {
                                      *       "mutation_preview": [
@@ -18464,6 +18539,16 @@ export interface paths {
                         message: string;
                         /** @enum {string} */
                         prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                        prompt_runtime_injections?: {
+                            content: string;
+                            order?: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope?: "request";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                        }[];
                         /**
                          * @example [
                          *       {
@@ -19701,6 +19786,21 @@ export interface paths {
                                             source_message_ids: string[];
                                         }[];
                                     };
+                                    injection?: {
+                                        items: {
+                                            applied: boolean;
+                                            content_length: number;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            order_requested: number;
+                                            placement_requested: string;
+                                            placement_resolved: string | null;
+                                            request_index: number;
+                                            /** @enum {string} */
+                                            scope: "request";
+                                            source_kind: string;
+                                            title: string;
+                                        }[];
+                                    };
                                     /**
                                      * @example {
                                      *       "mutation_preview": [
@@ -20201,6 +20301,16 @@ export interface paths {
                         message: string;
                         /** @enum {string} */
                         prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                        prompt_runtime_injections?: {
+                            content: string;
+                            order?: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope?: "request";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                        }[];
                         source_selection?: {
                             examples?: {
                                 enabled?: boolean;
@@ -21476,6 +21586,21 @@ export interface paths {
                                             source_message_ids: string[];
                                         }[];
                                     };
+                                    injection?: {
+                                        items: {
+                                            applied: boolean;
+                                            content_length: number;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            order_requested: number;
+                                            placement_requested: string;
+                                            placement_resolved: string | null;
+                                            request_index: number;
+                                            /** @enum {string} */
+                                            scope: "request";
+                                            source_kind: string;
+                                            title: string;
+                                        }[];
+                                    };
                                     /**
                                      * @example {
                                      *       "mutation_preview": [
@@ -21972,6 +22097,16 @@ export interface paths {
                         message: string;
                         /** @enum {string} */
                         prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                        prompt_runtime_injections?: {
+                            content: string;
+                            order?: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope?: "request";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                        }[];
                         /**
                          * @example [
                          *       {
@@ -38442,6 +38577,16 @@ export interface operations {
                     message: string;
                     /** @enum {string} */
                     prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
+                    prompt_runtime_injections?: {
+                        content: string;
+                        order?: number;
+                        placement: string;
+                        /** @enum {string} */
+                        scope?: "request";
+                        /** @enum {string} */
+                        source_kind: "client_injection";
+                        title: string;
+                    }[];
                     /**
                      * @example [
                      *       {
@@ -39187,6 +39332,19 @@ export interface operations {
                                     source_message_ids: string[];
                                 }[];
                             };
+                            injections: {
+                                applied: boolean;
+                                content_length: number;
+                                not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                order_requested: number;
+                                placement_requested: string;
+                                placement_resolved: string | null;
+                                request_index: number;
+                                /** @enum {string} */
+                                scope: "request";
+                                source_kind: string;
+                                title: string;
+                            }[];
                             limitations: string[];
                             mode: {
                                 /** @enum {string} */
@@ -39389,7 +39547,7 @@ export interface operations {
                                         [key: string]: unknown;
                                     } | null;
                                     /** @enum {string} */
-                                    phase: "conversation_resolve" | "source_resolve" | "pre_response" | "assemble" | "materialize" | "inspect";
+                                    phase: "conversation_resolve" | "source_resolve" | "injection" | "pre_response" | "assemble" | "materialize" | "inspect";
                                 }[];
                                 preprocessed_user_message: string | null;
                                 prompt_snapshot: {
@@ -39538,6 +39696,21 @@ export interface operations {
                                             message: string;
                                             source_floor_ids: string[];
                                             source_message_ids: string[];
+                                        }[];
+                                    };
+                                    injection?: {
+                                        items: {
+                                            applied: boolean;
+                                            content_length: number;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            order_requested: number;
+                                            placement_requested: string;
+                                            placement_resolved: string | null;
+                                            request_index: number;
+                                            /** @enum {string} */
+                                            scope: "request";
+                                            source_kind: string;
+                                            title: string;
                                         }[];
                                     };
                                     /**
@@ -41075,6 +41248,16 @@ export interface operations {
                         no_assistant?: boolean;
                         require_last_user?: boolean;
                     };
+                    prompt_runtime_injections?: {
+                        content: string;
+                        order?: number;
+                        placement: string;
+                        /** @enum {string} */
+                        scope?: "request";
+                        /** @enum {string} */
+                        source_kind: "client_injection";
+                        title: string;
+                    }[];
                     source_floor_id?: string;
                     source_selection?: {
                         examples?: {
@@ -41673,6 +41856,21 @@ export interface operations {
                                         message: string;
                                         source_floor_ids: string[];
                                         source_message_ids: string[];
+                                    }[];
+                                };
+                                injection?: {
+                                    items: {
+                                        applied: boolean;
+                                        content_length: number;
+                                        not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                        order_requested: number;
+                                        placement_requested: string;
+                                        placement_resolved: string | null;
+                                        request_index: number;
+                                        /** @enum {string} */
+                                        scope: "request";
+                                        source_kind: string;
+                                        title: string;
                                     }[];
                                 };
                                 /**

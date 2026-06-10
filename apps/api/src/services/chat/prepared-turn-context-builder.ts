@@ -153,6 +153,7 @@ export class PreparedTurnContextBuilder {
       ...(artifacts.memoryInjection ? { memoryInjection: artifacts.memoryInjection } : {}),
       memorySummary: artifacts.memorySummary,
       memoryTrace: artifacts.memoryTrace,
+      injections: artifacts.injections,
       resolvedTurnModels: artifacts.resolvedTurnModels,
       assembled: artifacts.assembled,
       materialized: artifacts.materialized,

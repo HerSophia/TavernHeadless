@@ -9,6 +9,8 @@ import type { PromptRuntimePreviewResult } from "../../services/chat/contracts.j
 import type { PromptRuntimeInspectResult } from "../../services/prompt-runtime/types.js";
 
 const apps: FastifyInstance[] = [];
+const CLIENT_INJECTION_TITLE = "Client guide";
+const CLIENT_INJECTION_CONTENT = "Keep the north pass in focus.";
 
 describe("prompt-runtime preview and inspect routes", () => {
   afterEach(async () => {
@@ -37,6 +39,7 @@ describe("prompt-runtime preview and inspect routes", () => {
           worldbook: { enabled: true },
           examples: { enabled: false },
         },
+        prompt_runtime_injections: createPromptRuntimeInjectionsRequestBody(),
       },
     });
 
@@ -53,6 +56,14 @@ describe("prompt-runtime preview and inspect routes", () => {
           worldbook: { enabled: true },
           examples: { enabled: false },
         },
+        promptRuntimeInjections: [{
+          sourceKind: "client_injection",
+          title: CLIENT_INJECTION_TITLE,
+          content: CLIENT_INJECTION_CONTENT,
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        }],
       }),
       DEFAULT_ADMIN_ACCOUNT_ID,
     );
@@ -157,6 +168,22 @@ describe("prompt-runtime preview and inspect routes", () => {
               diagnostics: [],
             },
           },
+          injection: {
+            items: [
+              {
+                request_index: 0,
+                source_kind: "client_injection",
+                scope: "request",
+                placement_requested: "before_history",
+                order_requested: 30,
+                title: CLIENT_INJECTION_TITLE,
+                content_length: CLIENT_INJECTION_CONTENT.length,
+                applied: true,
+                placement_resolved: "history.before",
+                not_applied_reason: null,
+              },
+            ],
+          },
         },
       },
     });
@@ -185,6 +212,7 @@ describe("prompt-runtime preview and inspect routes", () => {
             delete: true,
           },
         ],
+        prompt_runtime_injections: createPromptRuntimeInjectionsRequestBody(),
       },
     });
 
@@ -207,6 +235,14 @@ describe("prompt-runtime preview and inspect routes", () => {
             delete: true,
           },
         ],
+        promptRuntimeInjections: [{
+          sourceKind: "client_injection",
+          title: CLIENT_INJECTION_TITLE,
+          content: CLIENT_INJECTION_CONTENT,
+          placement: "before_history",
+          order: 30,
+          scope: "request",
+        }],
       }),
       DEFAULT_ADMIN_ACCOUNT_ID,
     );
@@ -221,6 +257,20 @@ describe("prompt-runtime preview and inspect routes", () => {
           history_source_branch_id: "alt-branch",
           history_source_mode: "existing_branch",
         },
+        injections: [
+          {
+            request_index: 0,
+            source_kind: "client_injection",
+            scope: "request",
+            placement_requested: "before_history",
+            order_requested: 30,
+            title: CLIENT_INJECTION_TITLE,
+            content_length: CLIENT_INJECTION_CONTENT.length,
+            applied: true,
+            placement_resolved: "history.before",
+            not_applied_reason: null,
+          },
+        ],
         prepared_turn: {
           prompt_snapshot: null,
           runtime_trace: {
@@ -246,6 +296,22 @@ describe("prompt-runtime preview and inspect routes", () => {
                 rejected_count: 0,
                 diagnostics: [],
               },
+            },
+            injection: {
+              items: [
+                {
+                  request_index: 0,
+                  source_kind: "client_injection",
+                  scope: "request",
+                  placement_requested: "before_history",
+                  order_requested: 30,
+                  title: CLIENT_INJECTION_TITLE,
+                  content_length: CLIENT_INJECTION_CONTENT.length,
+                  applied: true,
+                  placement_resolved: "history.before",
+                  not_applied_reason: null,
+                },
+              ],
             },
           },
           memory_injection: {
@@ -299,7 +365,7 @@ describe("prompt-runtime preview and inspect routes", () => {
               },
             ],
           },
-          prepare_phase_trace: [
+          prepare_phase_trace: expect.arrayContaining([
             {
               phase: "source_resolve",
               detail: {
@@ -307,7 +373,15 @@ describe("prompt-runtime preview and inspect routes", () => {
                 memory_summary_injected: true,
               },
             },
-          ],
+            {
+              phase: "injection",
+              detail: {
+                requested_count: 1,
+                applied_count: 1,
+                not_applied_count: 0,
+              },
+            },
+          ]),
         },
       },
     });
@@ -557,6 +631,31 @@ function createToolTransportTrace() {
   };
 }
 
+function createPromptRuntimeInjectionsRequestBody() {
+  return [{
+    source_kind: "client_injection" as const,
+    title: CLIENT_INJECTION_TITLE,
+    content: CLIENT_INJECTION_CONTENT,
+    placement: "before_history",
+    order: 30,
+    scope: "request" as const,
+  }];
+}
+
+function createInjectionTraceItems() {
+  return [{
+    requestIndex: 0,
+    sourceKind: "client_injection",
+    scope: "request" as const,
+    placementRequested: "before_history",
+    orderRequested: 30,
+    title: CLIENT_INJECTION_TITLE,
+    contentLength: CLIENT_INJECTION_CONTENT.length,
+    applied: true,
+    placementResolved: "history.before",
+  }];
+}
+
 function createPreviewResult(): PromptRuntimePreviewResult {
   return {
     scope: createScope(),
@@ -611,6 +710,9 @@ function createPreviewResult(): PromptRuntimePreviewResult {
           },
         ],
       },
+      injection: {
+        items: createInjectionTraceItems(),
+      },
     },
   } as PromptRuntimePreviewResult;
 }
@@ -660,6 +762,7 @@ function createInspectResult(): PromptRuntimeInspectResult {
       },
     ],
     limitations: ["inspect_limit"],
+    injections: createInjectionTraceItems(),
     preparedTurn: {
       messages: [
         { role: "system", content: "Stay in character and keep the tone warm." },
@@ -676,6 +779,9 @@ function createInspectResult(): PromptRuntimeInspectResult {
           { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
         ],
         toolTransport: createToolTransportTrace(),
+        injection: {
+          items: createInjectionTraceItems(),
+        },
       },
       memoryInjection: createMemoryInjection(),
       memory: createMemoryTrace(),
@@ -724,6 +830,14 @@ function createInspectResult(): PromptRuntimeInspectResult {
           detail: {
             selectedMemoryCount: 1,
             memorySummaryInjected: true,
+          },
+        },
+        {
+          phase: "injection",
+          detail: {
+            requestedCount: 1,
+            appliedCount: 1,
+            notAppliedCount: 0,
           },
         },
       ],

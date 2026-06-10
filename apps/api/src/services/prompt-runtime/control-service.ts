@@ -410,6 +410,7 @@ export interface PromptRuntimeInspectionResult {
   memory?: PromptRuntimeTrace["memory"];
   toolTransport?: PromptRuntimeTrace["toolTransport"];
   limitations: string[];
+  injections?: import("../prompt-runtime-injection-types.js").PromptRuntimeInjectionTrace["items"];
 }
 
 export type PromptRuntimeGovernanceMismatchCode =
