@@ -114,7 +114,7 @@ outline: [2, 3]
 
 `PATCH /sessions/:id` 仍然可以更新 `prompt_mode`。
 
-本轮设计接受两条写入口：
+当前设计接受两条写入口：
 
 - Sessions 通用更新面上的 `prompt_mode`
 - `PATCH /sessions/:id/prompt-runtime/mode`
