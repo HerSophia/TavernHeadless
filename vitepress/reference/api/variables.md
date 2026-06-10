@@ -579,7 +579,7 @@ GET /pages/:pageId/variables/promotions
 }
 ```
 
-这条轨迹当前只记录 `page -> floor`。更高层级 promotion 没有在本轮开放执行入口。
+这条轨迹当前只记录 `page -> floor`。更高层级 promotion 当前没有开放执行入口。
 
 ## 官方集成层对应方法
 
