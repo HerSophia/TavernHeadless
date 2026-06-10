@@ -25,6 +25,12 @@ import type { PromptRuntimeHistoryNormalizationSummary } from "./conversation-hi
 import type { FloorConversationInputSnapshot } from "./shared/metadata.js";
 import type { PromptMode } from "../prompt-assembler.js";
 
+import type {
+  PromptRuntimeInjectionBuildResult,
+  PromptRuntimeInjectionPromptMode,
+  PromptRuntimeInjectionTrace,
+} from "../prompt-runtime-injection-types.js";
+
 export type ChatWorkflowMode =
   | "respond"
   | "regenerate"
@@ -47,6 +53,7 @@ export type TurnRuntimePhase =
 export type PromptRuntimePreparePhase =
   | "conversation_resolve"
   | "source_resolve"
+  | "injection"
   | "pre_response"
   | "assemble"
   | "materialize"
@@ -61,7 +68,8 @@ export type PromptRuntimeContributorKind =
   | "worldbook_focus"
   | "memory_selection"
   | "verifier_hint"
-  | "tool_list";
+  | "tool_list"
+  | "client_injection";
 
 export interface PromptRuntimeContributorRenderable {
   title: string;
@@ -158,7 +166,7 @@ export interface PreparedPromptArtifacts {
   sessionId: string;
   branchId?: string;
   accountId: string;
-  promptMode: PromptMode;
+  promptMode: PromptRuntimeInjectionPromptMode;
   userMessage: string;
   rawUserMessage: string;
   executionContext: PromptRuntimeResolvedContext;
@@ -169,6 +177,7 @@ export interface PreparedPromptArtifacts {
   memorySummary?: string;
   memoryTrace: PromptRuntimeTrace["memory"];
   contributors: PromptRuntimeContributorOutput[];
+  injections: PromptRuntimeInjectionTrace["items"];
   resolvedTurnModels: ResolvedTurnModels;
   assembled: AssembleResult;
   materialized: MaterializePromptRuntimeMessagesResult;
@@ -206,6 +215,7 @@ export interface PreparedTurnContext {
   memoryInjection?: import("@tavern/core").MemoryInjectionResult;
   memorySummary?: string;
   memoryTrace: PromptRuntimeTrace["memory"];
+  injections: PromptRuntimeInjectionTrace["items"];
   resolvedTurnModels: ResolvedTurnModels;
   assembled: AssembleResult;
   materialized: MaterializePromptRuntimeMessagesResult;

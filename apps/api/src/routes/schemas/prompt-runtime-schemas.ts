@@ -1273,6 +1273,7 @@ const promptRuntimePreviewRuntimeTraceJsonSchema = {
       additionalProperties: false,
     },
     tool_transport: dryRunRuntimeTraceJsonSchema.properties.tool_transport,
+    injection: dryRunRuntimeTraceJsonSchema.properties.injection,
   },
   additionalProperties: false,
 } as const;
@@ -1679,6 +1680,22 @@ export const promptRuntimePreviewBodyJsonSchema = {
     delivery: promptRuntimePersistentDeliveryJsonSchema,
     budget: promptBudgetJsonSchema,
     source_selection: promptSourceSelectionJsonSchema,
+    prompt_runtime_injections: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["source_kind", "title", "content", "placement"],
+        properties: {
+          source_kind: { type: "string", enum: ["client_injection"] },
+          title: { type: "string" },
+          content: { type: "string" },
+          placement: { type: "string", minLength: 1 },
+          order: { type: "integer" },
+          scope: { type: "string", enum: ["request"] },
+        },
+        additionalProperties: false,
+      },
+    },
   },
   examples: [promptRuntimePreviewBodyExample],
   additionalProperties: false,
@@ -1701,6 +1718,22 @@ export const promptRuntimeInspectBodyJsonSchema = {
     delivery: promptRuntimePersistentDeliveryJsonSchema,
     budget: promptBudgetJsonSchema,
     source_selection: promptSourceSelectionJsonSchema,
+    prompt_runtime_injections: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["source_kind", "title", "content", "placement"],
+        properties: {
+          source_kind: { type: "string", enum: ["client_injection"] },
+          title: { type: "string" },
+          content: { type: "string" },
+          placement: { type: "string", minLength: 1 },
+          order: { type: "integer" },
+          scope: { type: "string", enum: ["request"] },
+        },
+        additionalProperties: false,
+      },
+    },
   },
   examples: [promptRuntimeInspectBodyExample],
   additionalProperties: false,
@@ -1844,7 +1877,7 @@ export const promptRuntimeInspectResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["scope", "mode", "policy", "source_map", "diagnostics", "history_normalization", "trim_reasons", "excluded_sources", "section_stats", "limitations", "prepared_turn", "governance"],
+      required: ["scope", "mode", "policy", "source_map", "diagnostics", "history_normalization", "trim_reasons", "excluded_sources", "section_stats", "limitations", "injections", "prepared_turn", "governance"],
       properties: {
         scope: promptRuntimeScopeJsonSchema,
         mode: promptRuntimeModeViewSchema,
@@ -1856,6 +1889,10 @@ export const promptRuntimeInspectResponseJsonSchema = {
         excluded_sources: { type: "array", items: promptRuntimeHistoricalExplainSourceExclusionJsonSchema },
         section_stats: { type: "array", items: promptRuntimeSectionStatJsonSchema },
         limitations: { type: "array", items: { type: "string" } },
+        injections: {
+          type: "array",
+          items: dryRunRuntimeTraceJsonSchema.properties.injection.properties.items.items,
+        },
         prepared_turn: {
           type: "object",
           required: ["messages", "token_estimate", "available_for_reply", "preprocessed_user_message", "prompt_snapshot", "runtime_trace", "memory_summary", "generation_params", "requested_turn_config", "turn_config", "session_state_writes", "contributors", "prepare_phase_trace"],
@@ -1919,7 +1956,7 @@ export const promptRuntimeInspectResponseJsonSchema = {
                 properties: {
                   phase: {
                     type: "string",
-                    enum: ["conversation_resolve", "source_resolve", "pre_response", "assemble", "materialize", "inspect"],
+                    enum: ["conversation_resolve", "source_resolve", "injection", "pre_response", "assemble", "materialize", "inspect"],
                   },
                   detail: {
                     anyOf: [

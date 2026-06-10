@@ -76,6 +76,7 @@ POST /sessions/:id/respond
 | `generation_params` | [GenerationParams](#generationparams-对象) | 否 | 生成参数覆盖 |
 | `branch_id` | string | 否 | 指定分支 ID |
 | `source_floor_id` | string | 否 | 从指定楼层开始（用于在中途插入） |
+| `prompt_runtime_injections` | object[] | 否 | 当前请求级 Prompt Runtime Injection 列表。字段见上面的“Prompt Runtime Injection 请求字段” |
 | `session_state_writes` | object[] | 否 | 与本次 turn 一起提交的受治理 Session State 写入声明 |
 | `session_state_writes[].namespace` | string | 是 | 已注册 custom namespace |
 | `session_state_writes[].slot` | string | 是 | 目标 custom slot |
@@ -96,6 +97,75 @@ POST /sessions/:id/respond
 - 写入会在生成成功后先 stage，并在当前 turn commit 成功时一并落地
 - `delete: true` 的治理语义是写成 `present: false`
 - 如果写入命中 Session State 的 managed storage 上限或 payload budget，上层会返回同一组 `session_state_*` 正式错误码，而不会把底层 `client_data_*` 错误直接暴露给调用方
+
+### Prompt Runtime Injection 请求字段
+
+以下接口现在都接受可选 `prompt_runtime_injections`：
+
+- `POST /sessions/:id/respond`
+- `POST /sessions/:id/respond/dry-run`
+- `POST /sessions/:id/regenerate`
+- `POST /floors/:id/retry`
+- `POST /messages/:id/edit-and-regenerate`
+
+它用于在本次请求的 Prompt Runtime 组装阶段，临时加入一组客户端提示。
+
+I1 的边界固定为：
+
+- 只对当前请求生效
+- 不写入 session / branch
+- 不进入数据库持久化
+- 只支持 `source_kind="client_injection"`
+- 只支持 `scope="request"`
+
+每个条目字段如下：
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `source_kind` | string | 是 | 当前固定为 `client_injection` |
+| `title` | string | 是 | 注入标题 |
+| `content` | string | 是 | 注入正文 |
+| `placement` | string | 是 | 语义锚点位置 |
+| `order` | integer | 否 | 同一 placement 内部排序，默认 `100` |
+| `scope` | string | 否 | 当前固定为 `request` |
+
+当前开放的 `placement` 为：
+
+- `before_system_prompt` / `after_system_prompt`
+- `before_character` / `after_character`
+- `before_persona` / `after_persona`
+- `before_worldbook` / `after_worldbook`
+- `before_memory` / `after_memory`
+- `before_examples` / `after_examples`
+- `before_history` / `after_history`
+- `before_current_user_input` / `after_current_user_input`
+- `before_output_instruction`
+- `before_assistant_prefill`
+
+示例：
+
+```json
+{
+  "message": "请继续这段对话",
+  "prompt_runtime_injections": [
+    {
+      "source_kind": "client_injection",
+      "title": "Client guide",
+      "content": "Keep the north pass in focus.",
+      "placement": "before_history",
+      "order": 30,
+      "scope": "request"
+    }
+  ]
+}
+```
+
+这组注入的结果会体现在：
+
+- chat 响应里的 `runtime_trace.injection.items`
+- dry-run 响应里的 `runtime_trace.injection.items`
+- Prompt Runtime inspect 顶层 `injections`
+- Prompt Runtime inspect / preview 的 `runtime_trace.injection.items`
 
 ### 响应 `200`
 
@@ -132,6 +202,24 @@ POST /sessions/:id/respond
 如果请求里显式打开 `debug_options.include_prompt_snapshot`，成功响应的 `data` 里还会附带 `prompt_snapshot`。
 
 如果请求里显式打开 `debug_options.include_runtime_trace`，成功响应的 `data` 里还会附带 `runtime_trace`。
+
+如果当前请求携带了 `prompt_runtime_injections`，`runtime_trace.injection.items` 会按条返回解析结果。每条记录至少包含：
+
+- `request_index`
+- `source_kind`
+- `scope`
+- `placement_requested`
+- `order_requested`
+- `title`
+- `content_length`
+- `applied`
+- `placement_resolved`
+- `not_applied_reason`
+
+其中：
+
+- `applied=true` 表示这条 injection 在本轮组装中成功落到了目标语义锚点
+- `not_applied_reason` 用于说明未生效原因，当前可能为 `placement_not_available_in_mode`、`unknown_placement`、`empty_title_or_content`、`prompt_section_absent`
 
 如果本轮 prompt 组装实际命中了宏系统，`runtime_trace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
 
@@ -258,6 +346,7 @@ dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot
 | ---- | ---- | ---- | ---- |
 | `message` | string | **是** | 用户消息文本 |
 | `prompt_intent` | string | 否 | Prompt 运行意图：`normal` / `continue` / `impersonate` / `swipe` / `regenerate` / `quiet` |
+| `prompt_runtime_injections` | object[] | 否 | 当前请求级 Prompt Runtime Injection 列表。字段见上面的“Prompt Runtime Injection 请求字段” |
 | `debug_options` | object | 否 | dry-run 额外调试选项 |
 | `debug_options.include_worldbook_matches` | boolean | 否 | 是否返回 `assembly.worldbook_matches`。默认 `false` |
 
@@ -572,6 +661,7 @@ POST /sessions/:id/regenerate
 | ---- | ---- | ---- | ---- |
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `prompt_runtime_injections` | object[] | 否 | 当前请求级 Prompt Runtime Injection 列表。字段见上面的“Prompt Runtime Injection 请求字段” |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
 | `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
 | `session_state_writes` | object[] | 否 | 与 `/sessions/:id/respond` 相同的 turn-embedded commit-bound Session State 写入声明 |
@@ -614,6 +704,8 @@ POST /sessions/:id/regenerate
 
 如果打开 `debug_options.include_prompt_snapshot` / `debug_options.include_runtime_trace`，成功响应 `data` 中会按需附带 `prompt_snapshot` / `runtime_trace`。
 
+如果本次请求携带了 `prompt_runtime_injections`，dry-run 也会在 `runtime_trace.injection.items` 中回显解析结果。
+
 如果服务端启用了 queue 模式，而请求在排队期间会话的最新 committed floor 已经变化，接口会返回 `409 generation_target_stale`。除此之外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
 
 ## 楼层重试
@@ -632,6 +724,7 @@ POST /floors/:id/retry
 | ---- | ---- | ---- | ---- |
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `prompt_runtime_injections` | object[] | 否 | 当前请求级 Prompt Runtime Injection 列表。字段见上面的“Prompt Runtime Injection 请求字段” |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
 | `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
 | `session_state_writes` | object[] | 否 | 与 `/sessions/:id/respond` 相同的 turn-embedded commit-bound Session State 写入声明 |
@@ -678,6 +771,8 @@ POST /floors/:id/retry
 
 如果打开 `debug_options.include_prompt_snapshot` / `debug_options.include_runtime_trace`，成功响应 `data` 中会按需附带 `prompt_snapshot` / `runtime_trace`。
 
+如果本次请求携带了 `prompt_runtime_injections`，重试结果也会在 `runtime_trace.injection.items` 中回显解析结果。
+
 如果服务端启用了 queue 模式，而目标 floor 在等待期间的结构化上下文已经变化（例如 `branch_id` 或 `floor_no` 被修改），接口会返回 `409 generation_target_stale`。
 
 除楼层自身不存在或状态不允许外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
@@ -698,6 +793,7 @@ POST /messages/:id/edit-and-regenerate
 | `branch_id` | string | 否 | 指定分支 ID（可创建新分支） |
 | `config` | TurnConfig | 否 | 回合配置覆盖 |
 | `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `prompt_runtime_injections` | object[] | 否 | 当前请求级 Prompt Runtime Injection 列表。字段见上面的“Prompt Runtime Injection 请求字段” |
 | `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
 | `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
 | `session_state_writes` | object[] | 否 | 与 `/sessions/:id/respond` 相同的 turn-embedded commit-bound Session State 写入声明 |
@@ -734,6 +830,8 @@ POST /messages/:id/edit-and-regenerate
 ```
 
 如果打开 `debug_options.include_prompt_snapshot` / `debug_options.include_runtime_trace`，成功响应 `data` 中会按需附带 `prompt_snapshot` / `runtime_trace`。
+
+如果本次请求携带了 `prompt_runtime_injections`，结果也会在 `runtime_trace.injection.items` 中回显解析结果。
 
 如果服务端启用了 queue 模式，而源消息对应的 floor 上下文在等待期间已经变化，接口会返回 `409 generation_target_stale`。
 

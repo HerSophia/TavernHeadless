@@ -20293,6 +20293,46 @@
                     },
                     "type": "object"
                   },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "session_state_writes": {
                     "example": [
                       {
@@ -22210,6 +22250,91 @@
                                 "trailing_user_source_floor_ids",
                                 "merged_user_groups",
                                 "violations"
+                              ],
+                              "type": "object"
+                            },
+                            "injection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "applied": {
+                                        "type": "boolean"
+                                      },
+                                      "content_length": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "not_applied_reason": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "placement_not_available_in_mode",
+                                              "unknown_placement",
+                                              "empty_title_or_content",
+                                              "prompt_section_absent"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "order_requested": {
+                                        "type": "integer"
+                                      },
+                                      "placement_requested": {
+                                        "type": "string"
+                                      },
+                                      "placement_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "request_index": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "request"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "request_index",
+                                      "source_kind",
+                                      "scope",
+                                      "placement_requested",
+                                      "order_requested",
+                                      "title",
+                                      "content_length",
+                                      "applied",
+                                      "placement_resolved",
+                                      "not_applied_reason"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "items"
                               ],
                               "type": "object"
                             },
@@ -40419,6 +40544,46 @@
                     },
                     "type": "object"
                   },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "session_state_writes": {
                     "example": [
                       {
@@ -42343,6 +42508,91 @@
                                 "trailing_user_source_floor_ids",
                                 "merged_user_groups",
                                 "violations"
+                              ],
+                              "type": "object"
+                            },
+                            "injection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "applied": {
+                                        "type": "boolean"
+                                      },
+                                      "content_length": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "not_applied_reason": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "placement_not_available_in_mode",
+                                              "unknown_placement",
+                                              "empty_title_or_content",
+                                              "prompt_section_absent"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "order_requested": {
+                                        "type": "integer"
+                                      },
+                                      "placement_requested": {
+                                        "type": "string"
+                                      },
+                                      "placement_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "request_index": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "request"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "request_index",
+                                      "source_kind",
+                                      "scope",
+                                      "placement_requested",
+                                      "order_requested",
+                                      "title",
+                                      "content_length",
+                                      "applied",
+                                      "placement_resolved",
+                                      "not_applied_reason"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "items"
                               ],
                               "type": "object"
                             },
@@ -69895,6 +70145,46 @@
                     ],
                     "type": "string"
                   },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "session_state_writes": {
                     "example": [
                       {
@@ -71055,6 +71345,82 @@
                           ],
                           "type": "object"
                         },
+                        "injections": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "applied": {
+                                "type": "boolean"
+                              },
+                              "content_length": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "not_applied_reason": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "placement_not_available_in_mode",
+                                      "unknown_placement",
+                                      "empty_title_or_content",
+                                      "prompt_section_absent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "order_requested": {
+                                "type": "integer"
+                              },
+                              "placement_requested": {
+                                "type": "string"
+                              },
+                              "placement_resolved": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "request_index": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "scope": {
+                                "enum": [
+                                  "request"
+                                ],
+                                "type": "string"
+                              },
+                              "source_kind": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "request_index",
+                              "source_kind",
+                              "scope",
+                              "placement_requested",
+                              "order_requested",
+                              "title",
+                              "content_length",
+                              "applied",
+                              "placement_resolved",
+                              "not_applied_reason"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "limitations": {
                           "items": {
                             "type": "string"
@@ -72091,6 +72457,7 @@
                                     "enum": [
                                       "conversation_resolve",
                                       "source_resolve",
+                                      "injection",
                                       "pre_response",
                                       "assemble",
                                       "materialize",
@@ -72952,6 +73319,91 @@
                                         "trailing_user_source_floor_ids",
                                         "merged_user_groups",
                                         "violations"
+                                      ],
+                                      "type": "object"
+                                    },
+                                    "injection": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "items": {
+                                          "items": {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "applied": {
+                                                "type": "boolean"
+                                              },
+                                              "content_length": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "not_applied_reason": {
+                                                "anyOf": [
+                                                  {
+                                                    "enum": [
+                                                      "placement_not_available_in_mode",
+                                                      "unknown_placement",
+                                                      "empty_title_or_content",
+                                                      "prompt_section_absent"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "order_requested": {
+                                                "type": "integer"
+                                              },
+                                              "placement_requested": {
+                                                "type": "string"
+                                              },
+                                              "placement_resolved": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "request_index": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "scope": {
+                                                "enum": [
+                                                  "request"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "source_kind": {
+                                                "type": "string"
+                                              },
+                                              "title": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": [
+                                              "request_index",
+                                              "source_kind",
+                                              "scope",
+                                              "placement_requested",
+                                              "order_requested",
+                                              "title",
+                                              "content_length",
+                                              "applied",
+                                              "placement_resolved",
+                                              "not_applied_reason"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          "type": "array"
+                                        }
+                                      },
+                                      "required": [
+                                        "items"
                                       ],
                                       "type": "object"
                                     },
@@ -74699,6 +75151,7 @@
                         "excluded_sources",
                         "section_stats",
                         "limitations",
+                        "injections",
                         "prepared_turn",
                         "governance"
                       ],
@@ -77505,6 +77958,46 @@
                     },
                     "type": "object"
                   },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "source_floor_id": {
                     "minLength": 1,
                     "type": "string"
@@ -79002,6 +79495,91 @@
                               ],
                               "type": "object"
                             },
+                            "injection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "applied": {
+                                        "type": "boolean"
+                                      },
+                                      "content_length": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "not_applied_reason": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "placement_not_available_in_mode",
+                                              "unknown_placement",
+                                              "empty_title_or_content",
+                                              "prompt_section_absent"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "order_requested": {
+                                        "type": "integer"
+                                      },
+                                      "placement_requested": {
+                                        "type": "string"
+                                      },
+                                      "placement_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "request_index": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "request"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "request_index",
+                                      "source_kind",
+                                      "scope",
+                                      "placement_requested",
+                                      "order_requested",
+                                      "title",
+                                      "content_length",
+                                      "applied",
+                                      "placement_resolved",
+                                      "not_applied_reason"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "items"
+                              ],
+                              "type": "object"
+                            },
                             "macro": {
                               "additionalProperties": false,
                               "example": {
@@ -80145,6 +80723,46 @@
                       }
                     },
                     "type": "object"
+                  },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
                   "session_state_writes": {
                     "example": [
@@ -82066,6 +82684,91 @@
                               ],
                               "type": "object"
                             },
+                            "injection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "applied": {
+                                        "type": "boolean"
+                                      },
+                                      "content_length": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "not_applied_reason": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "placement_not_available_in_mode",
+                                              "unknown_placement",
+                                              "empty_title_or_content",
+                                              "prompt_section_absent"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "order_requested": {
+                                        "type": "integer"
+                                      },
+                                      "placement_requested": {
+                                        "type": "string"
+                                      },
+                                      "placement_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "request_index": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "request"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "request_index",
+                                      "source_kind",
+                                      "scope",
+                                      "placement_requested",
+                                      "order_requested",
+                                      "title",
+                                      "content_length",
+                                      "applied",
+                                      "placement_resolved",
+                                      "not_applied_reason"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "items"
+                              ],
+                              "type": "object"
+                            },
                             "macro": {
                               "additionalProperties": false,
                               "example": {
@@ -83819,6 +84522,46 @@
                       "quiet"
                     ],
                     "type": "string"
+                  },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
                   "session_state_writes": {
                     "example": [
@@ -85747,6 +86490,91 @@
                               ],
                               "type": "object"
                             },
+                            "injection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "applied": {
+                                        "type": "boolean"
+                                      },
+                                      "content_length": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "not_applied_reason": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "placement_not_available_in_mode",
+                                              "unknown_placement",
+                                              "empty_title_or_content",
+                                              "prompt_section_absent"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "order_requested": {
+                                        "type": "integer"
+                                      },
+                                      "placement_requested": {
+                                        "type": "string"
+                                      },
+                                      "placement_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "request_index": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "request"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "request_index",
+                                      "source_kind",
+                                      "scope",
+                                      "placement_requested",
+                                      "order_requested",
+                                      "title",
+                                      "content_length",
+                                      "applied",
+                                      "placement_resolved",
+                                      "not_applied_reason"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "items"
+                              ],
+                              "type": "object"
+                            },
                             "macro": {
                               "additionalProperties": false,
                               "example": {
@@ -87366,6 +88194,46 @@
                       "quiet"
                     ],
                     "type": "string"
+                  },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
                   "source_selection": {
                     "additionalProperties": false,
@@ -89897,6 +90765,91 @@
                               ],
                               "type": "object"
                             },
+                            "injection": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "items": {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "applied": {
+                                        "type": "boolean"
+                                      },
+                                      "content_length": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "not_applied_reason": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "placement_not_available_in_mode",
+                                              "unknown_placement",
+                                              "empty_title_or_content",
+                                              "prompt_section_absent"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "order_requested": {
+                                        "type": "integer"
+                                      },
+                                      "placement_requested": {
+                                        "type": "string"
+                                      },
+                                      "placement_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "request_index": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "scope": {
+                                        "enum": [
+                                          "request"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "source_kind": {
+                                        "type": "string"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "request_index",
+                                      "source_kind",
+                                      "scope",
+                                      "placement_requested",
+                                      "order_requested",
+                                      "title",
+                                      "content_length",
+                                      "applied",
+                                      "placement_resolved",
+                                      "not_applied_reason"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "items"
+                              ],
+                              "type": "object"
+                            },
                             "macro": {
                               "additionalProperties": false,
                               "example": {
@@ -91555,6 +92508,46 @@
                       "quiet"
                     ],
                     "type": "string"
+                  },
+                  "prompt_runtime_injections": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "content": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "placement": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "scope": {
+                          "enum": [
+                            "request"
+                          ],
+                          "type": "string"
+                        },
+                        "source_kind": {
+                          "enum": [
+                            "client_injection"
+                          ],
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "source_kind",
+                        "title",
+                        "content",
+                        "placement"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
                   },
                   "session_state_writes": {
                     "example": [

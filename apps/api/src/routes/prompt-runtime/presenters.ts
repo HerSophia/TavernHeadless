@@ -1,4 +1,5 @@
 import type { PromptRuntimeInspectResult } from "../../services/prompt-runtime/types.js";
+import type { PromptRuntimeInjectionTraceItem } from "../../services/prompt-runtime-injection-types.js";
 import {
   mapMemoryInjectionResultToSnakeCase,
   mapPromptSnapshotToSnakeCase,
@@ -103,6 +104,23 @@ function mapPreparePhaseTraceEntryToSnakeCase(
   };
 }
 
+function mapInjectionItemToSnakeCase(
+  item: PromptRuntimeInjectionTraceItem,
+): Record<string, unknown> {
+  return {
+    request_index: item.requestIndex,
+    source_kind: item.sourceKind,
+    scope: item.scope,
+    placement_requested: item.placementRequested,
+    order_requested: item.orderRequested,
+    title: item.title,
+    content_length: item.contentLength,
+    applied: item.applied,
+    placement_resolved: item.placementResolved ?? null,
+    not_applied_reason: item.notAppliedReason ?? null,
+  };
+}
+
 function mapPreparedTurnToSnakeCase(result: PromptRuntimeInspectResult["preparedTurn"]): Record<string, unknown> {
   return {
     messages: result.messages,
@@ -179,6 +197,7 @@ export function mapPromptRuntimeInspectResultToSnakeCase(
     excluded_sources: result.excludedSources.map((source) => mapExcludedSourceToSnakeCase(source)),
     section_stats: result.sectionStats.map((stat) => mapSectionStatToSnakeCase(stat)),
     limitations: result.limitations,
+    injections: (result.injections ?? []).map((item) => mapInjectionItemToSnakeCase(item)),
     prepared_turn: mapPreparedTurnToSnakeCase(result.preparedTurn),
     governance: mapGovernanceViewToSnakeCase(result.governance),
   };

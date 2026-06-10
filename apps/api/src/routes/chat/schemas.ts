@@ -26,6 +26,10 @@ import {
   turnConfigJsonSchema,
 } from "../schemas/chat-schemas.js";
 
+import type {
+  PromptRuntimeClientInjectionInput,
+} from "../../services/prompt-runtime-injection-types.js";
+
 export type TurnConfigBody = {
   enableTools?: boolean;
   enableDirector?: boolean;
@@ -110,6 +114,15 @@ export type TurnSessionStateWriteDeleteBody = {
   delete: true;
 };
 
+export type PromptRuntimeInjectionBody = {
+  source_kind: PromptRuntimeClientInjectionInput["sourceKind"];
+  title: string;
+  content: string;
+  placement: string;
+  order?: number;
+  scope?: PromptRuntimeClientInjectionInput["scope"];
+};
+
 export type RespondBody = {
   message: string;
   prompt_intent?: (typeof promptIntentValues)[number];
@@ -121,6 +134,7 @@ export type RespondBody = {
   branch_id?: string;
   source_floor_id?: string;
   session_state_writes?: Array<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody>;
+  prompt_runtime_injections?: PromptRuntimeInjectionBody[];
 };
 
 export type DryRunBody = {
@@ -132,6 +146,7 @@ export type DryRunBody = {
   delivery?: PromptDeliveryBody;
   budget?: PromptBudgetBody;
   source_selection?: PromptSourceSelectionBody;
+  prompt_runtime_injections?: PromptRuntimeInjectionBody[];
 };
 
 export type RegenerateBody = {
@@ -143,6 +158,7 @@ export type RegenerateBody = {
   confirmed_execution_ids?: string[];
   confirmed_session_state_mutation_ids?: string[];
   session_state_writes?: Array<TurnSessionStateWriteValueBody | TurnSessionStateWriteDeleteBody>;
+  prompt_runtime_injections?: PromptRuntimeInjectionBody[];
 };
 
 export type EditAndRegenerateBody = RegenerateBody & {
@@ -193,6 +209,15 @@ export const turnSessionStateWriteBodySchema: z.ZodType<TurnSessionStateWriteVal
   turnSessionStateWriteDeleteBodySchema,
 ]);
 
+export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionBody> = z.object({
+  source_kind: z.literal("client_injection"),
+  title: z.string(),
+  content: z.string(),
+  placement: z.string().min(1),
+  order: z.number().int().optional(),
+  scope: z.literal("request").optional(),
+}).strict();
+
 export const respondBodySchema: z.ZodType<RespondBody> = z.object({
   message: z.string().min(1),
   prompt_intent: z.enum(promptIntentValues).optional(),
@@ -204,9 +229,22 @@ export const respondBodySchema: z.ZodType<RespondBody> = z.object({
   branch_id: z.string().min(1).optional(),
   source_floor_id: z.string().min(1).optional(),
   session_state_writes: z.array(turnSessionStateWriteBodySchema).optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
 }).strict();
 
-export const dryRunBodySchema = buildZodObjectSchema<DryRunBody>(dryRunBodyJsonSchema);
+export const dryRunBodySchema: z.ZodType<DryRunBody> = z.object({
+  message: z.string().min(1),
+  prompt_intent: z.enum(promptIntentValues).optional(),
+  debug_options: z.object({
+    include_worldbook_matches: z.boolean().optional(),
+  }).strict().optional(),
+  visibility: dryRunVisibilityBodySchema.optional(),
+  structure: promptStructureBodySchema.optional(),
+  delivery: promptDeliveryBodySchema.optional(),
+  budget: promptBudgetBodySchema.optional(),
+  source_selection: promptSourceSelectionBodySchema.optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
+}).strict();
 
 export const regenerateBodySchema: z.ZodType<RegenerateBody> = z.object({
   delivery: promptDeliveryBodySchema.optional(),
@@ -217,6 +255,7 @@ export const regenerateBodySchema: z.ZodType<RegenerateBody> = z.object({
   confirmed_execution_ids: z.array(z.string().min(1)).optional(),
   confirmed_session_state_mutation_ids: z.array(z.string().min(1)).optional(),
   session_state_writes: z.array(turnSessionStateWriteBodySchema).optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
 }).strict();
 
 export const editAndRegenerateBodySchema: z.ZodType<EditAndRegenerateBody> = (regenerateBodySchema as z.AnyZodObject).extend({

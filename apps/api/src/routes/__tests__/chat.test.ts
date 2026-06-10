@@ -16,6 +16,24 @@ type MockedChatService = {
 };
 
 const apps: FastifyInstance[] = [];
+const CLIENT_INJECTION_TITLE = "Client guide";
+const CLIENT_INJECTION_CONTENT = "Keep the north pass in focus.";
+const CLIENT_INJECTION_REQUEST_BODY = [{
+  source_kind: "client_injection" as const,
+  title: CLIENT_INJECTION_TITLE,
+  content: CLIENT_INJECTION_CONTENT,
+  placement: "before_history",
+  order: 30,
+  scope: "request" as const,
+}];
+const CLIENT_INJECTION_REQUEST = [{
+  sourceKind: "client_injection" as const,
+  title: CLIENT_INJECTION_TITLE,
+  content: CLIENT_INJECTION_CONTENT,
+  placement: "before_history",
+  order: 30,
+  scope: "request" as const,
+}];
 
 describe("chat routes", () => {
   afterEach(async () => {
@@ -195,6 +213,119 @@ describe("chat routes", () => {
     expect(mocked.regenerate.mock.calls[0]?.[1]?.sessionStateWrites).toEqual(writes);
     expect(mocked.retryFloor.mock.calls[0]?.[1]?.sessionStateWrites).toEqual(writes);
     expect(mocked.editAndRegenerate.mock.calls[0]?.[1]?.sessionStateWrites).toEqual(writes);
+  });
+
+  it("parses prompt_runtime_injections for respond and respond/stream", async () => {
+    const mocked = await buildChatApp();
+    const payload = {
+      message: "Continue the quest.",
+      prompt_runtime_injections: CLIENT_INJECTION_REQUEST_BODY,
+    };
+
+    const respondResponse = await mocked.serviceApp.inject({
+      method: "POST",
+      payload,
+      url: "/sessions/session-1/respond",
+    });
+    const streamResponse = await mocked.serviceApp.inject({
+      method: "POST",
+      payload,
+      url: "/sessions/session-1/respond/stream",
+    });
+
+    expect(respondResponse.statusCode).toBe(200);
+    expect(streamResponse.statusCode).toBe(200);
+    expect(streamResponse.body).toContain("event: done");
+
+    expect(mocked.respond).toHaveBeenCalledTimes(2);
+    expect(mocked.respond.mock.calls[0]?.[1]?.promptRuntimeInjections).toEqual(CLIENT_INJECTION_REQUEST);
+    expect(mocked.respond.mock.calls[1]?.[1]?.promptRuntimeInjections).toEqual(CLIENT_INJECTION_REQUEST);
+  });
+
+  it("parses prompt_runtime_injections for regenerate, retry, and edit-and-regenerate", async () => {
+    const mocked = await buildChatApp();
+
+    const regenerateResponse = await mocked.serviceApp.inject({
+      method: "POST",
+      payload: { prompt_runtime_injections: CLIENT_INJECTION_REQUEST_BODY },
+      url: "/sessions/session-1/regenerate",
+    });
+    const retryResponse = await mocked.serviceApp.inject({
+      method: "POST",
+      payload: { prompt_runtime_injections: CLIENT_INJECTION_REQUEST_BODY },
+      url: "/floors/floor-1/retry",
+    });
+    const editResponse = await mocked.serviceApp.inject({
+      method: "POST",
+      payload: {
+        content: "Revise the turn.",
+        prompt_runtime_injections: CLIENT_INJECTION_REQUEST_BODY,
+      },
+      url: "/messages/message-1/edit-and-regenerate",
+    });
+
+    expect(regenerateResponse.statusCode).toBe(200);
+    expect(retryResponse.statusCode).toBe(200);
+    expect(editResponse.statusCode).toBe(200);
+
+    expect(mocked.regenerate.mock.calls[0]?.[1]?.promptRuntimeInjections).toEqual(CLIENT_INJECTION_REQUEST);
+    expect(mocked.retryFloor.mock.calls[0]?.[1]?.promptRuntimeInjections).toEqual(CLIENT_INJECTION_REQUEST);
+    expect(mocked.editAndRegenerate.mock.calls[0]?.[1]?.promptRuntimeInjections).toEqual(CLIENT_INJECTION_REQUEST);
+  });
+
+  it("serializes runtime_trace.injection on respond responses", async () => {
+    const mocked = await buildChatApp({
+      respondImpl: async () => ({
+        ...createRespondResult(),
+        runtimeTrace: {
+          injection: {
+            items: [{
+              requestIndex: 0,
+              sourceKind: "client_injection",
+              scope: "request",
+              placementRequested: "before_history",
+              orderRequested: 30,
+              title: CLIENT_INJECTION_TITLE,
+              contentLength: CLIENT_INJECTION_CONTENT.length,
+              applied: true,
+              placementResolved: "history.before",
+            }],
+          },
+        },
+      }),
+    });
+
+    const response = await mocked.serviceApp.inject({
+      method: "POST",
+      payload: {
+        message: "Continue the quest.",
+      },
+      url: "/sessions/session-1/respond",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      data: {
+        runtime_trace: {
+          injection: {
+            items: [
+              {
+                request_index: 0,
+                source_kind: "client_injection",
+                scope: "request",
+                placement_requested: "before_history",
+                order_requested: 30,
+                title: CLIENT_INJECTION_TITLE,
+                content_length: CLIENT_INJECTION_CONTENT.length,
+                applied: true,
+                placement_resolved: "history.before",
+                not_applied_reason: null,
+              },
+            ],
+          },
+        },
+      },
+    });
   });
 
   it("returns validation_error when a session_state_write mixes value and delete", async () => {
