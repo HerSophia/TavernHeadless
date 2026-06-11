@@ -142,7 +142,7 @@ export interface SessionExportSnapshot {
   sessionId: string;
   accountId: string;
   title: string | null;
-  status: "active" | "archived";
+  status: typeof sessions.$inferSelect["status"];
   createdAt: number;
   updatedAt: number;
   characterSnapshot: Record<string, unknown> | null;

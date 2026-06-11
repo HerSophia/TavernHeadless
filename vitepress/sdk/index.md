@@ -169,6 +169,7 @@ const blob = await response.blob();
 | 属性               | 类型                       | 参考文档                                                             |
 | ------------------ | -------------------------- | -------------------------------------------------------------------- |
 | `sessions`         | `SessionsResource`         | [Sessions](/reference/api/sessions)、[Chat](/reference/api/chat)     |
+| `temporaryConversations` | `TemporaryConversationsResource` | [Temporary Conversations](/reference/api/temporary-conversations) |
 | `promptRuntime`    | `PromptRuntimeResource`    | [Prompt Runtime](/reference/api/prompt-runtime)、[Mode](/reference/api/prompt-runtime-mode)、[Inspection](/reference/api/prompt-runtime-inspection) |
 | `floors`           | `FloorsResource`           | [Floors](/reference/api/floors)                                      |
 | `pages`            | `PagesResource`            | [Pages](/reference/api/pages)                                        |
@@ -200,6 +201,12 @@ const blob = await response.blob();
 
 `sessions` 上同时挂载了 CRUD 方法和对话生成方法（`respond` / `respondStream` / `respondDryRun` / `regenerate`）。其中 `respond` / `respondStream` 会保留 `summaries` 和 `finalState`，`respondDryRun` 会返回对齐真实提交快照的 `promptSnapshot`。如果你要把 registered custom namespace 的写入与 turn 一起提交，`respond` / `respondStream` / `regenerate` 现在都接受 `sessionStateWrites`。`sessions.create()` / `sessions.update()` 也会直接返回完整的 session payload。
 
+临时对话相关入口分成三部分：
+
+- `client.sessions.createTemporaryConversation(...)`
+- `client.projects.createTemporaryConversation(...)`
+- `client.temporaryConversations.getDetail / appendMessage / respond / respondStream / getTranscript / finalize / discard / cancel / exportToPageStagedWrite`
+
 `promptRuntime.previewText(...)`、`inspect(...)` 和 `getFloorExplain(...)` 现在还会返回结构化记忆真相：分别对应 `preview.memory`、`inspect.preparedTurn.memory`、`explain.memory`。兼容字符串 `memorySummary` 仍然保留，但它不再是唯一真相。对于较旧的 explain snapshot 行，`explain.memory` 可能是 `null`。
 
 `promptRuntime.previewText(...)` 与 `inspect(...)` 的 runtime trace 现在也可能返回结构化 `toolTransport`。它会说明当前请求使用的是 `native_function_call`、`text_protocol` 还是 `none`，以及 text protocol 下的 tool list 注入摘要与解析诊断。
@@ -208,9 +215,14 @@ const blob = await response.blob();
 
 ```ts
 const session = await client.sessions.create({ title: "黎明前的酒馆", promptMode: "native" });
+const temp = await client.sessions.createTemporaryConversation({
+  sessionId: session?.id ?? "session-1",
+  input: { purpose: "draft-reply" },
+});
 const imported = await client.imports.character({ payload: cardJson, createSession: false });
 const executions = await client.tools.listExecutions({ sessionId: session?.id ?? "session-1" });
 
+console.log(temp.id);
 console.log(imported.characterVersionId);
 console.log(executions.records[0]?.runtimeJobId);
 ```

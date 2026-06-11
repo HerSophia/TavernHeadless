@@ -81,6 +81,7 @@ import {
   type ProjectEventRecord,
 } from "./project-event-service.js";
 import type { ProjectEventLiveHub } from "./project-event-live-hub.js";
+import { isTemporaryConversationSessionLike } from "./temporary-conversation-types.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -633,31 +634,40 @@ export class TurnCommitService {
     const variableMutationBatch = this.variableCommitService.beginBatch();
     const effectiveBranchId = input.branchId ?? "main";
     const assistantOutputText = composeAssistantOutputText(input.execution);
+    const [sessionRow] = this.db
+      .select({ kind: sessions.kind })
+      .from(sessions)
+      .where(eq(sessions.id, input.sessionId))
+      .limit(1)
+      .all();
+    const isTemporarySession = isTemporaryConversationSessionLike(sessionRow);
 
-    this.variableCommitService.stageBufferedMutations(variableMutationBatch, {
-      mutations: macroBufferedVariableMutations,
-      committedAt,
-      accountId: input.accountId,
-      sessionId: input.sessionId,
-      branchId: effectiveBranchId,
-    });
-    for (const mutation of input.macroStagedMutations ?? []) {
-      if (mutation.kind !== "delete") {
-        continue;
-      }
-      this.variableCommitService.stageDeleteMutation(variableMutationBatch, {
-        runId: `st-macro:${input.sessionId}`,
-        generationAttemptNo: 1,
-        scope: mutation.scope,
-        scopeId: mutation.scope === "global"
-          ? DEFAULT_GLOBAL_SCOPE_ID
-          : buildBranchVariableScopeId(input.sessionId, effectiveBranchId),
-        key: mutation.key,
+    if (!isTemporarySession) {
+      this.variableCommitService.stageBufferedMutations(variableMutationBatch, {
+        mutations: macroBufferedVariableMutations,
         committedAt,
         accountId: input.accountId,
         sessionId: input.sessionId,
         branchId: effectiveBranchId,
       });
+      for (const mutation of input.macroStagedMutations ?? []) {
+        if (mutation.kind !== "delete") {
+          continue;
+        }
+        this.variableCommitService.stageDeleteMutation(variableMutationBatch, {
+          runId: `st-macro:${input.sessionId}`,
+          generationAttemptNo: 1,
+          scope: mutation.scope,
+          scopeId: mutation.scope === "global"
+            ? DEFAULT_GLOBAL_SCOPE_ID
+            : buildBranchVariableScopeId(input.sessionId, effectiveBranchId),
+          key: mutation.key,
+          committedAt,
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          branchId: effectiveBranchId,
+        });
+      }
     }
 
     let transactionResult: {
@@ -794,20 +804,24 @@ export class TurnCommitService {
           }
         }
 
-        const variableMutationApply = variableMutationBatch.applyInTransaction(tx, {
-          actor: { type: "system", id: "turn-commit-service" },
-          requestId: `turn-commit:${input.floorId}`,
-        });
-        const stagedVariableWrites = new PageVariableStageService(tx).stageBufferedWrites({
-          accountId: input.accountId,
-          sessionId: input.sessionId,
-          branchId: effectiveBranchId,
-          floorId: input.floorId,
-          pageId: assistantMessage.pageId,
-          mutations: toolBufferedVariableMutations,
-          committedAt,
-          actorClientId: input.variableCommit?.actorClientId,
-        });
+        const variableMutationApply = isTemporarySession
+          ? { runAfterCommit: async () => {} }
+          : variableMutationBatch.applyInTransaction(tx, {
+              actor: { type: "system", id: "turn-commit-service" },
+              requestId: `turn-commit:${input.floorId}`,
+            });
+        const stagedVariableWrites = isTemporarySession
+          ? []
+          : new PageVariableStageService(tx).stageBufferedWrites({
+              accountId: input.accountId,
+              sessionId: input.sessionId,
+              branchId: effectiveBranchId,
+              floorId: input.floorId,
+              pageId: assistantMessage.pageId,
+              mutations: toolBufferedVariableMutations,
+              committedAt,
+              actorClientId: input.variableCommit?.actorClientId,
+            });
         const pageDecision = input.variableCommit?.pageDecision
           ?? (input.variableCommit
             ? new (PageVariableDecisionService)(tx).resolveForCommit({
@@ -978,20 +992,22 @@ export class TurnCommitService {
           })
           .run();
 
-        variableCommit = new VariablePromotionService(tx, this.sessionStateService).finalizePageWrites({
-          accountId: input.accountId,
-          sessionId: input.sessionId,
-          branchId: effectiveBranchId,
-          floorId: input.floorId,
-          pageId: assistantMessage.pageId,
-          committedAt,
-          pageDecision,
-          conflictPolicy: input.variableCommit?.policy === "ifAbsent" ? "if_absent" : "replace",
-          stagedWrites: stagedVariableWrites,
-          actorClientId: input.variableCommit?.actorClientId,
-        });
+        variableCommit = isTemporarySession
+          ? { ...createEmptyVariableCommitResult(input), pageId: assistantMessage.pageId }
+          : new VariablePromotionService(tx, this.sessionStateService).finalizePageWrites({
+              accountId: input.accountId,
+              sessionId: input.sessionId,
+              branchId: effectiveBranchId,
+              floorId: input.floorId,
+              pageId: assistantMessage.pageId,
+              committedAt,
+              pageDecision,
+              conflictPolicy: input.variableCommit?.policy === "ifAbsent" ? "if_absent" : "replace",
+              stagedWrites: stagedVariableWrites,
+              actorClientId: input.variableCommit?.actorClientId,
+            });
 
-        if (this.sessionStateService) {
+        if (!isTemporarySession && this.sessionStateService) {
           const sessionStateApply = this.sessionStateService.applyStagedMutationsForFloor({
             accountId: input.accountId,
             sessionId: input.sessionId,
@@ -1002,13 +1018,15 @@ export class TurnCommitService {
           sessionStateMutationCount = sessionStateApply.mutations.length;
         }
 
-        new BranchLocalVariableSnapshotService(tx).persistFloorLocalSnapshot({
-          accountId: input.accountId,
-          floorId: input.floorId,
-          sessionId: input.sessionId,
-          branchId: effectiveBranchId,
-          createdAt: committedAt,
-        });
+        if (!isTemporarySession) {
+          new BranchLocalVariableSnapshotService(tx).persistFloorLocalSnapshot({
+            accountId: input.accountId,
+            floorId: input.floorId,
+            sessionId: input.sessionId,
+            branchId: effectiveBranchId,
+            createdAt: committedAt,
+          });
+        }
 
         if (actualToolExecutionRunIds.length > 0) {
           tx
@@ -1023,7 +1041,7 @@ export class TurnCommitService {
         const floor = floorTransition.floor;
         let memory: TurnCommitMemoryReceipt | undefined;
 
-        if (input.memoryCommit) {
+        if (!isTemporarySession && input.memoryCommit) {
           const defaultScope = input.branchId ? "branch" : "chat";
           const defaultScopeId = input.branchId ? buildBranchMemoryScopeId(input.sessionId, input.branchId) : input.sessionId;
           try {
@@ -1069,26 +1087,28 @@ export class TurnCommitService {
           }
         }
 
-        const projectScope = loadProjectScopeForSession(tx, input.sessionId);
-        const floorOperation = appendFloorCommitOperationLog(tx, {
-          accountId: input.accountId,
-          sessionId: input.sessionId,
-          workspaceId: projectScope?.workspaceId ?? null,
-          projectId: projectScope?.projectId ?? null,
-          branchId: effectiveBranchId,
-          floorId: input.floorId,
-          runId: effectiveRunId,
-          promptSnapshotPresent: Boolean(input.promptSnapshot),
-          explainSnapshotPresent: Boolean(input.promptRuntimeInspection),
-          floorResultSnapshotPresent: true,
-          toolExecutionCount: actualToolExecutionRecords.length,
-          sessionStateMutationCount,
-          committedAt,
-          operationLog: input.operationLog,
-        });
+        const projectScope = isTemporarySession ? null : loadProjectScopeForSession(tx, input.sessionId);
+        const floorOperation = isTemporarySession
+          ? null
+          : appendFloorCommitOperationLog(tx, {
+              accountId: input.accountId,
+              sessionId: input.sessionId,
+              workspaceId: projectScope?.workspaceId ?? null,
+              projectId: projectScope?.projectId ?? null,
+              branchId: effectiveBranchId,
+              floorId: input.floorId,
+              runId: effectiveRunId,
+              promptSnapshotPresent: Boolean(input.promptSnapshot),
+              explainSnapshotPresent: Boolean(input.promptRuntimeInspection),
+              floorResultSnapshotPresent: true,
+              toolExecutionCount: actualToolExecutionRecords.length,
+              sessionStateMutationCount,
+              committedAt,
+              operationLog: input.operationLog,
+            });
 
         const projectEvents: ProjectEventRecord[] = [];
-        if (projectScope) {
+        if (projectScope && floorOperation) {
           const eventService = new ProjectEventService(tx);
           const correlationId = input.operationLog?.requestId ?? null;
           const stateChangedEvent = eventService.append({

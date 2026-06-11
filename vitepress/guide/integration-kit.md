@@ -80,6 +80,12 @@ TavernHeadless 提供了一套官方维护的第一方接入层，用来统一�
 - text protocol 下的 tool list 注入摘要
 - text protocol 解析统计与诊断
 
+`@tavern/sdk` 现在还直接覆盖临时对话高级资源：
+
+- `sessions.createTemporaryConversation(...)`
+- `projects.createTemporaryConversation(...)`
+- `temporaryConversations.getDetail / appendMessage / respond / respondStream / getTranscript / finalize / discard / cancel / exportToPageStagedWrite`
+
 ### `@tavern/client-helpers`
 
 语义层。
@@ -97,6 +103,57 @@ TavernHeadless 提供了一套官方维护的第一方接入层，用来统一�
 ### `@tavern/shared`
 
 `@tavern/shared` 是内部包，仓库内部可以复用，但不属于公开接入面。
+
+## 临时对话资源
+
+临时对话是一个正式的高级资源，用来承载不污染主叙事的短期草稿、多轮辅助推理和候选输出整理。
+
+SDK 入口分成三部分：
+
+- `client.sessions.createTemporaryConversation(...)`
+- `client.projects.createTemporaryConversation(...)`
+- `client.temporaryConversations.*`
+
+一个最小例子：
+
+```ts
+const temp = await client.sessions.createTemporaryConversation({
+  sessionId: "sess_1",
+  input: {
+    purpose: "draft-reply",
+    retentionPolicy: "ttl",
+    ttlSeconds: 1800,
+  },
+});
+
+const result = await client.temporaryConversations.respond({
+  conversationId: temp.id,
+  inputMessage: {
+    role: "user",
+    content: "请给我三个不同语气的候选回复。",
+  },
+});
+
+await client.temporaryConversations.exportToPageStagedWrite({
+  conversationId: temp.id,
+  targetPageId: "page_target_1",
+  reason: "候选草稿",
+});
+
+await client.temporaryConversations.finalize({
+  conversationId: temp.id,
+});
+
+console.log(result.generatedText);
+```
+
+这组资源的固定边界是：
+
+- 不进入普通 `sessions` 列表和详情
+- 生命周期固定为 `active / finalized / discarded / expired / cancelled`
+- 默认只返回 inline 结果
+- 如果要把结果送回正式页面，必须显式导出到 `page_staged_write`
+- 公共资源面只返回 `client_visible` 的临时对话
 
 ## 阶段五新增接入面
 
