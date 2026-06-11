@@ -78,11 +78,13 @@ export type TavernRespondErrorPayload = {
 
 export type TavernRespondDonePayload = {
   branchId?: string;
+  conversationId?: string;
   finalState?: RespondFinalState;
   floorId: string;
   floorNo: number;
   generatedText?: string;
   memory?: RespondMemoryReceipt;
+  pageId?: string;
   promptSnapshot?: PromptSnapshotPreview;
   runtimeTrace?: PromptRuntimeTrace;
   summaries: string[];

@@ -55,6 +55,7 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairProjectDerivedOutputInboxDrift(sqlite);
   repairClientIdentityPermissionAuditDrift(sqlite);
   repairWorkspacePhase5AgenticReadinessDrift(sqlite);
+  repairTemporaryConversationDrift(sqlite);
 }
 
 function tableHasColumns(
@@ -1189,6 +1190,94 @@ WHERE NOT EXISTS (
  * Existing memory / chat transfer runtime_job records keep their NULL agent
  * fields and remain functional.
  */
+function repairTemporaryConversationDrift(sqlite: Database.Database): void {
+  addColumnIfMissing(
+    sqlite,
+    "session",
+    "kind",
+    "`kind` text NOT NULL DEFAULT 'default' CHECK(`kind` IN ('default', 'temporary'))",
+  );
+  addColumnIfMissing(sqlite, "session", "purpose", "`purpose` text");
+  addColumnIfMissing(sqlite, "session", "temporary_source_session_id", "`temporary_source_session_id` text");
+  addColumnIfMissing(sqlite, "session", "temporary_snapshot_digest", "`temporary_snapshot_digest` text");
+  addColumnIfMissing(
+    sqlite,
+    "session",
+    "retention_policy",
+    "`retention_policy` text CHECK(`retention_policy` IN ('delete_on_finalize', 'ttl', 'keep_for_debug'))",
+  );
+  addColumnIfMissing(
+    sqlite,
+    "session",
+    "visibility",
+    "`visibility` text CHECK(`visibility` IN ('internal', 'client_visible'))",
+  );
+  addColumnIfMissing(sqlite, "session", "expires_at", "`expires_at` integer");
+  addColumnIfMissing(sqlite, "session", "finalized_at", "`finalized_at` integer");
+  addColumnIfMissing(sqlite, "session", "discarded_at", "`discarded_at` integer");
+  addColumnIfMissing(sqlite, "session", "cancelled_at", "`cancelled_at` integer");
+  addColumnIfMissing(sqlite, "session", "last_activity_at", "`last_activity_at` integer NOT NULL DEFAULT 0");
+  createIndexIfColumnsExist(
+    sqlite,
+    "session",
+    ["account_id", "kind", "updated_at"],
+    "CREATE INDEX IF NOT EXISTS `session_account_kind_updated_idx` ON `session` (`account_id`, `kind`, `updated_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "session",
+    ["temporary_source_session_id"],
+    "CREATE INDEX IF NOT EXISTS `session_temporary_source_session_idx` ON `session` (`temporary_source_session_id`);",
+  );
+  if (!tableExists(sqlite, "page_staged_write")) {
+    sqlite.exec(`CREATE TABLE \`page_staged_write\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`account_id\` text NOT NULL REFERENCES \`account\`(\`id\`) ON DELETE restrict,
+  \`session_id\` text NOT NULL REFERENCES \`session\`(\`id\`) ON DELETE cascade,
+  \`branch_id\` text NOT NULL,
+  \`floor_id\` text NOT NULL REFERENCES \`floor\`(\`id\`) ON DELETE cascade,
+  \`page_id\` text NOT NULL REFERENCES \`message_page\`(\`id\`) ON DELETE cascade,
+  \`source_kind\` text NOT NULL DEFAULT 'temporary_conversation',
+  \`source_session_id\` text REFERENCES \`session\`(\`id\`) ON DELETE set null,
+  \`source_page_id\` text REFERENCES \`message_page\`(\`id\`) ON DELETE set null,
+  \`actor_client_id\` text REFERENCES \`client\`(\`id\`) ON DELETE set null,
+  \`content\` text NOT NULL,
+  \`content_format\` text NOT NULL DEFAULT 'text',
+  \`reason\` text NOT NULL,
+  \`status\` text NOT NULL DEFAULT 'staged',
+  \`metadata_json\` text NOT NULL DEFAULT '{}',
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  \`applied_at\` integer,
+  \`discarded_at\` integer
+);`);
+  }
+  createIndexIfColumnsExist(
+    sqlite,
+    "page_staged_write",
+    ["page_id", "status", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `page_staged_write_page_status_created_idx` ON `page_staged_write` (`page_id`, `status`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "page_staged_write",
+    ["floor_id", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `page_staged_write_floor_created_idx` ON `page_staged_write` (`floor_id`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "page_staged_write",
+    ["source_session_id", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `page_staged_write_source_session_created_idx` ON `page_staged_write` (`source_session_id`, `created_at`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "page_staged_write",
+    ["account_id", "session_id", "branch_id", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `page_staged_write_account_session_branch_created_idx` ON `page_staged_write` (`account_id`, `session_id`, `branch_id`, `created_at`);",
+  );
+}
+
 function repairWorkspacePhase5AgenticReadinessDrift(sqlite: Database.Database): void {
   if (!tableExists(sqlite, "account") || !tableExists(sqlite, "workspace") || !tableExists(sqlite, "project")) {
     return;

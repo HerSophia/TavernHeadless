@@ -29,6 +29,7 @@ import { createPromptRuntimeResource, type PromptRuntimeResource } from "../reso
 import { createRegexProfilesResource, type RegexProfilesResource } from "../resources/regex-profiles.js";
 import { createSessionStateResource, type SessionStateResource } from "../resources/session-state.js";
 import { createSessionsResource, type SessionsResource } from "../resources/sessions.js";
+import { createTemporaryConversationsResource, type TemporaryConversationsResource } from "../resources/temporary-conversations.js";
 import { createToolsResource, type ToolsResource } from "../resources/tools.js";
 import { createUsersResource, type UsersResource } from "../resources/users.js";
 import { createVcTagsResource, type VcTagsResource } from "../resources/vc-tags.js";
@@ -68,6 +69,7 @@ export type TavernClient = ApiClient & {
   regexProfiles: RegexProfilesResource;
   sessionState: SessionStateResource;
   sessions: SessionsResource;
+  temporaryConversations: TemporaryConversationsResource;
   tools: ToolsResource;
   users: UsersResource;
   vcTags: VcTagsResource;
@@ -113,6 +115,7 @@ export function createTavernClient(options: TavernClientOptions): TavernClient {
     regexProfiles: createRegexProfilesResource(transport),
     sessionState: createSessionStateResource(transport),
     sessions: createSessionsResource(transport),
+    temporaryConversations: createTemporaryConversationsResource(transport),
     tools: createToolsResource(transport),
     users: createUsersResource(transport),
     vcTags: createVcTagsResource(transport),

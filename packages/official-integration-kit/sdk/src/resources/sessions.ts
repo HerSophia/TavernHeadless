@@ -38,6 +38,11 @@ import {
   readRecord,
   readString,
 } from "./utils.js";
+import {
+  createTemporaryConversationFromSession,
+  type SessionsCreateTemporaryConversationOptions,
+  type TemporaryConversationRecord,
+} from "./temporary-conversations.js";
 
 export type RespondTurnConfig = {
   enableDirector?: boolean;
@@ -723,6 +728,7 @@ export type SessionsResource = {
   batchDelete(options: SessionsBatchDeleteOptions): Promise<SessionsBatchDeleteResult>;
   batchUpdateStatus(options: SessionsBatchUpdateStatusOptions): Promise<SessionsBatchUpdateStatusResult>;
   create(options?: SessionsCreateOptions): Promise<SessionRecord | null>;
+  createTemporaryConversation(options: SessionsCreateTemporaryConversationOptions): Promise<TemporaryConversationRecord>;
   diffBranches(options: SessionsDiffBranchesOptions): Promise<SessionBranchDiff>;
   getActiveRun(options: SessionsGetActiveRunOptions): Promise<SessionActiveRunRecord>;
   getDetail(options: SessionsGetDetailOptions): Promise<SessionDetail>;
@@ -780,6 +786,9 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
 
       const payload = readRecord(response.body);
       return mapSession(payload?.data);
+    },
+    async createTemporaryConversation(options: SessionsCreateTemporaryConversationOptions): Promise<TemporaryConversationRecord> {
+      return createTemporaryConversationFromSession(client, options);
     },
     async diffBranches(options): Promise<SessionBranchDiff> {
       const query = buildQueryString({

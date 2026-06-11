@@ -23,6 +23,7 @@ import {
   messagePages,
   messages,
   projectEvents,
+  operationLogs,
   promptRuntimeExplainSnapshots,
   promptSnapshots,
   sessions,
@@ -2028,6 +2029,101 @@ describe("TurnCommitService", () => {
       session_state_mutation_count: expect.any(Number),
       tool_execution_count: expect.any(Number),
     });
+  });
+
+  it("skips memory jobs, operation logs, and Project Events for temporary sessions", async () => {
+    const sessionId = `sess_${nanoid()}`;
+    const floorId = `floor_${nanoid()}`;
+    const pageId = `page_${nanoid()}`;
+    const now = 1_735_690_500_000;
+    const committedAt = now + 1_000;
+
+    const scope = createTestSessionWithScope(database.db, {
+      id: sessionId,
+      accountId: DEFAULT_ACCOUNT_ID,
+      now,
+    });
+    await database.db
+      .update(sessions)
+      .set({
+        kind: "temporary",
+        visibility: "internal",
+        retentionPolicy: "delete_on_finalize",
+        temporarySourceSessionId: `source_${sessionId}`,
+        temporarySnapshotDigest: `sha256:${sessionId}`,
+      })
+      .where(eq(sessions.id, sessionId));
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await seedInputPage({ database, floorId, pageId, now });
+
+    const liveHub = new ProjectEventLiveHub();
+    const liveEvents: ProjectEventRecord[] = [];
+    const unsubscribe = liveHub.subscribe(scope.projectId, (event) => {
+      liveEvents.push(event);
+    });
+
+    const temporaryService = new TurnCommitService(
+      database.db,
+      new ChatMessagePersistence(database.db, new SimpleTokenCounter()),
+      eventBus,
+      {
+        enableAsyncMemoryIngest: true,
+        projectEventLiveHub: liveHub,
+      },
+    );
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Temporary assistant reply.",
+      rawText: "Temporary assistant reply.",
+      summaries: ["temporary summary"],
+      totalUsage: {
+        promptTokens: 5,
+        completionTokens: 6,
+        totalTokens: 11,
+      },
+    };
+
+    const result = await temporaryService.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      memoryCommit: {
+        summaries: execution.summaries,
+        enableConsolidation: true,
+      },
+      variableCommit: { pageId },
+    });
+
+    unsubscribe();
+
+    expect(result.finalState).toBe("committed");
+    expect(result.memory).toBeUndefined();
+
+    const runtimeJobRows = await database.db
+      .select()
+      .from(runtimeJobs)
+      .where(eq(runtimeJobs.floorId, floorId));
+    expect(runtimeJobRows).toEqual([]);
+
+    const persistedEvents = await database.db
+      .select()
+      .from(projectEvents)
+      .where(eq(projectEvents.projectId, scope.projectId));
+    expect(persistedEvents).toEqual([]);
+    expect(liveEvents).toEqual([]);
+
+    const floorCommitLogs = await database.db
+      .select()
+      .from(operationLogs)
+      .where(and(
+        eq(operationLogs.sessionId, sessionId),
+        eq(operationLogs.action, "commit_floor"),
+      ));
+    expect(floorCommitLogs).toEqual([]);
   });
 
   it("does not write Project Events or publish to the live hub when the commit transaction rolls back", async () => {

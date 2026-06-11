@@ -272,11 +272,13 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
 
     const donePayload: TavernRespondDonePayload = {
       branchId: readOptionalString(payload?.branch_id),
+      conversationId: readOptionalString(payload?.conversation_id),
       finalState: readOptionalFinalState(payload?.final_state),
       floorId,
       floorNo,
       generatedText: readOptionalString(payload?.generated_text),
       memory: readRespondMemoryReceipt(payload?.memory),
+      pageId: readOptionalString(payload?.page_id),
       ...mapPromptDebugPayload(payload),
       summaries: readStringArray(payload?.summaries),
       totalUsage: toApiUsage(payload?.total_usage),
