@@ -50,17 +50,96 @@ describe("llm-params", () => {
     ).toThrow(LlmParamsValidationError);
   });
 
-  it("merges generation param inputs while keeping explicit cancellations", () => {
+  it("normalizes and preserves stopSequences when binding params are valid", () => {
     expect(
-      mergeGenerationParamInputs(
-        { temperature: 0.7, topP: 0.9 },
-        { temperature: null, topK: 40 },
+      normalizeBindingParams(
+        {
+          stopSequences: [" DONE ", "HALT"],
+        },
+        true,
       ),
     ).toEqual({
-      temperature: null,
-      topP: 0.9,
-      topK: 40,
+      stopSequences: ["DONE", "HALT"],
     });
+  });
+
+  it("rejects invalid stopSequences in strict mode and drops them in non-strict mode", () => {
+    expect(() =>
+      normalizeBindingParams(
+        {
+          stopSequences: ["", "HALT"],
+        },
+        true,
+      ),
+    ).toThrow(LlmParamsValidationError);
+
+    expect(
+      normalizeBindingParams(
+        {
+          stopSequences: ["", "HALT"],
+          temperature: 0.7,
+        },
+        false,
+      ),
+    ).toEqual({
+      temperature: 0.7,
+    });
+  });
+
+  it("normalizes new generation params fields in strict mode", () => {
+    expect(
+      normalizeBindingParams(
+        {
+          seed: 42,
+          repetitionPenalty: 1.1,
+          minP: 0.05,
+          logitBias: { "42": -5, "43": 10 },
+          responseFormat: {
+            type: "json_schema",
+            jsonSchema: { type: "object" },
+          },
+        },
+        true,
+      ),
+    ).toEqual({
+      seed: 42,
+      repetitionPenalty: 1.1,
+      minP: 0.05,
+      logitBias: { "42": -5, "43": 10 },
+      responseFormat: {
+        type: "json_schema",
+        jsonSchema: { type: "object" },
+      },
+    });
+  });
+
+  it("drops invalid new generation params fields in non-strict mode", () => {
+    expect(
+      normalizeBindingParams(
+        {
+          seed: 42.5,
+          repetitionPenalty: 0,
+          minP: 2,
+          logitBias: { "42": 120 },
+          responseFormat: { type: "json_schema" },
+          temperature: 0.7,
+        },
+        false,
+      ),
+    ).toEqual({
+      temperature: 0.7,
+    });
+  });
+
+  it("throws on invalid new generation params fields in strict mode", () => {
+    expect(() =>
+      normalizeBindingParams(
+        {
+          responseFormat: { type: "json_schema" },
+        },
+        true,
+      ),
+    ).toThrow(LlmParamsValidationError);
   });
 
   it("strips null values from generation params before final runtime use", () => {

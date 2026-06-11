@@ -29,6 +29,7 @@ import {
   TextProtocolToolCallParser,
   TextProtocolToolResultFormatter,
 } from '../tools/transport/index.js';
+import { TEXT_PROTOCOL_TOOL_CALL_CLOSE } from '../tools/transport/text-protocol/constants.js';
 import type { Director } from './director.js';
 import type { DirectorResult } from './director.js';
 import type { Verifier } from './verifier.js';
@@ -201,6 +202,140 @@ function resolveSlotGenerationParams(
     return { ...input.generationParams, ...fromOverrides };
   }
   return fromOverrides;
+}
+
+const TEXT_PROTOCOL_TOOL_CALL_START = '<tool_call';
+
+function findTextProtocolToolCallStart(text: string, startIndex = 0): number {
+  let cursor = startIndex;
+  while (cursor < text.length) {
+    const candidate = text.indexOf(TEXT_PROTOCOL_TOOL_CALL_START, cursor);
+    if (candidate === -1) {
+      return -1;
+    }
+
+    const after = text[candidate + TEXT_PROTOCOL_TOOL_CALL_START.length];
+    if (after === undefined || after === '>' || /\s/.test(after)) {
+      return candidate;
+    }
+
+    cursor = candidate + TEXT_PROTOCOL_TOOL_CALL_START.length;
+  }
+
+  return -1;
+}
+
+function longestToolCallStartPrefixSuffix(text: string): number {
+  const maxLength = Math.min(text.length, TEXT_PROTOCOL_TOOL_CALL_START.length - 1);
+  for (let length = maxLength; length > 0; length -= 1) {
+    if (text.endsWith(TEXT_PROTOCOL_TOOL_CALL_START.slice(0, length))) {
+      return length;
+    }
+  }
+
+  return 0;
+}
+
+function findCompleteTextProtocolToolCallBlockEnd(text: string): number | undefined {
+  const openEnd = text.indexOf('>');
+  if (openEnd === -1) {
+    return undefined;
+  }
+
+  let depth = 1;
+  let cursor = openEnd + 1;
+  while (cursor < text.length) {
+    const nextStart = findTextProtocolToolCallStart(text, cursor);
+    const nextClose = text.indexOf(TEXT_PROTOCOL_TOOL_CALL_CLOSE, cursor);
+    if (nextClose === -1) {
+      return undefined;
+    }
+
+    if (nextStart !== -1 && nextStart < nextClose) {
+      depth += 1;
+      cursor = nextStart + TEXT_PROTOCOL_TOOL_CALL_START.length;
+      continue;
+    }
+
+    depth -= 1;
+    cursor = nextClose + TEXT_PROTOCOL_TOOL_CALL_CLOSE.length;
+    if (depth === 0) {
+      return cursor;
+    }
+  }
+
+  return undefined;
+}
+
+class TextProtocolStreamOutputBuffer {
+  private visibleBuffer = '';
+  private toolCallBuffer = '';
+  private insideToolCall = false;
+
+  process(chunk: string): string {
+    let output = '';
+
+    if (this.insideToolCall) {
+      this.toolCallBuffer += chunk;
+    } else {
+      this.visibleBuffer += chunk;
+    }
+
+    while (true) {
+      if (this.insideToolCall) {
+        const end = findCompleteTextProtocolToolCallBlockEnd(this.toolCallBuffer);
+        if (end === undefined) {
+          break;
+        }
+
+        const remainder = this.toolCallBuffer.slice(end);
+        this.toolCallBuffer = '';
+        this.insideToolCall = false;
+        if (remainder.length > 0) {
+          this.visibleBuffer += remainder;
+          continue;
+        }
+        break;
+      }
+
+      const start = findTextProtocolToolCallStart(this.visibleBuffer);
+      if (start === -1) {
+        const overlap = longestToolCallStartPrefixSuffix(this.visibleBuffer);
+        const safeLength = this.visibleBuffer.length - overlap;
+        if (safeLength <= 0) {
+          break;
+        }
+
+        output += this.visibleBuffer.slice(0, safeLength);
+        this.visibleBuffer = this.visibleBuffer.slice(safeLength);
+        break;
+      }
+
+      output += this.visibleBuffer.slice(0, start);
+      this.toolCallBuffer = this.visibleBuffer.slice(start);
+      this.visibleBuffer = '';
+      this.insideToolCall = true;
+    }
+
+    return output;
+  }
+
+  finalize(): string {
+    const trailingText = this.insideToolCall
+      ? `${this.visibleBuffer}${this.toolCallBuffer}`
+      : this.visibleBuffer;
+
+    this.visibleBuffer = '';
+    this.toolCallBuffer = '';
+    this.insideToolCall = false;
+
+    return trailingText;
+  }
+}
+
+function stripTextProtocolToolCallBlocksPreservingTrailingMalformed(text: string): string {
+  const buffer = new TextProtocolStreamOutputBuffer();
+  return `${buffer.process(text)}${buffer.finalize()}`.trim();
 }
 
 interface ToolTransportGenerationResult {
@@ -503,6 +638,24 @@ export class TurnOrchestrator {
 
       let accumulatedLength = 0;
       let accumulatedText = '';
+      const textProtocolStreamBuffer = input.toolTransport?.selection.transport === 'text_protocol'
+        ? new TextProtocolStreamOutputBuffer()
+        : undefined;
+      const emitChunk = (chunk: string) => {
+        if (chunk.length === 0) {
+          return;
+        }
+
+        accumulatedLength += chunk.length;
+        accumulatedText += chunk;
+        void this.deps.eventBus.emit('generation.chunk', {
+          floorId: input.floorId,
+          chunk,
+          accumulatedLength,
+        });
+        void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo });
+        input.onChunk?.(chunk);
+      };
       const result = await this.deps.generationPipeline.run(
         {
           messages: input.messages,
@@ -513,24 +666,22 @@ export class TurnOrchestrator {
           abortSignal: input.abortSignal,
           summaryOptions: input.summaryOptions,
           ...(narratorLLMTools ? { tools: narratorLLMTools } : {}),
+          ...(input.toolTransport?.toolChoiceApplied === true ? { toolChoice: 'auto' as const } : {}),
           ...(narratorLLMTools ? { maxSteps: input.toolPermissions?.maxStepsPerGeneration ?? 5 } : {}),
         },
         {
           onChunk: (chunk) => {
-            accumulatedLength += chunk.length;
-            accumulatedText += chunk;
-            // 转发到 EventBus（fire-and-forget）
-            void this.deps.eventBus.emit('generation.chunk', {
-              floorId: input.floorId,
-              chunk,
-              accumulatedLength,
-            });
-            void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo });
-            // 转发到调用方回调
-            input.onChunk?.(chunk);
+            const visibleChunk = textProtocolStreamBuffer
+              ? textProtocolStreamBuffer.process(chunk)
+              : chunk;
+            emitChunk(visibleChunk);
           },
         },
       );
+      const trailingBufferedChunk = textProtocolStreamBuffer?.finalize();
+      if (trailingBufferedChunk) {
+        emitChunk(trailingBufferedChunk);
+      }
 
       const finalResult = await this.applyToolTransportToGeneration({
         input,
@@ -769,7 +920,7 @@ export class TurnOrchestrator {
       allowedToolNames: new Set((args.narratorTools ?? []).map((tool) => tool.name)),
     });
 
-    const strippedText = parser.stripToolCallBlocks(args.generation.text);
+    const strippedText = stripTextProtocolToolCallBlocksPreservingTrailingMalformed(args.generation.text);
     const formatter = new TextProtocolToolResultFormatter();
     const writebackBlocks: string[] = [];
 

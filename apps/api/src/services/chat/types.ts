@@ -80,7 +80,7 @@ export interface PromptRuntimeContributorOutput {
   id: string;
   kind: PromptRuntimeContributorKind;
   sourceKind: string;
-  modeScope: "compat_plus" | "native";
+  modeScope: "compat_strict" | "compat_plus" | "native";
   payload: unknown;
   promptRenderable?: PromptRuntimeContributorRenderable;
   trace: {
@@ -93,7 +93,7 @@ export interface PromptRuntimeContributorView {
   id: string;
   kind: PromptRuntimeContributorKind;
   sourceKind: string;
-  modeScope: "compat_plus" | "native";
+  modeScope: "compat_strict" | "compat_plus" | "native";
   promptRenderable?: PromptRuntimeContributorRenderable;
   deterministic: boolean;
   cacheScope: "floor" | "page" | "none";

@@ -7,6 +7,8 @@ import { buildZodObjectSchema } from "./schemas/json-schema-zod.js";
 import { parseWithSchema, sendError } from "../lib/http";
 import { getRequestAuthContext } from "../plugins/auth";
 import type { LlmBindingGenerationParams } from "../lib/llm-params";
+import type { LlmInstanceCapabilities } from "../lib/llm-capabilities.js";
+import { normalizeLlmInstanceCapabilities } from "../lib/llm-capabilities.js";
 import type { RuntimeParamsResponse } from "../lib/llm-provider-discovery.js";
 import { llmGenerationParamsJsonSchema } from "./schemas/llm-profiles-schemas.js";
 import {
@@ -47,7 +49,21 @@ type SlotParams = {
   slot: string;
 };
 
+type RuntimeCapabilitiesResponse = {
+  supports_function_call?: boolean;
+  supports_tool_choice?: boolean;
+  supports_streaming_tool_call?: boolean;
+  unsupported_generation_params?: string[];
+};
+
 const generationParamsSchema = buildZodObjectSchema<RuntimeParamsResponse>(llmGenerationParamsJsonSchema);
+
+const capabilitiesSchema = z.object({
+  supports_function_call: z.boolean().optional(),
+  supports_tool_choice: z.boolean().optional(),
+  supports_streaming_tool_call: z.boolean().optional(),
+  unsupported_generation_params: z.array(z.string().min(1)).optional(),
+}).strict();
 
 const listQuerySchema = buildZodObjectSchema<ListQuery>(listQueryJsonSchema);
 
@@ -59,8 +75,10 @@ const upsertBodySchema = z.object({
   scope: scopeSchema.default("global"),
   session_id: z.string().min(1).optional(),
   preset_id: z.string().min(1).nullable().optional(),
+  model_id_override: z.string().min(1).nullable().optional(),
   enabled: z.boolean().default(true),
   params: generationParamsSchema.nullable().optional(),
+  capabilities: capabilitiesSchema.nullable().optional(),
 }).refine(
   (data) => data.scope !== "session" || (data.session_id !== undefined && data.session_id !== ""),
   { message: "session_id is required when scope is 'session'", path: ["session_id"] }
@@ -211,7 +229,7 @@ export async function registerLlmInstanceRoutes(
     if (!bodyParsed.ok) return;
 
     const auth = getRequestAuthContext(request);
-    const { scope, session_id, preset_id, enabled, params } = bodyParsed.data;
+    const { scope, session_id, preset_id, model_id_override, enabled, params, capabilities } = bodyParsed.data;
     const scopeId = scope === "session" ? session_id! : "global";
 
     try {
@@ -222,8 +240,10 @@ export async function registerLlmInstanceRoutes(
         slotResult.data,
         {
           presetId: preset_id,
+          ...(model_id_override !== undefined ? { modelIdOverride: model_id_override } : {}),
           enabled,
           params: fromApiParams(params),
+          capabilities: fromApiCapabilities(capabilities),
         }
       );
       return { data: toApiConfig(config) };
@@ -291,8 +311,10 @@ function toApiConfig(config: LlmInstanceConfigItem) {
     scope_id: config.scopeId,
     instance_slot: config.instanceSlot,
     preset_id: config.presetId,
+    model_id_override: config.modelIdOverride,
     enabled: config.enabled,
     params: toApiParams(config.params),
+    capabilities: toApiCapabilities(config.capabilities),
     created_at: config.createdAt,
     updated_at: config.updatedAt,
   };
@@ -305,8 +327,10 @@ function toApiResolvedSlot(slot: ResolvedInstanceSlot) {
     scope: slot.scope,
     config_id: slot.configId,
     preset_id: slot.presetId,
+    model_id_override: slot.modelIdOverride,
     enabled: slot.enabled,
     params: toApiParams(slot.params),
+    capabilities: toApiCapabilities(slot.capabilities),
   };
 }
 
@@ -321,6 +345,17 @@ function toApiParams(params: LlmBindingGenerationParams | null): RuntimeParamsRe
     top_k: params.topK,
     frequency_penalty: params.frequencyPenalty,
     presence_penalty: params.presencePenalty,
+    stop_sequences: params.stopSequences,
+    seed: params.seed,
+    repetition_penalty: params.repetitionPenalty,
+    min_p: params.minP,
+    logit_bias: params.logitBias,
+    response_format: params.responseFormat
+      ? {
+          type: params.responseFormat.type,
+          ...(params.responseFormat.jsonSchema ? { json_schema: params.responseFormat.jsonSchema } : {}),
+        }
+      : params.responseFormat,
     stream: params.stream,
     timeout_ms: params.timeoutMs,
     max_retries: params.maxRetries,
@@ -348,11 +383,53 @@ function fromApiParams(
     topK: params.top_k,
     frequencyPenalty: params.frequency_penalty,
     presencePenalty: params.presence_penalty,
+    stopSequences: params.stop_sequences,
+    seed: params.seed,
+    repetitionPenalty: params.repetition_penalty,
+    minP: params.min_p,
+    logitBias: params.logit_bias,
+    responseFormat: params.response_format
+      ? {
+          type: params.response_format.type,
+          ...(params.response_format.json_schema ? { jsonSchema: params.response_format.json_schema } : {}),
+        }
+      : params.response_format,
     stream: params.stream,
     timeoutMs: params.timeout_ms,
     maxRetries: params.max_retries,
     reasoningEffort: params.reasoning_effort,
   };
+}
+
+function toApiCapabilities(capabilities: LlmInstanceCapabilities | null): RuntimeCapabilitiesResponse | null {
+  if (!capabilities) {
+    return null;
+  }
+
+  return {
+    supports_function_call: capabilities.supportsFunctionCall,
+    supports_tool_choice: capabilities.supportsToolChoice,
+    supports_streaming_tool_call: capabilities.supportsStreamingToolCall,
+    unsupported_generation_params: capabilities.unsupportedGenerationParams,
+  };
+}
+
+function fromApiCapabilities(
+  capabilities: z.infer<typeof capabilitiesSchema> | null | undefined,
+): LlmInstanceCapabilities | null | undefined {
+  if (capabilities === undefined) {
+    return undefined;
+  }
+  if (capabilities === null) {
+    return null;
+  }
+
+  return normalizeLlmInstanceCapabilities({
+    supportsFunctionCall: capabilities.supports_function_call,
+    supportsToolChoice: capabilities.supports_tool_choice,
+    supportsStreamingToolCall: capabilities.supports_streaming_tool_call,
+    unsupportedGenerationParams: capabilities.unsupported_generation_params,
+  }) ?? null;
 }
 
 function sendServiceError(reply: FastifyReply, error: unknown) {

@@ -345,7 +345,7 @@ GET /llm-profiles/runtime
 | ------ | ---- | ---- |
 | `400` | `validation_error` | 查询参数校验失败 |
 
-这个接口描述的是 **Profile 侧** 的 provider / model 解析结果。若还需要查看实例侧的 `enabled`、`preset_id`、`params` 最终解析，应再查询 `GET /llm-instances/resolved`。
+这个接口描述的是 **Profile 侧** 的 provider / model 解析结果。若还需要查看实例侧的 `enabled`、`preset_id`、`model_id_override`、`params`、`capabilities` 最终解析，应再查询 `GET /llm-instances/resolved`。
 
 ## 发现可用模型
 

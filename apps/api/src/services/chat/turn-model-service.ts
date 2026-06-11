@@ -7,6 +7,7 @@ import type {
   ProviderType,
   TurnConfig,
 } from "@tavern/core";
+import type { LlmInstanceCapabilities } from "../../lib/llm-capabilities.js";
 import type {
   AssistantPrefillExecutionStrategy,
   PromptMacroRunKind,
@@ -131,6 +132,8 @@ export class TurnModelService {
   buildGenerationParams(args: {
     requestParams?: GenerationParamsInput;
     narratorParams?: GenerationParamsInput;
+    narratorParamOrigins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
+    capabilities?: LlmInstanceCapabilities;
     availableForReply: number;
     stream?: boolean;
   }): GenerationParams {
@@ -141,6 +144,7 @@ export class TurnModelService {
     requestParams?: GenerationParamsInput;
     narratorParams?: GenerationParamsInput;
     narratorParamOrigins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
+    capabilities?: LlmInstanceCapabilities;
     availableForReply: number;
     stream?: boolean;
   }): PromptRuntimeGenerationParamResolution[] {
@@ -151,6 +155,7 @@ export class TurnModelService {
     requestParams?: GenerationParamsInput;
     narratorParams?: GenerationParamsInput;
     narratorParamOrigins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
+    capabilities?: LlmInstanceCapabilities;
     availableForReply: number;
     stream?: boolean;
   }): { params: GenerationParams; resolution: PromptRuntimeGenerationParamResolution[] } {
@@ -257,6 +262,46 @@ export class TurnModelService {
       narratorParams,
       args.narratorParamOrigins,
       "stopSequences",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "seed",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "repetitionPenalty",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "minP",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "logitBias",
+    );
+    this.applyOptionalParam(
+      params,
+      resolution,
+      requestParams,
+      narratorParams,
+      args.narratorParamOrigins,
+      "responseFormat",
     );
     this.applyOptionalParam(
       params,
@@ -377,6 +422,12 @@ export class TurnModelService {
         origin: "absent",
       });
     }
+
+    this.filterUnsupportedGenerationParams(
+      params,
+      resolution,
+      args.capabilities,
+    );
 
     return { params, resolution };
   }
@@ -594,6 +645,34 @@ export class TurnModelService {
       }
     } catch {
       // 记录 last_used_at 失败不应阻断聊天流程。
+    }
+  }
+
+  private filterUnsupportedGenerationParams(
+    params: GenerationParams,
+    resolution: PromptRuntimeGenerationParamResolution[],
+    capabilities?: LlmInstanceCapabilities,
+  ): void {
+    const unsupported = capabilities?.unsupportedGenerationParams;
+    if (!unsupported || unsupported.length === 0) {
+      return;
+    }
+
+    for (const key of unsupported) {
+      if (!Object.prototype.hasOwnProperty.call(params, key)) {
+        continue;
+      }
+
+      delete params[key];
+      const entry = resolution.find((item) => item.name === key);
+      if (!entry) {
+        continue;
+      }
+
+      entry.finalState = "filtered";
+      entry.filterReason = "field_not_supported_by_provider";
+      delete entry.valueFrom;
+      delete entry.cancelledAt;
     }
   }
 

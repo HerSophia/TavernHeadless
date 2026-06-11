@@ -1777,6 +1777,38 @@ export const floorResultSnapshots = sqliteTable(
   })
 );
 
+export const promptRuntimeInjections = sqliteTable(
+  "prompt_runtime_injection",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id"),
+    sourceKind: text("source_kind", { enum: ["client_injection"] }).notNull().default("client_injection"),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    placement: text("placement").notNull(),
+    order: integer("order").notNull().default(100),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    modeScope: text("mode_scope", { enum: ["compat_strict", "compat_plus", "native"] }),
+    ttlMs: integer("ttl_ms"),
+    createdBy: text("created_by").references(() => accounts.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    sessionBranchOrderCreatedIdx: index("prompt_runtime_injection_session_branch_order_created_idx").on(
+      table.sessionId,
+      table.branchId,
+      table.order,
+      table.createdAt,
+    ),
+    sessionUpdatedIdx: index("prompt_runtime_injection_session_updated_idx").on(
+      table.sessionId,
+      table.updatedAt,
+    ),
+  })
+);
+
 /**
  * Explain-phase prompt runtime snapshot.
  *
@@ -1910,8 +1942,10 @@ export const llmInstanceConfigs = sqliteTable(
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot", { enum: ["*", "narrator", "director", "verifier", "memory"] }).notNull(),
     presetId: text("preset_id"),
+    modelIdOverride: text("model_id_override"),
     enabled: integer("enabled").notNull().default(1),
     paramsJson: text("params_json"),
+    capabilitiesJson: text("capabilities_json"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },

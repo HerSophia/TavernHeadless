@@ -21,17 +21,29 @@ import { sendError } from "../../lib/http.js";
 export function mapGenerationParams(
   params: GenerationParamsBody,
 ): RespondRequest["generationParams"] {
-  return {
-    temperature: params.temperature,
-    maxOutputTokens: params.max_output_tokens,
-    topP: params.top_p,
-    topK: params.top_k,
-    frequencyPenalty: params.frequency_penalty,
-    presencePenalty: params.presence_penalty,
-    stopSequences: params.stop_sequences,
-    stream: params.stream,
-    reasoningEffort: params.reasoning_effort,
-  };
+  return Object.fromEntries(
+    Object.entries({
+      temperature: params.temperature,
+      maxOutputTokens: params.max_output_tokens,
+      topP: params.top_p,
+      topK: params.top_k,
+      frequencyPenalty: params.frequency_penalty,
+      presencePenalty: params.presence_penalty,
+      stopSequences: params.stop_sequences,
+      seed: params.seed,
+      repetitionPenalty: params.repetition_penalty,
+      minP: params.min_p,
+      logitBias: params.logit_bias,
+      responseFormat: params.response_format
+        ? {
+            type: params.response_format.type,
+            ...(params.response_format.json_schema ? { jsonSchema: params.response_format.json_schema } : {}),
+          }
+        : params.response_format,
+      stream: params.stream,
+      reasoningEffort: params.reasoning_effort,
+    }).filter(([, value]) => value !== undefined),
+  ) as RespondRequest["generationParams"];
 }
 
 export function mapPromptRuntimeInjectionsRequest(

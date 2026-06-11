@@ -1,5 +1,6 @@
 import type { ToolCallTransportKind, ToolCallTransportSelection } from "@tavern/core";
 
+import type { LlmInstanceCapabilities } from "../../lib/llm-capabilities.js";
 import { parseJsonField } from "../../lib/http.js";
 
 export interface ToolCallTransportResolveInput {
@@ -8,8 +9,35 @@ export interface ToolCallTransportResolveInput {
   promptMode: "compat_strict" | "compat_plus" | "native";
   explicitTransport?: ToolCallTransportKind;
   toolsEnabled: boolean;
-  llmInstanceSupportsFunctionCall?: boolean;
+  capabilities?: LlmInstanceCapabilities;
 }
+
+const TOOL_CALL_TRANSPORTS_BY_PROMPT_MODE = {
+  compat_strict: ["native_function_call", "text_protocol"],
+  compat_plus: ["native_function_call", "text_protocol"],
+  native: ["native_function_call", "text_protocol"],
+} as const satisfies Record<
+  ToolCallTransportResolveInput["promptMode"],
+  readonly Exclude<ToolCallTransportKind, "none">[]
+>;
+
+export function listToolCallTransportsForPromptMode(
+  promptMode: ToolCallTransportResolveInput["promptMode"],
+): Array<Exclude<ToolCallTransportKind, "none">> {
+  return [...TOOL_CALL_TRANSPORTS_BY_PROMPT_MODE[promptMode]];
+}
+
+export function isToolCallTransportAllowedInPromptMode(
+  promptMode: ToolCallTransportResolveInput["promptMode"],
+  transport: ToolCallTransportKind,
+): boolean {
+  return transport !== "none" && TOOL_CALL_TRANSPORTS_BY_PROMPT_MODE[promptMode].includes(transport);
+}
+
+type PromptModeTransportAvailabilityResolver = (
+  promptMode: ToolCallTransportResolveInput["promptMode"],
+  transport: ToolCallTransportKind,
+) => boolean;
 
 export function normalizeToolCallTransportKind(value: unknown): ToolCallTransportKind | undefined {
   return value === "native_function_call"
@@ -34,6 +62,11 @@ export function readToolCallTransportOverride(metadataJson: string | null): Tool
 }
 
 export class ToolCallTransportResolver {
+  constructor(
+    private readonly isTransportAllowedInPromptMode: PromptModeTransportAvailabilityResolver =
+      isToolCallTransportAllowedInPromptMode,
+  ) {}
+
   resolve(input: ToolCallTransportResolveInput): ToolCallTransportSelection {
     if (!input.toolsEnabled) {
       return {
@@ -44,6 +77,14 @@ export class ToolCallTransportResolver {
     }
 
     if (input.explicitTransport) {
+      if (!this.isTransportAllowedInPromptMode(input.promptMode, input.explicitTransport)) {
+        return {
+          transport: "none",
+          reasonCode: "override_rejected_by_mode",
+          reasonDetail: `Tool transport '${input.explicitTransport}' is not allowed in prompt mode '${input.promptMode}'.`,
+        };
+      }
+
       return {
         transport: input.explicitTransport,
         reasonCode: "explicit_override",
@@ -51,18 +92,26 @@ export class ToolCallTransportResolver {
       };
     }
 
-    if (input.llmInstanceSupportsFunctionCall === false) {
+    const selection = input.capabilities?.supportsFunctionCall === false
+      ? {
+          transport: "text_protocol" as const,
+          reasonCode: "instance_not_supports_function_call" as const,
+          reasonDetail: "The resolved narrator instance declared native function call support as false.",
+        }
+      : {
+          transport: "native_function_call" as const,
+          reasonCode: "default_native_function_call" as const,
+          reasonDetail: "Using the default native function call transport.",
+        };
+
+    if (!this.isTransportAllowedInPromptMode(input.promptMode, selection.transport)) {
       return {
-        transport: "text_protocol",
-        reasonCode: "instance_not_supports_function_call",
-        reasonDetail: "The resolved narrator instance declared native function call support as false.",
+        transport: "none",
+        reasonCode: "mode_disallows_transport",
+        reasonDetail: `Tool transport '${selection.transport}' is not allowed in prompt mode '${input.promptMode}'.`,
       };
     }
 
-    return {
-      transport: "native_function_call",
-      reasonCode: "default_native_function_call",
-      reasonDetail: "Using the default native function call transport.",
-    };
+    return selection;
   }
 }

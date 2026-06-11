@@ -20,10 +20,10 @@ function makeTool(name: string) {
 }
 
 describe("PromptRuntimeContributorRunner", () => {
-  it("returns no contributors for compat_strict", () => {
+  it("keeps only tool_list contributors in compat_strict", () => {
     const runner = new PromptRuntimeContributorRunner();
 
-    expect(runner.resolve({
+    const result = runner.resolve({
       promptMode: "compat_strict",
       memorySummary: "memory summary",
       memoryTrace: {
@@ -35,7 +35,18 @@ describe("PromptRuntimeContributorRunner", () => {
       },
       transport: "text_protocol",
       toolsForSlot: [makeTool("roll_dice")],
-    })).toEqual({ contributors: [] });
+    });
+
+    expect(result.contributors.map((contributor) => contributor.kind)).toEqual(["tool_list"]);
+    expect(result.contributors[0]).toMatchObject({
+      id: "builtin:tool_list",
+      sourceKind: "tool_list",
+      modeScope: "compat_strict",
+      payload: {
+        transport: "text_protocol",
+        toolNames: ["roll_dice"],
+      },
+    });
   });
 
   it("collects memory and state contributors for compat_plus and native", () => {

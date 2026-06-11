@@ -341,6 +341,54 @@ describe("assemblePrompt", () => {
     expect(assembled.tokenUsage.allocator).toBeUndefined();
   });
 
+  it("injects compat_strict whitelisted contributors directly after the leading system prompt", async () => {
+    const now = Date.now();
+    const presetId = nanoid();
+
+    await database.db.insert(presets).values({
+      id: presetId,
+      name: "Compat Strict Contributor Preset",
+      source: "sillytavern",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      dataJson: JSON.stringify(SAMPLE_PRESET_DATA),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const sessionInfo: SessionPromptInfo = {
+      presetId,
+      worldbookProfileId: null,
+      regexProfileId: null,
+      metadataJson: null,
+      characterSnapshotJson: JSON.stringify({ name: "Knight" }),
+      promptMode: "compat_strict",
+      userSnapshotJson: JSON.stringify({ name: "Traveler" }),
+    };
+
+    const assembled = await assemblePrompt(
+      database.db,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      sessionInfo,
+      [{ role: "user", content: "Earlier turn." }],
+      "Continue.",
+      new SimpleTokenCounter(),
+      undefined,
+      {
+        contributors: [{
+          sourceKind: "tool_list",
+          title: "Tool list",
+          content: "<tool_list><tool name=\"roll_dice\" /></tool_list>",
+        }],
+      },
+    );
+
+    expect(assembled.messages[0]?.role).toBe("system");
+    expect(assembled.messages[1]).toEqual({
+      role: "system",
+      content: "<tool_list><tool name=\"roll_dice\" /></tool_list>",
+    });
+  });
+
   it("injects resolved persisted variables into prompt templates and preserves reserved aliases", async () => {
     const now = Date.now();
     const sessionId = nanoid();

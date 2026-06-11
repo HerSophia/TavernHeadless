@@ -45,6 +45,14 @@ export const generationParamsExample = {
   temperature: 0.7,
   max_output_tokens: 256,
   top_p: 0.9,
+  seed: 42,
+  repetition_penalty: 1.1,
+  min_p: 0.05,
+  logit_bias: { "42": -5 },
+  response_format: {
+    type: "json_schema",
+    json_schema: { type: "object" },
+  },
   reasoning_effort: "low",
 } as const;
 
@@ -283,6 +291,7 @@ export const liveRuntimeTraceExample = {
     tool_list: {
       injected: true,
       contributor_id: "builtin:tool_list",
+      placement_mode: "contributor_chain",
       tool_count: 2,
     },
     parsing: {
@@ -310,6 +319,12 @@ export const liveRuntimeTraceExample = {
       final_state: "cancelled",
       origin: "request",
       cancelled_at: "request",
+    },
+    {
+      name: "responseFormat",
+      final_state: "filtered",
+      origin: "instance",
+      filter_reason: "field_not_supported_by_provider",
     },
   ],
 } as const;
@@ -816,7 +831,38 @@ export const generationParamsJsonSchema = {
     presence_penalty: { type: ["number", "null"] },
     stop_sequences: {
       type: ["array", "null"],
-      items: { type: "string" },
+      items: { type: "string", minLength: 1 },
+      maxItems: 16,
+    },
+    seed: { type: ["integer", "null"] },
+    repetition_penalty: { type: ["number", "null"], exclusiveMinimum: 0, maximum: 2 },
+    min_p: { type: ["number", "null"], minimum: 0, maximum: 1 },
+    logit_bias: {
+      anyOf: [
+        {
+          type: "object",
+          additionalProperties: { type: "number", minimum: -100, maximum: 100 },
+          maxProperties: 256,
+        },
+        { type: "null" },
+      ],
+    },
+    response_format: {
+      anyOf: [
+        {
+          type: "object",
+          required: ["type"],
+          properties: {
+            type: { type: "string", enum: ["text", "json_object", "json_schema"] },
+            json_schema: {
+              type: "object",
+              additionalProperties: true,
+            },
+          },
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
     },
     stream: { type: ["boolean", "null"] },
     reasoning_effort: { type: ["string", "null"], enum: ["low", "medium", "high", null] },
@@ -1506,6 +1552,8 @@ const runtimeTraceToolTransportSelectionJsonSchema = {
         "tools_disabled",
         "instance_not_supports_function_call",
         "default_native_function_call",
+        "mode_disallows_transport",
+        "override_rejected_by_mode",
       ],
     },
     reason_detail: { type: "string" },
@@ -1519,6 +1567,7 @@ const runtimeTraceToolTransportToolListJsonSchema = {
   properties: {
     injected: { type: "boolean" },
     contributor_id: { type: "string" },
+    placement_mode: { type: "string", enum: ["strict_fixed", "contributor_chain"] },
     tool_count: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
@@ -1566,6 +1615,8 @@ const runtimeTraceToolTransportJsonSchema = {
   properties: {
     selection: runtimeTraceToolTransportSelectionJsonSchema,
     tool_list: runtimeTraceToolTransportToolListJsonSchema,
+    tool_choice_applied: { type: "boolean" },
+    streaming_tool_call_unsupported: { type: "boolean" },
     parsing: runtimeTraceToolTransportParsingJsonSchema,
   },
   additionalProperties: false,
@@ -1586,16 +1637,22 @@ const runtimeTraceGenerationParamResolutionJsonSchema = {
         "frequencyPenalty",
         "presencePenalty",
         "stopSequences",
+        "seed",
+        "repetitionPenalty",
+        "minP",
+        "logitBias",
+        "responseFormat",
         "stream",
         "timeoutMs",
         "maxRetries",
         "reasoningEffort",
       ],
     },
-    final_state: { type: "string", enum: ["sent", "absent", "cancelled"] },
+    final_state: { type: "string", enum: ["sent", "absent", "cancelled", "filtered"] },
     origin: { type: "string", enum: ["profile", "instance", "request", "default", "absent"] },
     cancelled_at: { type: "string", enum: ["profile", "instance", "request"] },
     value_from: { type: "string", enum: ["profile", "instance", "request", "default"] },
+    filter_reason: { type: "string", enum: ["field_not_supported_by_provider"] },
   },
   additionalProperties: false,
 } as const;
@@ -1605,6 +1662,8 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
   required: [
     "request_index",
     "source_kind",
+    "injection_id",
+    "enabled",
     "scope",
     "placement_requested",
     "order_requested",
@@ -1617,7 +1676,9 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
   properties: {
     request_index: { type: "integer", minimum: 0 },
     source_kind: { type: "string" },
-    scope: { type: "string", enum: ["request"] },
+    injection_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+    enabled: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+    scope: { type: "string", enum: ["request", "session", "branch"] },
     placement_requested: { type: "string" },
     order_requested: { type: "integer" },
     title: { type: "string" },
@@ -1633,6 +1694,9 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
             "unknown_placement",
             "empty_title_or_content",
             "prompt_section_absent",
+            "disabled",
+            "expired",
+            "mode_scope_mismatch",
           ],
         },
         { type: "null" },

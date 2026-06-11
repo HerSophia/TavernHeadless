@@ -96,6 +96,7 @@ export class PreparedTurnInspectionService {
         beforeFloorNo: branchContext.nextFloorNo,
       },
       resolvedTurnModels,
+      llmInstanceCapabilities: resolvedTurnModels.narrator?.capabilities,
       firstPartyStateContext,
       sessionInfo,
       extraDiagnostics: branchContext.branchExists

@@ -38,8 +38,12 @@ export function isContributorModeEnabled(promptMode: PromptMode): boolean {
   return promptMode === "compat_plus" || promptMode === "native";
 }
 
-export function resolveContributorModeScope(promptMode: PromptMode): "compat_plus" | "native" {
-  return promptMode === "native" ? "native" : "compat_plus";
+export function isStrictModeWhitelistedContributor(kind: PromptRuntimeContributorKind): boolean {
+  return kind === "tool_list";
+}
+
+export function resolveContributorModeScope(promptMode: PromptMode): PromptMode {
+  return promptMode;
 }
 
 export function buildPromptRuntimeContributorView(
@@ -161,6 +165,10 @@ export function buildPromptRuntimeContributorRenderablesForAssembly(
   contributors: PromptRuntimeContributorOutput[],
   promptMode: PromptMode,
 ): PromptRuntimeAssemblyContributor[] {
+  if (promptMode === "compat_strict") {
+    return contributors.flatMap((contributor) => mapStrictModeContributorRenderable(contributor));
+  }
+
   if (promptMode === "compat_plus") {
     return contributors.flatMap((contributor) => mapCompatPlusContributorRenderable(contributor));
   }
@@ -170,6 +178,20 @@ export function buildPromptRuntimeContributorRenderablesForAssembly(
   }
 
   return [];
+}
+
+function mapStrictModeContributorRenderable(
+  contributor: PromptRuntimeContributorOutput,
+): PromptRuntimeAssemblyContributor[] {
+  if (!contributor.promptRenderable || !isStrictModeWhitelistedContributor(contributor.kind)) {
+    return [];
+  }
+
+  return [{
+    sourceKind: contributor.sourceKind,
+    title: contributor.promptRenderable.title,
+    content: contributor.promptRenderable.content,
+  }];
 }
 
 function mapCompatPlusContributorRenderable(

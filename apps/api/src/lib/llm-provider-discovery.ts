@@ -36,6 +36,11 @@ export function resolveAssistantPrefillStrategy(provider?: ProviderValue): Assis
 
 // ── Types ─────────────────────────────────────────────
 
+export type RuntimeResponseFormat = {
+  type: "text" | "json_object" | "json_schema";
+  json_schema?: Record<string, unknown>;
+};
+
 export type RuntimeParamsResponse = {
   max_context_tokens?: number | null;
   max_output_tokens?: number | null;
@@ -44,6 +49,12 @@ export type RuntimeParamsResponse = {
   top_k?: number | null;
   frequency_penalty?: number | null;
   presence_penalty?: number | null;
+  stop_sequences?: string[] | null;
+  seed?: number | null;
+  repetition_penalty?: number | null;
+  min_p?: number | null;
+  logit_bias?: Record<string, number> | null;
+  response_format?: RuntimeResponseFormat | null;
   stream?: boolean | null;
   timeout_ms?: number | null;
   max_retries?: number | null;

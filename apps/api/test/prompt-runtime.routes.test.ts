@@ -30,6 +30,17 @@ type PromptRuntimeControlServiceStub = {
   getCapabilities: ReturnType<typeof vi.fn>;
 };
 
+type PromptRuntimeInjectionServiceStub = {
+  listSessionInjections: ReturnType<typeof vi.fn>;
+  createSessionInjection: ReturnType<typeof vi.fn>;
+  updateSessionInjection: ReturnType<typeof vi.fn>;
+  deleteSessionInjection: ReturnType<typeof vi.fn>;
+  listBranchInjections: ReturnType<typeof vi.fn>;
+  createBranchInjection: ReturnType<typeof vi.fn>;
+  updateBranchInjection: ReturnType<typeof vi.fn>;
+  deleteBranchInjection: ReturnType<typeof vi.fn>;
+};
+
 type PromptRuntimePreviewServiceStub = {
   previewPromptRuntimeText: ReturnType<typeof vi.fn<(
     sessionId: string,
@@ -61,6 +72,22 @@ function createPromptRuntimeControlService(
     getHistoricalExplain: vi.fn(),
     compareCommittedExplain: vi.fn(),
     getCapabilities: vi.fn(),
+    ...overrides,
+  };
+}
+
+function createPromptRuntimeInjectionService(
+  overrides: Partial<PromptRuntimeInjectionServiceStub> = {},
+): PromptRuntimeInjectionServiceStub {
+  return {
+    listSessionInjections: vi.fn(),
+    createSessionInjection: vi.fn(),
+    updateSessionInjection: vi.fn(),
+    deleteSessionInjection: vi.fn(),
+    listBranchInjections: vi.fn(),
+    createBranchInjection: vi.fn(),
+    updateBranchInjection: vi.fn(),
+    deleteBranchInjection: vi.fn(),
     ...overrides,
   };
 }
@@ -98,6 +125,7 @@ describe("prompt runtime routes", () => {
     service: PromptRuntimeControlServiceStub,
     previewService?: PromptRuntimePreviewServiceStub,
     inspectService?: PromptRuntimeInspectServiceStub,
+    injectionService?: PromptRuntimeInjectionServiceStub,
   ) {
     app = Fastify({ logger: false });
     await registerDevelopmentTestAuth(app);
@@ -123,6 +151,7 @@ describe("prompt runtime routes", () => {
     await registerPromptRuntimeRoutes(app, service as unknown as PromptRuntimeControlService, {
       previewService: previewService as unknown as { previewPromptRuntimeText: PromptRuntimePreviewServiceStub["previewPromptRuntimeText"] } | undefined,
       inspectService: inspectService as unknown as { inspectPromptRuntime: PromptRuntimeInspectServiceStub["inspectPromptRuntime"] } | undefined,
+      injectionService: injectionService as never,
     });
   }
 
@@ -188,6 +217,10 @@ describe("prompt runtime routes", () => {
           characterCard: { id: "char-1", name: "Hero" },
           worldbook: null,
           regexProfile: { id: "regex-1", name: null },
+        },
+        injections: {
+          session: { total: 1, enabled: 1 },
+          branch: { total: 2, enabled: 1 },
         },
         sourceMap: {
           structure: {
@@ -284,6 +317,10 @@ describe("prompt runtime routes", () => {
           worldbook: null,
           regex_profile: { id: "regex-1", name: null },
         },
+        injections: {
+          session: { total: 1, enabled: 1 },
+          branch: { total: 2, enabled: 1 },
+        },
         source_map: {
           structure: {
             mode: "session_policy",
@@ -313,6 +350,209 @@ describe("prompt runtime routes", () => {
     });
 
     expect(controlService.getResolvedState).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID, "alt-branch");
+  });
+
+  it("maps session injection CRUD routes", async () => {
+    const controlService = createPromptRuntimeControlService();
+    const injectionService = createPromptRuntimeInjectionService({
+      listSessionInjections: vi.fn(() => [createPromptRuntimeInjectionRecord({ scope: "session" })]),
+      createSessionInjection: vi.fn(() => createPromptRuntimeInjectionRecord({
+        id: "inj-created",
+        scope: "session",
+        modeScope: "native",
+        ttlMs: 60000,
+      })),
+      updateSessionInjection: vi.fn(() => createPromptRuntimeInjectionRecord({
+        id: "inj-updated",
+        scope: "session",
+        enabled: false,
+      })),
+      deleteSessionInjection: vi.fn(() => createPromptRuntimeInjectionRecord({ id: "inj-deleted", scope: "session" })),
+    });
+
+    await mountRoutes(controlService, undefined, undefined, injectionService);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/sessions/s1/prompt-runtime/injections",
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.json()).toEqual({
+      data: [expect.objectContaining({
+        id: "inj-1",
+        scope: "session",
+        source_kind: "client_injection",
+      })],
+    });
+    expect(injectionService.listSessionInjections).toHaveBeenCalledWith("s1", DEFAULT_ADMIN_ACCOUNT_ID);
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/injections",
+      payload: {
+        source_kind: "client_injection",
+        title: "History guard",
+        content: "Keep the north pass in focus.",
+        placement: "before_history",
+        enabled: true,
+        mode_scope: "native",
+        ttl_ms: 60000,
+      },
+    });
+    expect(createResponse.statusCode).toBe(201);
+    expect(createResponse.json()).toEqual({
+      data: expect.objectContaining({
+        id: "inj-created",
+        scope: "session",
+        mode_scope: "native",
+        ttl_ms: 60000,
+      }),
+    });
+    expect(injectionService.createSessionInjection).toHaveBeenCalledWith(
+      "s1",
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        sourceKind: "client_injection",
+        title: "History guard",
+        content: "Keep the north pass in focus.",
+        placement: "before_history",
+        enabled: true,
+        modeScope: "native",
+        ttlMs: 60000,
+      },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      expect.objectContaining({
+        sourceType: "http",
+        route: "POST /sessions/:id/prompt-runtime/injections",
+      }),
+    );
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: "/sessions/s1/prompt-runtime/injections/inj-1",
+      payload: {
+        enabled: false,
+      },
+    });
+    expect(patchResponse.statusCode).toBe(200);
+    expect(patchResponse.json()).toEqual({
+      data: expect.objectContaining({
+        id: "inj-updated",
+        enabled: false,
+      }),
+    });
+    expect(injectionService.updateSessionInjection).toHaveBeenCalledWith(
+      "s1",
+      "inj-1",
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        enabled: false,
+      },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      expect.objectContaining({
+        sourceType: "http",
+        route: "PATCH /sessions/:id/prompt-runtime/injections/:injectionId",
+      }),
+    );
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: "/sessions/s1/prompt-runtime/injections/inj-1",
+    });
+    expect(deleteResponse.statusCode).toBe(200);
+    expect(deleteResponse.json()).toEqual({
+      data: expect.objectContaining({ id: "inj-deleted", scope: "session" }),
+    });
+    expect(injectionService.deleteSessionInjection).toHaveBeenCalledWith(
+ "s1",
+      "inj-1",
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      expect.objectContaining({
+        sourceType: "http",
+        route: "DELETE /sessions/:id/prompt-runtime/injections/:injectionId",
+      }),
+    );
+  });
+
+  it("maps branch injection CRUD routes", async () => {
+    const controlService = createPromptRuntimeControlService();
+    const injectionService = createPromptRuntimeInjectionService({
+      listBranchInjections: vi.fn(() => [createPromptRuntimeInjectionRecord({ id: "inj-branch", scope: "branch" })]),
+      createBranchInjection: vi.fn(() => createPromptRuntimeInjectionRecord({ id: "inj-branch-created", scope: "branch" })),
+      updateBranchInjection: vi.fn(() => createPromptRuntimeInjectionRecord({ id: "inj-branch-updated", scope: "branch", enabled: false })),
+      deleteBranchInjection: vi.fn(() => createPromptRuntimeInjectionRecord({ id: "inj-branch-deleted", scope: "branch" })),
+    });
+
+    await mountRoutes(controlService, undefined, undefined, injectionService);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/sessions/s1/prompt-runtime/branches/alt-branch/injections",
+    });
+    expect(listResponse.statusCode).toBe(200);
+    expect(injectionService.listBranchInjections).toHaveBeenCalledWith("s1", "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID);
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/prompt-runtime/branches/alt-branch/injections",
+      payload: {
+        source_kind: "client_injection",
+        title: "Branch guard",
+        content: "Keep the branch in focus.",
+        placement: "before_history",
+      },
+    });
+    expect(createResponse.statusCode).toBe(201);
+    expect(injectionService.createBranchInjection).toHaveBeenCalledWith(
+      "s1",
+      "alt-branch",
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        sourceKind: "client_injection",
+        title: "Branch guard",
+        content: "Keep the branch in focus.",
+        placement: "before_history",
+      },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      expect.objectContaining({
+        route: "POST /sessions/:id/prompt-runtime/branches/:branchId/injections",
+      }),
+    );
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: "/sessions/s1/prompt-runtime/branches/alt-branch/injections/inj-branch",
+      payload: {
+        enabled: false,
+      },
+    });
+    expect(patchResponse.statusCode).toBe(200);
+    expect(injectionService.updateBranchInjection).toHaveBeenCalledWith(
+      "s1",
+      "alt-branch",
+      "inj-branch",
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      { enabled: false },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      expect.objectContaining({
+        route: "PATCH /sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId",
+      }),
+    );
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: "/sessions/s1/prompt-runtime/branches/alt-branch/injections/inj-branch",
+    });
+    expect(deleteResponse.statusCode).toBe(200);
+    expect(injectionService.deleteBranchInjection).toHaveBeenCalledWith(
+      "s1",
+      "alt-branch",
+      "inj-branch",
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      expect.objectContaining({
+        route: "DELETE /sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId",
+      }),
+    );
   });
 
   it("maps GET /sessions/:id/prompt-runtime/policy response to snake_case", async () => {
@@ -766,6 +1006,12 @@ describe("prompt runtime routes", () => {
             { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
             { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
             { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+            {
+              name: "responseFormat",
+              finalState: "filtered",
+              origin: "instance",
+              filterReason: "field_not_supported_by_provider",
+            },
           ],
           visibility: {
             hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
@@ -851,6 +1097,12 @@ describe("prompt runtime routes", () => {
             { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
             { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
             { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+            {
+              name: "responseFormat",
+              final_state: "filtered",
+              origin: "instance",
+              filter_reason: "field_not_supported_by_provider",
+            },
           ],
           visibility: {
             hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
@@ -1137,10 +1389,20 @@ describe("prompt runtime routes", () => {
               { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
               { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
               { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+              {
+                name: "responseFormat",
+                finalState: "filtered",
+                origin: "instance",
+                filterReason: "field_not_supported_by_provider",
+              },
             ],
           },
           memorySummary: "Remember the promise.",
-          generationParams: { maxOutputTokens: 256, temperature: 0.7 },
+          generationParams: {
+            maxOutputTokens: 256,
+            temperature: 0.7,
+            responseFormat: { type: "json_schema", jsonSchema: { type: "object" } },
+          },
           requestedTurnConfig: { enableTools: true, toolMode: "both" },
           turnConfig: { enableTools: true, toolMode: "both" },
           sessionStateWrites: {
@@ -1183,7 +1445,7 @@ describe("prompt runtime routes", () => {
         message: "Hello there",
         branch_id: "alt-inspect",
         source_floor_id: "floor-12",
-        generation_params: { max_output_tokens: 256, temperature: 0.7 },
+        generation_params: { max_output_tokens: 256, temperature: 0.7, response_format: { type: "json_schema", json_schema: { type: "object" } } },
         session_state_writes: [{ namespace: "quest_flags", slot: "companion", value: { mood: "ally" } }],
       },
     });
@@ -1224,6 +1486,12 @@ describe("prompt runtime routes", () => {
         { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
         { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
         { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+        {
+          name: "responseFormat",
+          final_state: "filtered",
+          origin: "instance",
+          filter_reason: "field_not_supported_by_provider",
+        },
       ],
     });
     expect(body.data.prepared_turn.session_state_writes).toEqual({ total: 1, writes: [{ namespace: "quest_flags", slot: "companion", operation: "set" }] });
@@ -1253,7 +1521,11 @@ describe("prompt runtime routes", () => {
       message: "Hello there",
       branchId: "alt-inspect",
       sourceFloorId: "floor-12",
-      generationParams: { maxOutputTokens: 256, temperature: 0.7 },
+      generationParams: {
+        maxOutputTokens: 256,
+        temperature: 0.7,
+        responseFormat: { type: "json_schema", jsonSchema: { type: "object" } },
+      },
       sessionStateWrites: [{ namespace: "quest_flags", slot: "companion", value: { mood: "ally" } }],
     }, DEFAULT_ADMIN_ACCOUNT_ID);
   });
@@ -1821,6 +2093,41 @@ describe("prompt runtime routes", () => {
 
     expect(controlService.getCapabilities).toHaveBeenCalledTimes(1);
   });
+
+
+function createPromptRuntimeInjectionRecord(overrides: Partial<{
+  id: string;
+  scope: "session" | "branch";
+  sourceKind: "client_injection";
+  title: string;
+  content: string;
+  placement: string;
+  order: number;
+  enabled: boolean;
+  modeScope: "compat_strict" | "compat_plus" | "native" | null;
+  ttlMs: number | null;
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+}> = {}) {
+  return {
+    id: overrides.id ?? "inj-1",
+    sessionId: "s1",
+    branchId: overrides.scope === "branch" ? "alt-branch" : null,
+    scope: overrides.scope ?? "session",
+    sourceKind: overrides.sourceKind ?? "client_injection",
+    title: overrides.title ?? "History guard",
+    content: overrides.content ?? "Keep the north pass in focus.",
+    placement: overrides.placement ?? "before_history",
+    order: overrides.order ?? 100,
+    enabled: overrides.enabled ?? true,
+    modeScope: overrides.modeScope ?? null,
+    ttlMs: overrides.ttlMs ?? null,
+    createdBy: overrides.createdBy ?? "user-1",
+    createdAt: overrides.createdAt ?? 1710000004600,
+    updatedAt: overrides.updatedAt ?? 1710000004700,
+  };
+}
 
   it("maps PromptRuntimeControlServiceError to stable http error", async () => {
     const controlService = createPromptRuntimeControlService({

@@ -31,31 +31,31 @@ export interface PromptRuntimeContributorResolveResult {
 
 export class PromptRuntimeContributorRunner {
   resolve(args: PromptRuntimeContributorResolveArgs): PromptRuntimeContributorResolveResult {
-    if (!isContributorModeEnabled(args.promptMode)) {
-      return { contributors: [] };
-    }
-
+    const contributorModeEnabled = isContributorModeEnabled(args.promptMode);
     const promptMode = args.promptMode === "native" ? "native" : "compat_plus";
     const contributors: PromptRuntimeContributorOutput[] = [];
-    const memory = buildMemoryProjectionContributor({
-      promptMode,
-      memorySummary: args.memorySummary,
-      memoryTrace: args.memoryTrace,
-    });
-    if (memory.contributor) {
-      contributors.push(memory.contributor);
-    }
 
-    const state = buildStateProjectionContributor({
-      promptMode,
-      firstPartyStateContext: args.firstPartyStateContext,
-    });
-    if (state.contributor) {
-      contributors.push(state.contributor);
+    if (contributorModeEnabled) {
+      const memory = buildMemoryProjectionContributor({
+        promptMode,
+        memorySummary: args.memorySummary,
+        memoryTrace: args.memoryTrace,
+      });
+      if (memory.contributor) {
+        contributors.push(memory.contributor);
+      }
+
+      const state = buildStateProjectionContributor({
+        promptMode,
+        firstPartyStateContext: args.firstPartyStateContext,
+      });
+      if (state.contributor) {
+        contributors.push(state.contributor);
+      }
     }
 
     const toolList = buildToolListContributor({
-      promptMode,
+      promptMode: args.promptMode,
       transport: args.transport ?? "none",
       toolsForSlot: args.toolsForSlot ?? [],
     });

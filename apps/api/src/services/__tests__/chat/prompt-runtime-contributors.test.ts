@@ -6,6 +6,7 @@ import {
   buildPromptRuntimeContributorView,
   buildPromptRuntimeContributorViews,
   isContributorModeEnabled,
+  isStrictModeWhitelistedContributor,
   resolvePreparedPromptArtifactsPromptMode,
 } from "../../chat/prompt-runtime-contributors.js";
 import type { PromptRuntimeContributorOutput } from "../../chat/types.js";
@@ -117,7 +118,13 @@ describe("prompt-runtime-contributors", () => {
     expect(buildPromptRuntimeContributorViews([contributor])).toHaveLength(1);
   });
 
-  it("maps tool_list contributors into assembly renderables outside compat_strict", () => {
+  it("whitelists only tool_list contributors in compat_strict", () => {
+    expect(isStrictModeWhitelistedContributor("tool_list")).toBe(true);
+    expect(isStrictModeWhitelistedContributor("memory_projection")).toBe(false);
+    expect(isStrictModeWhitelistedContributor("state_projection")).toBe(false);
+  });
+
+  it("maps tool_list contributors into assembly renderables across all prompt modes", () => {
     const contributor: PromptRuntimeContributorOutput = {
       id: "builtin:tool_list",
       kind: "tool_list",
@@ -134,7 +141,9 @@ describe("prompt-runtime-contributors", () => {
       },
     };
 
-    expect(buildPromptRuntimeContributorRenderablesForAssembly([contributor], "compat_strict")).toEqual([]);
+    expect(buildPromptRuntimeContributorRenderablesForAssembly([contributor], "compat_strict")).toEqual([
+      { sourceKind: "tool_list", title: "Tool list", content: "<tool_list>...</tool_list>" },
+    ]);
     expect(buildPromptRuntimeContributorRenderablesForAssembly([contributor], "compat_plus")).toEqual([
       { sourceKind: "tool_list", title: "Tool list", content: "<tool_list>...</tool_list>" },
     ]);
