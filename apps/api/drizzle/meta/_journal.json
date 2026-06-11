@@ -470,6 +470,20 @@
                         "when":  1766600000000,
                         "tag":  "0066_llm_instance_model_override",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  67,
+                        "version":  "7",
+                        "when":  1766700000000,
+                        "tag":  "0067_temporary_conversation_core",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  68,
+                        "version":  "7",
+                        "when":  1766800000000,
+                        "tag":  "0068_temporary_conversation_lifecycle_and_page_staged_write",
+                        "breakpoints":  true
                     }
                 ]
 }

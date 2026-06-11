@@ -1083,6 +1083,135 @@ export class ChatService {
     );
   }
 
+  async respondFromPreparedDraftFloor(args: {
+    sessionId: string;
+    accountId: string;
+    branchId?: string;
+    floorId: string;
+    floorNo: number;
+    pageId?: string;
+    pageMessageId?: string;
+    sourceFloorId?: string | null;
+    rawUserMessage: string;
+    request: {
+      config?: import("@tavern/core").TurnConfig;
+      generationParams?: import("../../lib/llm-params.js").GenerationParamsInput;
+      promptIntent?: import("@tavern/core").PromptRunIntent;
+      debugOptions?: import("./contracts.js").PromptLiveDebugOptions;
+      sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
+      structure?: RespondRequest["structure"];
+      delivery?: RespondRequest["delivery"];
+    };
+    executionContext: import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
+    conversationWindow: PromptRuntimeConversationWindow;
+    runtimeOptions?: RespondRuntimeOptions;
+  }): Promise<RespondResult & { outputPageId: string; assistantMessageId: string }> {
+    this.turnSessionStateService.assertTurnSessionStateWritesAvailable(args.request.sessionStateWrites);
+    const branchId = normalizeBranchId(args.branchId);
+
+    return this.withGenerationCoordinator(
+      args.sessionId,
+      branchId,
+      args.runtimeOptions?.abortSignal,
+      async (generationRuntime) => {
+        const session = await this.requireActiveSession(
+          args.sessionId,
+          args.accountId,
+          "Cannot respond to an archived session",
+          { allowTemporary: true },
+        );
+        if (session.kind !== "temporary") {
+          throw new ChatServiceError(
+            "invalid_session_kind",
+            `Session '${args.sessionId}' is not a temporary conversation session.`,
+          );
+        }
+        if (!args.conversationWindow.effectiveUserMessage) {
+          throw new ChatServiceError(
+            "missing_effective_user_tail",
+            "Prompt runtime execution requires a trailing effective user turn.",
+          );
+        }
+
+        const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(args.sessionId, args.accountId);
+        this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
+
+        const firstPartyStateContext = this.firstPartyStateContextService.loadFirstPartyStateContext({
+          accountId: args.accountId,
+          sessionId: args.sessionId,
+          branchId,
+          sourceFloorId: args.sourceFloorId ?? null,
+          expectedSourceBranchId: args.sourceFloorId ? branchId : null,
+          resolutionMode: args.sourceFloorId ? "source_floor" : "current_effective",
+        });
+        const sessionInfo = this.buildSessionPromptInfo(
+          session,
+          resolvedTurnModels,
+          firstPartyStateContext,
+          this.getSessionBranchAssetBinding(args.accountId, args.sessionId, branchId),
+        );
+
+        await this.turnRunTracker.initializeFloorRun(args.sessionId, args.floorId, "respond", Date.now());
+        args.runtimeOptions?.onStart?.({
+          floorId: args.floorId,
+          floorNo: args.floorNo,
+          branchId,
+        });
+        const unsubscribeRuntimeToolEvents = this.runtimeEventBridge.subscribeRuntimeToolEvents(args.floorId, args.runtimeOptions ?? {});
+        const unsubscribeFloorRunEvents = this.runtimeEventBridge.subscribeFloorRunEvents(args.floorId, args.runtimeOptions ?? {});
+
+        try {
+          const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
+            mode: "respond",
+            runType: "respond",
+            sessionId: args.sessionId,
+            branchId,
+            floorId: args.floorId,
+            pageId: args.pageId,
+            pageMessageId: args.pageMessageId,
+            accountId: args.accountId,
+            session,
+            sessionInfo,
+            userMessage: args.conversationWindow.effectiveUserMessage,
+            rawUserMessage: args.rawUserMessage,
+            request: args.request,
+            executionContext: args.executionContext,
+            conversationWindow: args.conversationWindow,
+            resolvedTurnModels,
+            firstPartyStateContext,
+            abortSignal: args.runtimeOptions?.abortSignal ?? generationRuntime.abortSignal,
+            onChunk: args.runtimeOptions?.onChunk,
+            stream: !!args.runtimeOptions?.onChunk,
+            orchestrationFailureCode: "orchestration_failed",
+            orchestrationFailureMessage: "Turn orchestration failed",
+            commitFailureMessage: "Turn commit failed",
+          });
+
+          return {
+            floorId: args.floorId,
+            floorNo: args.floorNo,
+            generatedText: this.composeAssistantOutputText(execution),
+            summaries: execution.summaries,
+            totalUsage: commit.usage,
+            finalState: commit.finalState,
+            branchId,
+            memory: commit.memory,
+            promptSnapshot: prepared.promptDebug.promptSnapshot,
+            runtimeTrace: prepared.promptDebug.runtimeTrace,
+            outputPageId: commit.outputPageId,
+            assistantMessageId: commit.assistantMessageId,
+          };
+        } catch (error) {
+          await this.turnRunTracker.failRunAndFloorBestEffort(args.floorId, error, "respond_from_prepared_draft_floor_failed");
+          throw error;
+        } finally {
+          unsubscribeRuntimeToolEvents();
+          unsubscribeFloorRunEvents();
+        }
+      },
+    );
+  }
+
   private async loadLiveConversationWindow(args: {
     sessionId: string;
     branchId: string;
@@ -1601,6 +1730,7 @@ export class ChatService {
     sessionId: string,
     accountId: string,
     archivedMessage: string,
+    options: { allowTemporary?: boolean } = {},
   ): Promise<typeof sessions.$inferSelect> {
     const session = await this.getSession(sessionId, accountId);
     if (!session) {
@@ -1609,6 +1739,13 @@ export class ChatService {
 
     if (session.status === "archived") {
       throw new ChatServiceError("session_archived", archivedMessage);
+    }
+
+    if (session.kind === "temporary" && options.allowTemporary !== true) {
+      throw new ChatServiceError(
+        "temporary_conversation_unavailable",
+        "Temporary conversations must use the internal temporary conversation service.",
+      );
     }
 
     return session;

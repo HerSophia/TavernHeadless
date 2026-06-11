@@ -153,6 +153,7 @@ WebSocket 也遵循相同边界：
 | 资源 | 说明 | 文档 |
 | ---- | ---- | ---- |
 | Sessions | 会话管理、时间线、分支、分支重置与无冲突合并 | [Sessions](./api/sessions) |
+| Temporary Conversations | 不污染主叙事的临时对话高级资源，支持生命周期、导出与 SSE | [Temporary Conversations](./api/temporary-conversations) |
 | Chat | 对话生成、SSE 流、Dry-run 与 `runtime_trace` 观察字段 | [Chat](./api/chat) |
 | Floors | 楼层管理、分支操作 | [Floors](./api/floors) |
 | Pages | 消息页管理、激活切换 | [Pages](./api/pages) |
@@ -215,6 +216,7 @@ WebSocket 也遵循相同边界：
 - [Operation Logs](./api/operation-logs)
 - [Workspace / Project 总览](./api/workspace-project)
 - [Projects](./api/projects)
+- [Temporary Conversations](./api/temporary-conversations)
 - [Agent Types](./api/agent-types)
 - [Project Agent Bindings](./api/project-agent-bindings)
 - [Project Settings](./api/project-settings)
