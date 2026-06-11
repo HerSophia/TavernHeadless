@@ -48,6 +48,14 @@ export type GenerationParamsBody = {
   frequency_penalty?: number | null;
   presence_penalty?: number | null;
   stop_sequences?: string[] | null;
+  seed?: number | null;
+  repetition_penalty?: number | null;
+  min_p?: number | null;
+  logit_bias?: Record<string, number> | null;
+  response_format?: {
+    type: "text" | "json_object" | "json_schema";
+    json_schema?: Record<string, unknown>;
+  } | null;
   stream?: boolean | null;
   reasoning_effort?: "low" | "medium" | "high" | null;
 };

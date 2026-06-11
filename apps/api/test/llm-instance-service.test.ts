@@ -4,6 +4,9 @@ import { and, eq } from "drizzle-orm";
 import { createDatabase, type DatabaseConnection } from "../src/db/client";
 import { llmInstanceConfigs } from "../src/db/schema";
 import {
+  DEFAULT_LLM_INSTANCE_CAPABILITIES,
+} from "../src/lib/llm-capabilities.js";
+import {
   LlmInstanceService,
   LlmInstanceServiceError,
 } from "../src/services/llm-instance-service";
@@ -37,6 +40,7 @@ describe("LlmInstanceService", () => {
     it("creates a new global config", async () => {
       const config = await service.upsertConfig(accountId, "global", "global", "narrator", {
         enabled: true,
+        modelIdOverride: "gpt-4.1-mini",
         params: { temperature: 0.8, maxOutputTokens: 1024 },
       });
 
@@ -45,6 +49,7 @@ describe("LlmInstanceService", () => {
       expect(config.scopeId).toBe("global");
       expect(config.instanceSlot).toBe("narrator");
       expect(config.enabled).toBe(true);
+      expect(config.modelIdOverride).toBe("gpt-4.1-mini");
       expect(config.params).toEqual({ temperature: 0.8, maxOutputTokens: 1024 });
       expect(config.createdAt).toBe(clock);
       expect(config.updatedAt).toBe(clock);
@@ -109,6 +114,20 @@ describe("LlmInstanceService", () => {
       });
 
       expect(updated.params).toBeNull();
+    });
+
+    it("accepts null modelIdOverride to clear an existing override", async () => {
+      await service.upsertConfig(accountId, "global", "global", "narrator", {
+        modelIdOverride: "gpt-4.1-mini",
+      });
+
+      clock += 1000;
+
+      const updated = await service.upsertConfig(accountId, "global", "global", "narrator", {
+        modelIdOverride: null,
+      });
+
+      expect(updated.modelIdOverride).toBeNull();
     });
 
     it("rejects params with out-of-range values", async () => {
@@ -206,6 +225,40 @@ describe("LlmInstanceService", () => {
   // ── resolveConfigs ──
 
   describe("resolveConfigs", () => {
+    it("persists capabilities on configs and resolves conservative defaults for other slots", async () => {
+      const config = await service.upsertConfig(accountId, "global", "global", "narrator", {
+        enabled: true,
+        capabilities: {
+          supportsFunctionCall: false,
+          supportsToolChoice: false,
+          supportsStreamingToolCall: false,
+          unsupportedGenerationParams: ["stopSequences"],
+        },
+      });
+
+      expect(config.capabilities).toEqual({
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: ["stopSequences"],
+      });
+
+      const resolved = await service.resolveConfigs(accountId);
+      const narrator = resolved.find((slot) => slot.slot === "narrator")!;
+      const memory = resolved.find((slot) => slot.slot === "memory")!;
+
+      expect(narrator.capabilities).toEqual({
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: ["stopSequences"],
+      });
+      expect(memory.capabilities).toEqual({
+        ...DEFAULT_LLM_INSTANCE_CAPABILITIES,
+        unsupportedGenerationParams: [],
+      });
+    });
+
     it("returns defaults for all 5 slots when no configs exist", async () => {
       const resolved = await service.resolveConfigs(accountId);
 
@@ -225,6 +278,7 @@ describe("LlmInstanceService", () => {
     it("resolves a global config for a named slot", async () => {
       await service.upsertConfig(accountId, "global", "global", "narrator", {
         enabled: true,
+        modelIdOverride: "gpt-4.1-mini",
         params: { temperature: 0.7 },
       });
 
@@ -234,6 +288,7 @@ describe("LlmInstanceService", () => {
       expect(narrator.source).toBe("global_config");
       expect(narrator.scope).toBe("global");
       expect(narrator.enabled).toBe(true);
+      expect(narrator.modelIdOverride).toBe("gpt-4.1-mini");
       expect(narrator.params).toEqual({ temperature: 0.7 });
       expect(narrator.configId).toBeTruthy();
     });

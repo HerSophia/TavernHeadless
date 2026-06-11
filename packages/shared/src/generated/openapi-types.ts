@@ -5123,8 +5123,20 @@ export interface paths {
                      *         "require_last_user": true
                      *       },
                      *       "generation_params": {
+                     *         "logit_bias": {
+                     *           "42": -5
+                     *         },
                      *         "max_output_tokens": 256,
+                     *         "min_p": 0.05,
                      *         "reasoning_effort": "low",
+                     *         "repetition_penalty": 1.1,
+                     *         "response_format": {
+                     *           "json_schema": {
+                     *             "type": "object"
+                     *           },
+                     *           "type": "json_schema"
+                     *         },
+                     *         "seed": 42,
                      *         "temperature": 0.7,
                      *         "top_p": 0.9
                      *       },
@@ -5194,18 +5206,43 @@ export interface paths {
                         };
                         /**
                          * @example {
+                         *       "logit_bias": {
+                         *         "42": -5
+                         *       },
                          *       "max_output_tokens": 256,
+                         *       "min_p": 0.05,
                          *       "reasoning_effort": "low",
+                         *       "repetition_penalty": 1.1,
+                         *       "response_format": {
+                         *         "json_schema": {
+                         *           "type": "object"
+                         *         },
+                         *         "type": "json_schema"
+                         *       },
+                         *       "seed": 42,
                          *       "temperature": 0.7,
                          *       "top_p": 0.9
                          *     }
                          */
                         generation_params?: {
                             frequency_penalty?: null | number;
+                            logit_bias?: {
+                                [key: string]: number;
+                            } | null;
                             max_output_tokens?: null | number;
+                            min_p?: null | number;
                             presence_penalty?: null | number;
                             /** @enum {null|string} */
                             reasoning_effort?: "low" | "medium" | "high" | null;
+                            repetition_penalty?: null | number;
+                            response_format?: {
+                                json_schema?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                type: "text" | "json_object" | "json_schema";
+                            } | null;
+                            seed?: null | number;
                             stop_sequences?: null | string[];
                             stream?: null | boolean;
                             temperature?: null | number;
@@ -5388,6 +5425,12 @@ export interface paths {
                          *               "final_state": "cancelled",
                          *               "name": "topP",
                          *               "origin": "request"
+                         *             },
+                         *             {
+                         *               "filter_reason": "field_not_supported_by_provider",
+                         *               "final_state": "filtered",
+                         *               "name": "responseFormat",
+                         *               "origin": "instance"
                          *             }
                          *           ],
                          *           "history_normalization": {
@@ -5600,6 +5643,7 @@ export interface paths {
                          *             "tool_list": {
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
+                         *               "placement_mode": "contributor_chain",
                          *               "tool_count": 2
                          *             }
                          *           },
@@ -5740,6 +5784,12 @@ export interface paths {
                              *             "final_state": "cancelled",
                              *             "name": "topP",
                              *             "origin": "request"
+                             *           },
+                             *           {
+                             *             "filter_reason": "field_not_supported_by_provider",
+                             *             "final_state": "filtered",
+                             *             "name": "responseFormat",
+                             *             "origin": "instance"
                              *           }
                              *         ],
                              *         "history_normalization": {
@@ -5952,6 +6002,7 @@ export interface paths {
                              *           "tool_list": {
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
+                             *             "placement_mode": "contributor_chain",
                              *             "tool_count": 2
                              *           }
                              *         },
@@ -6149,6 +6200,12 @@ export interface paths {
                                  *           "final_state": "cancelled",
                                  *           "name": "topP",
                                  *           "origin": "request"
+                                 *         },
+                                 *         {
+                                 *           "filter_reason": "field_not_supported_by_provider",
+                                 *           "final_state": "filtered",
+                                 *           "name": "responseFormat",
+                                 *           "origin": "instance"
                                  *         }
                                  *       ],
                                  *       "history_normalization": {
@@ -6361,6 +6418,7 @@ export interface paths {
                                  *         "tool_list": {
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
+                                 *           "placement_mode": "contributor_chain",
                                  *           "tool_count": 2
                                  *         }
                                  *       },
@@ -6404,9 +6462,11 @@ export interface paths {
                                         /** @enum {string} */
                                         cancelled_at?: "profile" | "instance" | "request";
                                         /** @enum {string} */
-                                        final_state: "sent" | "absent" | "cancelled";
+                                        filter_reason?: "field_not_supported_by_provider";
                                         /** @enum {string} */
-                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
                                         /** @enum {string} */
                                         origin: "profile" | "instance" | "request" | "default" | "absent";
                                         /** @enum {string} */
@@ -6462,13 +6522,15 @@ export interface paths {
                                         items: {
                                             applied: boolean;
                                             content_length: number;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            enabled: boolean | null;
+                                            injection_id: string | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                             order_requested: number;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
-                                            scope: "request";
+                                            scope: "request" | "session" | "branch";
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -6684,14 +6746,18 @@ export interface paths {
                                         };
                                         selection: {
                                             /** @enum {string} */
-                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
                                             reason_detail?: string;
                                             /** @enum {string} */
                                             transport: "native_function_call" | "text_protocol" | "none";
                                         };
+                                        streaming_tool_call_unsupported?: boolean;
+                                        tool_choice_applied?: boolean;
                                         tool_list?: {
                                             contributor_id?: string;
                                             injected: boolean;
+                                            /** @enum {string} */
+                                            placement_mode?: "strict_fixed" | "contributor_chain";
                                             tool_count: number;
                                         };
                                     };
@@ -9937,8 +10003,20 @@ export interface paths {
                      *         "require_last_user": true
                      *       },
                      *       "generation_params": {
+                     *         "logit_bias": {
+                     *           "42": -5
+                     *         },
                      *         "max_output_tokens": 256,
+                     *         "min_p": 0.05,
                      *         "reasoning_effort": "low",
+                     *         "repetition_penalty": 1.1,
+                     *         "response_format": {
+                     *           "json_schema": {
+                     *             "type": "object"
+                     *           },
+                     *           "type": "json_schema"
+                     *         },
+                     *         "seed": 42,
                      *         "temperature": 0.7,
                      *         "top_p": 0.9
                      *       },
@@ -10010,18 +10088,43 @@ export interface paths {
                         };
                         /**
                          * @example {
+                         *       "logit_bias": {
+                         *         "42": -5
+                         *       },
                          *       "max_output_tokens": 256,
+                         *       "min_p": 0.05,
                          *       "reasoning_effort": "low",
+                         *       "repetition_penalty": 1.1,
+                         *       "response_format": {
+                         *         "json_schema": {
+                         *           "type": "object"
+                         *         },
+                         *         "type": "json_schema"
+                         *       },
+                         *       "seed": 42,
                          *       "temperature": 0.7,
                          *       "top_p": 0.9
                          *     }
                          */
                         generation_params?: {
                             frequency_penalty?: null | number;
+                            logit_bias?: {
+                                [key: string]: number;
+                            } | null;
                             max_output_tokens?: null | number;
+                            min_p?: null | number;
                             presence_penalty?: null | number;
                             /** @enum {null|string} */
                             reasoning_effort?: "low" | "medium" | "high" | null;
+                            repetition_penalty?: null | number;
+                            response_format?: {
+                                json_schema?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                type: "text" | "json_object" | "json_schema";
+                            } | null;
+                            seed?: null | number;
                             stop_sequences?: null | string[];
                             stream?: null | boolean;
                             temperature?: null | number;
@@ -10204,6 +10307,12 @@ export interface paths {
                          *               "final_state": "cancelled",
                          *               "name": "topP",
                          *               "origin": "request"
+                         *             },
+                         *             {
+                         *               "filter_reason": "field_not_supported_by_provider",
+                         *               "final_state": "filtered",
+                         *               "name": "responseFormat",
+                         *               "origin": "instance"
                          *             }
                          *           ],
                          *           "history_normalization": {
@@ -10416,6 +10525,7 @@ export interface paths {
                          *             "tool_list": {
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
+                         *               "placement_mode": "contributor_chain",
                          *               "tool_count": 2
                          *             }
                          *           },
@@ -10558,6 +10668,12 @@ export interface paths {
                              *             "final_state": "cancelled",
                              *             "name": "topP",
                              *             "origin": "request"
+                             *           },
+                             *           {
+                             *             "filter_reason": "field_not_supported_by_provider",
+                             *             "final_state": "filtered",
+                             *             "name": "responseFormat",
+                             *             "origin": "instance"
                              *           }
                              *         ],
                              *         "history_normalization": {
@@ -10770,6 +10886,7 @@ export interface paths {
                              *           "tool_list": {
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
+                             *             "placement_mode": "contributor_chain",
                              *             "tool_count": 2
                              *           }
                              *         },
@@ -10969,6 +11086,12 @@ export interface paths {
                                  *           "final_state": "cancelled",
                                  *           "name": "topP",
                                  *           "origin": "request"
+                                 *         },
+                                 *         {
+                                 *           "filter_reason": "field_not_supported_by_provider",
+                                 *           "final_state": "filtered",
+                                 *           "name": "responseFormat",
+                                 *           "origin": "instance"
                                  *         }
                                  *       ],
                                  *       "history_normalization": {
@@ -11181,6 +11304,7 @@ export interface paths {
                                  *         "tool_list": {
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
+                                 *           "placement_mode": "contributor_chain",
                                  *           "tool_count": 2
                                  *         }
                                  *       },
@@ -11224,9 +11348,11 @@ export interface paths {
                                         /** @enum {string} */
                                         cancelled_at?: "profile" | "instance" | "request";
                                         /** @enum {string} */
-                                        final_state: "sent" | "absent" | "cancelled";
+                                        filter_reason?: "field_not_supported_by_provider";
                                         /** @enum {string} */
-                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
                                         /** @enum {string} */
                                         origin: "profile" | "instance" | "request" | "default" | "absent";
                                         /** @enum {string} */
@@ -11282,13 +11408,15 @@ export interface paths {
                                         items: {
                                             applied: boolean;
                                             content_length: number;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            enabled: boolean | null;
+                                            injection_id: string | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                             order_requested: number;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
-                                            scope: "request";
+                                            scope: "request" | "session" | "branch";
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -11504,14 +11632,18 @@ export interface paths {
                                         };
                                         selection: {
                                             /** @enum {string} */
-                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
                                             reason_detail?: string;
                                             /** @enum {string} */
                                             transport: "native_function_call" | "text_protocol" | "none";
                                         };
+                                        streaming_tool_call_unsupported?: boolean;
+                                        tool_choice_applied?: boolean;
                                         tool_list?: {
                                             contributor_id?: string;
                                             injected: boolean;
+                                            /** @enum {string} */
+                                            placement_mode?: "strict_fixed" | "contributor_chain";
                                             tool_count: number;
                                         };
                                     };
@@ -16486,6 +16618,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{id}/prompt-runtime/branches/{branchId}/injections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List branch prompt runtime injections */
+        get: operations["listSessionPromptRuntimeBranchInjections"];
+        put?: never;
+        /** Create branch prompt runtime injection */
+        post: operations["createSessionPromptRuntimeBranchInjection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime/branches/{branchId}/injections/{injectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete branch prompt runtime injection */
+        delete: operations["deleteSessionPromptRuntimeBranchInjection"];
+        options?: never;
+        head?: never;
+        /** Patch branch prompt runtime injection */
+        patch: operations["patchSessionPromptRuntimeBranchInjection"];
+        trace?: never;
+    };
     "/sessions/{id}/prompt-runtime/branches/{branchId}/policy": {
         parameters: {
             query?: never;
@@ -16519,6 +16687,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime/injections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List session prompt runtime injections */
+        get: operations["listSessionPromptRuntimeInjections"];
+        put?: never;
+        /** Create session prompt runtime injection */
+        post: operations["createSessionPromptRuntimeInjection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{id}/prompt-runtime/injections/{injectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete session prompt runtime injection */
+        delete: operations["deleteSessionPromptRuntimeInjection"];
+        options?: never;
+        head?: never;
+        /** Patch session prompt runtime injection */
+        patch: operations["patchSessionPromptRuntimeInjection"];
         trace?: never;
     };
     "/sessions/{id}/prompt-runtime/inspect": {
@@ -16637,8 +16841,20 @@ export interface paths {
                      *         "require_last_user": true
                      *       },
                      *       "generation_params": {
+                     *         "logit_bias": {
+                     *           "42": -5
+                     *         },
                      *         "max_output_tokens": 256,
+                     *         "min_p": 0.05,
                      *         "reasoning_effort": "low",
+                     *         "repetition_penalty": 1.1,
+                     *         "response_format": {
+                     *           "json_schema": {
+                     *             "type": "object"
+                     *           },
+                     *           "type": "json_schema"
+                     *         },
+                     *         "seed": 42,
                      *         "temperature": 0.7,
                      *         "top_p": 0.9
                      *       },
@@ -16708,18 +16924,43 @@ export interface paths {
                         };
                         /**
                          * @example {
+                         *       "logit_bias": {
+                         *         "42": -5
+                         *       },
                          *       "max_output_tokens": 256,
+                         *       "min_p": 0.05,
                          *       "reasoning_effort": "low",
+                         *       "repetition_penalty": 1.1,
+                         *       "response_format": {
+                         *         "json_schema": {
+                         *           "type": "object"
+                         *         },
+                         *         "type": "json_schema"
+                         *       },
+                         *       "seed": 42,
                          *       "temperature": 0.7,
                          *       "top_p": 0.9
                          *     }
                          */
                         generation_params?: {
                             frequency_penalty?: null | number;
+                            logit_bias?: {
+                                [key: string]: number;
+                            } | null;
                             max_output_tokens?: null | number;
+                            min_p?: null | number;
                             presence_penalty?: null | number;
                             /** @enum {null|string} */
                             reasoning_effort?: "low" | "medium" | "high" | null;
+                            repetition_penalty?: null | number;
+                            response_format?: {
+                                json_schema?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                type: "text" | "json_object" | "json_schema";
+                            } | null;
+                            seed?: null | number;
                             stop_sequences?: null | string[];
                             stream?: null | boolean;
                             temperature?: null | number;
@@ -16902,6 +17143,12 @@ export interface paths {
                          *               "final_state": "cancelled",
                          *               "name": "topP",
                          *               "origin": "request"
+                         *             },
+                         *             {
+                         *               "filter_reason": "field_not_supported_by_provider",
+                         *               "final_state": "filtered",
+                         *               "name": "responseFormat",
+                         *               "origin": "instance"
                          *             }
                          *           ],
                          *           "history_normalization": {
@@ -17114,6 +17361,7 @@ export interface paths {
                          *             "tool_list": {
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
+                         *               "placement_mode": "contributor_chain",
                          *               "tool_count": 2
                          *             }
                          *           },
@@ -17254,6 +17502,12 @@ export interface paths {
                              *             "final_state": "cancelled",
                              *             "name": "topP",
                              *             "origin": "request"
+                             *           },
+                             *           {
+                             *             "filter_reason": "field_not_supported_by_provider",
+                             *             "final_state": "filtered",
+                             *             "name": "responseFormat",
+                             *             "origin": "instance"
                              *           }
                              *         ],
                              *         "history_normalization": {
@@ -17466,6 +17720,7 @@ export interface paths {
                              *           "tool_list": {
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
+                             *             "placement_mode": "contributor_chain",
                              *             "tool_count": 2
                              *           }
                              *         },
@@ -17663,6 +17918,12 @@ export interface paths {
                                  *           "final_state": "cancelled",
                                  *           "name": "topP",
                                  *           "origin": "request"
+                                 *         },
+                                 *         {
+                                 *           "filter_reason": "field_not_supported_by_provider",
+                                 *           "final_state": "filtered",
+                                 *           "name": "responseFormat",
+                                 *           "origin": "instance"
                                  *         }
                                  *       ],
                                  *       "history_normalization": {
@@ -17875,6 +18136,7 @@ export interface paths {
                                  *         "tool_list": {
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
+                                 *           "placement_mode": "contributor_chain",
                                  *           "tool_count": 2
                                  *         }
                                  *       },
@@ -17918,9 +18180,11 @@ export interface paths {
                                         /** @enum {string} */
                                         cancelled_at?: "profile" | "instance" | "request";
                                         /** @enum {string} */
-                                        final_state: "sent" | "absent" | "cancelled";
+                                        filter_reason?: "field_not_supported_by_provider";
                                         /** @enum {string} */
-                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
                                         /** @enum {string} */
                                         origin: "profile" | "instance" | "request" | "default" | "absent";
                                         /** @enum {string} */
@@ -17976,13 +18240,15 @@ export interface paths {
                                         items: {
                                             applied: boolean;
                                             content_length: number;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            enabled: boolean | null;
+                                            injection_id: string | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                             order_requested: number;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
-                                            scope: "request";
+                                            scope: "request" | "session" | "branch";
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -18198,14 +18464,18 @@ export interface paths {
                                         };
                                         selection: {
                                             /** @enum {string} */
-                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
                                             reason_detail?: string;
                                             /** @enum {string} */
                                             transport: "native_function_call" | "text_protocol" | "none";
                                         };
+                                        streaming_tool_call_unsupported?: boolean;
+                                        tool_choice_applied?: boolean;
                                         tool_list?: {
                                             contributor_id?: string;
                                             injected: boolean;
+                                            /** @enum {string} */
+                                            placement_mode?: "strict_fixed" | "contributor_chain";
                                             tool_count: number;
                                         };
                                     };
@@ -18446,8 +18716,20 @@ export interface paths {
                      *         "require_last_user": false
                      *       },
                      *       "generation_params": {
+                     *         "logit_bias": {
+                     *           "42": -5
+                     *         },
                      *         "max_output_tokens": 256,
+                     *         "min_p": 0.05,
                      *         "reasoning_effort": "low",
+                     *         "repetition_penalty": 1.1,
+                     *         "response_format": {
+                     *           "json_schema": {
+                     *             "type": "object"
+                     *           },
+                     *           "type": "json_schema"
+                     *         },
+                     *         "seed": 42,
                      *         "temperature": 0.7,
                      *         "top_p": 0.9
                      *       },
@@ -18518,18 +18800,43 @@ export interface paths {
                         };
                         /**
                          * @example {
+                         *       "logit_bias": {
+                         *         "42": -5
+                         *       },
                          *       "max_output_tokens": 256,
+                         *       "min_p": 0.05,
                          *       "reasoning_effort": "low",
+                         *       "repetition_penalty": 1.1,
+                         *       "response_format": {
+                         *         "json_schema": {
+                         *           "type": "object"
+                         *         },
+                         *         "type": "json_schema"
+                         *       },
+                         *       "seed": 42,
                          *       "temperature": 0.7,
                          *       "top_p": 0.9
                          *     }
                          */
                         generation_params?: {
                             frequency_penalty?: null | number;
+                            logit_bias?: {
+                                [key: string]: number;
+                            } | null;
                             max_output_tokens?: null | number;
+                            min_p?: null | number;
                             presence_penalty?: null | number;
                             /** @enum {null|string} */
                             reasoning_effort?: "low" | "medium" | "high" | null;
+                            repetition_penalty?: null | number;
+                            response_format?: {
+                                json_schema?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                type: "text" | "json_object" | "json_schema";
+                            } | null;
+                            seed?: null | number;
                             stop_sequences?: null | string[];
                             stream?: null | boolean;
                             temperature?: null | number;
@@ -18716,6 +19023,12 @@ export interface paths {
                          *               "final_state": "cancelled",
                          *               "name": "topP",
                          *               "origin": "request"
+                         *             },
+                         *             {
+                         *               "filter_reason": "field_not_supported_by_provider",
+                         *               "final_state": "filtered",
+                         *               "name": "responseFormat",
+                         *               "origin": "instance"
                          *             }
                          *           ],
                          *           "history_normalization": {
@@ -18928,6 +19241,7 @@ export interface paths {
                          *             "tool_list": {
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
+                         *               "placement_mode": "contributor_chain",
                          *               "tool_count": 2
                          *             }
                          *           },
@@ -19068,6 +19382,12 @@ export interface paths {
                              *             "final_state": "cancelled",
                              *             "name": "topP",
                              *             "origin": "request"
+                             *           },
+                             *           {
+                             *             "filter_reason": "field_not_supported_by_provider",
+                             *             "final_state": "filtered",
+                             *             "name": "responseFormat",
+                             *             "origin": "instance"
                              *           }
                              *         ],
                              *         "history_normalization": {
@@ -19280,6 +19600,7 @@ export interface paths {
                              *           "tool_list": {
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
+                             *             "placement_mode": "contributor_chain",
                              *             "tool_count": 2
                              *           }
                              *         },
@@ -19477,6 +19798,12 @@ export interface paths {
                                  *           "final_state": "cancelled",
                                  *           "name": "topP",
                                  *           "origin": "request"
+                                 *         },
+                                 *         {
+                                 *           "filter_reason": "field_not_supported_by_provider",
+                                 *           "final_state": "filtered",
+                                 *           "name": "responseFormat",
+                                 *           "origin": "instance"
                                  *         }
                                  *       ],
                                  *       "history_normalization": {
@@ -19689,6 +20016,7 @@ export interface paths {
                                  *         "tool_list": {
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
+                                 *           "placement_mode": "contributor_chain",
                                  *           "tool_count": 2
                                  *         }
                                  *       },
@@ -19732,9 +20060,11 @@ export interface paths {
                                         /** @enum {string} */
                                         cancelled_at?: "profile" | "instance" | "request";
                                         /** @enum {string} */
-                                        final_state: "sent" | "absent" | "cancelled";
+                                        filter_reason?: "field_not_supported_by_provider";
                                         /** @enum {string} */
-                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
                                         /** @enum {string} */
                                         origin: "profile" | "instance" | "request" | "default" | "absent";
                                         /** @enum {string} */
@@ -19790,13 +20120,15 @@ export interface paths {
                                         items: {
                                             applied: boolean;
                                             content_length: number;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            enabled: boolean | null;
+                                            injection_id: string | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                             order_requested: number;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
-                                            scope: "request";
+                                            scope: "request" | "session" | "branch";
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -20012,14 +20344,18 @@ export interface paths {
                                         };
                                         selection: {
                                             /** @enum {string} */
-                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
                                             reason_detail?: string;
                                             /** @enum {string} */
                                             transport: "native_function_call" | "text_protocol" | "none";
                                         };
+                                        streaming_tool_call_unsupported?: boolean;
+                                        tool_choice_applied?: boolean;
                                         tool_list?: {
                                             contributor_id?: string;
                                             injected: boolean;
+                                            /** @enum {string} */
+                                            placement_mode?: "strict_fixed" | "contributor_chain";
                                             tool_count: number;
                                         };
                                     };
@@ -21532,9 +21868,11 @@ export interface paths {
                                         /** @enum {string} */
                                         cancelled_at?: "profile" | "instance" | "request";
                                         /** @enum {string} */
-                                        final_state: "sent" | "absent" | "cancelled";
+                                        filter_reason?: "field_not_supported_by_provider";
                                         /** @enum {string} */
-                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
                                         /** @enum {string} */
                                         origin: "profile" | "instance" | "request" | "default" | "absent";
                                         /** @enum {string} */
@@ -21590,13 +21928,15 @@ export interface paths {
                                         items: {
                                             applied: boolean;
                                             content_length: number;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            enabled: boolean | null;
+                                            injection_id: string | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                             order_requested: number;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
-                                            scope: "request";
+                                            scope: "request" | "session" | "branch";
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -21812,14 +22152,18 @@ export interface paths {
                                         };
                                         selection: {
                                             /** @enum {string} */
-                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
                                             reason_detail?: string;
                                             /** @enum {string} */
                                             transport: "native_function_call" | "text_protocol" | "none";
                                         };
+                                        streaming_tool_call_unsupported?: boolean;
+                                        tool_choice_applied?: boolean;
                                         tool_list?: {
                                             contributor_id?: string;
                                             injected: boolean;
+                                            /** @enum {string} */
+                                            placement_mode?: "strict_fixed" | "contributor_chain";
                                             tool_count: number;
                                         };
                                     };
@@ -22004,8 +22348,20 @@ export interface paths {
                      *         "require_last_user": false
                      *       },
                      *       "generation_params": {
+                     *         "logit_bias": {
+                     *           "42": -5
+                     *         },
                      *         "max_output_tokens": 256,
+                     *         "min_p": 0.05,
                      *         "reasoning_effort": "low",
+                     *         "repetition_penalty": 1.1,
+                     *         "response_format": {
+                     *           "json_schema": {
+                     *             "type": "object"
+                     *           },
+                     *           "type": "json_schema"
+                     *         },
+                     *         "seed": 42,
                      *         "temperature": 0.7,
                      *         "top_p": 0.9
                      *       },
@@ -22076,18 +22432,43 @@ export interface paths {
                         };
                         /**
                          * @example {
+                         *       "logit_bias": {
+                         *         "42": -5
+                         *       },
                          *       "max_output_tokens": 256,
+                         *       "min_p": 0.05,
                          *       "reasoning_effort": "low",
+                         *       "repetition_penalty": 1.1,
+                         *       "response_format": {
+                         *         "json_schema": {
+                         *           "type": "object"
+                         *         },
+                         *         "type": "json_schema"
+                         *       },
+                         *       "seed": 42,
                          *       "temperature": 0.7,
                          *       "top_p": 0.9
                          *     }
                          */
                         generation_params?: {
                             frequency_penalty?: null | number;
+                            logit_bias?: {
+                                [key: string]: number;
+                            } | null;
                             max_output_tokens?: null | number;
+                            min_p?: null | number;
                             presence_penalty?: null | number;
                             /** @enum {null|string} */
                             reasoning_effort?: "low" | "medium" | "high" | null;
+                            repetition_penalty?: null | number;
+                            response_format?: {
+                                json_schema?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                type: "text" | "json_object" | "json_schema";
+                            } | null;
+                            seed?: null | number;
                             stop_sequences?: null | string[];
                             stream?: null | boolean;
                             temperature?: null | number;
@@ -28979,12 +29360,24 @@ export interface operations {
                      * @example {
                      *       "data": [
                      *         {
+                     *           "capabilities": {
+                     *             "supports_function_call": false,
+                     *             "supports_streaming_tool_call": false,
+                     *             "supports_tool_choice": false,
+                     *             "unsupported_generation_params": [
+                     *               "stopSequences"
+                     *             ]
+                     *           },
                      *           "created_at": 1735689600000,
                      *           "enabled": true,
                      *           "id": "ic_demo123",
                      *           "instance_slot": "narrator",
+                     *           "model_id_override": "gpt-4.1-mini",
                      *           "params": {
                      *             "max_output_tokens": 1024,
+                     *             "stop_sequences": [
+                     *               "DONE"
+                     *             ],
                      *             "temperature": 0.8
                      *           },
                      *           "preset_id": null,
@@ -28997,19 +29390,40 @@ export interface operations {
                      */
                     "application/json": {
                         data: {
+                            capabilities: {
+                                supports_function_call?: boolean;
+                                supports_streaming_tool_call?: boolean;
+                                supports_tool_choice?: boolean;
+                                unsupported_generation_params?: string[];
+                            } | null;
                             created_at: number;
                             enabled: boolean;
                             id: string;
                             /** @enum {string} */
                             instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
-                            params?: {
+                            model_id_override: string | null;
+                            params: {
                                 frequency_penalty?: number | null;
+                                logit_bias?: {
+                                    [key: string]: number;
+                                } | null;
                                 max_context_tokens?: number | null;
                                 max_output_tokens?: number | null;
                                 max_retries?: number | null;
+                                min_p?: number | null;
                                 presence_penalty?: number | null;
                                 /** @enum {string|null} */
                                 reasoning_effort?: "low" | "medium" | "high" | null;
+                                repetition_penalty?: number | null;
+                                response_format?: {
+                                    json_schema?: {
+                                        [key: string]: unknown;
+                                    };
+                                    /** @enum {string} */
+                                    type: "text" | "json_object" | "json_schema";
+                                } | null;
+                                seed?: number | null;
+                                stop_sequences?: string[] | null;
                                 stream?: boolean | null;
                                 temperature?: number | null;
                                 timeout_ms?: number | null;
@@ -29069,12 +29483,24 @@ export interface operations {
                      * @example {
                      *       "data": [
                      *         {
+                     *           "capabilities": {
+                     *             "supports_function_call": false,
+                     *             "supports_streaming_tool_call": false,
+                     *             "supports_tool_choice": false,
+                     *             "unsupported_generation_params": [
+                     *               "stopSequences"
+                     *             ]
+                     *           },
                      *           "created_at": 1735689600000,
                      *           "enabled": true,
                      *           "id": "ic_demo123",
                      *           "instance_slot": "narrator",
+                     *           "model_id_override": "gpt-4.1-mini",
                      *           "params": {
                      *             "max_output_tokens": 1024,
+                     *             "stop_sequences": [
+                     *               "DONE"
+                     *             ],
                      *             "temperature": 0.8
                      *           },
                      *           "preset_id": null,
@@ -29087,19 +29513,40 @@ export interface operations {
                      */
                     "application/json": {
                         data: {
+                            capabilities: {
+                                supports_function_call?: boolean;
+                                supports_streaming_tool_call?: boolean;
+                                supports_tool_choice?: boolean;
+                                unsupported_generation_params?: string[];
+                            } | null;
                             created_at: number;
                             enabled: boolean;
                             id: string;
                             /** @enum {string} */
                             instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
-                            params?: {
+                            model_id_override: string | null;
+                            params: {
                                 frequency_penalty?: number | null;
+                                logit_bias?: {
+                                    [key: string]: number;
+                                } | null;
                                 max_context_tokens?: number | null;
                                 max_output_tokens?: number | null;
                                 max_retries?: number | null;
+                                min_p?: number | null;
                                 presence_penalty?: number | null;
                                 /** @enum {string|null} */
                                 reasoning_effort?: "low" | "medium" | "high" | null;
+                                repetition_penalty?: number | null;
+                                response_format?: {
+                                    json_schema?: {
+                                        [key: string]: unknown;
+                                    };
+                                    /** @enum {string} */
+                                    type: "text" | "json_object" | "json_schema";
+                                } | null;
+                                seed?: number | null;
+                                stop_sequences?: string[] | null;
                                 stream?: boolean | null;
                                 temperature?: number | null;
                                 timeout_ms?: number | null;
@@ -29148,9 +29595,19 @@ export interface operations {
             content: {
                 /**
                  * @example {
+                 *       "capabilities": {
+                 *         "supports_function_call": false,
+                 *         "unsupported_generation_params": [
+                 *           "stopSequences"
+                 *         ]
+                 *       },
                  *       "enabled": true,
+                 *       "model_id_override": "gpt-4.1-mini",
                  *       "params": {
                  *         "max_output_tokens": 1024,
+                 *         "stop_sequences": [
+                 *           "DONE"
+                 *         ],
                  *         "temperature": 0.8
                  *       },
                  *       "preset_id": null,
@@ -29158,15 +29615,36 @@ export interface operations {
                  *     }
                  */
                 "application/json": {
+                    capabilities?: {
+                        supports_function_call?: boolean;
+                        supports_streaming_tool_call?: boolean;
+                        supports_tool_choice?: boolean;
+                        unsupported_generation_params?: string[];
+                    } | null;
                     enabled?: boolean;
+                    model_id_override?: string | null;
                     params?: {
                         frequency_penalty?: number | null;
+                        logit_bias?: {
+                            [key: string]: number;
+                        } | null;
                         max_context_tokens?: number | null;
                         max_output_tokens?: number | null;
                         max_retries?: number | null;
+                        min_p?: number | null;
                         presence_penalty?: number | null;
                         /** @enum {string|null} */
                         reasoning_effort?: "low" | "medium" | "high" | null;
+                        repetition_penalty?: number | null;
+                        response_format?: {
+                            json_schema?: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            type: "text" | "json_object" | "json_schema";
+                        } | null;
+                        seed?: number | null;
+                        stop_sequences?: string[] | null;
                         stream?: boolean | null;
                         temperature?: number | null;
                         timeout_ms?: number | null;
@@ -29178,15 +29656,36 @@ export interface operations {
                     scope?: "global";
                     session_id?: string;
                 } | {
+                    capabilities?: {
+                        supports_function_call?: boolean;
+                        supports_streaming_tool_call?: boolean;
+                        supports_tool_choice?: boolean;
+                        unsupported_generation_params?: string[];
+                    } | null;
                     enabled?: boolean;
+                    model_id_override?: string | null;
                     params?: {
                         frequency_penalty?: number | null;
+                        logit_bias?: {
+                            [key: string]: number;
+                        } | null;
                         max_context_tokens?: number | null;
                         max_output_tokens?: number | null;
                         max_retries?: number | null;
+                        min_p?: number | null;
                         presence_penalty?: number | null;
                         /** @enum {string|null} */
                         reasoning_effort?: "low" | "medium" | "high" | null;
+                        repetition_penalty?: number | null;
+                        response_format?: {
+                            json_schema?: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            type: "text" | "json_object" | "json_schema";
+                        } | null;
+                        seed?: number | null;
+                        stop_sequences?: string[] | null;
                         stream?: boolean | null;
                         temperature?: number | null;
                         timeout_ms?: number | null;
@@ -29210,12 +29709,24 @@ export interface operations {
                     /**
                      * @example {
                      *       "data": {
+                     *         "capabilities": {
+                     *           "supports_function_call": false,
+                     *           "supports_streaming_tool_call": false,
+                     *           "supports_tool_choice": false,
+                     *           "unsupported_generation_params": [
+                     *             "stopSequences"
+                     *           ]
+                     *         },
                      *         "created_at": 1735689600000,
                      *         "enabled": true,
                      *         "id": "ic_demo123",
                      *         "instance_slot": "narrator",
+                     *         "model_id_override": "gpt-4.1-mini",
                      *         "params": {
                      *           "max_output_tokens": 1024,
+                     *           "stop_sequences": [
+                     *             "DONE"
+                     *           ],
                      *           "temperature": 0.8
                      *         },
                      *         "preset_id": null,
@@ -29227,19 +29738,40 @@ export interface operations {
                      */
                     "application/json": {
                         data: {
+                            capabilities: {
+                                supports_function_call?: boolean;
+                                supports_streaming_tool_call?: boolean;
+                                supports_tool_choice?: boolean;
+                                unsupported_generation_params?: string[];
+                            } | null;
                             created_at: number;
                             enabled: boolean;
                             id: string;
                             /** @enum {string} */
                             instance_slot: "*" | "narrator" | "director" | "verifier" | "memory";
-                            params?: {
+                            model_id_override: string | null;
+                            params: {
                                 frequency_penalty?: number | null;
+                                logit_bias?: {
+                                    [key: string]: number;
+                                } | null;
                                 max_context_tokens?: number | null;
                                 max_output_tokens?: number | null;
                                 max_retries?: number | null;
+                                min_p?: number | null;
                                 presence_penalty?: number | null;
                                 /** @enum {string|null} */
                                 reasoning_effort?: "low" | "medium" | "high" | null;
+                                repetition_penalty?: number | null;
+                                response_format?: {
+                                    json_schema?: {
+                                        [key: string]: unknown;
+                                    };
+                                    /** @enum {string} */
+                                    type: "text" | "json_object" | "json_schema";
+                                } | null;
+                                seed?: number | null;
+                                stop_sequences?: string[] | null;
                                 stream?: boolean | null;
                                 temperature?: number | null;
                                 timeout_ms?: number | null;
@@ -29373,10 +29905,22 @@ export interface operations {
                      *         "session_id": null,
                      *         "slots": [
                      *           {
+                     *             "capabilities": {
+                     *               "supports_function_call": false,
+                     *               "supports_streaming_tool_call": false,
+                     *               "supports_tool_choice": false,
+                     *               "unsupported_generation_params": [
+                     *                 "stopSequences"
+                     *               ]
+                     *             },
                      *             "config_id": "ic_demo123",
                      *             "enabled": true,
+                     *             "model_id_override": "gpt-4.1-mini",
                      *             "params": {
                      *               "max_output_tokens": 1024,
+                     *               "stop_sequences": [
+                     *                 "DONE"
+                     *               ],
                      *               "temperature": 0.8
                      *             },
                      *             "preset_id": null,
@@ -29392,16 +29936,37 @@ export interface operations {
                         data: {
                             session_id?: string | null;
                             slots: {
+                                capabilities: {
+                                    supports_function_call?: boolean;
+                                    supports_streaming_tool_call?: boolean;
+                                    supports_tool_choice?: boolean;
+                                    unsupported_generation_params?: string[];
+                                };
                                 config_id?: string | null;
                                 enabled: boolean;
-                                params?: {
+                                model_id_override: string | null;
+                                params: {
                                     frequency_penalty?: number | null;
+                                    logit_bias?: {
+                                        [key: string]: number;
+                                    } | null;
                                     max_context_tokens?: number | null;
                                     max_output_tokens?: number | null;
                                     max_retries?: number | null;
+                                    min_p?: number | null;
                                     presence_penalty?: number | null;
                                     /** @enum {string|null} */
                                     reasoning_effort?: "low" | "medium" | "high" | null;
+                                    repetition_penalty?: number | null;
+                                    response_format?: {
+                                        json_schema?: {
+                                            [key: string]: unknown;
+                                        };
+                                        /** @enum {string} */
+                                        type: "text" | "json_object" | "json_schema";
+                                    } | null;
+                                    seed?: number | null;
+                                    stop_sequences?: string[] | null;
                                     stream?: boolean | null;
                                     temperature?: number | null;
                                     timeout_ms?: number | null;
@@ -30031,12 +30596,26 @@ export interface operations {
                     instance_slot?: "*" | "narrator" | "director" | "verifier" | "memory";
                     params?: {
                         frequency_penalty?: number | null;
+                        logit_bias?: {
+                            [key: string]: number;
+                        } | null;
                         max_context_tokens?: number | null;
                         max_output_tokens?: number | null;
                         max_retries?: number | null;
+                        min_p?: number | null;
                         presence_penalty?: number | null;
                         /** @enum {string|null} */
                         reasoning_effort?: "low" | "medium" | "high" | null;
+                        repetition_penalty?: number | null;
+                        response_format?: {
+                            json_schema?: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            type: "text" | "json_object" | "json_schema";
+                        } | null;
+                        seed?: number | null;
+                        stop_sequences?: string[] | null;
                         stream?: boolean | null;
                         temperature?: number | null;
                         timeout_ms?: number | null;
@@ -30051,12 +30630,26 @@ export interface operations {
                     instance_slot?: "*" | "narrator" | "director" | "verifier" | "memory";
                     params?: {
                         frequency_penalty?: number | null;
+                        logit_bias?: {
+                            [key: string]: number;
+                        } | null;
                         max_context_tokens?: number | null;
                         max_output_tokens?: number | null;
                         max_retries?: number | null;
+                        min_p?: number | null;
                         presence_penalty?: number | null;
                         /** @enum {string|null} */
                         reasoning_effort?: "low" | "medium" | "high" | null;
+                        repetition_penalty?: number | null;
+                        response_format?: {
+                            json_schema?: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            type: "text" | "json_object" | "json_schema";
+                        } | null;
+                        seed?: number | null;
+                        stop_sequences?: string[] | null;
                         stream?: boolean | null;
                         temperature?: number | null;
                         timeout_ms?: number | null;
@@ -30099,12 +30692,26 @@ export interface operations {
                             instance_slot: string;
                             params: {
                                 frequency_penalty?: number | null;
+                                logit_bias?: {
+                                    [key: string]: number;
+                                } | null;
                                 max_context_tokens?: number | null;
                                 max_output_tokens?: number | null;
                                 max_retries?: number | null;
+                                min_p?: number | null;
                                 presence_penalty?: number | null;
                                 /** @enum {string|null} */
                                 reasoning_effort?: "low" | "medium" | "high" | null;
+                                repetition_penalty?: number | null;
+                                response_format?: {
+                                    json_schema?: {
+                                        [key: string]: unknown;
+                                    };
+                                    /** @enum {string} */
+                                    type: "text" | "json_object" | "json_schema";
+                                } | null;
+                                seed?: number | null;
+                                stop_sequences?: string[] | null;
                                 stream?: boolean | null;
                                 temperature?: number | null;
                                 timeout_ms?: number | null;
@@ -30475,12 +31082,26 @@ export interface operations {
                                 model_id: string;
                                 params: {
                                     frequency_penalty?: number | null;
+                                    logit_bias?: {
+                                        [key: string]: number;
+                                    } | null;
                                     max_context_tokens?: number | null;
                                     max_output_tokens?: number | null;
                                     max_retries?: number | null;
+                                    min_p?: number | null;
                                     presence_penalty?: number | null;
                                     /** @enum {string|null} */
                                     reasoning_effort?: "low" | "medium" | "high" | null;
+                                    repetition_penalty?: number | null;
+                                    response_format?: {
+                                        json_schema?: {
+                                            [key: string]: unknown;
+                                        };
+                                        /** @enum {string} */
+                                        type: "text" | "json_object" | "json_schema";
+                                    } | null;
+                                    seed?: number | null;
+                                    stop_sequences?: string[] | null;
                                     stream?: boolean | null;
                                     temperature?: number | null;
                                     timeout_ms?: number | null;
@@ -36765,6 +37386,16 @@ export interface operations {
                      *             "/messages/:id/prompt-runtime"
                      *           ]
                      *         },
+                     *         "injections": {
+                     *           "branch": {
+                     *             "enabled": 1,
+                     *             "total": 2
+                     *           },
+                     *           "session": {
+                     *             "enabled": 1,
+                     *             "total": 1
+                     *           }
+                     *         },
                      *         "limitations": [
                      *           "Memory is branch-aware. Current limitations center on page-local proposal / promotion coverage for older committed floors and legacy fallback rows.",
                      *           "Variable commit remains page -> floor. Branch promotion is not automatic."
@@ -37016,6 +37647,16 @@ export interface operations {
                                 severity: "info" | "warning" | "error";
                                 source?: string;
                             }[];
+                            injections: {
+                                branch: {
+                                    enabled: number;
+                                    total: number;
+                                };
+                                session: {
+                                    enabled: number;
+                                    total: number;
+                                };
+                            };
                             limitations: string[];
                             mode: {
                                 /** @enum {string} */
@@ -37371,6 +38012,518 @@ export interface operations {
                                 version_id?: string | null;
                                 version_no?: number | null;
                             } | null;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    listSessionPromptRuntimeBranchInjections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "content": "Keep the north pass in focus.",
+                     *           "created_at": 1710000004600,
+                     *           "created_by": "user-1",
+                     *           "enabled": true,
+                     *           "id": "inj_1",
+                     *           "mode_scope": null,
+                     *           "order": 100,
+                     *           "placement": "before_history",
+                     *           "scope": "session",
+                     *           "source_kind": "client_injection",
+                     *           "title": "History guard",
+                     *           "ttl_ms": null,
+                     *           "updated_at": 1710000004700
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createSessionPromptRuntimeBranchInjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branchId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "content": "Keep the north pass in focus.",
+                 *       "enabled": true,
+                 *       "mode_scope": null,
+                 *       "order": 100,
+                 *       "placement": "before_history",
+                 *       "source_kind": "client_injection",
+                 *       "title": "History guard",
+                 *       "ttl_ms": null
+                 *     }
+                 */
+                "application/json": {
+                    content: string;
+                    enabled?: boolean;
+                    mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
+                    order?: number;
+                    placement: string;
+                    /** @enum {string} */
+                    source_kind: "client_injection";
+                    title: string;
+                    ttl_ms?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "content": "Keep the north pass in focus.",
+                     *         "created_at": 1710000004600,
+                     *         "created_by": "user-1",
+                     *         "enabled": true,
+                     *         "id": "inj_1",
+                     *         "mode_scope": null,
+                     *         "order": 100,
+                     *         "placement": "before_history",
+                     *         "scope": "session",
+                     *         "source_kind": "client_injection",
+                     *         "title": "History guard",
+                     *         "ttl_ms": null,
+                     *         "updated_at": 1710000004700
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteSessionPromptRuntimeBranchInjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branchId: string;
+                injectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "content": "Keep the north pass in focus.",
+                     *         "created_at": 1710000004600,
+                     *         "created_by": "user-1",
+                     *         "enabled": true,
+                     *         "id": "inj_1",
+                     *         "mode_scope": null,
+                     *         "order": 100,
+                     *         "placement": "before_history",
+                     *         "scope": "session",
+                     *         "source_kind": "client_injection",
+                     *         "title": "History guard",
+                     *         "ttl_ms": null,
+                     *         "updated_at": 1710000004700
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    patchSessionPromptRuntimeBranchInjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                branchId: string;
+                injectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "enabled": false,
+                 *       "mode_scope": "native",
+                 *       "ttl_ms": 60000
+                 *     }
+                 */
+                "application/json": {
+                    content?: string;
+                    enabled?: boolean;
+                    mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
+                    order?: number;
+                    placement?: string;
+                    /** @enum {string} */
+                    source_kind?: "client_injection";
+                    title?: string;
+                    ttl_ms?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "content": "Keep the north pass in focus.",
+                     *         "created_at": 1710000004600,
+                     *         "created_by": "user-1",
+                     *         "enabled": true,
+                     *         "id": "inj_1",
+                     *         "mode_scope": null,
+                     *         "order": 100,
+                     *         "placement": "before_history",
+                     *         "scope": "session",
+                     *         "source_kind": "client_injection",
+                     *         "title": "History guard",
+                     *         "ttl_ms": null,
+                     *         "updated_at": 1710000004700
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
                         };
                     };
                 };
@@ -38430,6 +39583,514 @@ export interface operations {
             };
         };
     };
+    listSessionPromptRuntimeInjections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "content": "Keep the north pass in focus.",
+                     *           "created_at": 1710000004600,
+                     *           "created_by": "user-1",
+                     *           "enabled": true,
+                     *           "id": "inj_1",
+                     *           "mode_scope": null,
+                     *           "order": 100,
+                     *           "placement": "before_history",
+                     *           "scope": "session",
+                     *           "source_kind": "client_injection",
+                     *           "title": "History guard",
+                     *           "ttl_ms": null,
+                     *           "updated_at": 1710000004700
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        }[];
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createSessionPromptRuntimeInjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "content": "Keep the north pass in focus.",
+                 *       "enabled": true,
+                 *       "mode_scope": null,
+                 *       "order": 100,
+                 *       "placement": "before_history",
+                 *       "source_kind": "client_injection",
+                 *       "title": "History guard",
+                 *       "ttl_ms": null
+                 *     }
+                 */
+                "application/json": {
+                    content: string;
+                    enabled?: boolean;
+                    mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
+                    order?: number;
+                    placement: string;
+                    /** @enum {string} */
+                    source_kind: "client_injection";
+                    title: string;
+                    ttl_ms?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "content": "Keep the north pass in focus.",
+                     *         "created_at": 1710000004600,
+                     *         "created_by": "user-1",
+                     *         "enabled": true,
+                     *         "id": "inj_1",
+                     *         "mode_scope": null,
+                     *         "order": 100,
+                     *         "placement": "before_history",
+                     *         "scope": "session",
+                     *         "source_kind": "client_injection",
+                     *         "title": "History guard",
+                     *         "ttl_ms": null,
+                     *         "updated_at": 1710000004700
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    deleteSessionPromptRuntimeInjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                injectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "content": "Keep the north pass in focus.",
+                     *         "created_at": 1710000004600,
+                     *         "created_by": "user-1",
+                     *         "enabled": true,
+                     *         "id": "inj_1",
+                     *         "mode_scope": null,
+                     *         "order": 100,
+                     *         "placement": "before_history",
+                     *         "scope": "session",
+                     *         "source_kind": "client_injection",
+                     *         "title": "History guard",
+                     *         "ttl_ms": null,
+                     *         "updated_at": 1710000004700
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    patchSessionPromptRuntimeInjection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                injectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "enabled": false,
+                 *       "mode_scope": "native",
+                 *       "ttl_ms": 60000
+                 *     }
+                 */
+                "application/json": {
+                    content?: string;
+                    enabled?: boolean;
+                    mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
+                    order?: number;
+                    placement?: string;
+                    /** @enum {string} */
+                    source_kind?: "client_injection";
+                    title?: string;
+                    ttl_ms?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": {
+                     *         "content": "Keep the north pass in focus.",
+                     *         "created_at": 1710000004600,
+                     *         "created_by": "user-1",
+                     *         "enabled": true,
+                     *         "id": "inj_1",
+                     *         "mode_scope": null,
+                     *         "order": 100,
+                     *         "placement": "before_history",
+                     *         "scope": "session",
+                     *         "source_kind": "client_injection",
+                     *         "title": "History guard",
+                     *         "ttl_ms": null,
+                     *         "updated_at": 1710000004700
+                     *       }
+                     *     }
+                     */
+                    "application/json": {
+                        data: {
+                            content: string;
+                            created_at: number;
+                            created_by: string | null;
+                            enabled: boolean;
+                            id: string;
+                            mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
+                            order: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope: "session" | "branch";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                            ttl_ms: number | null;
+                            updated_at: number;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     inspectSessionPromptRuntime: {
         parameters: {
             query?: never;
@@ -38556,18 +40217,43 @@ export interface operations {
                     };
                     /**
                      * @example {
+                     *       "logit_bias": {
+                     *         "42": -5
+                     *       },
                      *       "max_output_tokens": 256,
+                     *       "min_p": 0.05,
                      *       "reasoning_effort": "low",
+                     *       "repetition_penalty": 1.1,
+                     *       "response_format": {
+                     *         "json_schema": {
+                     *           "type": "object"
+                     *         },
+                     *         "type": "json_schema"
+                     *       },
+                     *       "seed": 42,
                      *       "temperature": 0.7,
                      *       "top_p": 0.9
                      *     }
                      */
                     generation_params?: {
                         frequency_penalty?: null | number;
+                        logit_bias?: {
+                            [key: string]: number;
+                        } | null;
                         max_output_tokens?: null | number;
+                        min_p?: null | number;
                         presence_penalty?: null | number;
                         /** @enum {null|string} */
                         reasoning_effort?: "low" | "medium" | "high" | null;
+                        repetition_penalty?: null | number;
+                        response_format?: {
+                            json_schema?: {
+                                [key: string]: unknown;
+                            };
+                            /** @enum {string} */
+                            type: "text" | "json_object" | "json_schema";
+                        } | null;
+                        seed?: null | number;
                         stop_sequences?: null | string[];
                         stream?: null | boolean;
                         temperature?: null | number;
@@ -39142,6 +40828,7 @@ export interface operations {
                      *               "tool_list": {
                      *                 "contributor_id": "builtin:tool_list",
                      *                 "injected": true,
+                     *                 "placement_mode": "contributor_chain",
                      *                 "tool_count": 2
                      *               }
                      *             },
@@ -39335,13 +41022,15 @@ export interface operations {
                             injections: {
                                 applied: boolean;
                                 content_length: number;
-                                not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                enabled: boolean | null;
+                                injection_id: string | null;
+                                not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                 order_requested: number;
                                 placement_requested: string;
                                 placement_resolved: string | null;
                                 request_index: number;
                                 /** @enum {string} */
-                                scope: "request";
+                                scope: "request" | "session" | "branch";
                                 source_kind: string;
                                 title: string;
                             }[];
@@ -39428,18 +41117,43 @@ export interface operations {
                                 }[];
                                 /**
                                  * @example {
+                                 *       "logit_bias": {
+                                 *         "42": -5
+                                 *       },
                                  *       "max_output_tokens": 256,
+                                 *       "min_p": 0.05,
                                  *       "reasoning_effort": "low",
+                                 *       "repetition_penalty": 1.1,
+                                 *       "response_format": {
+                                 *         "json_schema": {
+                                 *           "type": "object"
+                                 *         },
+                                 *         "type": "json_schema"
+                                 *       },
+                                 *       "seed": 42,
                                  *       "temperature": 0.7,
                                  *       "top_p": 0.9
                                  *     }
                                  */
                                 generation_params: {
                                     frequency_penalty?: null | number;
+                                    logit_bias?: {
+                                        [key: string]: number;
+                                    } | null;
                                     max_output_tokens?: null | number;
+                                    min_p?: null | number;
                                     presence_penalty?: null | number;
                                     /** @enum {null|string} */
                                     reasoning_effort?: "low" | "medium" | "high" | null;
+                                    repetition_penalty?: null | number;
+                                    response_format?: {
+                                        json_schema?: {
+                                            [key: string]: unknown;
+                                        };
+                                        /** @enum {string} */
+                                        type: "text" | "json_object" | "json_schema";
+                                    } | null;
+                                    seed?: null | number;
                                     stop_sequences?: null | string[];
                                     stream?: null | boolean;
                                     temperature?: null | number;
@@ -39644,9 +41358,11 @@ export interface operations {
                                         /** @enum {string} */
                                         cancelled_at?: "profile" | "instance" | "request";
                                         /** @enum {string} */
-                                        final_state: "sent" | "absent" | "cancelled";
+                                        filter_reason?: "field_not_supported_by_provider";
                                         /** @enum {string} */
-                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
                                         /** @enum {string} */
                                         origin: "profile" | "instance" | "request" | "default" | "absent";
                                         /** @enum {string} */
@@ -39702,13 +41418,15 @@ export interface operations {
                                         items: {
                                             applied: boolean;
                                             content_length: number;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                            enabled: boolean | null;
+                                            injection_id: string | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                             order_requested: number;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
-                                            scope: "request";
+                                            scope: "request" | "session" | "branch";
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -39924,14 +41642,18 @@ export interface operations {
                                         };
                                         selection: {
                                             /** @enum {string} */
-                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
                                             reason_detail?: string;
                                             /** @enum {string} */
                                             transport: "native_function_call" | "text_protocol" | "none";
                                         };
+                                        streaming_tool_call_unsupported?: boolean;
+                                        tool_choice_applied?: boolean;
                                         tool_list?: {
                                             contributor_id?: string;
                                             injected: boolean;
+                                            /** @enum {string} */
+                                            placement_mode?: "strict_fixed" | "contributor_chain";
                                             tool_count: number;
                                         };
                                     };
@@ -41577,6 +43299,7 @@ export interface operations {
                      *             "tool_list": {
                      *               "contributor_id": "builtin:tool_list",
                      *               "injected": true,
+                     *               "placement_mode": "contributor_chain",
                      *               "tool_count": 2
                      *             }
                      *           },
@@ -41804,9 +43527,11 @@ export interface operations {
                                     /** @enum {string} */
                                     cancelled_at?: "profile" | "instance" | "request";
                                     /** @enum {string} */
-                                    final_state: "sent" | "absent" | "cancelled";
+                                    filter_reason?: "field_not_supported_by_provider";
                                     /** @enum {string} */
-                                    name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                    final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                    /** @enum {string} */
+                                    name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
                                     /** @enum {string} */
                                     origin: "profile" | "instance" | "request" | "default" | "absent";
                                     /** @enum {string} */
@@ -41862,13 +43587,15 @@ export interface operations {
                                     items: {
                                         applied: boolean;
                                         content_length: number;
-                                        not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent") | null;
+                                        enabled: boolean | null;
+                                        injection_id: string | null;
+                                        not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
                                         order_requested: number;
                                         placement_requested: string;
                                         placement_resolved: string | null;
                                         request_index: number;
                                         /** @enum {string} */
-                                        scope: "request";
+                                        scope: "request" | "session" | "branch";
                                         source_kind: string;
                                         title: string;
                                     }[];
@@ -41983,14 +43710,18 @@ export interface operations {
                                     };
                                     selection: {
                                         /** @enum {string} */
-                                        reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call";
+                                        reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
                                         reason_detail?: string;
                                         /** @enum {string} */
                                         transport: "native_function_call" | "text_protocol" | "none";
                                     };
+                                    streaming_tool_call_unsupported?: boolean;
+                                    tool_choice_applied?: boolean;
                                     tool_list?: {
                                         contributor_id?: string;
                                         injected: boolean;
+                                        /** @enum {string} */
+                                        placement_mode?: "strict_fixed" | "contributor_chain";
                                         tool_count: number;
                                     };
                                 };

@@ -241,6 +241,10 @@ describe("PromptRuntimeControlService", () => {
           name: "Safety Regex",
         },
       },
+      injections: {
+        session: { total: 0, enabled: 0 },
+        branch: { total: 0, enabled: 0 },
+      },
       sourceMap: {
         structure: {
           mode: "session_policy",

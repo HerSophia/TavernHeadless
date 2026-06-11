@@ -9,6 +9,8 @@ import {
   mapPromptSnapshotPayload,
   type PromptLiveDebugOptions,
   type PromptRuntimeInjectionInput,
+  type PromptRuntimeToolTransportKind,
+  type PromptRuntimeToolTransportReasonCode,
   type PromptRuntimeTrace,
   type PromptRuntimeWorldbookFirstMatch,
   type PromptRuntimeWorldbookMatchActivation,
@@ -517,6 +519,16 @@ export type SessionEffectiveConfigView = {
       profileId: string | null;
       override: Record<string, unknown> | null;
     } | null;
+  };
+  toolTransport: {
+    available: Array<Exclude<PromptRuntimeToolTransportKind, "none">>;
+    selected: PromptRuntimeToolTransportKind;
+    reasonCode: PromptRuntimeToolTransportReasonCode;
+    capabilities: {
+      supportsFunctionCall: boolean;
+      supportsToolChoice: boolean;
+      supportsStreamingToolCall: boolean;
+    };
   };
 };
 
@@ -2129,8 +2141,10 @@ function mapSessionEffectiveConfig(value: unknown): SessionEffectiveConfigView |
 
   const llmSource = readString(llmProfile?.source) as SessionEffectiveConfigView["llmProfile"]["source"];
   const mcpSource = readString(mcp?.source) as SessionEffectiveConfigView["mcp"]["source"];
+  const toolTransport = mapSessionEffectiveConfigToolTransport(record.toolTransport);
   if ((llmSource !== "workspace" && llmSource !== "project" && llmSource !== "session")
-    || (mcpSource !== "workspace" && mcpSource !== "project" && mcpSource !== "session")) {
+    || (mcpSource !== "workspace" && mcpSource !== "project" && mcpSource !== "session")
+    || !toolTransport) {
     return null;
   }
 
@@ -2189,6 +2203,45 @@ function mapSessionEffectiveConfig(value: unknown): SessionEffectiveConfigView |
             override: readRecord(sessionOverrideLlm.override),
           }
         : null,
+    },
+    toolTransport,
+  };
+}
+
+function mapSessionEffectiveConfigToolTransport(
+  value: unknown,
+): SessionEffectiveConfigView["toolTransport"] | null {
+  const record = readRecord(value);
+  const capabilities = readRecord(record?.capabilities);
+  const selected = readString(record?.selected);
+  const reasonCode = readString(record?.reasonCode);
+  if (!record || !capabilities) {
+    return null;
+  }
+  if (selected !== "native_function_call" && selected !== "text_protocol" && selected !== "none") {
+    return null;
+  }
+  if (
+    reasonCode !== "explicit_override"
+    && reasonCode !== "override_rejected_by_mode"
+    && reasonCode !== "mode_disallows_transport"
+    && reasonCode !== "tools_disabled"
+    && reasonCode !== "instance_not_supports_function_call"
+    && reasonCode !== "default_native_function_call"
+  ) {
+    return null;
+  }
+
+  return {
+    available: readArray(record.available)
+      .map((item) => readString(item))
+      .filter((item): item is Exclude<PromptRuntimeToolTransportKind, "none"> => item === "native_function_call" || item === "text_protocol"),
+    selected,
+    reasonCode,
+    capabilities: {
+      supportsFunctionCall: readBoolean(capabilities.supportsFunctionCall),
+      supportsToolChoice: readBoolean(capabilities.supportsToolChoice),
+      supportsStreamingToolCall: readBoolean(capabilities.supportsStreamingToolCall),
     },
   };
 }

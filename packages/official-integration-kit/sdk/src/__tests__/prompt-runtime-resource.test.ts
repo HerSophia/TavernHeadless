@@ -129,6 +129,55 @@ const promptRuntimeInjectionResult: PromptRuntimeInjectionResult = {
   placementResolved: "history.before",
 };
 
+const promptRuntimePersistedInjectionPayload = {
+  id: "inj_1",
+  scope: "session",
+  source_kind: "client_injection",
+  title: "History guard",
+  content: "Keep the north pass in focus.",
+  placement: "before_history",
+  order: 100,
+  enabled: true,
+  mode_scope: "native",
+  ttl_ms: 60000,
+  created_by: "user-1",
+  created_at: 1710000004600,
+  updated_at: 1710000004700,
+} as const;
+
+const promptRuntimePersistedInjectionRecord = {
+  id: "inj_1",
+  scope: "session",
+  sourceKind: "client_injection",
+  title: "History guard",
+  content: "Keep the north pass in focus.",
+  placement: "before_history",
+  order: 100,
+  enabled: true,
+  modeScope: "native",
+  ttlMs: 60000,
+  createdBy: "user-1",
+  createdAt: 1710000004600,
+  updatedAt: 1710000004700,
+} as const;
+
+const promptRuntimeBranchInjectionPayload = {
+  ...promptRuntimePersistedInjectionPayload,
+  id: "inj_branch_1",
+  scope: "branch",
+} as const;
+
+const promptRuntimeBranchInjectionRecord = {
+  ...promptRuntimePersistedInjectionRecord,
+  id: "inj_branch_1",
+  scope: "branch",
+} as const;
+
+const promptRuntimeInjectionSummary = {
+  session: { total: 1, enabled: 1 },
+  branch: { total: 2, enabled: 1 },
+} as const;
+
 const generationParamsResolutionPayload = [
   {
     name: "temperature",
@@ -331,6 +380,7 @@ describe("sdk prompt runtime resource", () => {
               },
             },
             branch_persistent_policy: null,
+            injections: promptRuntimeInjectionSummary,
             assets: {
               preset: {
                 id: "preset-1",
@@ -656,6 +706,7 @@ describe("sdk prompt runtime resource", () => {
           name: "Safe Regex",
         },
       },
+      injections: promptRuntimeInjectionSummary,
       warnings: [
         "Session metadata contains an invalid prompt_runtime.policy object. The control plane ignored it.",
       ],
@@ -902,6 +953,136 @@ describe("sdk prompt runtime resource", () => {
     const capabilitiesHeaders = fetchImpl.mock.calls[3]![1]?.headers as Headers;
     expect(sessionHeaders.get("x-account-id")).toBe("acc-1");
     expect(capabilitiesHeaders.get("x-account-id")).toBe("acc-1");
+  });
+
+  it("maps persistent prompt runtime injection CRUD routes", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: [promptRuntimePersistedInjectionPayload] }))
+      .mockResolvedValueOnce(jsonResponse({ data: promptRuntimePersistedInjectionPayload }, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          ...promptRuntimePersistedInjectionPayload,
+          enabled: false,
+          mode_scope: "compat_plus",
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ data: promptRuntimePersistedInjectionPayload }))
+      .mockResolvedValueOnce(jsonResponse({ data: [promptRuntimeBranchInjectionPayload] }))
+      .mockResolvedValueOnce(jsonResponse({ data: promptRuntimeBranchInjectionPayload }, 201))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          ...promptRuntimeBranchInjectionPayload,
+          enabled: false,
+          ttl_ms: null,
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ data: promptRuntimeBranchInjectionPayload }));
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const promptRuntime = createPromptRuntimeResource(transport);
+
+    await expect(promptRuntime.listSessionInjections({
+      sessionId: "session 1",
+      accountId: "acc-1",
+    })).resolves.toEqual([promptRuntimePersistedInjectionRecord]);
+
+    await expect(promptRuntime.createSessionInjection({
+      sessionId: "session 1",
+      accountId: "acc-1",
+      sourceKind: "client_injection",
+      title: "History guard",
+      content: "Keep the north pass in focus.",
+      placement: "before_history",
+      order: 100,
+      enabled: true,
+      modeScope: "native",
+      ttlMs: 60000,
+    })).resolves.toEqual(promptRuntimePersistedInjectionRecord);
+
+    await expect(promptRuntime.patchSessionInjection({
+      sessionId: "session 1",
+      accountId: "acc-1",
+      injectionId: "inj_1",
+      enabled: false,
+      modeScope: "compat_plus",
+    })).resolves.toEqual({
+      ...promptRuntimePersistedInjectionRecord,
+      enabled: false,
+      modeScope: "compat_plus",
+    });
+
+    await expect(promptRuntime.deleteSessionInjection({
+      sessionId: "session 1",
+      accountId: "acc-1",
+      injectionId: "inj_1",
+    })).resolves.toEqual(promptRuntimePersistedInjectionRecord);
+
+    await expect(promptRuntime.listBranchInjections({
+      sessionId: "session 1",
+      branchId: "branch-1",
+      accountId: "acc-1",
+    })).resolves.toEqual([promptRuntimeBranchInjectionRecord]);
+
+    await expect(promptRuntime.createBranchInjection({
+      sessionId: "session 1",
+      branchId: "branch-1",
+      accountId: "acc-1",
+      sourceKind: "client_injection",
+      title: "History guard",
+      content: "Keep the north pass in focus.",
+      placement: "before_history",
+    })).resolves.toEqual(promptRuntimeBranchInjectionRecord);
+
+    await expect(promptRuntime.patchBranchInjection({
+      sessionId: "session 1",
+      branchId: "branch-1",
+      accountId: "acc-1",
+      injectionId: "inj_branch_1",
+      enabled: false,
+      ttlMs: null,
+    })).resolves.toEqual({
+      ...promptRuntimeBranchInjectionRecord,
+      enabled: false,
+      ttlMs: null,
+    });
+
+    await expect(promptRuntime.deleteBranchInjection({
+      sessionId: "session 1",
+      branchId: "branch-1",
+      accountId: "acc-1",
+      injectionId: "inj_branch_1",
+    })).resolves.toEqual(promptRuntimeBranchInjectionRecord);
+
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/injections");
+    expect(fetchImpl.mock.calls[1]![1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]?.body))).toEqual({
+      source_kind: "client_injection",
+      title: "History guard",
+      content: "Keep the north pass in focus.",
+      placement: "before_history",
+      order: 100,
+      enabled: true,
+      mode_scope: "native",
+      ttl_ms: 60000,
+    });
+    expect(String(fetchImpl.mock.calls[2]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/injections/inj_1");
+    expect(JSON.parse(String(fetchImpl.mock.calls[2]![1]?.body))).toEqual({
+      enabled: false,
+      mode_scope: "compat_plus",
+    });
+    expect(String(fetchImpl.mock.calls[4]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/branches/branch-1/injections");
+    expect(fetchImpl.mock.calls[5]![1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchImpl.mock.calls[5]![1]?.body))).toEqual({
+      source_kind: "client_injection",
+      title: "History guard",
+      content: "Keep the north pass in focus.",
+      placement: "before_history",
+    });
+    expect(String(fetchImpl.mock.calls[6]![0])).toBe("http://localhost:3000/sessions/session%201/prompt-runtime/branches/branch-1/injections/inj_branch_1");
+    expect(JSON.parse(String(fetchImpl.mock.calls[6]![1]?.body))).toEqual({
+      enabled: false,
+      ttl_ms: null,
+    });
   });
 
   it("maps dedicated mode requests and mode responses", async () => {

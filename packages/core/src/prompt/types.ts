@@ -536,11 +536,13 @@ export interface PromptRuntimeDiffEntry<TValue = unknown> {
 
 export type PromptRuntimeGenerationParamName = keyof GenerationParams;
 
-export type PromptRuntimeGenerationParamFinalState = 'sent' | 'absent' | 'cancelled';
+export type PromptRuntimeGenerationParamFinalState = 'sent' | 'absent' | 'cancelled' | 'filtered';
 
 export type PromptRuntimeGenerationParamOrigin = 'profile' | 'instance' | 'request' | 'default' | 'absent';
 
 export type PromptRuntimeGenerationParamLayer = 'profile' | 'instance' | 'request';
+
+export type PromptRuntimeGenerationParamFilterReason = 'field_not_supported_by_provider';
 
 export interface PromptRuntimeGenerationParamResolution {
   name: PromptRuntimeGenerationParamName;
@@ -548,6 +550,7 @@ export interface PromptRuntimeGenerationParamResolution {
   origin: PromptRuntimeGenerationParamOrigin;
   cancelledAt?: PromptRuntimeGenerationParamLayer;
   valueFrom?: Exclude<PromptRuntimeGenerationParamOrigin, 'absent'>;
+  filterReason?: PromptRuntimeGenerationParamFilterReason;
 }
 
 export interface PromptRuntimeToolTransportTrace {
@@ -556,7 +559,10 @@ export interface PromptRuntimeToolTransportTrace {
     injected: boolean;
     contributorId?: string;
     toolCount: number;
+    placementMode?: 'strict_fixed' | 'contributor_chain';
   };
+  toolChoiceApplied?: boolean;
+  streamingToolCallUnsupported?: boolean;
   parsing?: ToolCallParseStats & {
     diagnostics: ToolCallParseDiagnostic[];
   };

@@ -435,6 +435,41 @@
                         "when":  1766100000000,
                         "tag":  "0061_pre_agentic_state_systems_governance_closeout",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  62,
+                        "version":  "7",
+                        "when":  1766200000000,
+                        "tag":  "0062_llm_instance_capabilities",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  63,
+                        "version":  "7",
+                        "when":  1766300000000,
+                        "tag":  "0063_prompt_runtime_injection",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  64,
+                        "version":  "7",
+                        "when":  1766400000000,
+                        "tag":  "0064_prompt_runtime_injection_session_branch_order_created_idx",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  65,
+                        "version":  "7",
+                        "when":  1766500000000,
+                        "tag":  "0065_prompt_runtime_injection_session_updated_idx",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  66,
+                        "version":  "7",
+                        "when":  1766600000000,
+                        "tag":  "0066_llm_instance_model_override",
+                        "breakpoints":  true
                     }
                 ]
 }

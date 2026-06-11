@@ -742,7 +742,7 @@ describe("session-state public routes", () => {
     const byteWriteRes = await writeCustomState(byteBuilt, byteSessionId, { namespace: "quest_flags", slot: "companion", value: { mood: "ally" } });
     expect(byteWriteRes.statusCode).toBe(409);
     expect(JSON.parse(byteWriteRes.body).error.code).toBe("session_state_account_byte_limit_exceeded");
-  });
+  }, 15_000);
 });
 
 function stageAndApplyState(

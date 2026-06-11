@@ -1081,6 +1081,11 @@ export async function assemblePrompt(
   }
   if (!characterOverridesHandledInPromptIR) {
     messages = injectCharacterSystemPrompt(messages, promptSnapshot.character, presetForbidsCharacterSystemPrompt(presetData));
+  }
+  if (promptSnapshot.promptMode === "compat_strict") {
+    messages = applyCompatStrictFixedContributors(messages, legacyContributorRenderables);
+  }
+  if (!characterOverridesHandledInPromptIR) {
     messages = injectCharacterPostHistoryInstructions(messages, promptSnapshot.character);
   }
 
@@ -1426,6 +1431,42 @@ function createCompatPlusMemoryInjection(
     formattedText: memorySummary,
     tokenCount: tokenCounter.count(memorySummary),
   };
+}
+
+function formatCompatStrictContributorContent(contributor: PromptRuntimeAssemblyContributor): string {
+  const content = contributor.content.trim();
+  if (!content) {
+    return "";
+  }
+
+  if (contributor.sourceKind === "tool_list") {
+    return content;
+  }
+
+  const title = contributor.title.trim();
+  return title ? `[${title}]\n${content}` : content;
+}
+
+function applyCompatStrictFixedContributors(
+  messages: ChatMessage[],
+  contributors: PromptRuntimeAssemblyContributor[],
+): ChatMessage[] {
+  const renderedMessages = contributors
+    .map((contributor) => formatCompatStrictContributorContent(contributor))
+    .filter((content): content is string => content.length > 0)
+    .map((content) => ({
+      role: "system" as const,
+      content,
+    }));
+
+  if (renderedMessages.length === 0) {
+    return messages;
+  }
+
+  const insertionIndex = messages[0]?.role === "system" ? 1 : 0;
+  const nextMessages = [...messages];
+  nextMessages.splice(insertionIndex, 0, ...renderedMessages);
+  return nextMessages;
 }
 
 function isStructuredPromptRuntimeInjectionContributor(

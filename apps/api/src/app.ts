@@ -73,6 +73,7 @@ import {
 } from "./client-data/client-data-maintenance.js";
 
 import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
+import { PromptRuntimeInjectionService } from "./services/prompt-runtime/injection-service.js";
 import { ToolWorker } from "./services/tooling/runtime/tool-worker.js";
 import { SessionEffectiveToolPolicyProvider } from "./services/tooling/shared/session-effective-tool-policy-provider.js";
 import {
@@ -755,6 +756,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     enablePreviewEndpoint: Boolean(options.orchestration && orchestrationContext),
     enableStreamEndpoint: Boolean(options.orchestration && orchestrationContext) && options.enableSseChat === true,
   });
+  const promptRuntimeInjectionService = new PromptRuntimeInjectionService(database.db);
 
   if (options.orchestration && orchestrationContext) {
     const llmInstanceService = new LlmInstanceService(database.db);
@@ -788,6 +790,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
                   enabled: false,
                   source: slot.source,
                   presetId: slot.presetId ?? undefined,
+                  capabilities: slot.capabilities,
                   generationParams: mergedGenerationParams.params,
                   generationParamOrigins: mergedGenerationParams.origins,
                 };
@@ -800,19 +803,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
                   enabled: slot.enabled,
                   source: "env",
                   presetId: slot.presetId ?? undefined,
+                  capabilities: slot.capabilities,
                   generationParams: mergedGenerationParams.params,
                   generationParamOrigins: mergedGenerationParams.origins,
                 };
                 continue;
               }
 
+              const effectiveModelId = slot.modelIdOverride ?? activeProfile.modelId;
               const providerId = `llm-profile-${activeProfile.profileId}-turn-${nanoid(8)}`;
               const languageModel = orchestrationContext.providerRegistry.createModel({
                 id: providerId,
                 type: activeProfile.provider,
                 apiKey: activeProfile.apiKey,
                 baseURL: activeProfile.baseUrl ?? undefined,
-              }, activeProfile.modelId);
+              }, effectiveModelId);
 
               const mergedGenerationParams = mergeTurnGenerationParams(
                 activeProfile.params,
@@ -821,15 +826,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
               result[slot.slot] = {
                 ...activeProfile,
+                modelId: effectiveModelId,
                 enabled: slot.enabled,
                 presetId: slot.presetId ?? undefined,
+                capabilities: slot.capabilities,
                 source: activeProfile.source === "session" ? "session_profile" : "global_profile",
                 generationParams: mergedGenerationParams.params,
                 generationParamOrigins: mergedGenerationParams.origins,
                 providerType: activeProfile.provider,
                 model: {
                   providerId,
-                  modelId: activeProfile.modelId,
+                  modelId: effectiveModelId,
                   languageModel,
                 },
               };
@@ -893,6 +900,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await registerPromptRuntimeRoutes(app, promptRuntimeControlService, {
     previewService: promptRuntimeReadOnlyService,
     inspectService: promptRuntimeReadOnlyService,
+    injectionService: promptRuntimeInjectionService,
     projectAccessService,
   });
 

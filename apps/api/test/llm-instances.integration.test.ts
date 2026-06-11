@@ -5,14 +5,23 @@ import type { AppDb } from "../src/db/client";
 import { buildApp } from "../src/app";
 import { createTestSessionWithScope } from "../src/__tests__/helpers/workspace-project";
 
+type InstanceCapabilities = {
+  supports_function_call: boolean;
+  supports_tool_choice: boolean;
+  supports_streaming_tool_call: boolean;
+  unsupported_generation_params: string[];
+};
+
 type InstanceConfig = {
   id: string;
   scope: string;
   scope_id: string;
   instance_slot: string;
   preset_id: string | null;
+  model_id_override: string | null;
   enabled: boolean;
   params: Record<string, unknown> | null;
+  capabilities: InstanceCapabilities | null;
   created_at: number;
   updated_at: number;
 };
@@ -26,8 +35,10 @@ type ResolvedSlot = {
   scope: string | null;
   config_id: string | null;
   preset_id: string | null;
+  model_id_override: string | null;
   enabled: boolean;
   params: Record<string, unknown> | null;
+  capabilities: InstanceCapabilities;
 };
 
 type ResolvedResponse = {
@@ -288,7 +299,110 @@ describe("LLM Instance Config Routes", () => {
     });
   });
 
-  // ── DELETE ──
+  it("round-trips stop_sequences and capabilities through instance routes", async () => {
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      payload: {
+        scope: "global",
+        enabled: true,
+        params: {
+          stop_sequences: [" DONE ", "HALT"],
+        },
+        capabilities: {
+          supports_function_call: false,
+          unsupported_generation_params: ["stopSequences", "unknown_param"],
+        },
+      },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json<ConfigResponse>().data.params).toEqual({
+      stop_sequences: ["DONE", "HALT"],
+    });
+    expect(putRes.json<ConfigResponse>().data.capabilities).toEqual({
+      supports_function_call: false,
+      supports_tool_choice: false,
+      supports_streaming_tool_call: false,
+      unsupported_generation_params: ["stopSequences"],
+    });
+
+    const resolvedRes = await app.inject({ method: "GET", url: "/llm-instances/resolved" });
+    const narrator = resolvedRes.json<ResolvedResponse>().data.slots.find((slot) => slot.slot === "narrator");
+
+    expect(narrator?.params).toEqual({ stop_sequences: ["DONE", "HALT"] });
+    expect(narrator?.capabilities).toEqual({
+      supports_function_call: false,
+      supports_tool_choice: false,
+      supports_streaming_tool_call: false,
+      unsupported_generation_params: ["stopSequences"],
+    });
+  });
+
+  it("round-trips new generation params fields through instance routes", async () => {
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      payload: {
+        scope: "global",
+        enabled: true,
+        params: {
+          seed: 42,
+          repetition_penalty: 1.1,
+          min_p: 0.05,
+          logit_bias: { "42": -5 },
+          response_format: { type: "json_schema", json_schema: { type: "object" } },
+        },
+      },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json<ConfigResponse>().data.params).toEqual({
+      seed: 42,
+      repetition_penalty: 1.1,
+      min_p: 0.05,
+      logit_bias: { "42": -5 },
+      response_format: { type: "json_schema", json_schema: { type: "object" } },
+    });
+
+    const narratorRes = await app.inject({ method: "GET", url: "/llm-instances/narrator" });
+    expect(narratorRes.json<ConfigListResponse>().data[0]!.params).toEqual({
+      seed: 42,
+      repetition_penalty: 1.1,
+      min_p: 0.05,
+      logit_bias: { "42": -5 },
+      response_format: { type: "json_schema", json_schema: { type: "object" } },
+    });
+  });
+
+  it("round-trips model_id_override through config and resolved routes", async () => {
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/llm-instances/narrator",
+      payload: {
+        scope: "session",
+        session_id: "test-sess-1",
+        enabled: true,
+        model_id_override: "gpt-4.1-mini",
+      },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json<ConfigResponse>().data.model_id_override).toBe("gpt-4.1-mini");
+
+    const narratorRes = await app.inject({
+      method: "GET",
+      url: "/llm-instances/narrator?scope=session&session_id=test-sess-1",
+    });
+    expect(narratorRes.json<ConfigListResponse>().data[0]!.model_id_override).toBe("gpt-4.1-mini");
+
+    const resolvedRes = await app.inject({
+      method: "GET",
+      url: "/llm-instances/resolved?session_id=test-sess-1",
+    });
+    const narrator = resolvedRes.json<ResolvedResponse>().data.slots.find((slot) => slot.slot === "narrator");
+    expect(narrator?.model_id_override).toBe("gpt-4.1-mini");
+  });
 
   it("deletes an existing config", async () => {
     await app.inject({

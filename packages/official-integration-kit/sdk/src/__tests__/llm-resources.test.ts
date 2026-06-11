@@ -365,8 +365,15 @@ describe("sdk llm resources", () => {
             enabled: true,
             id: "cfg-1",
             instance_slot: "memory",
+            model_id_override: "gpt-4.1-mini",
             params: "bad",
             preset_id: null,
+            capabilities: {
+              supports_function_call: false,
+              supports_tool_choice: false,
+              supports_streaming_tool_call: false,
+              unsupported_generation_params: ["stopSequences"],
+            },
             scope_id: "global",
           },
         ],
@@ -380,8 +387,15 @@ describe("sdk llm resources", () => {
         enabled: true,
         id: "cfg-1",
         instanceSlot: "memory",
+        modelIdOverride: "gpt-4.1-mini",
         params: null,
         presetId: null,
+        capabilities: {
+          supportsFunctionCall: false,
+          supportsToolChoice: false,
+          supportsStreamingToolCall: false,
+          unsupportedGenerationParams: ["stopSequences"],
+        },
         scope: "global",
         scopeId: "global",
         updatedAt: 0,
@@ -416,8 +430,15 @@ describe("sdk llm resources", () => {
             {
               config_id: null,
               enabled: false,
+              model_id_override: null,
               params: "bad",
               preset_id: null,
+              capabilities: {
+                supports_function_call: false,
+                supports_tool_choice: false,
+                supports_streaming_tool_call: false,
+                unsupported_generation_params: ["stopSequences"],
+              },
               scope: null,
               slot: "director",
             },
@@ -433,8 +454,15 @@ describe("sdk llm resources", () => {
       {
         configId: null,
         enabled: false,
+        modelIdOverride: null,
         params: null,
         presetId: null,
+        capabilities: {
+          supportsFunctionCall: false,
+          supportsToolChoice: false,
+          supportsStreamingToolCall: false,
+          unsupportedGenerationParams: ["stopSequences"],
+        },
         scope: null,
         slot: "director",
         source: "default",
@@ -479,6 +507,76 @@ describe("sdk llm resources", () => {
     const [secondUrl] = fetchImpl.mock.calls[1]!;
     expect(new URL(firstUrl as string).search).toBe("");
     expect(new URL(secondUrl as string).searchParams.get("scope")).toBe("session");
+  });
+
+  it("upserts llm instance configs with model override and capabilities", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+      data: {
+        id: "cfg-2",
+        scope: "session",
+        scope_id: "session-1",
+        instance_slot: "narrator",
+        preset_id: "profile-1",
+        model_id_override: "gpt-4.1-mini",
+        enabled: true,
+        params: { stop_sequences: ["DONE"] },
+        capabilities: {
+          supports_function_call: false,
+          supports_tool_choice: false,
+          supports_streaming_tool_call: false,
+          unsupported_generation_params: ["stopSequences"],
+        },
+        created_at: 1,
+        updated_at: 2,
+      },
+    }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.llmInstances.upsert({
+      slot: "narrator",
+      scope: "session",
+      sessionId: "session-1",
+      presetId: "profile-1",
+      modelIdOverride: "gpt-4.1-mini",
+      params: { stop_sequences: ["DONE"] },
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: ["stopSequences"],
+      },
+    })).resolves.toEqual({
+      id: "cfg-2",
+      scope: "session",
+      scopeId: "session-1",
+      instanceSlot: "narrator",
+      presetId: "profile-1",
+      modelIdOverride: "gpt-4.1-mini",
+      enabled: true,
+      params: { stop_sequences: ["DONE"] },
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: ["stopSequences"],
+      },
+      createdAt: 1,
+      updatedAt: 2,
+    });
+
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toEqual({
+      preset_id: "profile-1",
+      model_id_override: "gpt-4.1-mini",
+      params: { stop_sequences: ["DONE"] },
+      capabilities: {
+        supports_function_call: false,
+        supports_tool_choice: false,
+        supports_streaming_tool_call: false,
+        unsupported_generation_params: ["stopSequences"],
+      },
+      scope: "session",
+      session_id: "session-1",
+    });
   });
 
   it("throws when llm instance upsert returns no usable data payload", async () => {

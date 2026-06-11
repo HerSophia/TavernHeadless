@@ -13,11 +13,15 @@ import {
   promptRuntimeCompareBodyJsonSchema,
   promptRuntimeCompareResponseJsonSchema,
   promptRuntimeCapabilitiesResponseJsonSchema,
-  promptRuntimePolicyViewResponseJsonSchema,
   promptRuntimeHistoricalExplainResponseJsonSchema,
+  promptRuntimeInjectionCreateBodyJsonSchema,
+  promptRuntimeInjectionListResponseJsonSchema,
+  promptRuntimeInjectionPatchBodyJsonSchema,
+  promptRuntimeInjectionResponseJsonSchema,
   promptRuntimeModePatchBodyJsonSchema,
   promptRuntimeModeResponseJsonSchema,
   promptRuntimePolicyPatchBodyJsonSchema,
+  promptRuntimePolicyViewResponseJsonSchema,
   promptRuntimePreviewBodyJsonSchema,
   promptRuntimeInspectBodyJsonSchema,
   promptRuntimeInspectResponseJsonSchema,
@@ -46,6 +50,10 @@ import {
 } from "../../services/prompt-runtime/control-service.js";
 import { ChatServiceError } from "../../services/chat/errors.js";
 import { isBranchLocalSnapshotMissingError } from "../../services/branch-local-variable-snapshot-service.js";
+import {
+  PromptRuntimeInjectionServiceError,
+  type PromptRuntimeInjectionService,
+} from "../../services/prompt-runtime/injection-service.js";
 import type {
   PromptRuntimePreviewRequest,
   PromptRuntimePreviewResult,
@@ -57,12 +65,24 @@ import type {
 import {
   promptRuntimeInspectBodySchema,
   promptRuntimeModePatchBodySchema,
+  promptRuntimePersistedInjectionCreateBodySchema,
+  promptRuntimePersistedInjectionPatchBodySchema,
   type PromptRuntimeModePatchBody,
+  type PromptRuntimePersistedInjectionCreateBody,
+  type PromptRuntimePersistedInjectionPatchBody,
 } from "./schemas.js";
 import {
-  mapModeViewToCamelCase, mapModeViewToSnakeCase, mapPromptRuntimeInspectBodyToCamelCase,
+  mapModeViewToCamelCase,
+  mapModeViewToSnakeCase,
+  mapPromptRuntimeInspectBodyToCamelCase,
+  mapPromptRuntimePersistedInjectionCreateBodyToCamelCase,
+  mapPromptRuntimePersistedInjectionPatchBodyToCamelCase,
 } from "./mappers.js";
-import { mapPromptRuntimeInspectResultToSnakeCase } from "./presenters.js";
+import {
+  mapPromptRuntimeInjectionRecordToSnakeCase,
+  mapPromptRuntimeInjectionSummaryToSnakeCase,
+  mapPromptRuntimeInspectResultToSnakeCase,
+} from "./presenters.js";
 import {
   mapPromptRuntimeHistoryNormalizationToSnakeCase,
   mapMemoryInjectionResultToSnakeCase,
@@ -83,6 +103,17 @@ const sessionPromptRuntimeQuerySchema = z.object({
 const sessionBranchParamsSchema = z.object({
   id: z.string().min(1),
   branchId: z.string().min(1),
+});
+
+const sessionInjectionParamsSchema = z.object({
+  id: z.string().min(1),
+  injectionId: z.string().min(1),
+});
+
+const sessionBranchInjectionParamsSchema = z.object({
+  id: z.string().min(1),
+  branchId: z.string().min(1),
+  injectionId: z.string().min(1),
 });
 
 const promptRuntimeVisibilitySchema = z.object({
@@ -184,6 +215,7 @@ interface RegisterPromptRuntimeRoutesOptions {
   inspectService?: {
     inspectPromptRuntime(sessionId: string, request: PromptRuntimeInspectRequest, accountId?: string): Promise<PromptRuntimeInspectResult>;
   };
+  injectionService?: PromptRuntimeInjectionService;
   projectAccessService?: ProjectAccessService;
 }
 
@@ -532,6 +564,438 @@ export async function registerPromptRuntimeRoutes(
     }
   });
 
+  app.get("/sessions/:id/prompt-runtime/injections", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "List session prompt runtime injections",
+      operationId: "listSessionPromptRuntimeInjections",
+      params: idParamsJsonSchema,
+      response: {
+        200: promptRuntimeInjectionListResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const injections = options.injectionService.listSessionInjections(parsedParams.data.id, auth.accountId);
+      return reply.send({ data: injections.map((record) => mapPromptRuntimeInjectionRecordToSnakeCase(record)) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+  app.post("/sessions/:id/prompt-runtime/injections", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Create session prompt runtime injection",
+      operationId: "createSessionPromptRuntimeInjection",
+      params: idParamsJsonSchema,
+      body: promptRuntimeInjectionCreateBodyJsonSchema,
+      response: {
+        201: promptRuntimeInjectionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimePersistedInjectionCreateBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
+    try {
+      const created = options.injectionService.createSessionInjection(
+        parsedParams.data.id,
+        writeAccess.accountId,
+        mapPromptRuntimePersistedInjectionCreateBodyToCamelCase(parsedBody.data as PromptRuntimePersistedInjectionCreateBody),
+        auth.subject ?? auth.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "POST /sessions/:id/prompt-runtime/injections",
+        },
+      );
+      return reply.code(201).send({ data: mapPromptRuntimeInjectionRecordToSnakeCase(created) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+  app.patch("/sessions/:id/prompt-runtime/injections/:injectionId", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Patch session prompt runtime injection",
+      operationId: "patchSessionPromptRuntimeInjection",
+      params: {
+        type: "object",
+        required: ["id", "injectionId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          injectionId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      body: promptRuntimeInjectionPatchBodyJsonSchema,
+      response: {
+        200: promptRuntimeInjectionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionInjectionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimePersistedInjectionPatchBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
+    try {
+      const updated = options.injectionService.updateSessionInjection(
+        parsedParams.data.id,
+        parsedParams.data.injectionId,
+        writeAccess.accountId,
+        mapPromptRuntimePersistedInjectionPatchBodyToCamelCase(parsedBody.data as PromptRuntimePersistedInjectionPatchBody),
+        auth.subject ?? auth.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "PATCH /sessions/:id/prompt-runtime/injections/:injectionId",
+        },
+      );
+      return reply.send({ data: mapPromptRuntimeInjectionRecordToSnakeCase(updated) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+  app.delete("/sessions/:id/prompt-runtime/injections/:injectionId", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Delete session prompt runtime injection",
+      operationId: "deleteSessionPromptRuntimeInjection",
+      params: {
+        type: "object",
+        required: ["id", "injectionId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          injectionId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: promptRuntimeInjectionResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionInjectionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
+    try {
+      const deleted = options.injectionService.deleteSessionInjection(
+        parsedParams.data.id,
+        parsedParams.data.injectionId,
+        writeAccess.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "DELETE /sessions/:id/prompt-runtime/injections/:injectionId",
+        },
+      );
+      return reply.send({ data: mapPromptRuntimeInjectionRecordToSnakeCase(deleted) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+  app.get("/sessions/:id/prompt-runtime/branches/:branchId/injections", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "List branch prompt runtime injections",
+      operationId: "listSessionPromptRuntimeBranchInjections",
+      params: {
+        type: "object",
+        required: ["id", "branchId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          branchId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: promptRuntimeInjectionListResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionBranchParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    try {
+      const auth = getRequestAuthContext(request);
+      const injections = options.injectionService.listBranchInjections(
+        parsedParams.data.id,
+        parsedParams.data.branchId,
+        auth.accountId,
+      );
+      return reply.send({ data: injections.map((record) => mapPromptRuntimeInjectionRecordToSnakeCase(record)) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+  app.post("/sessions/:id/prompt-runtime/branches/:branchId/injections", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Create branch prompt runtime injection",
+      operationId: "createSessionPromptRuntimeBranchInjection",
+      params: {
+        type: "object",
+        required: ["id", "branchId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          branchId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      body: promptRuntimeInjectionCreateBodyJsonSchema,
+      response: {
+        201: promptRuntimeInjectionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionBranchParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimePersistedInjectionCreateBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
+    try {
+      const created = options.injectionService.createBranchInjection(
+        parsedParams.data.id,
+        parsedParams.data.branchId,
+        writeAccess.accountId,
+        mapPromptRuntimePersistedInjectionCreateBodyToCamelCase(parsedBody.data as PromptRuntimePersistedInjectionCreateBody),
+        auth.subject ?? auth.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "POST /sessions/:id/prompt-runtime/branches/:branchId/injections",
+        },
+      );
+      return reply.code(201).send({ data: mapPromptRuntimeInjectionRecordToSnakeCase(created) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+  app.patch("/sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId", {
+    schema: {
+      tags:["prompt-runtime"],
+      summary: "Patch branch prompt runtime injection",
+      operationId: "patchSessionPromptRuntimeBranchInjection",
+      params: {
+        type: "object",
+        required: ["id", "branchId", "injectionId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          branchId: { type: "string", minLength: 1 },
+          injectionId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      body: promptRuntimeInjectionPatchBodyJsonSchema,
+      response: {
+        200: promptRuntimeInjectionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionBranchInjectionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+    const parsedBody = parseWithSchema(promptRuntimePersistedInjectionPatchBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
+    try {
+      const updated = options.injectionService.updateBranchInjection(
+        parsedParams.data.id,
+        parsedParams.data.branchId,
+        parsedParams.data.injectionId,
+        writeAccess.accountId,
+        mapPromptRuntimePersistedInjectionPatchBodyToCamelCase(parsedBody.data as PromptRuntimePersistedInjectionPatchBody),
+        auth.subject ?? auth.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "PATCH /sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId",
+        },
+      );
+      return reply.send({ data: mapPromptRuntimeInjectionRecordToSnakeCase(updated) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+  app.delete("/sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId", {
+    schema: {
+      tags: ["prompt-runtime"],
+      summary: "Delete branch prompt runtime injection",
+      operationId: "deleteSessionPromptRuntimeBranchInjection",
+      params: {
+        type: "object",
+        required: ["id", "branchId", "injectionId"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          branchId: { type: "string", minLength: 1 },
+          injectionId: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: promptRuntimeInjectionResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        500: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    if (!options.injectionService) {
+      return sendError(reply, 404, "not_found", "Prompt runtime injection endpoint is disabled");
+    }
+
+    const parsedParams = parseWithSchema(sessionBranchInjectionParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const writeAccess = authorizeProjectWriteBySessionId(reply, auth.accountId, parsedParams.data.id);
+    if (!writeAccess.ok) {
+      return;
+    }
+
+    try {
+      const deleted = options.injectionService.deleteBranchInjection(
+        parsedParams.data.id,
+        parsedParams.data.branchId,
+        parsedParams.data.injectionId,
+        writeAccess.accountId,
+        {
+          ...operationActorFromRequest(request),
+          requestId: operationRequestIdFromRequest(request),
+          sourceType: "http",
+          route: "DELETE /sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId",
+        },
+      );
+      return reply.send({ data: mapPromptRuntimeInjectionRecordToSnakeCase(deleted) });
+    } catch (error) {
+      return sendPromptRuntimeRouteServiceError(reply, error);
+    }
+  });
+
+
   app.post("/sessions/:id/prompt-runtime/preview", {
     schema: {
       tags: ["prompt-runtime"],
@@ -710,6 +1174,7 @@ function mapResolvedStateToSnakeCase(state: PromptRuntimeResolvedState): Record<
       ? { branch_persistent_policy_envelope: mapPersistedPolicyEnvelopeToSnakeCase(state.branchPersistentPolicyEnvelope) }
       : {}),
     assets: mapAssetsViewToSnakeCase(state.assets),
+    injections: mapPromptRuntimeInjectionSummaryToSnakeCase(state.injections),
     warnings: state.warnings,
     diagnostics: state.diagnostics.map((diagnostic) => mapDiagnosticToSnakeCase(diagnostic)),
     limitations: state.limitations,
@@ -975,6 +1440,7 @@ function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewRes
             origin: item.origin,
             ...(item.cancelledAt ? { cancelled_at: item.cancelledAt } : {}),
             ...(item.valueFrom ? { value_from: item.valueFrom } : {}),
+            ...("filterReason" in item && item.filterReason ? { filter_reason: item.filterReason } : {}),
           })),
         }
       : {}),
@@ -1015,6 +1481,8 @@ function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewRes
             items: runtimeTrace.injection.items.map((item) => ({
               request_index: item.requestIndex,
               source_kind: item.sourceKind,
+              injection_id: item.injectionId ?? null,
+              enabled: item.enabled ?? null,
               scope: item.scope,
               placement_requested: item.placementRequested,
               order_requested: item.orderRequested,
@@ -1607,6 +2075,21 @@ function sendPromptRuntimeControlServiceError(
   error: unknown,
 ) {
   if (error instanceof PromptRuntimeControlServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
+
+  throw error;
+}
+
+function sendPromptRuntimeRouteServiceError(
+  reply: Parameters<typeof sendError>[0],
+  error: unknown,
+) {
+  if (error instanceof PromptRuntimeControlServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
+
+  if (error instanceof PromptRuntimeInjectionServiceError) {
     return sendError(reply, error.statusCode, error.code, error.message);
   }
 

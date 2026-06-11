@@ -1,4 +1,4 @@
-import { generateText, streamText } from 'ai';
+import { generateText, streamText, wrapLanguageModel } from 'ai';
 import type { LanguageModel } from 'ai';
 import type {
   LLMPort,
@@ -141,11 +141,74 @@ function normalizeFinishReason(finishReason: unknown): string {
     : 'other';
 }
 
+type ProviderResponseFormat = {
+  type: 'text';
+} | {
+  type: 'json';
+  schema?: Record<string, unknown>;
+};
+
+function mergeOpenAIProviderOptions(
+  mapped: Record<string, unknown>,
+  options: Record<string, unknown>,
+): void {
+  const currentProviderOptions = mapped.providerOptions as Record<string, unknown> | undefined;
+  const currentOpenAIOptions = currentProviderOptions?.openai as Record<string, unknown> | undefined;
+
+  mapped.providerOptions = {
+    ...(currentProviderOptions ?? {}),
+    openai: {
+      ...(currentOpenAIOptions ?? {}),
+      ...options,
+    },
+  };
+}
+
+function mapResponseFormat(
+  responseFormat: GenerationParams['responseFormat'],
+): ProviderResponseFormat | undefined {
+  if (responseFormat === undefined || responseFormat === null) {
+    return undefined;
+  }
+
+  switch (responseFormat.type) {
+    case 'text':
+      return { type: 'text' };
+    case 'json_object':
+      return { type: 'json' };
+    case 'json_schema':
+      return responseFormat.jsonSchema
+        ? { type: 'json', schema: responseFormat.jsonSchema }
+        : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function applyResponseFormatMiddleware(
+  model: LanguageModel,
+  responseFormat: ProviderResponseFormat | undefined,
+): LanguageModel {
+  if (!responseFormat) {
+    return model;
+  }
+
+  return wrapLanguageModel({
+    model: model as any,
+    middleware: {
+      specificationVersion: 'v3',
+      transformParams: async ({ params }) => ({
+        ...params,
+        responseFormat,
+      }),
+    },
+  }) as LanguageModel;
+}
+
 /**
  * 将 GenerationParams 映射为 Vercel AI SDK 的设置。
  */
-function mapParams(params: GenerationParams): Record<string, unknown> {
-  const mapped: Record<string, unknown> = {};
+function mapParams(params: GenerationParams): Record<string, unknown> {  const mapped: Record<string, unknown> = {};
 
   if (params.maxOutputTokens !== undefined && params.maxOutputTokens !== null) mapped.maxOutputTokens = params.maxOutputTokens;
   if (params.temperature !== undefined && params.temperature !== null) mapped.temperature = params.temperature;
@@ -154,13 +217,26 @@ function mapParams(params: GenerationParams): Record<string, unknown> {
   if (params.frequencyPenalty !== undefined && params.frequencyPenalty !== null) mapped.frequencyPenalty = params.frequencyPenalty;
   if (params.presencePenalty !== undefined && params.presencePenalty !== null) mapped.presencePenalty = params.presencePenalty;
   if (params.stopSequences !== undefined && params.stopSequences !== null) mapped.stopSequences = params.stopSequences;
+  if (params.seed !== undefined && params.seed !== null) mapped.seed = params.seed;
+  const responseFormat = mapResponseFormat(params.responseFormat);
+  if (responseFormat !== undefined) mapped.responseFormat = responseFormat;
   if (params.maxRetries !== undefined && params.maxRetries !== null) mapped.maxRetries = params.maxRetries;
+
+  const openAIProviderOptions: Record<string, unknown> = {};
   if (params.reasoningEffort !== undefined && params.reasoningEffort !== null) {
-    mapped.providerOptions = {
-      openai: {
-        reasoningEffort: params.reasoningEffort,
-      },
-    };
+    openAIProviderOptions.reasoningEffort = params.reasoningEffort;
+  }
+  if (params.repetitionPenalty !== undefined && params.repetitionPenalty !== null) {
+    openAIProviderOptions.repetitionPenalty = params.repetitionPenalty;
+  }
+  if (params.minP !== undefined && params.minP !== null) {
+    openAIProviderOptions.minP = params.minP;
+  }
+  if (params.logitBias !== undefined && params.logitBias !== null) {
+    openAIProviderOptions.logitBias = params.logitBias;
+  }
+  if (Object.keys(openAIProviderOptions).length > 0) {
+    mergeOpenAIProviderOptions(mapped, openAIProviderOptions);
   }
 
   return mapped;
@@ -198,11 +274,14 @@ export class LLMService implements LLMPort {
    */
   private getLanguageModel(request: LLMRequest): LanguageModel {
     const model = request.model ?? this.defaultModel;
-    if (model.languageModel) {
-      return model.languageModel;
-    }
+    const baseModel = model.languageModel
+      ? model.languageModel
+      : this.registry.getModel(model.providerId, model.modelId);
 
-    return this.registry.getModel(model.providerId, model.modelId);
+    return applyResponseFormatMiddleware(
+      baseModel,
+      mapResponseFormat(request.params.responseFormat),
+    );
   }
 
   /**
@@ -221,6 +300,7 @@ export class LLMService implements LLMPort {
         model: languageModel,
         messages: request.messages,
         ...(request.tools ? { tools: request.tools as any } : {}),
+        ...(request.toolChoice ? { toolChoice: request.toolChoice } : {}),
         ...(request.maxSteps ? { maxSteps: request.maxSteps } : {}),
         abortSignal: signal,
         ...settings,
@@ -256,6 +336,7 @@ export class LLMService implements LLMPort {
         model: languageModel,
         messages: request.messages,
         ...(request.tools ? { tools: request.tools as any } : {}),
+        ...(request.toolChoice ? { toolChoice: request.toolChoice } : {}),
         ...(request.maxSteps ? { maxSteps: request.maxSteps } : {}),
         abortSignal: signal,
         ...settings,

@@ -19,6 +19,12 @@ export type LlmBindingGenerationParams = Partial<Pick<GenerationParamsInput,
   | "topK"
   | "frequencyPenalty"
   | "presencePenalty"
+  | "stopSequences"
+  | "seed"
+  | "repetitionPenalty"
+  | "minP"
+  | "logitBias"
+  | "responseFormat"
   | "stream"
   | "timeoutMs"
   | "maxRetries"
@@ -34,6 +40,11 @@ export const GENERATION_PARAM_KEYS = [
   "frequencyPenalty",
   "presencePenalty",
   "stopSequences",
+  "seed",
+  "repetitionPenalty",
+  "minP",
+  "logitBias",
+  "responseFormat",
   "stream",
   "timeoutMs",
   "maxRetries",
@@ -44,6 +55,10 @@ export type GenerationParamKey = (typeof GENERATION_PARAM_KEYS)[number];
 
 function hasOwn<T extends object>(value: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export class LlmParamsValidationError extends Error {
@@ -131,7 +146,7 @@ export function normalizeBindingParams(input: unknown, strict: boolean): LlmBind
 
   const readNumber = (
     key: keyof LlmBindingGenerationParams,
-    options: { int?: boolean; min?: number; max?: number } = {},
+    options: { int?: boolean; min?: number; max?: number; exclusiveMin?: number } = {},
   ): number | null | undefined => {
     if (!hasOwn(raw, key)) {
       return undefined;
@@ -159,6 +174,12 @@ export function normalizeBindingParams(input: unknown, strict: boolean): LlmBind
     if (options.min !== undefined && value < options.min) {
       if (strict) {
         throw new LlmParamsValidationError(`params.${String(key)} must be >= ${options.min}`);
+      }
+      return undefined;
+    }
+    if (options.exclusiveMin !== undefined && value <= options.exclusiveMin) {
+      if (strict) {
+        throw new LlmParamsValidationError(`params.${String(key)} must be > ${options.exclusiveMin}`);
       }
       return undefined;
     }
@@ -190,6 +211,146 @@ export function normalizeBindingParams(input: unknown, strict: boolean): LlmBind
       return undefined;
     }
     return value;
+  };
+
+  const readStringArray = (key: keyof LlmBindingGenerationParams): string[] | null | undefined => {
+    if (!hasOwn(raw, key)) {
+      return undefined;
+    }
+
+    const value = raw[key];
+    if (value === null) {
+      return null;
+    }
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(value)) {
+      if (strict) {
+        throw new LlmParamsValidationError(`params.${String(key)} must be an array of strings`);
+      }
+      return undefined;
+    }
+    if (value.length > 16) {
+      if (strict) {
+        throw new LlmParamsValidationError(`params.${String(key)} must contain at most 16 items`);
+      }
+      return undefined;
+    }
+
+    const normalizedItems: string[] = [];
+    for (const item of value) {
+      if (typeof item !== "string") {
+        if (strict) {
+          throw new LlmParamsValidationError(`params.${String(key)} must be an array of strings`);
+        }
+        return undefined;
+      }
+
+      const trimmed = item.trim();
+      if (trimmed.length === 0) {
+        if (strict) {
+          throw new LlmParamsValidationError(`params.${String(key)} must not contain empty strings`);
+        }
+        return undefined;
+      }
+
+      normalizedItems.push(trimmed);
+    }
+
+    return normalizedItems;
+  };
+
+  const readLogitBias = (): GenerationParams["logitBias"] | null | undefined => {
+    if (!hasOwn(raw, "logitBias")) {
+      return undefined;
+    }
+
+    const value = raw.logitBias;
+    if (value === null) {
+      return null;
+    }
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!isPlainObject(value)) {
+      if (strict) {
+        throw new LlmParamsValidationError("params.logitBias must be an object");
+      }
+      return undefined;
+    }
+
+    const entries = Object.entries(value);
+    if (entries.length > 256) {
+      if (strict) {
+        throw new LlmParamsValidationError("params.logitBias must contain at most 256 entries");
+      }
+      return undefined;
+    }
+
+    const normalizedBias: Record<string, number> = {};
+    for (const [entryKey, entryValue] of entries) {
+      if (typeof entryValue !== "number" || !Number.isFinite(entryValue)) {
+        if (strict) {
+          throw new LlmParamsValidationError(`params.logitBias.${entryKey} must be a number`);
+        }
+        return undefined;
+      }
+      if (entryValue < -100 || entryValue > 100) {
+        if (strict) {
+          throw new LlmParamsValidationError(`params.logitBias.${entryKey} must be between -100 and 100`);
+        }
+        return undefined;
+      }
+
+      normalizedBias[entryKey] = entryValue;
+    }
+
+    return normalizedBias;
+  };
+
+  const readResponseFormat = (): GenerationParams["responseFormat"] | null | undefined => {
+    if (!hasOwn(raw, "responseFormat")) {
+      return undefined;
+    }
+
+    const value = raw.responseFormat;
+    if (value === null) {
+      return null;
+    }
+    if (value === undefined) {
+      return undefined;
+    }
+    if (!isPlainObject(value)) {
+      if (strict) {
+        throw new LlmParamsValidationError("params.responseFormat must be an object");
+      }
+      return undefined;
+    }
+
+    const type = value.type;
+    if (type !== "text" && type !== "json_object" && type !== "json_schema") {
+      if (strict) {
+        throw new LlmParamsValidationError("params.responseFormat.type must be one of text, json_object, json_schema");
+      }
+      return undefined;
+    }
+
+    if (type === "json_schema") {
+      if (!isPlainObject(value.jsonSchema)) {
+        if (strict) {
+          throw new LlmParamsValidationError("params.responseFormat.jsonSchema must be an object when type is json_schema");
+        }
+        return undefined;
+      }
+
+      return {
+        type,
+        jsonSchema: value.jsonSchema,
+      };
+    }
+
+    return { type };
   };
 
   const readReasoningEffort = (): GenerationParams["reasoningEffort"] | null | undefined => {
@@ -233,6 +394,24 @@ export function normalizeBindingParams(input: unknown, strict: boolean): LlmBind
 
   const presencePenalty = readNumber("presencePenalty", { min: -2, max: 2 });
   if (presencePenalty !== undefined) normalized.presencePenalty = presencePenalty;
+
+  const stopSequences = readStringArray("stopSequences");
+  if (stopSequences !== undefined) normalized.stopSequences = stopSequences;
+
+  const seed = readNumber("seed", { int: true });
+  if (seed !== undefined) normalized.seed = seed;
+
+  const repetitionPenalty = readNumber("repetitionPenalty", { exclusiveMin: 0, max: 2 });
+  if (repetitionPenalty !== undefined) normalized.repetitionPenalty = repetitionPenalty;
+
+  const minP = readNumber("minP", { min: 0, max: 1 });
+  if (minP !== undefined) normalized.minP = minP;
+
+  const logitBias = readLogitBias();
+  if (logitBias !== undefined) normalized.logitBias = logitBias;
+
+  const responseFormat = readResponseFormat();
+  if (responseFormat !== undefined) normalized.responseFormat = responseFormat;
 
   const timeoutMs = readNumber("timeoutMs", { int: true, min: 1 });
   if (timeoutMs !== undefined) normalized.timeoutMs = timeoutMs;

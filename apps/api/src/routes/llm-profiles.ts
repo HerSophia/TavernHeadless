@@ -722,6 +722,17 @@ function fromApiGenerationParams(
     topK: params.top_k,
     frequencyPenalty: params.frequency_penalty,
     presencePenalty: params.presence_penalty,
+    stopSequences: params.stop_sequences,
+    seed: params.seed,
+    repetitionPenalty: params.repetition_penalty,
+    minP: params.min_p,
+    logitBias: params.logit_bias,
+    responseFormat: params.response_format
+      ? {
+          type: params.response_format.type,
+          ...(params.response_format.json_schema ? { jsonSchema: params.response_format.json_schema } : {}),
+        }
+      : params.response_format,
     stream: params.stream,
     timeoutMs: params.timeout_ms,
     maxRetries: params.max_retries,
@@ -744,6 +755,17 @@ function toApiGenerationParams(
     top_k: params.topK,
     frequency_penalty: params.frequencyPenalty,
     presence_penalty: params.presencePenalty,
+    stop_sequences: params.stopSequences,
+    seed: params.seed,
+    repetition_penalty: params.repetitionPenalty,
+    min_p: params.minP,
+    logit_bias: params.logitBias,
+    response_format: params.responseFormat
+      ? {
+          type: params.responseFormat.type,
+          ...(params.responseFormat.jsonSchema ? { json_schema: params.responseFormat.jsonSchema } : {}),
+        }
+      : params.responseFormat,
     stream: params.stream,
     timeout_ms: params.timeoutMs,
     max_retries: params.maxRetries,

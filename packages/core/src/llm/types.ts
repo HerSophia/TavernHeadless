@@ -41,6 +41,14 @@ export interface ModelConfig {
 
 // ── Generation Params ─────────────────────────────────
 
+/** 生成响应格式 */
+export interface GenerationResponseFormat {
+  /** 响应类型 */
+  type: 'text' | 'json_object' | 'json_schema';
+  /** JSON Schema（仅 json_schema 时可用） */
+  jsonSchema?: Record<string, unknown>;
+}
+
 /** 生成参数（从 STPreset 或自定义传入） */
 export interface GenerationParams {
   /** 最大上下文 token 数（主要用于 prompt assemble / token budget） */
@@ -59,6 +67,16 @@ export interface GenerationParams {
   presencePenalty?: number;
   /** 停止序列 */
   stopSequences?: string[];
+  /** 随机种子 */
+  seed?: number;
+  /** 重复惩罚 */
+  repetitionPenalty?: number;
+  /** 最小概率阈值 */
+  minP?: number;
+  /** token 偏置 */
+  logitBias?: Record<string, number>;
+  /** 结构化响应格式 */
+  responseFormat?: GenerationResponseFormat;
   /** 是否流式 */
   stream?: boolean;
   /** 超时（毫秒） */
@@ -111,6 +129,8 @@ export interface LLMRequest {
   abortSignal?: AbortSignal;
   /** 可用工具列表（inline 模式使用，Vercel AI SDK 兼容格式） */
   tools?: Record<string, LLMToolDefinition>;
+  /** 工具选择策略（当前仅在支持时显式设置 auto） */
+  toolChoice?: 'auto';
   /** 最大自动工具调用步数（对应 Vercel AI SDK maxSteps） */
   maxSteps?: number;
 }

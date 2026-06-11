@@ -52,6 +52,16 @@ describe("sdk project agent bindings and settings resources", () => {
         mcp: { source: "workspace", bindings: [] },
         sessionId: "sess_1",
         sessionOverrides: { llmProfile: null },
+        toolTransport: {
+          available: ["native_function_call", "text_protocol"],
+          selected: "text_protocol",
+          reasonCode: "instance_not_supports_function_call",
+          capabilities: {
+            supportsFunctionCall: false,
+            supportsToolChoice: false,
+            supportsStreamingToolCall: false,
+          },
+        },
       }));
 
     const client = createTavernClient({ baseUrl, fetchImpl });
@@ -77,6 +87,16 @@ describe("sdk project agent bindings and settings resources", () => {
     const sessionEffective = await client.sessions.getEffectiveConfig({ sessionId: "sess_1", accountId: "acc_1" });
     expect(sessionEffective.sessionId).toBe("sess_1");
     expect(sessionEffective.sessionOverrides.llmProfile).toBeNull();
+    expect(sessionEffective.toolTransport).toEqual({
+      available: ["native_function_call", "text_protocol"],
+      selected: "text_protocol",
+      reasonCode: "instance_not_supports_function_call",
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+      },
+    });
 
     expect(fetchImpl.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({
       agent_type_id: "agt_1",
