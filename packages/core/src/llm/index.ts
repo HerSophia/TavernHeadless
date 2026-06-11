@@ -4,6 +4,7 @@ export type {
   InstanceSlot,
   ProviderConfig,
   ModelConfig,
+  GenerationResponseFormat,
   GenerationParams,
   LLMRole,
   LLMInstance,

@@ -4,9 +4,9 @@ outline: [2, 3]
 
 # LLM Instances（LLM 实例配置）
 
-LLM 实例配置用来控制每个生成槽位具体用哪个 LLM Profile、是否启用、以及额外的生成参数覆盖。
+LLM 实例配置用来控制每个生成槽位具体用哪个 LLM Profile、是否启用、额外的生成参数覆盖，以及可选的 `model_id_override`。
 
-它和 LLM Profiles 的关系是：Profile 管"连什么模型"，Instance Config 管"哪个槽位用哪个 Profile"。
+它和 LLM Profiles 的关系是：Profile 继续负责 provider、base URL、API Key 这类连接信息；Instance Config 负责"哪个槽位用哪个 Profile"，以及是否只把模型名改成别的值。
 
 ## 什么时候需要看这页
 
@@ -17,14 +17,14 @@ LLM 实例配置用来控制每个生成槽位具体用哪个 LLM Profile、是�
 ## 一个简单例子
 
 ```bash
-# 为某个会话的通配槽位指定 LLM Profile
-curl -X POST http://localhost:3000/llm-instances/configs \
+# 为某个会话的 narrator 槽位指定 LLM Profile，并覆盖模型名
+curl -X PUT http://localhost:3000/llm-instances/narrator \
   -H 'Content-Type: application/json' \
   -d '{
     "scope": "session",
-    "scope_id": "sess_001",
-    "instance_slot": "*",
+    "session_id": "sess_001",
     "preset_id": "llm_profile_001",
+    "model_id_override": "gpt-4.1-mini",
     "enabled": true
   }'
 ```
@@ -69,9 +69,11 @@ curl -X POST http://localhost:3000/llm-instances/configs \
 | `scope` | string | `global` / `session` |
 | `scope_id` | string | 作用域 ID |
 | `instance_slot` | string | 实例槽位 |
-| `preset_id` | string \| null | 关联预设 ID |
+| `preset_id` | string \| null | 关联的 LLM Profile ID |
+| `model_id_override` | string \| null | 仅覆盖模型名。`null` 表示继承 Profile 默认 `model_id` |
 | `enabled` | boolean | 是否启用 |
 | `params` | object \| null | 生成参数覆盖 |
+| `capabilities` | object \| null | 实例能力声明，例如是否支持原生 function call |
 | `created_at` | integer | 创建时间 |
 | `updated_at` | integer | 更新时间 |
 
@@ -99,8 +101,15 @@ GET /llm-instances
       "scope_id": "global",
       "instance_slot": "narrator",
       "preset_id": null,
+      "model_id_override": "gpt-4.1-mini",
       "enabled": true,
-      "params": { "temperature": 0.8, "max_output_tokens": 1024 },
+      "params": { "temperature": 0.8, "max_output_tokens": 1024, "stop_sequences": ["DONE"] },
+      "capabilities": {
+        "supports_function_call": false,
+        "supports_tool_choice": false,
+        "supports_streaming_tool_call": false,
+        "unsupported_generation_params": ["stopSequences"]
+      },
       "created_at": 1735689600000,
       "updated_at": 1735689660000
     }
@@ -156,25 +165,34 @@ PUT /llm-instances/:slot
 | ---- | ---- | ---- | ---- |
 | `scope` | string | 否 | `global`（默认）/ `session` |
 | `session_id` | string | 条件 | 当 scope=session 时必填 |
-| `preset_id` | string \| null | 否 | 关联预设 ID |
+| `preset_id` | string \| null | 否 | 关联 LLM Profile ID |
+| `model_id_override` | string \| null | 否 | 仅覆盖模型名。传 `null` 表示清除覆盖 |
 | `enabled` | boolean | 否 | 是否启用（默认 `true`） |
 | `params` | object \| null | 否 | 生成参数覆盖 |
+| `capabilities` | object \| null | 否 | 实例能力声明 |
 
 字段省略语义：
 
 - 省略 `enabled`：会按请求 schema 默认值 `true` 处理；对于已存在配置，这等价于把它重新写成 `enabled=true`
 - 省略 `preset_id`：如果目标配置已存在，则保留原有 `preset_id`；首次创建时写入 `null`
+- 省略 `model_id_override`：如果目标配置已存在，则保留原有覆盖值
+- 显式传 `model_id_override: null`：清空实例级模型名覆盖，回退到 Profile 默认 `model_id`
 - 省略 `params`：如果目标配置已存在，则保留原有 `params`
 - 显式传 `params: null`：清空原有 `params` 覆盖
+- 省略 `capabilities`：如果目标配置已存在，则保留原有能力声明；首次创建时写入 `null`
+- 显式传 `capabilities: null`：清空实例能力声明，回退到系统保守默认
 
 运行时语义说明：
 
 - `enabled=false` 且 `slot=narrator` 时，真实聊天执行会返回 `409 instance_slot_disabled_required`，不会再回退到环境变量 narrator。
 - `enabled=false` 且 `slot=director` / `verifier` / `memory` 时，对应子流程会在本轮 turn 中被强制跳过。
 - `preset_id` 在当前实现中作为 narrator Prompt 组装阶段的显式覆盖值；当它为非空字符串时，优先于 `session.presetId`。
+- `model_id_override` 只影响最终使用的模型名，不会改动 provider、base URL、API Key 这类 Profile 连接信息。
+- `model_id_override` 只有在当前槽位最终解析到 active profile 时才生效；如果没有 active profile，它不会单独把环境变量 fallback 模型替换掉。
 - `params` 采用浅层 merge，同名键覆盖。当前槽位原有参数（包括 Profile 绑定参数和默认运行参数）先建立基线，再由 `llm_instance_config.params` 覆盖同名字段。
 - `params` 内部某个字段传 `null` 时，表示显式取消该字段，不再沿用上游同名参数，也不会再套用该字段的默认填充值。
-- 如果你需要查看“Profile 解析结果”，使用 `/llm-profiles/runtime`；如果你需要查看“实例侧 enabled / preset_id / params 的最终解析结果”，应使用 `/llm-instances/resolved`。
+- `capabilities` 用来声明实例运行时能力。例如 `supports_function_call=false` 时，服务端会把工具调用 transport 解析到 `text_protocol`，并在 Prompt Runtime trace / effective-config 中公开原因。
+- 如果你需要查看“Profile 解析结果”，使用 `/llm-profiles/runtime`；如果你需要查看“实例侧 enabled / preset_id / model_id_override / params / capabilities 的最终解析结果”，应使用 `/llm-instances/resolved`。
 
 `params` 可覆盖的字段：
 
@@ -191,6 +209,7 @@ PUT /llm-instances/:slot
 | `timeout_ms` | integer \| null | 超时毫秒。传 `null` 表示显式取消 |
 | `max_retries` | integer \| null | 最大重试 0-10。传 `null` 表示显式取消 |
 | `reasoning_effort` | string \| null | `low` / `medium` / `high`。传 `null` 表示显式取消 |
+| `stop_sequences` | string[] \| null | 停止词列表。传 `null` 表示显式取消 |
 
 ### 请求示例
 
@@ -198,8 +217,13 @@ PUT /llm-instances/:slot
 {
   "scope": "global",
   "preset_id": null,
+  "model_id_override": "gpt-4.1-mini",
   "enabled": true,
-  "params": { "temperature": 0.8, "max_output_tokens": 1024 }
+  "params": { "temperature": 0.8, "max_output_tokens": 1024, "stop_sequences": ["DONE"] },
+  "capabilities": {
+    "supports_function_call": false,
+    "unsupported_generation_params": ["stopSequences"]
+  }
 }
 ```
 
@@ -213,8 +237,15 @@ PUT /llm-instances/:slot
     "scope_id": "global",
     "instance_slot": "narrator",
     "preset_id": null,
+    "model_id_override": "gpt-4.1-mini",
     "enabled": true,
-    "params": { "temperature": 0.8, "max_output_tokens": 1024 },
+    "params": { "temperature": 0.8, "max_output_tokens": 1024, "stop_sequences": ["DONE"] },
+    "capabilities": {
+      "supports_function_call": false,
+      "supports_tool_choice": false,
+      "supports_streaming_tool_call": false,
+      "unsupported_generation_params": ["stopSequences"]
+    },
     "created_at": 1735689600000,
     "updated_at": 1735689660000
   }
@@ -292,8 +323,15 @@ GET /llm-instances/resolved
         "scope": "global",
         "config_id": "ic_abc",
         "preset_id": null,
+        "model_id_override": "gpt-4.1-mini",
         "enabled": true,
-        "params": { "temperature": 0.7 }
+        "params": { "temperature": 0.7, "stop_sequences": ["DONE"] },
+        "capabilities": {
+          "supports_function_call": false,
+          "supports_tool_choice": false,
+          "supports_streaming_tool_call": false,
+          "unsupported_generation_params": ["stopSequences"]
+        }
       },
       {
         "slot": "narrator",
@@ -301,8 +339,15 @@ GET /llm-instances/resolved
         "scope": null,
         "config_id": null,
         "preset_id": null,
+        "model_id_override": null,
         "enabled": true,
-        "params": null
+        "params": null,
+        "capabilities": {
+          "supports_function_call": true,
+          "supports_tool_choice": false,
+          "supports_streaming_tool_call": false,
+          "unsupported_generation_params": []
+        }
       }
     ]
   }

@@ -3,6 +3,7 @@ import {
   type PromptRuntimeInjectionPlacement,
   type PromptRuntimeInjectionPlacementResolverInput,
   type PromptRuntimeInjectionPlacementResolverOutput,
+  type PromptRuntimeInjectionPromptMode,
 } from "../prompt-runtime-injection-types.js";
 
 const INTERNAL_PLACEMENT_KEYS: Record<PromptRuntimeInjectionPlacement, string> = {
@@ -26,8 +27,30 @@ const INTERNAL_PLACEMENT_KEYS: Record<PromptRuntimeInjectionPlacement, string> =
   before_assistant_prefill: "assistant_prefill.before",
 };
 
+const PROMPT_RUNTIME_INJECTION_PLACEMENTS_BY_MODE: Record<
+  PromptRuntimeInjectionPromptMode,
+  readonly PromptRuntimeInjectionPlacement[]
+> = {
+  compat_strict: PROMPT_RUNTIME_INJECTION_PLACEMENTS,
+  compat_plus: PROMPT_RUNTIME_INJECTION_PLACEMENTS,
+  native: PROMPT_RUNTIME_INJECTION_PLACEMENTS,
+};
+
 function isKnownPlacement(value: string): value is PromptRuntimeInjectionPlacement {
   return (PROMPT_RUNTIME_INJECTION_PLACEMENTS as readonly string[]).includes(value);
+}
+
+export function listPromptRuntimeInjectionPlacementsForMode(
+  promptMode: PromptRuntimeInjectionPromptMode,
+): readonly PromptRuntimeInjectionPlacement[] {
+  return PROMPT_RUNTIME_INJECTION_PLACEMENTS_BY_MODE[promptMode];
+}
+
+export function isPromptRuntimeInjectionPlacementAvailableInMode(
+  placement: PromptRuntimeInjectionPlacement,
+  promptMode: PromptRuntimeInjectionPromptMode,
+): boolean {
+  return listPromptRuntimeInjectionPlacementsForMode(promptMode).includes(placement);
 }
 
 export class PromptRuntimeInjectionPlacementResolver {
@@ -41,7 +64,7 @@ export class PromptRuntimeInjectionPlacementResolver {
       };
     }
 
-    if (!this.isPlacementAvailableInMode(input.placement, input.promptMode)) {
+    if (!isPromptRuntimeInjectionPlacementAvailableInMode(input.placement, input.promptMode)) {
       return {
         resolved: false,
         reason: "placement_not_available_in_mode",
@@ -52,12 +75,5 @@ export class PromptRuntimeInjectionPlacementResolver {
       resolved: true,
       internalKey: INTERNAL_PLACEMENT_KEYS[input.placement],
     };
-  }
-
-  private isPlacementAvailableInMode(
-    _placement: PromptRuntimeInjectionPlacement,
-    _promptMode: PromptRuntimeInjectionPlacementResolverInput["promptMode"],
-  ): boolean {
-    return true;
   }
 }

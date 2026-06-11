@@ -47,6 +47,9 @@ export interface GenerationInput {
   /** 可用工具（inline 模式，Vercel AI SDK 兼容格式） */
   tools?: Record<string, LLMToolDefinition>;
 
+  /** 工具选择策略（当前仅在支持时显式设置 auto） */
+  toolChoice?: 'auto';
+
   /** 最大自动工具调用步数 */
   maxSteps?: number;
 }

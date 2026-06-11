@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { LlmInstanceCapabilities } from "../../../lib/llm-capabilities.js";
 import { ChatServiceError } from "../../chat/errors.js";
 import { TurnModelService } from "../../chat/turn-model-service.js";
 
@@ -93,7 +94,7 @@ describe("TurnModelService", () => {
     expect(params.timeoutMs).toBeUndefined();
   });
 
-  it("resolveMaxOutputTokensOverride honors explicit request cancellations", () => {
+  it("buildGenerationParams merges new fields and filters unsupported params by capabilities", () => {
     const service = new TurnModelService({
       enableMemoryConsolidationByDefault: false,
       enableAsyncMemoryIngest: false,
@@ -101,12 +102,119 @@ describe("TurnModelService", () => {
       executionTimeoutMs: 60_000,
     });
 
-    expect(
-      service.resolveMaxOutputTokensOverride(
-        { maxOutputTokens: null },
-        { maxOutputTokens: 512 },
-      ),
-    ).toBeUndefined();
+    const capabilities: LlmInstanceCapabilities = {
+      supportsFunctionCall: true,
+      supportsToolChoice: false,
+      supportsStreamingToolCall: false,
+      unsupportedGenerationParams: ["responseFormat"],
+    };
+
+    const result = service.buildGenerationParamsResult({
+      narratorParams: {
+        seed: 7,
+        repetitionPenalty: 1.1,
+        minP: 0.05,
+        logitBias: { "42": -5 },
+        responseFormat: { type: "json_schema", jsonSchema: { type: "object" } },
+      },
+      narratorParamOrigins: {
+        seed: "profile",
+        repetitionPenalty: "profile",
+        minP: "profile",
+        logitBias: "profile",
+        responseFormat: "instance",
+      },
+      requestParams: {
+        seed: 9,
+      },
+      capabilities,
+      availableForReply: 256,
+    });
+
+    expect(result.params).toMatchObject({
+      seed: 9,
+      repetitionPenalty: 1.1,
+      minP: 0.05,
+      logitBias: { "42": -5 },
+    });
+    expect(result.params).not.toHaveProperty("responseFormat");
+    expect(result.resolution).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "seed", finalState: "sent", origin: "request", valueFrom: "request" }),
+        expect.objectContaining({ name: "repetitionPenalty", finalState: "sent", origin: "profile", valueFrom: "profile" }),
+        expect.objectContaining({ name: "minP", finalState: "sent", origin: "profile", valueFrom: "profile" }),
+        expect.objectContaining({ name: "logitBias", finalState: "sent", origin: "profile", valueFrom: "profile" }),
+        expect.objectContaining({
+          name: "responseFormat",
+          finalState: "filtered",
+          origin: "instance",
+          filterReason: "field_not_supported_by_provider",
+        }),
+      ]),
+    );
+  });
+
+  it("buildGenerationParams lets request null cancel new fields", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: false,
+      enableAsyncMemoryIngest: false,
+      memoryStoreEnabled: false,
+      executionTimeoutMs: 60_000,
+    });
+
+    const params = service.buildGenerationParams({
+      narratorParams: {
+        seed: 7,
+        repetitionPenalty: 1.1,
+        minP: 0.05,
+      },
+      requestParams: {
+        seed: null,
+        repetitionPenalty: null,
+        minP: null,
+      },
+      availableForReply: 256,
+    });
+
+    expect(params.seed).toBeUndefined();
+    expect(params.repetitionPenalty).toBeUndefined();
+    expect(params.minP).toBeUndefined();
+  });
+
+  it("buildGenerationParamsOverrides preserves new fields for non-narrator slots", () => {
+    const service = new TurnModelService({
+      enableMemoryConsolidationByDefault: false,
+      enableAsyncMemoryIngest: false,
+      memoryStoreEnabled: false,
+      executionTimeoutMs: 60_000,
+    });
+
+    const overrides = service.buildGenerationParamsOverrides({
+      narrator: {
+        enabled: true,
+        source: "env",
+        generationParams: { temperature: 0.7 },
+      },
+      director: {
+        enabled: true,
+        source: "env",
+        generationParams: {
+          seed: 42,
+          repetitionPenalty: 1.1,
+          minP: 0.05,
+          logitBias: { "42": -5 },
+          responseFormat: { type: "json_object" },
+        },
+      },
+    });
+
+    expect(overrides?.director).toEqual({
+      seed: 42,
+      repetitionPenalty: 1.1,
+      minP: 0.05,
+      logitBias: { "42": -5 },
+      responseFormat: { type: "json_object" },
+    });
   });
 
   it("resolveRequestedTurnConfig disables slots that are not available", () => {

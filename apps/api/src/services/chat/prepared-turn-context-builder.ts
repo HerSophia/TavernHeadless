@@ -79,6 +79,7 @@ export class PreparedTurnContextBuilder {
       executionContext: args.executionContext,
       conversationWindow: args.conversationWindow,
       resolvedTurnModels: args.resolvedTurnModels,
+      llmInstanceCapabilities: args.resolvedTurnModels.narrator?.capabilities,
       firstPartyStateContext: args.firstPartyStateContext,
       includeRuntimeTrace: args.request.debugOptions?.includeRuntimeTrace === true,
       baseRuntimeTrace: args.baseRuntimeTrace,

@@ -27,13 +27,16 @@ export type PromptRuntimeInjectionPromptMode =
   | "compat_plus"
   | "native";
 
-export type PromptRuntimeInjectionScope = "request";
+export type PromptRuntimeInjectionScope = "request" | "session" | "branch";
 
 export type PromptRuntimeInjectionNotAppliedReason =
   | "placement_not_available_in_mode"
   | "unknown_placement"
   | "empty_title_or_content"
-  | "prompt_section_absent";
+  | "prompt_section_absent"
+  | "disabled"
+  | "expired"
+  | "mode_scope_mismatch";
 
 export interface PromptRuntimeClientInjectionInput {
   sourceKind: "client_injection";
@@ -41,7 +44,21 @@ export interface PromptRuntimeClientInjectionInput {
   content: string;
   placement: string;
   order?: number;
+  scope?: Extract<PromptRuntimeInjectionScope, "request">;
+}
+
+export interface PromptRuntimeInjectionBuilderInput {
+  sourceKind: string;
+  title: string;
+  content: string;
+  placement: string;
+  order?: number;
   scope?: PromptRuntimeInjectionScope;
+  injectionId?: string;
+  enabled?: boolean;
+  modeScope?: PromptRuntimeInjectionPromptMode | null;
+  ttlMs?: number | null;
+  createdAt?: number;
 }
 
 export interface PromptRuntimeInjectionPlacementResolverInput {
@@ -61,6 +78,8 @@ export interface PromptRuntimeInjectionPlacementResolverOutput {
 export interface PromptRuntimeInjectionTraceItem {
   requestIndex: number;
   sourceKind: string;
+  injectionId?: string;
+  enabled?: boolean;
   scope: PromptRuntimeInjectionScope;
   placementRequested: string;
   orderRequested: number;

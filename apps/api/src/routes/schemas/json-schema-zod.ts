@@ -12,15 +12,16 @@ export type SupportedJsonSchema =
   | { type: "number" | readonly ["number", "null"] | readonly ["null", "number"]; minimum?: number; maximum?: number }
   | { type: "integer" | readonly ["integer", "null"] | readonly ["null", "integer"]; minimum?: number; maximum?: number }
   | { type: "string" | readonly ["string", "null"] | readonly ["null", "string"]; minLength?: number; maxLength?: number;enum?: readonly (string | null)[] }
-  | { type: "array" | readonly ["array", "null"] | readonly ["null", "array"]; items: SupportedJsonSchema }
+  | { type: "array" | readonly ["array", "null"] | readonly ["null", "array"]; items: SupportedJsonSchema; maxItems?: number }
   | {
     anyOf: readonly [SupportedJsonSchema, SupportedJsonSchema, ...SupportedJsonSchema[]];
   }
   | {
     type: "object";
-    properties: Record<string, SupportedJsonSchema>;
+    properties?: Record<string, SupportedJsonSchema>;
     required?: readonly string[];
-    additionalProperties?: boolean;
+    additionalProperties?: boolean | SupportedJsonSchema;
+    maxProperties?: number;
   };
 
 export type SupportedJsonObjectSchema = Extract<SupportedJsonSchema, { type: "object" }>;
@@ -92,10 +93,16 @@ export function buildZodSchemaFromJsonSchema(schema: SupportedJsonSchema): z.Zod
       if (schema.maxLength !== undefined) stringSchema = stringSchema.max(schema.maxLength);
       return stringSchema;
     }
-    case "array":
-      return z.array(buildZodSchemaFromJsonSchema(schema.items));
+    case "array": {
+      let arraySchema = z.array(buildZodSchemaFromJsonSchema(schema.items));
+      if (schema.maxItems !== undefined) {
+        arraySchema = arraySchema.max(schema.maxItems);
+      }
+      return arraySchema;
+    }
     case "object":
       return buildZodObjectSchema<Record<string, unknown>>(schema);
+
     default:
       return z.never();
   }
@@ -112,9 +119,10 @@ export function buildZodObjectSchema<T>(
   const trimStringFields = new Set(options.trimStringFields ?? []);
   const coerceBooleanFields = new Set(options.coerceBooleanFields ?? []);
   const defaultValues = options.defaultValues ?? {};
+  const properties = schema.properties ?? {};
   const shape: Record<string, z.ZodTypeAny> = {};
 
-  for (const [key, propertySchema] of Object.entries(schema.properties)) {
+  for (const [key, propertySchema] of Object.entries(properties)) {
     let fieldSchema: z.ZodTypeAny;
 
     if (
@@ -147,6 +155,25 @@ export function buildZodObjectSchema<T>(
   let objectSchema: z.ZodTypeAny = z.object(shape);
   if (schema.additionalProperties === false) {
     objectSchema = (objectSchema as z.AnyZodObject).strict();
+  } else if (schema.additionalProperties === true) {
+    objectSchema = (objectSchema as z.AnyZodObject).catchall(z.unknown());
+  } else if (schema.additionalProperties) {
+    objectSchema = (objectSchema as z.AnyZodObject).catchall(buildZodSchemaFromJsonSchema(schema.additionalProperties));
+  }
+
+  if (schema.maxProperties !== undefined) {
+    const maximum = schema.maxProperties;
+    objectSchema = objectSchema.superRefine((value, context) => {
+      if (value && typeof value === "object" && Object.keys(value as Record<string, unknown>).length > maximum) {
+        context.addIssue({
+          code: z.ZodIssueCode.too_big,
+          maximum,
+          inclusive: true,
+          type: "array",
+          message: `Object must contain at most ${maximum} properties`,
+        });
+      }
+    });
   }
 
   return objectSchema as unknown as z.ZodType<T>;

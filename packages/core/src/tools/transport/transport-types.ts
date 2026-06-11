@@ -12,7 +12,9 @@ export type ToolCallTransportReasonCode =
   | 'explicit_override'
   | 'tools_disabled'
   | 'instance_not_supports_function_call'
-  | 'default_native_function_call';
+  | 'default_native_function_call'
+  | 'mode_disallows_transport'
+  | 'override_rejected_by_mode';
 
 /**
  * 本轮工具调用传输决策。

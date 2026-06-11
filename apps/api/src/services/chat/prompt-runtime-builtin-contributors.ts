@@ -108,7 +108,7 @@ export function buildStateProjectionContributor(args: {
 }
 
 export function buildToolListContributor(args: {
-  promptMode: "compat_plus" | "native";
+  promptMode: "compat_strict" | "compat_plus" | "native";
   transport: ToolCallTransportKind;
   toolsForSlot: ToolDefinition[];
 }): PromptRuntimeBuiltinContributorResult {

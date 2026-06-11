@@ -307,8 +307,10 @@ describe("sdk resources", () => {
       enabled: true,
       id: "cfg-1",
       instanceSlot: "memory",
+      modelIdOverride: null,
       params: { top_p: 0.9 },
       presetId: "preset-1",
+      capabilities: null,
       scope: "session",
       scopeId: "session-1",
       updatedAt: 2,
@@ -317,13 +319,13 @@ describe("sdk resources", () => {
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(url).toBe("http://localhost:3000/llm-instances/memory");
     expect(init?.method).toBe("PUT");
-    expect(init?.body).toBe(JSON.stringify({
+    expect(JSON.parse(String(init?.body))).toEqual({
       enabled: true,
       params: { top_p: 0.9 },
       preset_id: "preset-1",
       scope: "session",
       session_id: "session-1",
-    }));
+    });
   });
 
   it("lists users with default query and normalized rows", async () => {

@@ -1,4 +1,8 @@
 import type { PromptRuntimeInspectResult } from "../../services/prompt-runtime/types.js";
+import type {
+  PromptRuntimeInjectionRecord,
+  PromptRuntimeInjectionResolvedStateSummary,
+} from "../../services/prompt-runtime/injection-service.js";
 import type { PromptRuntimeInjectionTraceItem } from "../../services/prompt-runtime-injection-types.js";
 import {
   mapMemoryInjectionResultToSnakeCase,
@@ -110,6 +114,8 @@ function mapInjectionItemToSnakeCase(
   return {
     request_index: item.requestIndex,
     source_kind: item.sourceKind,
+    injection_id: item.injectionId ?? null,
+    enabled: item.enabled ?? null,
     scope: item.scope,
     placement_requested: item.placementRequested,
     order_requested: item.orderRequested,
@@ -181,6 +187,41 @@ function mapResolvedPolicyToSnakeCase(policy: PromptRuntimeInspectResult["policy
 
 function mapSourceMapToSnakeCase(sourceMap: PromptRuntimeInspectResult["sourceMap"]): Record<string, unknown> {
   return mapUnknownKeysToSnakeCase(sourceMap) as Record<string, unknown>;
+}
+
+export function mapPromptRuntimeInjectionRecordToSnakeCase(
+  record: PromptRuntimeInjectionRecord,
+): Record<string, unknown> {
+  return {
+    id: record.id,
+    scope: record.scope,
+    source_kind: record.sourceKind,
+    title: record.title,
+    content: record.content,
+    placement: record.placement,
+    order: record.order,
+    enabled: record.enabled,
+    mode_scope: record.modeScope,
+    ttl_ms: record.ttlMs,
+    created_by: record.createdBy,
+    created_at: record.createdAt,
+    updated_at: record.updatedAt,
+  };
+}
+
+export function mapPromptRuntimeInjectionSummaryToSnakeCase(
+  summary: PromptRuntimeInjectionResolvedStateSummary,
+): Record<string, unknown> {
+  return {
+    session: {
+      total: summary.session.total,
+      enabled: summary.session.enabled,
+    },
+    branch: {
+      total: summary.branch.total,
+      enabled: summary.branch.enabled,
+    },
+  };
 }
 
 export function mapPromptRuntimeInspectResultToSnakeCase(
