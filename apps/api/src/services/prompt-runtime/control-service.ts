@@ -6,6 +6,10 @@ import type { AppDb, DbExecutor } from "../../db/client.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
 import { characters, floorResultSnapshots, floors, presets, promptRuntimeExplainSnapshots, promptSnapshots, regexProfiles, runtimeJobs, sessions, worldbooks } from "../../db/schema.js";
 import { parseJsonField, stringifyJsonField } from "../../lib/http.js";
+import {
+  PromptRuntimeInjectionService,
+  type PromptRuntimeInjectionResolvedStateSummary,
+} from "./injection-service.js";
 import { parsePromptRuntimeExplainSourceMapEnvelope } from "./explain-snapshot.js";
 import {
   SessionBranchRegistryService,
@@ -351,6 +355,7 @@ export interface PromptRuntimeResolvedState {
   branchPersistentPolicy: PromptRuntimePersistentPolicy | null;
   branchPersistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
   assets: PromptRuntimeAssetsView;
+  injections: PromptRuntimeInjectionResolvedStateSummary;
   sourceMap?: PromptRuntimeSourceMap;
   warnings: string[];
   diagnostics: PromptRuntimeDiagnostic[];
@@ -761,6 +766,11 @@ export class PromptRuntimeControlService {
       ?.assetBinding
       ?? null;
     const assets = await this.buildAssetsView(session, accountId, branchAssetBinding);
+    const injections = new PromptRuntimeInjectionService(this.db).getResolvedStateSummary(
+      session.id,
+      targetBranchId,
+      accountId,
+    );
     const {
       persistentPolicy,
       envelope: persistentPolicyEnvelope,
@@ -791,6 +801,7 @@ export class PromptRuntimeControlService {
       branchPersistentPolicy: branchPersistentPolicy ?? null,
       ...(branchPersistentPolicyEnvelope !== undefined ? { branchPersistentPolicyEnvelope } : {}),
       assets,
+      injections,
       sourceMap: buildPromptRuntimeSourceMap({
         sessionPolicy: persistentPolicy,
         branchPolicy: branchPersistentPolicy ?? undefined,

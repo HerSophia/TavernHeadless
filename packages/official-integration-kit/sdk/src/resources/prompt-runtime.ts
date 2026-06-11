@@ -283,6 +283,16 @@ export type PromptRuntimeInspectGenerationParams = {
   reasoningEffort?: "low" | "medium" | "high" | null;
 };
 
+export type PromptRuntimeInjectionScopeSummary = {
+  total: number;
+  enabled: number;
+};
+
+export type PromptRuntimeInjectionSummary = {
+  session: PromptRuntimeInjectionScopeSummary;
+  branch: PromptRuntimeInjectionScopeSummary;
+};
+
 export type PromptRuntimeResolvedState = {
   assets: PromptRuntimeAssetsView;
   branchPersistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
@@ -291,6 +301,7 @@ export type PromptRuntimeResolvedState = {
   limitations?: string[];
   persistentPolicyEnvelope?: PromptRuntimePersistedPolicyEnvelope | null;
   persistentPolicy?: PromptRuntimePersistentPolicy;
+  injections: PromptRuntimeInjectionSummary;
   scope: PromptRuntimeScopeRef;
   mode: PromptRuntimeModeView;
   policy: PromptRuntimeResolvedPolicy;
@@ -464,6 +475,41 @@ export type PromptRuntimeInjectionSourceKind = import("../prompt-runtime.js").Pr
 export type PromptRuntimeInjectionNotAppliedReason = import("../prompt-runtime.js").PromptRuntimeInjectionNotAppliedReason;
 export type PromptRuntimeInjectionInput = import("../prompt-runtime.js").PromptRuntimeInjectionInput;
 export type PromptRuntimeInjectionResult = import("../prompt-runtime.js").PromptRuntimeInjectionResult;
+export type PromptRuntimePersistedInjectionRecord = {
+  id: string;
+  scope: "session" | "branch";
+  sourceKind: "client_injection";
+  title: string;
+  content: string;
+  placement: string;
+  order: number;
+  enabled: boolean;
+  modeScope: PromptRuntimeModeName | null;
+  ttlMs: number | null;
+  createdBy: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+export type PromptRuntimePersistedInjectionWriteInput = {
+  sourceKind: "client_injection";
+  title: string;
+  content: string;
+  placement: string;
+  order?: number;
+  enabled?: boolean;
+  modeScope?: PromptRuntimeModeName | null;
+  ttlMs?: number | null;
+};
+export type PromptRuntimePersistedInjectionPatchInput = {
+  sourceKind?: "client_injection";
+  title?: string;
+  content?: string;
+  placement?: string;
+  order?: number;
+  enabled?: boolean;
+  modeScope?: PromptRuntimeModeName | null;
+  ttlMs?: number | null;
+};
 
 export type PromptRuntimePreviewVisibility = PromptRuntimeVisibilityPolicy;
 
@@ -541,7 +587,7 @@ export type PromptRuntimeContributorView = {
   id: string;
   kind: string;
   sourceKind: string;
-  modeScope: "compat_plus" | "native";
+  modeScope: "compat_strict" | "compat_plus" | "native";
   promptRenderable: PromptRuntimeContributorRenderable | null;
   deterministic: boolean;
   cacheScope: "floor" | "page" | "none";
@@ -673,9 +719,26 @@ export type PromptRuntimeGetModeOptions = {
 export type PromptRuntimeUpdateModeOptions = PromptRuntimeGetModeOptions;
 export type PromptRuntimeUpdateModeRequest = { promptMode: PromptRuntimeModeView["sessionPromptMode"] };
 
+export type PromptRuntimeListSessionInjectionsOptions = PromptRuntimeGetSessionOptions;
+export type PromptRuntimeCreateSessionInjectionOptions = PromptRuntimeGetSessionOptions & PromptRuntimePersistedInjectionWriteInput;
+export type PromptRuntimePatchSessionInjectionOptions = PromptRuntimeGetSessionOptions & { injectionId: string } & PromptRuntimePersistedInjectionPatchInput;
+export type PromptRuntimeDeleteSessionInjectionOptions = PromptRuntimeGetSessionOptions & { injectionId: string };
+export type PromptRuntimeListBranchInjectionsOptions = PromptRuntimeGetSessionOptions & { branchId: string };
+export type PromptRuntimeCreateBranchInjectionOptions = PromptRuntimeGetSessionOptions & { branchId: string } & PromptRuntimePersistedInjectionWriteInput;
+export type PromptRuntimePatchBranchInjectionOptions = PromptRuntimeGetSessionOptions & { branchId: string; injectionId: string } & PromptRuntimePersistedInjectionPatchInput;
+export type PromptRuntimeDeleteBranchInjectionOptions = PromptRuntimeGetSessionOptions & { branchId: string; injectionId: string };
+
 export type PromptRuntimeResource = {
   compare(options: PromptRuntimeCompareOptions): Promise<PromptRuntimeExplainDiff>;
   getAssets(options: PromptRuntimeGetAssetsOptions): Promise<PromptRuntimeAssetsView>;
+  listSessionInjections(options: PromptRuntimeListSessionInjectionsOptions): Promise<PromptRuntimePersistedInjectionRecord[]>;
+  createSessionInjection(options: PromptRuntimeCreateSessionInjectionOptions): Promise<PromptRuntimePersistedInjectionRecord>;
+  patchSessionInjection(options: PromptRuntimePatchSessionInjectionOptions): Promise<PromptRuntimePersistedInjectionRecord>;
+  deleteSessionInjection(options: PromptRuntimeDeleteSessionInjectionOptions): Promise<PromptRuntimePersistedInjectionRecord>;
+  listBranchInjections(options: PromptRuntimeListBranchInjectionsOptions): Promise<PromptRuntimePersistedInjectionRecord[]>;
+  createBranchInjection(options: PromptRuntimeCreateBranchInjectionOptions): Promise<PromptRuntimePersistedInjectionRecord>;
+  patchBranchInjection(options: PromptRuntimePatchBranchInjectionOptions): Promise<PromptRuntimePersistedInjectionRecord>;
+  deleteBranchInjection(options: PromptRuntimeDeleteBranchInjectionOptions): Promise<PromptRuntimePersistedInjectionRecord>;
   inspect(options: PromptRuntimeInspectOptions): Promise<PromptRuntimeInspectResult>;
   getBranchPolicy(options: PromptRuntimeGetBranchPolicyOptions): Promise<PromptRuntimePolicyView>;
   getCapabilities(options?: PromptRuntimeGetCapabilitiesOptions): Promise<PromptRuntimeCapabilities>;
@@ -723,6 +786,132 @@ export function createPromptRuntimeResource(client: TransportClient): PromptRunt
       const payload = mapPromptRuntimeAssetsView(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Prompt Runtime assets payload is missing");
+      }
+
+      return payload;
+    },
+    async listSessionInjections(options): Promise<PromptRuntimePersistedInjectionRecord[]> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/injections`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+
+      return readArray(readRecord(response.body)?.data)
+        .map(mapPromptRuntimePersistedInjectionRecord)
+        .filter((item): item is PromptRuntimePersistedInjectionRecord => item !== null);
+    },
+    async createSessionInjection(options): Promise<PromptRuntimePersistedInjectionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/injections`,
+        {
+          body: mapPromptRuntimePersistedInjectionBody(options),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const payload = mapPromptRuntimePersistedInjectionRecord(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime session injection payload is missing");
+      }
+
+      return payload;
+    },
+    async patchSessionInjection(options): Promise<PromptRuntimePersistedInjectionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/injections/${encodeURIComponent(options.injectionId)}`,
+        {
+          body: mapPromptRuntimePersistedInjectionBody(options),
+          headers: buildAccountHeaders(options.accountId),
+          method: "PATCH",
+        },
+      );
+
+      const payload = mapPromptRuntimePersistedInjectionRecord(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime session injection payload is missing");
+      }
+
+      return payload;
+    },
+    async deleteSessionInjection(options): Promise<PromptRuntimePersistedInjectionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/injections/${encodeURIComponent(options.injectionId)}`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "DELETE",
+        },
+      );
+
+      const payload = mapPromptRuntimePersistedInjectionRecord(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime session injection payload is missing");
+      }
+
+      return payload;
+    },
+    async listBranchInjections(options): Promise<PromptRuntimePersistedInjectionRecord[]> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/branches/${encodeURIComponent(options.branchId)}/injections`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+
+      return readArray(readRecord(response.body)?.data)
+        .map(mapPromptRuntimePersistedInjectionRecord)
+        .filter((item): item is PromptRuntimePersistedInjectionRecord => item !== null);
+    },
+    async createBranchInjection(options): Promise<PromptRuntimePersistedInjectionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/branches/${encodeURIComponent(options.branchId)}/injections`,
+        {
+          body: mapPromptRuntimePersistedInjectionBody(options),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const payload = mapPromptRuntimePersistedInjectionRecord(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime branch injection payload is missing");
+      }
+
+      return payload;
+    },
+    async patchBranchInjection(options): Promise<PromptRuntimePersistedInjectionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/branches/${encodeURIComponent(options.branchId)}/injections/${encodeURIComponent(options.injectionId)}`,
+        {
+          body: mapPromptRuntimePersistedInjectionBody(options),
+          headers: buildAccountHeaders(options.accountId),
+          method: "PATCH",
+        },
+      );
+
+      const payload = mapPromptRuntimePersistedInjectionRecord(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime branch injection payload is missing");
+      }
+
+      return payload;
+    },
+    async deleteBranchInjection(options): Promise<PromptRuntimePersistedInjectionRecord> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/sessions/${encodeURIComponent(options.sessionId)}/prompt-runtime/branches/${encodeURIComponent(options.branchId)}/injections/${encodeURIComponent(options.injectionId)}`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "DELETE",
+        },
+      );
+
+      const payload = mapPromptRuntimePersistedInjectionRecord(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Prompt Runtime branch injection payload is missing");
       }
 
       return payload;
@@ -957,6 +1146,10 @@ function mapPromptRuntimeResolvedState(value: unknown): PromptRuntimeResolvedSta
   const persistentPolicyEnvelope = mapPromptRuntimePersistentPolicyEnvelope(record.persistent_policy_envelope);
   const branchPersistentPolicyEnvelope = mapPromptRuntimePersistentPolicyEnvelope(record.branch_persistent_policy_envelope);
   const sourceMap = mapPromptRuntimeSourceMap(record.source_map);
+  const injections = mapPromptRuntimeInjectionSummary(record.injections) ?? {
+    session: { total: 0, enabled: 0 },
+    branch: { total: 0, enabled: 0 },
+  };
 
   return {
     assets,
@@ -966,6 +1159,7 @@ function mapPromptRuntimeResolvedState(value: unknown): PromptRuntimeResolvedSta
     ...(record.limitations !== undefined ? { limitations: mapStringArray(record.limitations) } : {}),
     ...(record.persistent_policy_envelope !== undefined ? { persistentPolicyEnvelope: persistentPolicyEnvelope ?? null } : {}),
     ...(persistentPolicy ? { persistentPolicy } : {}),
+    injections,
     scope: scope ?? {
       sessionId: "",
       targetBranchId: "main",
@@ -977,6 +1171,52 @@ function mapPromptRuntimeResolvedState(value: unknown): PromptRuntimeResolvedSta
     policy,
     ...(sourceMap ? { sourceMap } : {}),
     warnings: mapStringArray(record.warnings),
+  };
+}
+
+function mapPromptRuntimeInjectionSummary(value: unknown): PromptRuntimeInjectionSummary | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    session: mapPromptRuntimeInjectionScopeSummary(record.session),
+    branch: mapPromptRuntimeInjectionScopeSummary(record.branch),
+  };
+}
+
+function mapPromptRuntimeInjectionScopeSummary(value: unknown): PromptRuntimeInjectionScopeSummary {
+  const record = readRecord(value);
+  return {
+    total: readNumber(record?.total),
+    enabled: readNumber(record?.enabled),
+  };
+}
+
+function mapPromptRuntimePersistedInjectionRecord(value: unknown): PromptRuntimePersistedInjectionRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const modeScope = readNullableString(record.mode_scope);
+  return {
+    id: readString(record.id),
+    scope: readString(record.scope) === "branch" ? "branch" : "session",
+    sourceKind: "client_injection",
+    title: readString(record.title),
+    content: readString(record.content),
+    placement: readString(record.placement),
+    order: readNumber(record.order),
+    enabled: readBoolean(record.enabled),
+    modeScope: modeScope === "compat_strict" || modeScope === "compat_plus" || modeScope === "native"
+      ? modeScope
+      : null,
+    ttlMs: readNullableNumber(record.ttl_ms),
+    createdBy: readNullableString(record.created_by),
+    createdAt: readNumber(record.created_at),
+    updatedAt: readNumber(record.updated_at),
   };
 }
 
@@ -1477,6 +1717,21 @@ function mapPromptRuntimeInspectRequestBody(options: PromptRuntimeInspectOptions
   });
 }
 
+function mapPromptRuntimePersistedInjectionBody(
+  value: PromptRuntimePersistedInjectionWriteInput | PromptRuntimePersistedInjectionPatchInput,
+): Record<string, unknown> {
+  return compactObject({
+    source_kind: value.sourceKind,
+    title: value.title,
+    content: value.content,
+    placement: value.placement,
+    order: value.order,
+    enabled: value.enabled,
+    mode_scope: value.modeScope,
+    ttl_ms: value.ttlMs,
+  });
+}
+
 function mapPromptRuntimeInspectTurnConfigRequest(
   value?: PromptRuntimeInspectTurnConfig,
 ): Record<string, unknown> | undefined {
@@ -1690,11 +1945,16 @@ function mapPromptRuntimeContributorView(value: unknown): PromptRuntimeContribut
   }
 
   const renderable = readRecord(record.prompt_renderable);
+  const modeScope = readString(record.mode_scope);
   return {
     id: readString(record.id),
     kind: readString(record.kind),
     sourceKind: readString(record.source_kind),
-    modeScope: readString(record.mode_scope) === "native" ? "native" : "compat_plus",
+    modeScope: modeScope === "native"
+      ? "native"
+      : modeScope === "compat_strict"
+        ? "compat_strict"
+        : "compat_plus",
     promptRenderable: renderable
       ? {
           title: readString(renderable.title),

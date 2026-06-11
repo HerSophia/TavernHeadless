@@ -21,6 +21,7 @@ import {
 } from "../services/variables/host/session-branch-registry-service.js";
 import { OperationLogService, operationActorFromRequest, operationRequestIdFromRequest } from "../services/operation-log-service.js";
 import { ProjectAccessService, ProjectAccessServiceError } from "../services/project-access-service.js";
+import { PromptRuntimeInjectionService } from "../services/prompt-runtime/injection-service.js";
 import { VcDiffService } from "../services/vc-diff-service.js";
 
 const floorStateSchema = z.enum(["draft", "generating", "committed", "failed"]);
@@ -1368,6 +1369,7 @@ export async function registerFloorRoutes(
       .map((row) => row.id);
 
     const deletedRows = await db.transaction((tx) => {
+      new PromptRuntimeInjectionService(tx).deleteBranchScopeInjections(targetSessionId, branchId);
       new SessionBranchRegistryService(tx).remove(
         auth.accountId,
         targetSessionId,

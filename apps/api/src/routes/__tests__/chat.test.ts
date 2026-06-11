@@ -282,6 +282,7 @@ describe("chat routes", () => {
             items: [{
               requestIndex: 0,
               sourceKind: "client_injection",
+              enabled: true,
               scope: "request",
               placementRequested: "before_history",
               orderRequested: 30,
@@ -312,6 +313,8 @@ describe("chat routes", () => {
               {
                 request_index: 0,
                 source_kind: "client_injection",
+                injection_id: null,
+                enabled: true,
                 scope: "request",
                 placement_requested: "before_history",
                 order_requested: 30,

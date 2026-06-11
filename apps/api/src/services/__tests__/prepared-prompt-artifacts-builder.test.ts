@@ -141,6 +141,7 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
       phase: "injection",
       detail: {
         requestedCount: 1,
+        persistentCount: 0,
         appliedCount: 1,
         notAppliedCount: 0,
       },
@@ -221,6 +222,107 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
     expect(result.injections).toHaveLength(1);
     expect(result.injections[0]?.title).toBe(expectedTitle);
   });
+
+  it("keeps tool_list contributors available in compat_strict and marks strict_fixed placement", async () => {
+    modelService.resolveRequestedTurnConfig.mockReturnValueOnce({ enableTools: true });
+    modelService.toOrchestratorTurnConfig.mockReturnValueOnce({ enableTools: true });
+    turnToolingService.resolveTurnToolingForTurn.mockResolvedValueOnce({
+      toolRegistry: {
+        listForSlot: vi.fn(async () => [createNarratorTool()]),
+      },
+      toolPermissions: { enabled: true },
+    });
+
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+    });
+
+    const result = await builder.prepare({
+      ...createPrepareArgs(),
+      llmInstanceCapabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: [],
+      },
+    } as never);
+
+    const assembleOptions = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7];
+    expect(assembleOptions?.contributors).toContainEqual(expect.objectContaining({
+      sourceKind: "tool_list",
+      title: "Tool list",
+    }));
+    expect(result.toolTransport).toMatchObject({
+      selection: {
+        transport: "text_protocol",
+        reasonCode: "instance_not_supports_function_call",
+      },
+      toolList: {
+        injected: true,
+        contributorId: "builtin:tool_list",
+        placementMode: "strict_fixed",
+        toolCount: 1,
+      },
+    });
+  });
+
+  it("records native tool choice application and disables stream when streaming tool calls are unsupported", async () => {
+    modelService.resolveRequestedTurnConfig.mockReturnValueOnce({ enableTools: true });
+    modelService.toOrchestratorTurnConfig.mockReturnValueOnce({ enableTools: true });
+    turnToolingService.resolveTurnToolingForTurn.mockResolvedValueOnce({
+      toolRegistry: {
+        listForSlot: vi.fn(async () => [createNarratorTool()]),
+      },
+      toolPermissions: { enabled: true },
+    });
+
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+    });
+
+    const baseArgs = createPrepareArgs();
+    const result = await builder.prepare({
+      ...baseArgs,
+      session: {
+        ...baseArgs.session,
+        promptMode: "native",
+      },
+      sessionInfo: {
+        ...baseArgs.sessionInfo,
+        promptMode: "native",
+      },
+      stream: true,
+      llmInstanceCapabilities: {
+        supportsFunctionCall: true,
+        supportsToolChoice: true,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: [],
+      },
+    } as never);
+
+    const generationParamsArgs = modelService.buildGenerationParamsResult.mock.calls.at(-1)?.[0];
+    expect(generationParamsArgs).toMatchObject({ stream: false });
+    expect(result.toolTransport).toMatchObject({
+      selection: {
+        transport: "native_function_call",
+        reasonCode: "default_native_function_call",
+      },
+      toolChoiceApplied: true,
+      streamingToolCallUnsupported: true,
+      toolList: {
+        injected: false,
+        toolCount: 1,
+      },
+    });
+  });
 });
 
 function createBuilder(args: {
@@ -261,6 +363,7 @@ function createBuilder(args: {
     } as never,
     args.firstPartyStateContextService as never,
     args.turnToolingService as never,
+    { enablePersistentInjections: false },
   );
 }
 
@@ -471,5 +574,22 @@ function createInjectionTraceItem(title: string, placementResolved: string) {
     contentLength: title.length,
     applied: true,
     placementResolved,
+  };
+}
+
+function createNarratorTool(name = "roll_dice") {
+  return {
+    name,
+    description: `${name} description`,
+    parameters: {
+      type: "object" as const,
+      properties: {
+        value: { type: "string" },
+      },
+      required: ["value"],
+    },
+    sideEffectLevel: "none" as const,
+    allowedSlots: [],
+    source: "builtin" as const,
   };
 }

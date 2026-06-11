@@ -256,13 +256,16 @@ export type PromptRuntimeInjectionPlacement =
   | "after_current_user_input"
   | "before_output_instruction"
   | "before_assistant_prefill";
-export type PromptRuntimeInjectionScope = "request";
+export type PromptRuntimeInjectionScope = "request" | "session" | "branch";
 export type PromptRuntimeInjectionSourceKind = "client_injection";
 export type PromptRuntimeInjectionNotAppliedReason =
   | "placement_not_available_in_mode"
   | "unknown_placement"
   | "empty_title_or_content"
-  | "prompt_section_absent";
+  | "prompt_section_absent"
+  | "disabled"
+  | "mode_scope_mismatch"
+  | "expired";
 export type PromptRuntimeInjectionInput = {
   sourceKind: PromptRuntimeInjectionSourceKind;
   title: string;
@@ -533,6 +536,8 @@ export type PromptRuntimeToolTransportKind = "native_function_call" | "text_prot
 
 export type PromptRuntimeToolTransportReasonCode =
   | "explicit_override"
+  | "override_rejected_by_mode"
+  | "mode_disallows_transport"
   | "tools_disabled"
   | "instance_not_supports_function_call"
   | "default_native_function_call";
@@ -759,6 +764,8 @@ function readPromptRuntimeToolTransportKind(value: unknown): PromptRuntimeToolTr
 function readPromptRuntimeToolTransportReasonCode(value: unknown): PromptRuntimeToolTransportReasonCode | undefined {
   const reason = readOptionalString(value);
   return reason === "explicit_override"
+    || reason === "override_rejected_by_mode"
+    || reason === "mode_disallows_transport"
     || reason === "tools_disabled"
     || reason === "instance_not_supports_function_call"
     || reason === "default_native_function_call"
@@ -1062,7 +1069,11 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
   return {
     requestIndex: readNumber(record.request_index),
     sourceKind: readString(record.source_kind),
-    scope: scope === "request" ? "request" : "request",
+    scope: scope === "session"
+      ? "session"
+      : scope === "branch"
+        ? "branch"
+        : "request",
     placementRequested: readString(record.placement_requested),
     orderRequested: readNumber(record.order_requested),
     title: readString(record.title),
@@ -1074,6 +1085,9 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
         || notAppliedReason === "unknown_placement"
         || notAppliedReason === "empty_title_or_content"
         || notAppliedReason === "prompt_section_absent"
+        || notAppliedReason === "disabled"
+        || notAppliedReason === "mode_scope_mismatch"
+        || notAppliedReason === "expired"
       )
       ? { notAppliedReason }
       : {}),

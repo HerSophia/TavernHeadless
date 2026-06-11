@@ -97,20 +97,14 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 - `previewText(...)` 仍然对应 `macro_text_preview`
 - `inspect(...)` 仍然对应一次真实 prepared turn 的只读检查
 
-### Prompt Runtime Injection（I1）
+### Prompt Runtime Injection
 
-当前 `previewText(...)`、`inspect(...)`、`sessions.respond(...)`、`sessions.respondDryRun(...)`、`sessions.regenerate(...)`、`floors.retry(...)`、`messages.editAndRegenerate(...)` 都已经支持可选的 `promptRuntimeInjections`。
+当前 SDK 同时支持两类 Prompt Runtime Injection：
 
-它对应后端请求体字段 `prompt_runtime_injections`。
+1. 请求级注入：通过 `promptRuntimeInjections` 随 `previewText(...)`、`inspect(...)`、`sessions.respond(...)`、`sessions.respondDryRun(...)`、`sessions.regenerate(...)`、`floors.retry(...)`、`messages.editAndRegenerate(...)` 一起提交
+2. 持久注入：通过 `client.promptRuntime.list/create/patch/deleteSessionInjection(...)` 和 `...BranchInjection(...)` 管理 session / branch 级记录
 
-I1 的公开边界固定为：
-
-- 只支持请求级注入，不做 session / branch 持久化
-- `sourceKind` 只允许 `"client_injection"`
-- `scope` 只允许 `"request"`
-- `order` 默认 `100`，只影响同一 placement 内部顺序
-
-示例：
+请求级注入示例：
 
 ```ts
 const injection = {
@@ -135,6 +129,33 @@ const preview = await client.promptRuntime.previewText({
 });
 ```
 
+持久注入示例：
+
+```ts
+const created = await client.promptRuntime.createSessionInjection({
+  sessionId: "sess_1",
+  sourceKind: "client_injection",
+  title: "History guard",
+  content: "Keep the north pass in focus.",
+  placement: "before_history",
+  modeScope: "native",
+});
+
+await client.promptRuntime.patchBranchInjection({
+  sessionId: "sess_1",
+  branchId: "branch_alt",
+  injectionId: created.id,
+  enabled: false,
+});
+```
+
+公开边界固定为：
+
+- `sourceKind` 只允许 `"client_injection"`
+- 请求级 `scope` 仍然使用 `"request"`
+- inspection 返回的注入结果里，`scope` 可能为 `request`、`session`、`branch`
+- `order` 默认 `100`，只影响同一 placement 内部顺序
+
 其中：
 
 - `previewText(...)` 不会把 injection 注入返回的 `text`
@@ -150,6 +171,9 @@ const preview = await client.promptRuntime.previewText({
 - `PromptRuntimeInjectionScope`
 - `PromptRuntimeInjectionSourceKind`
 - `PromptRuntimeInjectionNotAppliedReason`
+- `PromptRuntimePersistedInjectionRecord`
+- `PromptRuntimePersistedInjectionWriteInput`
+- `PromptRuntimePersistedInjectionPatchInput`
 
 ### inspect 的新增返回字段
 
@@ -233,6 +257,16 @@ const preview = await client.promptRuntime.previewText({
 - inspect 现在还能返回准备阶段的 phase trace
 
 SDK 这里只暴露稳定视图，不暴露 contributor 的内部 raw payload。
+
+## LLM Instances 与 Session Effective Config
+
+`client.llmInstances.upsert(...)` 现在支持：
+
+- `modelIdOverride`：只覆盖模型名，不改 provider / base URL / API Key
+- `capabilities`：声明实例是否支持原生 function call、tool choice、streaming tool call
+- `params.stop_sequences`
+
+`client.sessions.getEffectiveConfig(...)` 现在会额外返回 `toolTransport`，用于说明当前会话最终选择了哪种工具调用 transport，以及为什么这样选。
 
 ## 阶段五新增资源
 

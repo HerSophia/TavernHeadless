@@ -175,6 +175,27 @@ const promptRuntimePersistentPolicyEnvelopeExample = {
   },
 } as const;
 
+const promptRuntimeInjectionSummaryExample = {
+  session: { total: 1, enabled: 1 },
+  branch: { total: 2, enabled: 1 },
+} as const;
+
+const promptRuntimePersistedInjectionExample = {
+  id: "inj_1",
+  scope: "session",
+  source_kind: "client_injection",
+  title: "History guard",
+  content: "Keep the north pass in focus.",
+  placement: "before_history",
+  order: 100,
+  enabled: true,
+  mode_scope: null,
+  ttl_ms: null,
+  created_by: "user-1",
+  created_at: 1710000004600,
+  updated_at: 1710000004700,
+} as const;
+
 const promptRuntimeSectionStatsExample = [
   { section_name: "history", token_count: 320 },
   { section_name: "main", token_count: 96 },
@@ -493,6 +514,7 @@ export const promptRuntimePreviewResponseExample = {
       tool_list: {
         injected: true,
         contributor_id: "builtin:tool_list",
+        placement_mode: "contributor_chain",
         tool_count: 2,
       },
       parsing: {
@@ -1763,6 +1785,114 @@ const promptRuntimePersistentPolicyEnvelopeResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const promptRuntimeInjectionScopeSummaryJsonSchema = {
+  type: "object",
+  required: ["total", "enabled"],
+  properties: {
+    total: { type: "integer", minimum: 0 },
+    enabled: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeInjectionResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: [
+        "id",
+        "scope",
+        "source_kind",
+        "title",
+        "content",
+        "placement",
+        "order",
+        "enabled",
+        "mode_scope",
+        "ttl_ms",
+        "created_by",
+        "created_at",
+        "updated_at",
+      ],
+      properties: {
+        id: { type: "string" },
+        scope: { type: "string", enum: ["session", "branch"] },
+        source_kind: { type: "string", enum: ["client_injection"] },
+        title: { type: "string" },
+        content: { type: "string" },
+        placement: { type: "string" },
+        order: { type: "integer" },
+        enabled: { type: "boolean" },
+        mode_scope: { anyOf: [{ type: "string", enum: ["compat_strict", "compat_plus", "native"] }, { type: "null" }] },
+        ttl_ms: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+        created_by: { anyOf: [{ type: "string" }, { type: "null" }] },
+        created_at: { type: "integer", minimum: 0 },
+        updated_at: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    },
+  },
+  examples: [{ data: promptRuntimePersistedInjectionExample }],
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeInjectionListResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "array",
+      items: promptRuntimeInjectionResponseJsonSchema.properties.data,
+    },
+  },
+  examples: [{ data: [promptRuntimePersistedInjectionExample] }],
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeInjectionCreateBodyJsonSchema = {
+  type: "object",
+  required: ["source_kind", "title", "content", "placement"],
+  properties: {
+    source_kind: { type: "string", enum: ["client_injection"] },
+    title: { type: "string", minLength: 1 },
+    content: { type: "string", minLength: 1 },
+    placement: { type: "string", minLength: 1 },
+    order: { type: "integer" },
+    enabled: { type: "boolean" },
+    mode_scope: { anyOf: [{ type: "string", enum: ["compat_strict", "compat_plus", "native"] }, { type: "null" }] },
+    ttl_ms: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+  },
+  examples: [{
+    source_kind: "client_injection",
+    title: "History guard",
+    content: "Keep the north pass in focus.",
+    placement: "before_history",
+    order: 100,
+    enabled: true,
+    mode_scope: null,
+    ttl_ms: null,
+  }],
+  additionalProperties: false,
+} as const;
+
+export const promptRuntimeInjectionPatchBodyJsonSchema = {
+  type: "object",
+  properties: {
+    source_kind: { type: "string", enum: ["client_injection"] },
+    title: { type: "string", minLength: 1 },
+    content: { type: "string", minLength: 1 },
+    placement: { type: "string", minLength: 1 },
+    order: { type: "integer" },
+    enabled: { type: "boolean" },
+    mode_scope: { anyOf: [{ type: "string", enum: ["compat_strict", "compat_plus", "native"] }, { type: "null" }] },
+    ttl_ms: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+  },
+  examples: [{ enabled: false, mode_scope: "native", ttl_ms: 60000 }],
+  additionalProperties: false,
+} as const;
+
 const promptRuntimeAssetSummaryResponseJsonSchema = {
   type: "object",
   required: ["id", "name"],
@@ -1782,7 +1912,7 @@ export const promptRuntimeResolvedStateResponseJsonSchema = {
   properties: {
     data: {
       type: "object",
-      required: ["scope", "mode", "policy", "branch_persistent_policy", "assets", "warnings", "diagnostics", "limitations"],
+      required: ["scope", "mode", "policy", "branch_persistent_policy", "assets", "injections", "warnings", "diagnostics", "limitations"],
       properties: {
         scope: promptRuntimeScopeJsonSchema,
         mode: promptRuntimeModeViewSchema,
@@ -1791,6 +1921,15 @@ export const promptRuntimeResolvedStateResponseJsonSchema = {
         persistent_policy_envelope: { anyOf: [promptRuntimePersistentPolicyEnvelopeResponseJsonSchema, { type: "null" }] },
         branch_persistent_policy: { anyOf: [promptRuntimePersistentPolicyResponseJsonSchema, { type: "null" }] },
         branch_persistent_policy_envelope: { anyOf: [promptRuntimePersistentPolicyEnvelopeResponseJsonSchema, { type: "null" }] },
+        injections: {
+          type: "object",
+          required: ["session", "branch"],
+          properties: {
+            session: promptRuntimeInjectionScopeSummaryJsonSchema,
+            branch: promptRuntimeInjectionScopeSummaryJsonSchema,
+          },
+          additionalProperties: false,
+        },
         source_map: promptRuntimeSourceMapJsonSchema,
         assets: {
           type: "object",
@@ -1823,6 +1962,7 @@ export const promptRuntimeResolvedStateResponseJsonSchema = {
     },
     source_map: promptRuntimeSourceMapExample,
     assets: promptRuntimeAssetsExample,
+    injections: promptRuntimeInjectionSummaryExample,
     capabilities: promptRuntimeCapabilitiesExample,
     limitations: promptRuntimeLimitationsExample,
   } }],
