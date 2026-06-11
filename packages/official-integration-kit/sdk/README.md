@@ -85,6 +85,57 @@ const client = createTavernClient({
 - `AUTH_MODE=off` 只应用于本地开发；服务端会在 `NODE_ENV=production && AUTH_MODE=off` 时直接拒绝启动
 - `/health`、`/version`、`/openapi.json`、`/docs`、`/docs/*` 这些 public path 始终按匿名请求处理，不会继承管理员上下文
 
+## 临时对话资源
+
+临时对话是一个正式的高级资源，用来承载不污染主叙事的短期草稿、多轮辅助推理和候选输出整理。
+
+SDK 里有三组对应入口：
+
+- `client.sessions.createTemporaryConversation(...)`
+- `client.projects.createTemporaryConversation(...)`
+- `client.temporaryConversations.*`
+
+一个最小例子：
+
+```ts
+const temp = await client.sessions.createTemporaryConversation({
+  sessionId: "sess_1",
+  input: {
+    purpose: "draft-reply",
+    retentionPolicy: "ttl",
+    ttlSeconds: 1800,
+  },
+});
+
+const result = await client.temporaryConversations.respond({
+  conversationId: temp.id,
+  inputMessage: {
+    role: "user",
+    content: "请给我三个不同语气的候选回复。",
+  },
+});
+
+await client.temporaryConversations.exportToPageStagedWrite({
+  conversationId: temp.id,
+  targetPageId: "page_target_1",
+  reason: "候选草稿",
+});
+
+await client.temporaryConversations.finalize({
+  conversationId: temp.id,
+});
+
+console.log(result.generatedText);
+```
+
+这组资源的固定边界是：
+
+- 普通 `sessions` 列表和详情不会直接暴露临时对话
+- 生命周期只有 `active / finalized / discarded / expired / cancelled`
+- `respond(...)` / `respondStream(...)` 默认只返回 inline 结果
+- 如果要把结果送回正式页面，必须显式调用 `exportToPageStagedWrite(...)`
+- 公开路由只返回 `client_visible` 的临时对话
+
 ## Prompt Runtime 资源补充
 
 Prompt Runtime 资源当前有两条需要特别区分的只读入口：

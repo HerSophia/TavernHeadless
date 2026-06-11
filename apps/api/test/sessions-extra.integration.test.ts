@@ -427,6 +427,42 @@ expect(res.json<E>().error.code).toBe("user_not_active");
     expect(res.json<E>().error.code).toBe("session_project_move_not_supported");
   });
 
+  it("GET /sessions hides temporary conversations and GET /sessions/:id returns 404 for them", async () => {
+    const sourceSession = await createSession(app, { title: "Temp Source Session" });
+    const temporarySessionId = `temp-${sourceSession.id}`;
+    const now = Date.now();
+
+    await database.insert(sessions).values({
+      id: temporarySessionId,
+      title: "Temporary Hidden Session",
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      status: "active",
+      kind: "temporary",
+      purpose: "route-filter",
+      temporarySourceSessionId: sourceSession.id,
+      temporarySnapshotDigest: `sha256:${sourceSession.id}`,
+      retentionPolicy: "delete_on_finalize",
+      visibility: "internal",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/sessions",
+    });
+    expect(listResponse.statusCode, listResponse.body).toBe(200);
+    const listBody = listResponse.json<D<SessionData[]> & { meta: Record<string, unknown> }>();
+    expect(listBody.data.some((item) => item.id === temporarySessionId)).toBe(false);
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: `/sessions/${temporarySessionId}`,
+    });
+    expect(detailResponse.statusCode, detailResponse.body).toBe(404);
+    expect(detailResponse.json<E>().error.code).toBe("not_found");
+  });
+
   it("GET /sessions filters by status", async ()=> {
 
     await createSession(app, { title: "Active One" });

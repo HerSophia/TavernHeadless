@@ -17,6 +17,8 @@ Project 级的派生结果、收件箱、Agent 启用和设置覆盖各有自己
 
 如果你只是普通聊天接入，不需要看这页。普通客户端创建会话时不需要传任何 Project 字段。
 
+如果你要基于某个 Project 开一个不污染主叙事的研究、整理或候选起草容器，请看 [Temporary Conversations](./temporary-conversations)。那组接口会通过 `POST /projects/:id/temporary-conversations` 创建临时对话。
+
 ## 一个简单例子
 
 ```bash

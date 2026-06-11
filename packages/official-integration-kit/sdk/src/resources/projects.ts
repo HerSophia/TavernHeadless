@@ -12,6 +12,11 @@ import {
   readRecord,
   readString,
 } from "./utils.js";
+import {
+  createTemporaryConversationFromProject,
+  type ProjectsCreateTemporaryConversationOptions,
+  type TemporaryConversationRecord,
+} from "./temporary-conversations.js";
 
 export type ProjectRole = "owner" | "observer" | "deriver";
 export type ProjectStatus = "active" | "archived";
@@ -478,6 +483,7 @@ export type ProjectsResource = {
   addObserver(options: ProjectsAddObserverOptions): Promise<ProjectMember>;
   addDeriver(projectId: string, deriverAccountId: string, options?: ProjectsMemberMutationOptions): Promise<ProjectMember>;
   removeMember(options: ProjectsRemoveMemberOptions): Promise<ProjectMember>;
+  createTemporaryConversation(options: ProjectsCreateTemporaryConversationOptions): Promise<TemporaryConversationRecord>;
   getEffectiveConfig(projectId: string, options?: ProjectsSettingsRequestOptions): Promise<ProjectEffectiveConfigView>;
   derivedOutputs: ProjectsDerivedOutputsResource;
   inbox: ProjectsInboxResource;
@@ -673,6 +679,9 @@ export function createProjectsResource(client: TransportClient): ProjectsResourc
         throw new Error("Project member payload is missing");
       }
       return member;
+    },
+    async createTemporaryConversation(options: ProjectsCreateTemporaryConversationOptions): Promise<TemporaryConversationRecord> {
+      return createTemporaryConversationFromProject(client, options);
     },
     async getEffectiveConfig(projectId, options = {}): Promise<ProjectEffectiveConfigView> {
       const response = await client.fetchJson<Record<string, unknown>>(
