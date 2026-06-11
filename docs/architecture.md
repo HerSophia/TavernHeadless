@@ -72,6 +72,21 @@
 - `GET /sessions/:id` 和列表响应默认不返回 `workspace_id`、`project_id`。
 - Prompt Asset、角色、用户卡、LLM 配置、工具定义和 MCP 配置的旧列表接口默认只读当前账号默认 Workspace。
 
+#### 临时对话（高级资源）
+
+系统现在还支持一种临时对话资源。它仍然复用 `session / floor / message_page / message` 这套模型，但 `sessions.kind = temporary`，因此不会被普通 `sessions` 资源列表和详情接口直接暴露。
+
+这套能力现在已经有专用公共路由和 SDK 资源，但仍保持单独资源面，不混入普通会话主链。它的边界如下：
+
+- 默认非正史，不进入普通会话列表与详情读取面。
+- 默认快照读取：从来源 Session 或 Project 生效配置派生后，在临时副本上运行。
+- 生命周期固定为 `active / finalized / discarded / expired / cancelled`。
+- 默认返回 `return_inline` 结果；如果需要把结果送回正式页面，必须显式导出到 `page_staged_write`。
+- 默认不写记忆真相层、不写 Session State live、不写 Variables durable truth、不进入 Project committed-only 事件流。
+- 公共资源面只暴露 `client_visible` 资源；`internal` 临时对话继续只供内部调用方使用。
+
+它的主要用途，是给辅助推理、短期多轮草稿和后续 Agent 执行介质提供一个可控的隔离容器，同时避免污染主叙事会话。
+
 ### 楼层（Floor）
 
 一次「回合」。你发一条消息、AI 回一条消息，这就是一个楼层。

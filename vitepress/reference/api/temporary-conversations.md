@@ -1,0 +1,689 @@
+---
+outline: [2, 3]
+---
+
+# Temporary Conversations（临时对话）
+
+临时对话是一组正式的高级资源。
+
+它用来承载不污染主叙事的短期草稿、多轮辅助推理、候选输出整理和 Project 级研究协作。底层仍然复用 `session / floor / message_page / message` 这套模型，但资源载体固定为 `sessions.kind = temporary`，并且不会出现在普通 `sessions` 列表和详情接口里。
+
+## 什么时候需要看这页
+
+- 你要基于一个已有会话开一个隔离的草稿对话。
+- 你要基于一个 Project 开一个临时研究或整理容器。
+- 你要给这类临时对话追加消息、继续生成或读取 transcript。
+- 你要把临时对话结果显式导出到 `page_staged_write`。
+- 你要区分 `finalize`、`discard`、`cancel`、`expired` 这些生命周期语义。
+
+如果你只是普通聊天接入，继续看 [Sessions](./sessions) 和 [Chat](./chat) 即可。
+
+## 一个简单例子
+
+```bash
+# 1) 基于现有 Session 创建临时对话
+curl -X POST http://localhost:3000/sessions/sess_main/temporary-conversations \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "purpose": "draft-reply",
+    "retention_policy": "ttl",
+    "ttl_seconds": 1800
+  }'
+
+# 2) 在临时对话里继续生成
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/respond \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input_message": {
+      "role": "user",
+      "content": "请给我三个不同语气的候选回复。"
+    }
+  }'
+
+# 3) 把候选结果显式导出到正式页面的 staged write ledger
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/export \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "target": "page_staged_write",
+    "target_page_id": "page_target_1",
+    "reason": "候选草稿"
+  }'
+```
+
+## 先理解几个词
+
+| 词 | 这里的意思 |
+| ---- | ---- |
+| temporary conversation | 一种独立资源，底层仍复用会话模型，但默认不进入主叙事正史 |
+| source session | 临时对话的来源会话。基于 Session 创建时会从这里派生快照 |
+| source project | 临时对话的来源 Project。基于 Project 创建时会从这里读取生效配置 |
+| `return_inline` | 默认结果出口。`respond` 只把结果作为当前请求返回，不自动写回正式页面 |
+| `page_staged_write` | 候选写入 ledger。它不是 commit，也不会自动激活 page |
+| `client_visible` | 公共资源面可见的临时对话 |
+| `internal` | 只供内部调用方使用的临时对话；公共 API 按不存在处理 |
+| retention policy | 终态后的保留策略。当前只有 `delete_on_finalize`、`ttl`、`keep_for_debug` |
+
+## 边界与生命周期
+
+这组资源有几条固定边界：
+
+- 不提供 list、search、branch、edit-and-regenerate。
+- T2 阶段固定只在分支 `main` 上运行。
+- 普通 `sessions` 列表和详情不会返回它们。
+- 公共 API 只返回 `visibility = client_visible` 的资源；`internal` 会返回 `404 conversation_not_found`。
+- `respond` 的 JSON 模式和 SSE 模式都默认只返回 inline 结果，不自动写入主叙事。
+- 显式导出目标当前只有 `page_staged_write`。
+- TTL 过期是惰性检查：下一次读写入口触发时，资源会原子转成 `expired`。
+
+### 生命周期状态
+
+| 状态 | 说明 |
+| ---- | ---- |
+| `active` | 可继续追加消息、生成、读取 transcript、导出和终止 |
+| `finalized` | 正常结束，进入终态 |
+| `discarded` | 明确放弃结果，进入终态 |
+| `cancelled` | 主动中止，进入终态 |
+| `expired` | TTL 到期后惰性转入的终态 |
+
+### 保留策略
+
+| 策略 | 说明 |
+| ---- | ---- |
+| `delete_on_finalize` | 默认策略。进入终态后标记为可清理 |
+| `ttl` | 创建时必须提供 `ttl_seconds`；到期后转为 `expired` |
+| `keep_for_debug` | 终态后继续保留 detail / transcript，供授权调用方按 id 读取 |
+
+## 响应格式说明
+
+这组路由沿用普通 REST 资源的 `data` 包裹：
+
+```json
+{
+  "data": {}
+}
+```
+
+即使创建入口挂在 `/projects/:id/...` 下面，它也不使用 Project 路由族常见的 `items` / `item` 格式。
+
+## 公共类型
+
+### TemporaryConversationResource
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | `string` | 临时对话 ID |
+| `workspace_id` | `string \| null` | 所属 Workspace |
+| `project_id` | `string \| null` | 所属 Project |
+| `source_session_id` | `string \| null` | 来源会话 ID。基于 Project 创建时可为空 |
+| `branch_id` | `string` | 当前固定为 `main` |
+| `kind` | `"temporary"` | 资源类型 |
+| `title` | `string \| null` | 可选标题 |
+| `purpose` | `string \| null` | 用途短标签 |
+| `status` | `TemporaryConversationStatus` | 生命周期状态 |
+| `retention_policy` | `TemporaryConversationRetentionPolicy` | 保留策略 |
+| `visibility` | `"client_visible" \| "internal"` | 可见性 |
+| `created_at` | `integer` | 创建时间戳（ms） |
+| `updated_at` | `integer` | 最近更新时间戳（ms） |
+| `last_activity_at` | `integer` | 最近一次消息、生成、导出或终止动作时间（ms） |
+| `expires_at` | `integer \| null` | TTL 到期时间 |
+| `finalized_at` | `integer \| null` | finalize 时间 |
+| `discarded_at` | `integer \| null` | discard 时间 |
+| `cancelled_at` | `integer \| null` | cancel 时间 |
+
+### TemporaryConversationTranscript
+
+返回结构保持 floor / page / message 三层：
+
+- `floors[].floor_no`
+- `floors[].pages[].page_no`
+- `floors[].pages[].messages[].seq`
+
+消息层会返回 `role`、`content`、`content_format`、`is_hidden`、`source`、`created_at`。
+
+### TemporaryConversationExportResult
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `conversation_id` | `string` | 临时对话 ID |
+| `target` | `"page_staged_write"` | 导出目标 |
+| `staged_write_id` | `string` | 新写入的 staged write 记录 ID |
+| `target_page_id` | `string` | 目标正式页面 ID |
+| `source_page_id` | `string` | 临时对话里被导出的输出页 ID |
+| `created_at` | `integer` | 导出时间戳（ms） |
+| `status` | `"staged"` | 候选写入状态 |
+
+## 创建临时对话（基于 Session）
+
+```http
+POST /sessions/:id/temporary-conversations
+```
+
+从一个已有 Session 的快照派生出临时对话。适合围绕当前剧情上下文做候选草稿或短期辅助推理。
+
+### 路径参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `id` | `string` | 是 | 来源 Session ID |
+
+### 请求体
+
+```json
+{
+  "title": "候选回复草稿",
+  "purpose": "draft-reply",
+  "retention_policy": "ttl",
+  "ttl_seconds": 1800
+}
+```
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+| ---- | ---- | ---- | ---- | ---- |
+| `title` | `string` | 否 | - | 可选标题，1-200 字符 |
+| `purpose` | `string` | 是 | - | 用途短标签，1-120 字符 |
+| `retention_policy` | `string` | 否 | `delete_on_finalize` | `delete_on_finalize` / `ttl` / `keep_for_debug` |
+| `ttl_seconds` | `integer` | 条件必填 | - | 仅在 `retention_policy = ttl` 时允许，范围 `1-86400` |
+
+### 成功响应 `201`
+
+```json
+{
+  "data": {
+    "id": "temp_001",
+    "workspace_id": "ws_default_default-admin",
+    "project_id": "proj_main",
+    "source_session_id": "sess_main",
+    "branch_id": "main",
+    "kind": "temporary",
+    "title": "候选回复草稿",
+    "purpose": "draft-reply",
+    "status": "active",
+    "retention_policy": "ttl",
+    "visibility": "client_visible",
+    "created_at": 1735689600000,
+    "updated_at": 1735689600000,
+    "last_activity_at": 1735689600000,
+    "expires_at": 1735691400000,
+    "finalized_at": null,
+    "discarded_at": null,
+    "cancelled_at": null
+  }
+}
+```
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` / `invalid_retention_policy` / `ttl_required` / `invalid_ttl_seconds` | 请求体不合法，或 TTL 相关字段不满足约束 |
+| `403` | `project_access_denied` | 当前账号能看见来源范围，但没有写权限 |
+| `404` | `conversation_not_found` / `source_session_not_found` | 来源 Session 不存在，或按权限规则对当前账号隐藏 |
+| `409` | `project_archived` | 来源 Session 所在 Project 已归档 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/sessions/sess_main/temporary-conversations \
+  -H 'Content-Type: application/json' \
+  -d '{"purpose":"draft-reply","retention_policy":"ttl","ttl_seconds":1800}'
+```
+
+## 创建临时对话（基于 Project）
+
+```http
+POST /projects/:id/temporary-conversations
+```
+
+从一个 Project 的生效配置派生出临时对话。适合资料整理、候选起草和 Project 级研究。
+
+### 路径参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `id` | `string` | 是 | 来源 Project ID |
+
+### 请求体
+
+与上一个基于 Session 的创建接口相同。
+
+### 成功响应 `201`
+
+响应结构同 `TemporaryConversationResource`。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` / `invalid_retention_policy` / `ttl_required` / `invalid_ttl_seconds` | 请求体不合法 |
+| `403` | `project_access_denied` | 当前账号能看见该 Project，但没有写权限 |
+| `404` | `project_not_found` / `source_project_not_found` | Project 不存在，或按成员规则对当前账号隐藏 |
+| `409` | `project_archived` | Project 已归档 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/projects/proj_main/temporary-conversations \
+  -H 'Content-Type: application/json' \
+  -d '{"purpose":"research-note","retention_policy":"keep_for_debug"}'
+```
+
+## 读取详情
+
+```http
+GET /temporary-conversations/:id
+```
+
+读取临时对话元数据，不返回完整 transcript。
+
+### 路径参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `id` | `string` | 是 | 临时对话 ID |
+
+### 成功响应 `200`
+
+返回 `TemporaryConversationResource`。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `403` | `project_access_denied` | 当前账号能看见来源范围，但没有读取权限 |
+| `404` | `conversation_not_found` | 临时对话不存在，或 `visibility = internal`，或按成员规则对当前账号隐藏 |
+| `409` | `project_archived` | 关联 Project 已归档 |
+
+### 示例
+
+```bash
+curl http://localhost:3000/temporary-conversations/temp_001
+```
+
+## 追加消息
+
+```http
+POST /temporary-conversations/:id/messages
+```
+
+只负责向临时对话追加一条消息，不触发生成。
+
+### 请求体
+
+```json
+{
+  "role": "user",
+  "content": "请先给我一个克制版。"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `role` | `"user" \| "assistant" \| "system"` | 是 | 消息角色 |
+| `content` | `string` | 是 | 消息正文，不能为空 |
+
+### 成功响应 `200`
+
+```json
+{
+  "data": {
+    "conversation_id": "temp_001",
+    "floor_id": "floor_001",
+    "page_id": "page_001",
+    "message_id": "msg_001",
+    "seq": 3,
+    "role": "user"
+  }
+}
+```
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` / `invalid_message_role` / `empty_message_content` | 请求体不合法 |
+| `403` | `project_access_denied` | 没有继续写入权限 |
+| `404` | `conversation_not_found` | 资源不存在，或对当前账号隐藏 |
+| `409` | `conversation_not_active` / `project_archived` | 资源已经进入终态，或关联 Project 已归档 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"role":"user","content":"请先给我一个克制版。"}'
+```
+
+## 生成回复（JSON / SSE）
+
+```http
+POST /temporary-conversations/:id/respond
+```
+
+这一个接口同时承担非流式和流式两种模式：
+
+- 默认返回 JSON。
+- 当 `Accept: text/event-stream` 时返回 SSE。
+
+`input_message` 是可选字段。传入时，服务会先把这条消息原子追加进 transcript，再执行本次生成。
+
+### 请求体
+
+```json
+{
+  "input_message": {
+    "role": "user",
+    "content": "请给我三个不同语气的候选回复。"
+  }
+}
+```
+
+### JSON 成功响应 `200`
+
+```json
+{
+  "data": {
+    "conversation_id": "temp_001",
+    "branch_id": "main",
+    "floor_id": "floor_002",
+    "floor_no": 2,
+    "page_id": "page_002",
+    "generated_text": "这里是候选回复正文",
+    "total_usage": {
+      "prompt_tokens": 321,
+      "completion_tokens": 144,
+      "total_tokens": 465
+    },
+    "final_state": "stop"
+  }
+}
+```
+
+### SSE 响应
+
+请求头：
+
+| Header | 值 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `Accept` | `text/event-stream` | 是 | 开启 SSE 模式 |
+
+SSE 事件序列会复用现有聊天流的基本习惯：
+
+- `start`：本次生成开始，返回 `floor_id`、`floor_no`、`branch_id`
+- `chunk`：文本增量，字段是 `chunk`
+- `tool`：运行时工具事件摘要
+- `run`：楼层运行快照摘要
+- `done`：最终结果，包含 `conversation_id`、`page_id`、`generated_text`、`total_usage`、`final_state`
+- `error`：流式错误
+
+一个简化示例：
+
+```text
+event: start
+data: {"floor_id":"floor_002","floor_no":2,"branch_id":"main"}
+
+event: chunk
+data: {"chunk":"第一段文本"}
+
+event: done
+data: {"conversation_id":"temp_001","branch_id":"main","floor_id":"floor_002","floor_no":2,"page_id":"page_002","generated_text":"完整文本","summaries":[],"total_usage":{"prompt_tokens":321,"completion_tokens":144,"total_tokens":465},"final_state":"stop"}
+```
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` / `invalid_message_role` / `empty_message_content` | 请求体不合法 |
+| `403` | `project_access_denied` | 没有继续写入权限 |
+| `404` | `conversation_not_found` | 资源不存在，或对当前账号隐藏 |
+| `409` | `conversation_not_active` / `conversation_busy` / `no_pending_input` / `missing_effective_user_tail` / `project_archived` | 资源不可写、正在忙、上下文不满足生成前提，或关联 Project 已归档 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/respond \
+  -H 'Content-Type: application/json' \
+  -d '{"input_message":{"role":"user","content":"请给我三个不同语气的候选回复。"}}'
+```
+
+```bash
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/respond \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: text/event-stream' \
+  -d '{"input_message":{"role":"user","content":"请给我三个不同语气的候选回复。"}}'
+```
+
+## 读取 transcript
+
+```http
+GET /temporary-conversations/:id/transcript
+```
+
+返回结构化 transcript，按 floor / page / message 三层展开。
+
+### 成功响应 `200`
+
+```json
+{
+  "data": {
+    "conversation_id": "temp_001",
+    "branch_id": "main",
+    "floors": [
+      {
+        "id": "floor_001",
+        "floor_no": 1,
+        "branch_id": "main",
+        "parent_floor_id": null,
+        "state": "committed",
+        "token_in": 0,
+        "token_out": 0,
+        "created_at": 1735689600000,
+        "updated_at": 1735689600000,
+        "pages": [
+          {
+            "id": "page_001",
+            "page_no": 1,
+            "page_kind": "mixed",
+            "is_active": true,
+            "version": 1,
+            "checksum": null,
+            "created_at": 1735689600000,
+            "updated_at": 1735689600000,
+            "messages": [
+              {
+                "id": "msg_001",
+                "seq": 1,
+                "role": "user",
+                "content": "请先给我一个克制版。",
+                "content_format": "text",
+                "is_hidden": false,
+                "source": null,
+                "created_at": 1735689600000
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `403` | `project_access_denied` | 没有读取权限 |
+| `404` | `conversation_not_found` | 资源不存在，或对当前账号隐藏 |
+| `409` | `project_archived` | 关联 Project 已归档 |
+
+### 示例
+
+```bash
+curl http://localhost:3000/temporary-conversations/temp_001/transcript
+```
+
+## finalize
+
+```http
+POST /temporary-conversations/:id/finalize
+```
+
+把临时对话标记为正常结束。
+
+### 成功响应 `200`
+
+返回更新后的 `TemporaryConversationResource`，其中 `status = finalized`，并写入 `finalized_at`。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `403` | `project_access_denied` | 没有终止权限 |
+| `404` | `conversation_not_found` | 资源不存在，或对当前账号隐藏 |
+| `409` | `conversation_not_active` / `project_archived` | 资源已经不在 `active`，或关联 Project 已归档 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/finalize
+```
+
+## discard
+
+```http
+POST /temporary-conversations/:id/discard
+```
+
+把临时对话标记为放弃结果。
+
+### 成功响应 `200`
+
+返回更新后的 `TemporaryConversationResource`，其中 `status = discarded`，并写入 `discarded_at`。
+
+### 错误
+
+与 `finalize` 相同，只是终态改为 `discarded`。
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/discard
+```
+
+## cancel
+
+```http
+POST /temporary-conversations/:id/cancel
+```
+
+把临时对话标记为主动中止。
+
+### 成功响应 `200`
+
+返回更新后的 `TemporaryConversationResource`，其中 `status = cancelled`，并写入 `cancelled_at`。
+
+### 错误
+
+与 `finalize` 相同，只是终态改为 `cancelled`。
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/cancel
+```
+
+## 导出到 page staged write
+
+```http
+POST /temporary-conversations/:id/export
+```
+
+把临时对话的一个输出页显式导出到正式页面的 staged write ledger。
+
+这个动作只会写入候选记录，不会：
+
+- 激活目标 page
+- commit floor
+- 写入变量 durable truth
+- 写入记忆真相层
+- 写入 `session_state_live_head`
+
+如果没有显式提供 `source_output_page_id`，服务会自动选择该临时对话最近一次可导出的助手输出页。
+
+### 请求体
+
+```json
+{
+  "target": "page_staged_write",
+  "target_page_id": "page_target_1",
+  "source_output_page_id": "page_tmp_output_1",
+  "reason": "候选草稿"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `target` | `"page_staged_write"` | 是 | 当前唯一允许的导出目标 |
+| `target_page_id` | `string` | 是 | 正式页面 ID |
+| `source_output_page_id` | `string` | 否 | 指定要导出的临时输出页 |
+| `reason` | `string` | 否 | 导出原因，1-500 字符 |
+
+### 成功响应 `200`
+
+```json
+{
+  "data": {
+    "conversation_id": "temp_001",
+    "target": "page_staged_write",
+    "staged_write_id": "stw_001",
+    "target_page_id": "page_target_1",
+    "source_page_id": "page_tmp_output_1",
+    "created_at": 1735689600000,
+    "status": "staged"
+  }
+}
+```
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` / `unsupported_export_target` / `invalid_source_output_page` | 请求体不合法，或来源页不是可导出的输出页 |
+| `403` | `project_access_denied` | 没有临时对话写权限，或没有目标页面的 staged write 写权限 |
+| `404` | `conversation_not_found` / `source_output_page_not_found` / `target_page_not_found` | 临时对话、来源输出页或目标页面不存在，或按权限规则对当前账号隐藏 |
+| `409` | `conversation_not_active` / `project_archived` | 资源已经不在 `active`，或关联 Project 已归档 |
+
+### 示例
+
+```bash
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/export \
+  -H 'Content-Type: application/json' \
+  -d '{"target":"page_staged_write","target_page_id":"page_target_1","reason":"候选草稿"}'
+```
+
+## 审计与 SDK 对应
+
+这组路由会写入最小操作审计。当前公开动作包括：
+
+- `temporary_conversation.created`
+- `temporary_conversation.message_appended`
+- `temporary_conversation.responded`
+- `temporary_conversation.finalized`
+- `temporary_conversation.discarded`
+- `temporary_conversation.cancelled`
+- `temporary_conversation.exported`
+- `temporary_conversation.expired`
+
+第一方 SDK 对应入口如下：
+
+- `client.sessions.createTemporaryConversation(...)`
+- `client.projects.createTemporaryConversation(...)`
+- `client.temporaryConversations.getDetail(...)`
+- `client.temporaryConversations.appendMessage(...)`
+- `client.temporaryConversations.respond(...)`
+- `client.temporaryConversations.respondStream(...)`
+- `client.temporaryConversations.getTranscript(...)`
+- `client.temporaryConversations.finalize(...)`
+- `client.temporaryConversations.discard(...)`
+- `client.temporaryConversations.cancel(...)`
+- `client.temporaryConversations.exportToPageStagedWrite(...)`

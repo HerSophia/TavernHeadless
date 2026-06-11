@@ -14917,6 +14917,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{id}/temporary-conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a temporary conversation from a project scope */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        purpose: string;
+                        /** @enum {string} */
+                        retention_policy?: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                        title?: string;
+                        ttl_seconds?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                cancelled_at: number | null;
+                                created_at: number;
+                                discarded_at: number | null;
+                                expires_at: number | null;
+                                finalized_at: number | null;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "temporary";
+                                last_activity_at: number;
+                                project_id: string | null;
+                                purpose: string | null;
+                                /** @enum {string} */
+                                retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "active" | "finalized" | "discarded" | "expired" | "cancelled";
+                                title: string | null;
+                                updated_at: number;
+                                /** @enum {string} */
+                                visibility: "internal" | "client_visible";
+                                workspace_id: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/prompt-runtime/capabilities": {
         parameters: {
             query?: never;
@@ -22684,6 +22808,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{id}/temporary-conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a temporary conversation from a source session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        purpose: string;
+                        /** @enum {string} */
+                        retention_policy?: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                        title?: string;
+                        ttl_seconds?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                cancelled_at: number | null;
+                                created_at: number;
+                                discarded_at: number | null;
+                                expires_at: number | null;
+                                finalized_at: number | null;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "temporary";
+                                last_activity_at: number;
+                                project_id: string | null;
+                                purpose: string | null;
+                                /** @enum {string} */
+                                retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "active" | "finalized" | "discarded" | "expired" | "cancelled";
+                                title: string | null;
+                                updated_at: number;
+                                /** @enum {string} */
+                                visibility: "internal" | "client_visible";
+                                workspace_id: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{id}/timeline": {
         parameters: {
             query?: never;
@@ -23301,6 +23549,774 @@ export interface paths {
         head?: never;
         /** Batch update session status */
         patch: operations["batchUpdateSessionStatus"];
+        trace?: never;
+    };
+    "/temporary-conversations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get temporary conversation detail */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                cancelled_at: number | null;
+                                created_at: number;
+                                discarded_at: number | null;
+                                expires_at: number | null;
+                                finalized_at: number | null;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "temporary";
+                                last_activity_at: number;
+                                project_id: string | null;
+                                purpose: string | null;
+                                /** @enum {string} */
+                                retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "active" | "finalized" | "discarded" | "expired" | "cancelled";
+                                title: string | null;
+                                updated_at: number;
+                                /** @enum {string} */
+                                visibility: "internal" | "client_visible";
+                                workspace_id: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a temporary conversation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                cancelled_at: number | null;
+                                created_at: number;
+                                discarded_at: number | null;
+                                expires_at: number | null;
+                                finalized_at: number | null;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "temporary";
+                                last_activity_at: number;
+                                project_id: string | null;
+                                purpose: string | null;
+                                /** @enum {string} */
+                                retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "active" | "finalized" | "discarded" | "expired" | "cancelled";
+                                title: string | null;
+                                updated_at: number;
+                                /** @enum {string} */
+                                visibility: "internal" | "client_visible";
+                                workspace_id: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard a temporary conversation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                cancelled_at: number | null;
+                                created_at: number;
+                                discarded_at: number | null;
+                                expires_at: number | null;
+                                finalized_at: number | null;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "temporary";
+                                last_activity_at: number;
+                                project_id: string | null;
+                                purpose: string | null;
+                                /** @enum {string} */
+                                retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "active" | "finalized" | "discarded" | "expired" | "cancelled";
+                                title: string | null;
+                                updated_at: number;
+                                /** @enum {string} */
+                                visibility: "internal" | "client_visible";
+                                workspace_id: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export a temporary conversation result to a staged page write */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason?: string;
+                        source_output_page_id?: string;
+                        /** @enum {string} */
+                        target: "page_staged_write";
+                        target_page_id: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                conversation_id: string;
+                                created_at: number;
+                                source_page_id: string;
+                                staged_write_id: string;
+                                /** @enum {string} */
+                                status: "staged";
+                                /** @enum {string} */
+                                target: "page_staged_write";
+                                target_page_id: string;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finalize a temporary conversation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                cancelled_at: number | null;
+                                created_at: number;
+                                discarded_at: number | null;
+                                expires_at: number | null;
+                                finalized_at: number | null;
+                                id: string;
+                                /** @enum {string} */
+                                kind: "temporary";
+                                last_activity_at: number;
+                                project_id: string | null;
+                                purpose: string | null;
+                                /** @enum {string} */
+                                retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                source_session_id: string | null;
+                                /** @enum {string} */
+                                status: "active" | "finalized" | "discarded" | "expired" | "cancelled";
+                                title: string | null;
+                                updated_at: number;
+                                /** @enum {string} */
+                                visibility: "internal" | "client_visible";
+                                workspace_id: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append a message to a temporary conversation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        content: string;
+                        /** @enum {string} */
+                        role: "user" | "assistant" | "system";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                conversation_id: string;
+                                floor_id: string;
+                                message_id: string;
+                                page_id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant" | "system";
+                                seq: number;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond inside a temporary conversation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        input_message?: {
+                            content: string;
+                            /** @enum {string} */
+                            role: "user" | "assistant" | "system";
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                conversation_id: string;
+                                final_state: string | null;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                page_id: string;
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a temporary conversation transcript */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                conversation_id: string;
+                                floors: {
+                                    [key: string]: unknown;
+                                }[];
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/tool-executions": {

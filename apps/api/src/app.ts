@@ -15,6 +15,7 @@ import { registerChatRoutes } from "./routes/chat";
 import { registerPromptRuntimeRoutes } from "./routes/prompt-runtime";
 import { registerSessionStateRoutes } from "./routes/session-state";
 import { registerSessionStateObservationRoutes } from "./routes/session-state-observation";
+import { registerTemporaryConversationRoutes } from "./routes/temporary-conversations.js";
 
 import { registerWsPlugin, type WsBridge } from "./ws";
 import {
@@ -74,6 +75,7 @@ import {
 
 import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
 import { PromptRuntimeInjectionService } from "./services/prompt-runtime/injection-service.js";
+import { TemporaryConversationService } from "./services/temporary-conversation-service.js";
 import { ToolWorker } from "./services/tooling/runtime/tool-worker.js";
 import { SessionEffectiveToolPolicyProvider } from "./services/tooling/shared/session-effective-tool-policy-provider.js";
 import {
@@ -257,6 +259,7 @@ export type BuildAppResult = {
   wsBridge?: WsBridge;
   mcpManager?: McpConnectionManager;
   projectEventLiveHub: ProjectEventLiveHub;
+  temporaryConversationService?: TemporaryConversationService;
 };
 
 export type MemoryMaintenanceScopeRef = {
@@ -579,6 +582,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let sessionStatePublicService: SessionStatePublicService | undefined;
   let sessionStateCustomNamespaceService: SessionStateCustomNamespaceService | undefined;
   let sessionStateObservationService: SessionStateObservationService | undefined;
+  let temporaryConversationService: TemporaryConversationService | undefined;
   const projectEventLiveHub = new ProjectEventLiveHub();
   const projectAccessService = new ProjectAccessService(database.db);
 
@@ -881,6 +885,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     );
 
     promptRuntimeReadOnlyService = chatService;
+    temporaryConversationService = new TemporaryConversationService(database.db, chatService, {
+      tokenCounter: orchestrationContext.tokenCounter,
+    });
 
     await registerChatRoutes(app, chatService, {
       enableSseChat: options.enableSseChat,
@@ -889,6 +896,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       cors: options.cors,
       projectAccessService,
     });
+
+    if (temporaryConversationService) {
+      await registerTemporaryConversationRoutes(app, database, {
+        temporaryConversationService,
+        cors: options.cors,
+      });
+    }
 
     const shouldEnableWs = options.enableWebSocket ?? Boolean(options.orchestration);
     if (shouldEnableWs) {
@@ -1047,5 +1061,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     wsBridge,
     mcpManager,
     projectEventLiveHub,
+    temporaryConversationService,
   };
 }

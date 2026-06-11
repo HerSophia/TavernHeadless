@@ -1437,7 +1437,7 @@ function listProjectSessions(
   projectId: string,
   status?: "active" | "archived",
 ) {
-  const filters = [eq(sessions.projectId, projectId)];
+  const filters = [eq(sessions.projectId, projectId), eq(sessions.kind, "default")];
   if (status) {
     filters.push(eq(sessions.status, status));
   }
@@ -1543,7 +1543,7 @@ function ensureSessionBelongsToProject(
   const row = db
     .select({ id: sessions.id, projectId: sessions.projectId })
     .from(sessions)
-    .where(eq(sessions.id, sessionId))
+    .where(and(eq(sessions.id, sessionId), eq(sessions.kind, "default")))
     .limit(1)
     .get();
 

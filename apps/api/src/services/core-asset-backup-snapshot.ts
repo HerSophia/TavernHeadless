@@ -710,7 +710,7 @@ export function captureCoreAssetBackupSnapshot(
     return {
       id: sessionRow.id,
       title: sessionRow.title,
-      status: sessionRow.status,
+      status: sessionRow.status === "archived" ? "archived" : "active",
       created_at: sessionRow.createdAt,
       updated_at: sessionRow.updatedAt,
       prompt_mode: sessionRow.promptMode,

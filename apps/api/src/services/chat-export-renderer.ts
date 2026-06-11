@@ -136,7 +136,7 @@ export function renderExportSnapshotToThChat(
     export_app_version: options?.appVersion,
     data: {
       title: snapshot.title,
-      status: snapshot.status,
+      status: snapshot.status === "archived" ? "archived" : "active",
       created_at: snapshot.createdAt,
       updated_at: snapshot.updatedAt,
       character_snapshot: snapshot.characterSnapshot,
