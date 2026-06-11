@@ -137,6 +137,10 @@ describe("OpenAPI integration", () => {
     expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime");
     expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/policy");
     expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/assets");
+    expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/injections");
+    expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/injections/{injectionId}");
+    expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/branches/{branchId}/injections");
+    expect(Object.keys(body.paths)).toContain("/sessions/{id}/prompt-runtime/branches/{branchId}/injections/{injectionId}");
     expect(Object.keys(body.paths)).toContain("/prompt-runtime/capabilities");
 
     const versionPath = body.paths["/version"] as { get?: OpenApiOperation };
@@ -645,12 +649,17 @@ describe("OpenAPI integration", () => {
     expect(getOpenApiResponseExample(instancesListPath.get, "200")).toMatchObject({ data: [{ id: "ic_demo123" }] });
 
     const instancesSlotPath = body.paths["/llm-instances/{slot}"] as { put?: OpenApiOperation };
-    expect(getOpenApiSchemaExample(instancesSlotPath.put?.requestBody)).toMatchObject({ scope: "global" });
-    expect(getOpenApiResponseExample(instancesSlotPath.put, "200")).toMatchObject({ data: { id: "ic_demo123" } });
+    expect(getOpenApiSchemaExample(instancesSlotPath.put?.requestBody)).toMatchObject({
+      scope: "global",
+      model_id_override: "gpt-4.1-mini",
+    });
+    expect(getOpenApiResponseExample(instancesSlotPath.put, "200")).toMatchObject({
+      data: { id: "ic_demo123", model_id_override: "gpt-4.1-mini" },
+    });
 
     const instancesResolvedPath = body.paths["/llm-instances/resolved"] as { get?: OpenApiOperation };
     expect(getOpenApiResponseExample(instancesResolvedPath.get, "200")).toMatchObject({
-      data: { slots: [{ slot: "narrator" }] },
+      data: { slots: [{ slot: "narrator", model_id_override: "gpt-4.1-mini" }] },
     });
   });
 
@@ -779,6 +788,16 @@ describe("OpenAPI integration", () => {
         exclusion_changes: [expect.objectContaining({ right: [expect.objectContaining({ source: "examples" })] })],
       },
     });
+
+    const sessionInjectionPath = body.paths["/sessions/{id}/prompt-runtime/injections"] as {
+      get?: OpenApiOperation;
+      post?: OpenApiOperation;
+    };
+    expect(getOpenApiResponseExample(sessionInjectionPath.get, "200")).toMatchObject({
+      data: [expect.objectContaining({ scope: "session", source_kind: "client_injection" })],
+    });
+    expect(getOpenApiRequestSchema(sessionInjectionPath.post)?.properties).toHaveProperty("mode_scope");
+    expect(getOpenApiRequestSchema(sessionInjectionPath.post)?.properties).toHaveProperty("ttl_ms");
   });
 
   it("includes feature-gated chat and session-state routes in the export profile", async () => {

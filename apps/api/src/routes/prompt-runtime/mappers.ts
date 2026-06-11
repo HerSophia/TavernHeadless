@@ -1,7 +1,10 @@
 import type { PromptMode } from "../../services/prompt-assembler.js";
 import type { PromptRuntimeInspectRequest } from "../../services/prompt-runtime/types.js";
 import type { PromptRuntimeModeView } from "../../services/prompt-runtime-control-service.js";
-import type { PromptRuntimeClientInjectionInput } from "../../services/prompt-runtime-injection-types.js";
+import type {
+  PromptRuntimeInjectionPatchInput,
+  PromptRuntimeInjectionWriteInput,
+} from "../../services/prompt-runtime/injection-service.js";
 
 import type { PromptRuntimePreviewRequest } from "../../services/chat/contracts.js";
 import type { RespondRequest } from "../../services/chat/contracts.js";
@@ -9,6 +12,8 @@ import type {
   PromptRuntimeInspectBody,
   PromptRuntimeInjectionBody,
   PromptRuntimeModePatchBody,
+  PromptRuntimePersistedInjectionCreateBody,
+  PromptRuntimePersistedInjectionPatchBody,
 } from "./schemas.js";
 import {
   mapGenerationParams,
@@ -111,5 +116,35 @@ export function mapPromptRuntimeLiveRequestBodyToCamelCase(
     sessionStateWrites: mapTurnSessionStateWritesRequest(body.session_state_writes),
     debugOptions: mapLiveDebugOptionsRequest(body.debug_options),
     promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(body.prompt_runtime_injections),
+  };
+}
+
+export function mapPromptRuntimePersistedInjectionCreateBodyToCamelCase(
+  body: PromptRuntimePersistedInjectionCreateBody,
+): PromptRuntimeInjectionWriteInput {
+  return {
+    sourceKind: body.source_kind,
+    title: body.title,
+    content: body.content,
+    placement: body.placement,
+    ...(body.order !== undefined ? { order: body.order } : {}),
+    ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+    ...(body.mode_scope !== undefined ? { modeScope: body.mode_scope } : {}),
+    ...(body.ttl_ms !== undefined ? { ttlMs: body.ttl_ms } : {}),
+  };
+}
+
+export function mapPromptRuntimePersistedInjectionPatchBodyToCamelCase(
+  body: PromptRuntimePersistedInjectionPatchBody,
+): PromptRuntimeInjectionPatchInput {
+  return {
+    ...(body.source_kind !== undefined ? { sourceKind: body.source_kind } : {}),
+    ...(body.title !== undefined ? { title: body.title } : {}),
+    ...(body.content !== undefined ? { content: body.content } : {}),
+    ...(body.placement !== undefined ? { placement: body.placement } : {}),
+    ...(body.order !== undefined ? { order: body.order } : {}),
+    ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+    ...(body.mode_scope !== undefined ? { modeScope: body.mode_scope } : {}),
+    ...(body.ttl_ms !== undefined ? { ttlMs: body.ttl_ms } : {}),
   };
 }

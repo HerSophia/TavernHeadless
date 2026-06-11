@@ -149,6 +149,12 @@ describe("prompt-runtime preview and inspect routes", () => {
             { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
             { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
             { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+            {
+              name: "responseFormat",
+              final_state: "filtered",
+              origin: "instance",
+              filter_reason: "field_not_supported_by_provider",
+            },
           ],
           tool_transport: {
             selection: {
@@ -159,6 +165,7 @@ describe("prompt-runtime preview and inspect routes", () => {
             tool_list: {
               injected: true,
               contributor_id: "builtin:tool_list",
+              placement_mode: "contributor_chain",
               tool_count: 2,
             },
             parsing: {
@@ -173,6 +180,8 @@ describe("prompt-runtime preview and inspect routes", () => {
               {
                 request_index: 0,
                 source_kind: "client_injection",
+                injection_id: null,
+                enabled: true,
                 scope: "request",
                 placement_requested: "before_history",
                 order_requested: 30,
@@ -261,6 +270,8 @@ describe("prompt-runtime preview and inspect routes", () => {
           {
             request_index: 0,
             source_kind: "client_injection",
+            injection_id: null,
+            enabled: true,
             scope: "request",
             placement_requested: "before_history",
             order_requested: 30,
@@ -278,6 +289,12 @@ describe("prompt-runtime preview and inspect routes", () => {
               { name: "temperature", final_state: "sent", origin: "default", value_from: "default" },
               { name: "maxOutputTokens", final_state: "sent", origin: "request", value_from: "request" },
               { name: "topP", final_state: "cancelled", origin: "request", cancelled_at: "request" },
+              {
+                name: "responseFormat",
+                final_state: "filtered",
+                origin: "instance",
+                filter_reason: "field_not_supported_by_provider",
+              },
             ],
             tool_transport: {
               selection: {
@@ -288,6 +305,7 @@ describe("prompt-runtime preview and inspect routes", () => {
               tool_list: {
                 injected: true,
                 contributor_id: "builtin:tool_list",
+                placement_mode: "contributor_chain",
                 tool_count: 2,
               },
               parsing: {
@@ -302,6 +320,8 @@ describe("prompt-runtime preview and inspect routes", () => {
                 {
                   request_index: 0,
                   source_kind: "client_injection",
+                  injection_id: null,
+                  enabled: true,
                   scope: "request",
                   placement_requested: "before_history",
                   order_requested: 30,
@@ -620,6 +640,7 @@ function createToolTransportTrace() {
     toolList: {
       injected: true,
       contributorId: "builtin:tool_list",
+      placementMode: "contributor_chain" as const,
       toolCount: 2,
     },
     parsing: {
@@ -646,6 +667,7 @@ function createInjectionTraceItems() {
   return [{
     requestIndex: 0,
     sourceKind: "client_injection",
+    enabled: true,
     scope: "request" as const,
     placementRequested: "before_history",
     orderRequested: 30,
@@ -695,6 +717,12 @@ function createPreviewResult(): PromptRuntimePreviewResult {
         { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
         { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
         { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+        {
+          name: "responseFormat",
+          finalState: "filtered",
+          origin: "instance",
+          filterReason: "field_not_supported_by_provider",
+        },
       ],
       toolTransport: createToolTransportTrace(),
       visibility: {
@@ -777,6 +805,12 @@ function createInspectResult(): PromptRuntimeInspectResult {
           { name: "temperature", finalState: "sent", origin: "default", valueFrom: "default" },
           { name: "maxOutputTokens", finalState: "sent", origin: "request", valueFrom: "request" },
           { name: "topP", finalState: "cancelled", origin: "request", cancelledAt: "request" },
+          {
+            name: "responseFormat",
+            finalState: "filtered",
+            origin: "instance",
+            filterReason: "field_not_supported_by_provider",
+          },
         ],
         toolTransport: createToolTransportTrace(),
         injection: {

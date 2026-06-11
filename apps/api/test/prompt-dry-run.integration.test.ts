@@ -286,6 +286,14 @@ describe("POST /sessions/:id/respond/dry-run", () => {
           hiddenFloorRanges: [{ startFloorNo: 1, endFloorNo: 2 }],
           filteredFloorNos: [1, 2],
         },
+        generationParamsResolution: [
+          {
+            name: "responseFormat",
+            finalState: "filtered",
+            origin: "instance",
+            filterReason: "field_not_supported_by_provider",
+          },
+        ],
       },
     };
 
@@ -497,6 +505,14 @@ describe("POST /sessions/:id/respond/dry-run", () => {
         hidden_floor_ranges: [{ start_floor_no: 1, end_floor_no: 2 }],
         filtered_floor_nos: [1, 2],
       },
+      generation_params_resolution: [
+        {
+          name: "responseFormat",
+          final_state: "filtered",
+          origin: "instance",
+          filter_reason: "field_not_supported_by_provider",
+        },
+      ],
     });
   });
 

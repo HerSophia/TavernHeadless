@@ -187,9 +187,18 @@ export function mapPromptRuntimeToolTransportToSnakeCase(
             ...(toolTransport.toolList.contributorId !== undefined
               ? { contributor_id: toolTransport.toolList.contributorId }
               : {}),
+            ...(toolTransport.toolList.placementMode !== undefined
+              ? { placement_mode: toolTransport.toolList.placementMode }
+              : {}),
             tool_count: toolTransport.toolList.toolCount,
           },
         }
+      : {}),
+    ...(toolTransport.toolChoiceApplied !== undefined
+      ? { tool_choice_applied: toolTransport.toolChoiceApplied }
+      : {}),
+    ...(toolTransport.streamingToolCallUnsupported !== undefined
+      ? { streaming_tool_call_unsupported: toolTransport.streamingToolCallUnsupported }
       : {}),
     ...(toolTransport.parsing
       ? {
@@ -216,6 +225,8 @@ function mapPromptRuntimeInjectionTraceToSnakeCase(
     items: injection.items.map((item: NonNullable<PromptRuntimeTrace["injection"]>["items"][number]) => ({
       request_index: item.requestIndex,
       source_kind: item.sourceKind,
+      injection_id: item.injectionId ?? null,
+      enabled: item.enabled ?? null,
       scope: item.scope,
       placement_requested: item.placementRequested,
       order_requested: item.orderRequested,
@@ -404,6 +415,7 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
             origin: item.origin,
             ...(item.cancelledAt ? { cancelled_at: item.cancelledAt } : {}),
             ...(item.valueFrom ? { value_from: item.valueFrom } : {}),
+            ...("filterReason" in item && item.filterReason ? { filter_reason: item.filterReason } : {}),
           })),
         }
       : {}),

@@ -17,6 +17,10 @@ type TableInfoRow = {
   dflt_value: string | null;
 };
 
+type IndexInfoRow = {
+  name: string;
+};
+
 function getTableColumns(sqlite: Database.Database, tableName: string): TableInfoRow[] {
   return sqlite.prepare(`PRAGMA table_info(\`${tableName}\`)`).all() as TableInfoRow[];
 }
@@ -26,6 +30,13 @@ function getTableNames(sqlite: Database.Database): string[] {
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name ASC")
     .all()
     .map((row) => (row as { name: string }).name);
+}
+
+function getIndexNames(sqlite: Database.Database, tableName: string): string[] {
+  return sqlite
+    .prepare(`PRAGMA index_list(\`${tableName}\`)`)
+    .all()
+    .map((row) => (row as IndexInfoRow).name);
 }
 
 function replaceMigrationHistory(
@@ -391,6 +402,149 @@ describe("createDatabase", () => {
       id: "proj_session_session-drift",
       workspace_id: "ws_default_default-admin",
       kind: "session_default",
+    });
+  });
+
+  it("upgrades pre-I2 databases with prompt runtime injection tables and indexes", () => {
+    tempDir = mkdtempSync(join(tmpdir(), "tavern-db-"));
+    tempMigrationsDir = createMigrationsDirBeforeIndex(63);
+
+    const databasePath = join(tempDir, "tavern.db");
+    const now = 1_735_700_200_000;
+
+    seedSqlite = new Database(databasePath);
+    seedSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(seedSqlite, { schema }), { migrationsFolder: tempMigrationsDir });
+
+    expect(getTableNames(seedSqlite)).not.toContain("prompt_runtime_injection");
+
+    seedSqlite.prepare(
+      `INSERT OR IGNORE INTO account (
+        id,
+        name,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?)`
+    ).run("default-admin", "default-admin", now, now);
+
+    seedSqlite.prepare(
+      `INSERT INTO session (
+        id,
+        account_id,
+        status,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?)`
+    ).run("session-i2", "default-admin", "active", now, now + 10);
+
+    seedSqlite.prepare(
+      `INSERT INTO floor (
+        id,
+        session_id,
+        floor_no,
+        branch_id,
+        parent_floor_id,
+        state,
+        token_in,
+        token_out,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run("floor-main", "session-i2", 0, "main", null, "committed", 0, 0, now + 20, now + 20);
+
+    seedSqlite.prepare(
+      `INSERT INTO floor (
+        id,
+        session_id,
+        floor_no,
+        branch_id,
+        parent_floor_id,
+        state,
+        token_in,
+        token_out,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run("floor-alt", "session-i2", 1, "alt", null, "committed", 0, 0, now + 30, now + 30);
+
+    seedSqlite.close();
+    seedSqlite = undefined;
+
+    connection = createDatabase(databasePath);
+    connection.close();
+    connection = undefined;
+
+    verifySqlite = new Database(databasePath);
+
+    expect(getTableNames(verifySqlite)).toContain("prompt_runtime_injection");
+    expect(getTableColumns(verifySqlite, "prompt_runtime_injection").map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "session_id",
+        "branch_id",
+        "source_kind",
+        "title",
+        "content",
+        "placement",
+        "order",
+        "enabled",
+        "mode_scope",
+        "ttl_ms",
+        "created_by",
+        "created_at",
+        "updated_at",
+      ]),
+    );
+    expect(getIndexNames(verifySqlite, "prompt_runtime_injection")).toEqual(
+      expect.arrayContaining([
+        "prompt_runtime_injection_session_branch_order_created_idx",
+        "prompt_runtime_injection_session_updated_idx",
+      ]),
+    );
+
+    verifySqlite.prepare(
+      `INSERT INTO prompt_runtime_injection (
+        id,
+        session_id,
+        branch_id,
+        source_kind,
+        title,
+        content,
+        placement,
+        \`order\`,
+        enabled,
+        mode_scope,
+        ttl_ms,
+        created_by,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "inj-i2",
+      "session-i2",
+      "alt",
+      "client_injection",
+      "Branch guard",
+      "Keep the alternate branch in focus.",
+      "before_current_user_input",
+      50,
+      1,
+      "compat_plus",
+      60000,
+      "default-admin",
+      now + 40,
+      now + 40,
+    );
+
+    expect(
+      verifySqlite.prepare(
+        "SELECT session_id, branch_id, placement, mode_scope, ttl_ms FROM prompt_runtime_injection WHERE id = ?",
+      ).get("inj-i2"),
+    ).toEqual({
+      session_id: "session-i2",
+      branch_id: "alt",
+      placement: "before_current_user_input",
+      mode_scope: "compat_plus",
+      ttl_ms: 60000,
     });
   });
 });

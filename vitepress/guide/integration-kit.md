@@ -161,6 +161,52 @@ const sessionEffective = await client.sessions.getEffectiveConfig({
   sessionId: "sess_1",
   accountId: "acc_1",
 });
+
+sessionEffective.toolTransport.selected;
+sessionEffective.toolTransport.reasonCode;
+```
+
+### LLM Instances 的模型名覆盖与能力声明
+
+```ts
+await client.llmInstances.upsert({
+  slot: "narrator",
+  scope: "session",
+  sessionId: "sess_1",
+  presetId: "llm_alpha",
+  modelIdOverride: "gpt-4.1-mini",
+  capabilities: {
+    supportsFunctionCall: false,
+    supportsToolChoice: false,
+    supportsStreamingToolCall: false,
+    unsupportedGenerationParams: ["stopSequences"],
+  },
+  params: {
+    stop_sequences: ["DONE"],
+  },
+});
+```
+
+### Prompt Runtime 持久注入
+
+```ts
+const created = await client.promptRuntime.createSessionInjection({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+  sourceKind: "client_injection",
+  title: "History guard",
+  content: "Keep the north pass in focus.",
+  placement: "before_history",
+  modeScope: "native",
+});
+
+await client.promptRuntime.patchBranchInjection({
+  sessionId: "sess_1",
+  branchId: "branch_alt",
+  injectionId: created.id,
+  accountId: "acc_1",
+  enabled: false,
+});
 ```
 
 ### Tools 与会话运行时目录

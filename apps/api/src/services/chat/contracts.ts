@@ -19,6 +19,7 @@
 import type {
   PromptRuntimeClientInjectionInput,
 } from "../prompt-runtime-injection-types.js";
+import type { LlmInstanceCapabilities } from "../../lib/llm-capabilities.js";
 import type { EffectiveToolPolicyResolution } from "../tooling/shared/tool-policy-resolution.js";
 import type { GenerationParamKey, GenerationParamsInput } from "../../lib/llm-params.js";
 import type { PromptVisibilityPolicy } from "../chat-history-loader.js";
@@ -239,6 +240,7 @@ export interface ResolvedTurnModel {
   providerType?: ProviderType;
   generationParams?: GenerationParamsInput;
   generationParamOrigins?: Partial<Record<GenerationParamKey, "profile" | "instance">>;
+  capabilities?: LlmInstanceCapabilities;
   enabled?: boolean;
   presetId?: string;
 }

@@ -1,0 +1,274 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { nanoid } from "nanoid";
+
+import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../../accounts/constants.js";
+import { createDatabase, type DatabaseConnection } from "../../../db/client.js";
+import { floors, promptRuntimeInjections, sessions } from "../../../db/schema.js";
+import {
+  PromptRuntimeInjectionService,
+  PromptRuntimeInjectionServiceError,
+} from "../../prompt-runtime/injection-service.js";
+
+describe("PromptRuntimeInjectionService", () => {
+  let database: DatabaseConnection;
+  let service: PromptRuntimeInjectionService;
+
+  beforeEach(() => {
+    database = createDatabase(":memory:");
+    service = new PromptRuntimeInjectionService(database.db);
+  });
+
+  afterEach(() => {
+    database.close();
+  });
+
+  it("creates updates lists and deletes session scope injections with normalized fields", async () => {
+    const sessionId = await insertSession(database);
+
+    const created = service.createSessionInjection(
+      sessionId,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        sourceKind: "client_injection",
+        title: "  History guard  ",
+        content: "  Keep the north pass in focus.  ",
+        placement: " before_history ",
+      },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+    );
+
+    expect(created).toMatchObject({
+      sessionId,
+      branchId: null,
+      scope: "session",
+      sourceKind: "client_injection",
+      title: "History guard",
+      content: "Keep the north pass in focus.",
+      placement: "before_history",
+      order: 100,
+      enabled: true,
+      modeScope: null,
+      ttlMs: null,
+      createdBy: DEFAULT_ADMIN_ACCOUNT_ID,
+    });
+
+    expect(service.listSessionInjections(sessionId, DEFAULT_ADMIN_ACCOUNT_ID)).toEqual([created]);
+
+    const updated = service.updateSessionInjection(
+      sessionId,
+      created.id,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        enabled: false,
+        modeScope: "native",
+        ttlMs: 60000,
+      },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+    );
+
+    expect(updated).toMatchObject({
+      id: created.id,
+      enabled: false,
+      modeScope: "native",
+      ttlMs: 60000,
+      createdBy: DEFAULT_ADMIN_ACCOUNT_ID,
+    });
+
+    const deleted = service.deleteSessionInjection(
+      sessionId,
+      created.id,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+    );
+
+    expect(deleted.id).toBe(created.id);
+    expect(service.listSessionInjections(sessionId, DEFAULT_ADMIN_ACCOUNT_ID)).toEqual([]);
+  });
+
+  it("creates branch scope injections and builds resolved summaries and prepared inputs", async () => {
+    const sessionId = await insertSession(database, { branchId: "alt-branch" });
+
+    const sessionScoped = service.createSessionInjection(
+      sessionId,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        sourceKind: "client_injection",
+        title: "Session injection",
+        content: "Session body",
+        placement: "before_history",
+      },
+    );
+
+    const branchScoped = service.createBranchInjection(
+      sessionId,
+      "alt-branch",
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        sourceKind: "client_injection",
+        title: "Branch injection",
+        content: "Branch body",
+        placement: "before_history",
+        enabled: false,
+      },
+    );
+
+    expect(service.getResolvedStateSummary(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID)).toEqual({
+      session: { total: 1, enabled: 1 },
+      branch: { total: 1, enabled: 0 },
+    });
+
+    expect(service.listPersistentInputsForPrompt(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID)).toEqual([
+      {
+        sourceKind: sessionScoped.sourceKind,
+        title: sessionScoped.title,
+        content: sessionScoped.content,
+        placement: sessionScoped.placement,
+        order: sessionScoped.order,
+        scope: "session",
+        injectionId: sessionScoped.id,
+        enabled: true,
+        modeScope: null,
+        ttlMs: null,
+        createdAt: sessionScoped.createdAt,
+      },
+      {
+        sourceKind: branchScoped.sourceKind,
+        title: branchScoped.title,
+        content: branchScoped.content,
+        placement: branchScoped.placement,
+        order: branchScoped.order,
+        scope: "branch",
+        injectionId: branchScoped.id,
+        enabled: false,
+        modeScope: null,
+        ttlMs: null,
+        createdAt: branchScoped.createdAt,
+      },
+    ]);
+  });
+
+  it("rejects branch scoped access when the branch is missing", async () => {
+    const sessionId = await insertSession(database);
+
+    expect(() => service.listBranchInjections(sessionId, "missing-branch", DEFAULT_ADMIN_ACCOUNT_ID)).toThrowError(
+      new PromptRuntimeInjectionServiceError(404, "branch_not_found", "Branch 'missing-branch' not found in session"),
+    );
+  });
+
+  it("purges expired injections and supports branch scope cleanup", async () => {
+    const sessionId = await insertSession(database, { branchId: "alt-branch" });
+    const createdAt = Date.now() - 10_000;
+
+    await database.db.insert(promptRuntimeInjections).values([
+      {
+        id: nanoid(),
+        sessionId,
+        branchId: null,
+        sourceKind: "client_injection",
+        title: "Expired session",
+        content: "Expired session body",
+        placement: "before_history",
+        order: 100,
+        enabled: true,
+        modeScope: null,
+        ttlMs: 100,
+        createdBy: null,
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        id: nanoid(),
+        sessionId,
+        branchId: "alt-branch",
+        sourceKind: "client_injection",
+        title: "Branch entry",
+        content: "Branch body",
+        placement: "before_history",
+        order: 100,
+        enabled: true,
+        modeScope: null,
+        ttlMs: null,
+        createdBy: null,
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ]);
+
+    expect(service.deleteExpired(Date.now())).toBe(1);
+    expect(service.listSessionInjections(sessionId, DEFAULT_ADMIN_ACCOUNT_ID)).toEqual([]);
+    expect(service.deleteBranchScopeInjections(sessionId, "alt-branch")).toBe(1);
+    expect(service.listBranchInjections(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID)).toEqual([]);
+  });
+});
+
+async function insertSession(
+  database: DatabaseConnection,
+  args: { branchId?: string } = {},
+) {
+  const now = Date.now();
+  const sessionId = nanoid();
+
+  await database.db.insert(sessions).values({
+    id: sessionId,
+    title: "Prompt runtime session",
+    accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+    status: "active",
+    characterId: null,
+    characterSnapshotJson: null,
+    characterSyncPolicy: "manual",
+    characterVersionId: null,
+    projectId: null,
+    workspaceId: null,
+    presetId: null,
+    worldbookProfileId: null,
+    regexProfileId: null,
+    deepBinding: false,
+    presetVersionId: null,
+    worldbookVersionId: null,
+    regexProfileVersionId: null,
+    userId: null,
+    userSnapshotJson: null,
+    modelProvider: null,
+    modelName: null,
+    modelParamsJson: null,
+    promptMode: null,
+    metadataJson: null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await database.db.insert(floors).values({
+    id: nanoid(),
+    sessionId,
+floorNo: 0,
+    branchId: "main",
+    parentFloorId: null,
+    supersededAt: null,
+    supersededByFloorId: null,
+    state: "committed",
+    metadataJson: null,
+    tokenIn: 0,
+    tokenOut: 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  if (args.branchId) {
+    await database.db.insert(floors).values({
+      id: nanoid(),
+      sessionId,
+      floorNo: 1,
+      branchId: args.branchId,
+      parentFloorId: null,
+      supersededAt: null,
+      supersededByFloorId: null,
+      state: "committed",
+      metadataJson: null,
+      tokenIn: 0,
+      tokenOut: 0,
+      createdAt: now + 1,
+      updatedAt: now + 1,
+    });
+  }
+
+  return sessionId;
+}

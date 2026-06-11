@@ -57,7 +57,7 @@ describe('LLMService', () => {
       expect(response.finishReason).toBe('stop');
     });
 
-    it('maps generation params correctly', async () => {
+     it('maps generation params correctly', async () => {
       let capturedSettings: any;
 
       const model = new MockLanguageModelV3({
@@ -87,19 +87,33 @@ describe('LLMService', () => {
           topP: 0.9,
           frequencyPenalty: 0.3,
           presencePenalty: 0.2,
+          seed: 42,
+          repetitionPenalty: 1.1,
+          minP: 0.05,
+          logitBias: { '42': -5 },
+          responseFormat: { type: 'json_schema', jsonSchema: { type: 'object' } },
           reasoningEffort: 'low',
         },
       });
 
-      // v5 中 generateText 的 maxTokens 已改为 maxOutputTokens
       expect(capturedSettings).toBeDefined();
       expect(capturedSettings.maxOutputTokens).toBe(500);
       expect(capturedSettings.temperature).toBe(0.5);
       expect(capturedSettings.topP).toBe(0.9);
       expect(capturedSettings.frequencyPenalty).toBe(0.3);
       expect(capturedSettings.presencePenalty).toBe(0.2);
+      expect(capturedSettings.seed).toBe(42);
+      expect(capturedSettings.responseFormat).toEqual({
+        type: 'json',
+        schema: { type: 'object' },
+      });
       expect(capturedSettings.providerOptions).toEqual({
-        openai: { reasoningEffort: 'low' },
+        openai: {
+          reasoningEffort: 'low',
+          repetitionPenalty: 1.1,
+          minP: 0.05,
+          logitBias: { '42': -5 },
+        },
       });
     });
 

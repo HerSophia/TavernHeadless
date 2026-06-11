@@ -3,6 +3,11 @@ import { nanoid } from "nanoid"
 import type { ProviderType } from "@tavern/core"
 
 import { llmInstanceConfigs, llmProfileBindings, llmProfiles, sessions } from "../db/schema.js"
+import {
+  normalizeLlmInstanceCapabilities,
+  parseLlmInstanceCapabilitiesJson,
+  type LlmInstanceCapabilities,
+} from "../lib/llm-capabilities.js"
 import { normalizeBindingParams, parseBindingParamsJson, LlmParamsValidationError, type LlmBindingGenerationParams } from "../lib/llm-params.js"
 import { encryptSecret, maskSecret } from "../lib/secrets.js"
 import { MutationApplierRegistry } from "./mutation-applier-registry.js"
@@ -68,8 +73,10 @@ export interface LlmInstanceConfigItemMutationResult {
   scopeId: string
   instanceSlot: LlmInstanceSlot
   presetId: string | null
+  modelIdOverride: string | null
   enabled: boolean
   params: LlmBindingGenerationParams | null
+  capabilities: LlmInstanceCapabilities | null
   createdAt: number
   updatedAt: number
 }
@@ -120,8 +127,10 @@ export interface UpsertLlmInstanceConfigMutationPayload {
   slot: LlmInstanceSlot
   input: {
     presetId?: string | null
+    modelIdOverride?: string | null
     enabled?: boolean
     params?: LlmBindingGenerationParams | null
+    capabilities?: LlmInstanceCapabilities | null
   }
 }
 
@@ -194,8 +203,10 @@ function toInstanceConfigItem(
     scopeId: row.scopeId,
     instanceSlot: row.instanceSlot as LlmInstanceSlot,
     presetId: row.presetId,
+    modelIdOverride: row.modelIdOverride,
     enabled: row.enabled === 1,
     params: normalizeBindingParams(parseBindingParamsJson(row.paramsJson), false) ?? null,
+    capabilities: normalizeLlmInstanceCapabilities(parseLlmInstanceCapabilitiesJson(row.capabilitiesJson)) ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -612,6 +623,34 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
       paramsJson = normalizedParams ? JSON.stringify(normalizedParams) : null
     }
 
+    let capabilitiesJson: string | null | undefined
+    if (!Object.prototype.hasOwnProperty.call(request.envelope.payload.input, "capabilities")) {
+      capabilitiesJson = undefined
+    } else if (request.envelope.payload.input.capabilities === null) {
+      capabilitiesJson = null
+    } else {
+      const normalizedCapabilities = normalizeLlmInstanceCapabilities(request.envelope.payload.input.capabilities)
+      capabilitiesJson = normalizedCapabilities ? JSON.stringify(normalizedCapabilities) : null
+    }
+
+    let modelIdOverride: string | null | undefined
+    if (
+      !Object.prototype.hasOwnProperty.call(request.envelope.payload.input, "modelIdOverride")
+      || request.envelope.payload.input.modelIdOverride === undefined
+    ) {
+      modelIdOverride = undefined
+    } else if (request.envelope.payload.input.modelIdOverride === null) {
+      modelIdOverride = null
+    } else if (typeof request.envelope.payload.input.modelIdOverride === "string") {
+      const trimmedModelIdOverride = request.envelope.payload.input.modelIdOverride.trim()
+      if (trimmedModelIdOverride.length === 0) {
+        throw new ConfigMutationError("invalid_params", "modelIdOverride must not be empty")
+      }
+      modelIdOverride = trimmedModelIdOverride
+    } else {
+      throw new ConfigMutationError("invalid_params", "modelIdOverride must be a string or null")
+    }
+
     const conflictSet: Partial<typeof llmInstanceConfigs.$inferInsert> = {
       workspaceId,
       updatedAt: now,
@@ -620,11 +659,17 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
     if (request.envelope.payload.input.presetId !== undefined) {
       conflictSet.presetId = request.envelope.payload.input.presetId
     }
+    if (modelIdOverride !== undefined) {
+      conflictSet.modelIdOverride = modelIdOverride
+    }
     if (request.envelope.payload.input.enabled !== undefined) {
       conflictSet.enabled = request.envelope.payload.input.enabled ? 1 : 0
     }
     if (paramsJson !== undefined) {
       conflictSet.paramsJson = paramsJson
+    }
+    if (capabilitiesJson !== undefined) {
+      conflictSet.capabilitiesJson = capabilitiesJson
     }
 
     request.context.tx
@@ -637,8 +682,10 @@ export class ConfigMutationApplier implements RuntimeMutationApplier<unknown, un
         scopeId: effectiveScopeId,
         instanceSlot: request.envelope.payload.slot,
         presetId: request.envelope.payload.input.presetId ?? null,
+        modelIdOverride: modelIdOverride ?? null,
         enabled: request.envelope.payload.input.enabled === false ? 0 : 1,
         paramsJson: paramsJson ?? null,
+        capabilitiesJson: capabilitiesJson ?? null,
         createdAt: now,
         updatedAt: now,
       })
