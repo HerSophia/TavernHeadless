@@ -1354,8 +1354,12 @@ type SyncCharacterBindingPlan = {
   changed: boolean;
 };
 
+function publicSessionIdFilter(sessionId: string) {
+  return and(eq(sessions.id, sessionId), eq(sessions.kind, "default"));
+}
+
 function sessionOwnershipFilter(sessionId: string, accountId: string) {
-  return and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId));
+  return and(publicSessionIdFilter(sessionId), eq(sessions.accountId, accountId));
 }
 
 function deleteSessionOwnedProfileBindings(tx: DbExecutor, sessionId: string, accountId: string): void {
@@ -1746,7 +1750,7 @@ export async function registerSessionRoutes(
     }
 
     const auth = getRequestAuthContext(request);
-    const filters = [eq(sessions.accountId, auth.accountId)];
+    const filters = [eq(sessions.accountId, auth.accountId), eq(sessions.kind, "default")];
 
     if (parsedQuery.data.status !== undefined) {
       filters.push(eq(sessions.status, parsedQuery.data.status));
@@ -1809,7 +1813,7 @@ export async function registerSessionRoutes(
         const fetched = await db
           .select()
           .from(sessions)
-          .where(eq(sessions.id, parsedParams.data.id));
+          .where(publicSessionIdFilter(parsedParams.data.id));
         row = fetched[0];
       }
     }
@@ -1850,7 +1854,7 @@ export async function registerSessionRoutes(
       const session = db
         .select({ id: sessions.id, workspaceId: sessions.workspaceId, projectId: sessions.projectId })
         .from(sessions)
-        .where(eq(sessions.id, parsedParams.data.id))
+        .where(publicSessionIdFilter(parsedParams.data.id))
         .limit(1)
         .get();
 
@@ -1900,7 +1904,7 @@ export async function registerSessionRoutes(
         const fetched = await db
           .select({ id: sessions.id })
           .from(sessions)
-          .where(eq(sessions.id, parsedParams.data.id));
+          .where(publicSessionIdFilter(parsedParams.data.id));
         row = fetched[0];
       }
     }
@@ -1955,7 +1959,7 @@ export async function registerSessionRoutes(
       .select()
       .from(sessions)
       .where(writeAuth.hasProjectScope
-        ? eq(sessions.id, parsedParams.data.id)
+        ? publicSessionIdFilter(parsedParams.data.id)
         : sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
       .limit(1);
 
@@ -2259,7 +2263,7 @@ export async function registerSessionRoutes(
       return;
     }
     const [sessionRow] = await db.select().from(sessions).where(writeAuth.hasProjectScope
-      ? eq(sessions.id, parsedParams.data.id)
+      ? publicSessionIdFilter(parsedParams.data.id)
       : sessionOwnershipFilter(parsedParams.data.id, auth.accountId)).limit(1);
     if (!sessionRow) {
       return sendError(reply, 404, "not_found", "Session not found");
@@ -2338,7 +2342,7 @@ export async function registerSessionRoutes(
       .select()
       .from(sessions)
       .where(writeAuth.hasProjectScope
-        ? eq(sessions.id, parsedParams.data.id)
+        ? publicSessionIdFilter(parsedParams.data.id)
         : sessionOwnershipFilter(parsedParams.data.id, auth.accountId))
       .limit(1);
 
@@ -2410,7 +2414,7 @@ export async function registerSessionRoutes(
         const fetched = await db
           .select({ id: sessions.id, accountId: sessions.accountId })
           .from(sessions)
-          .where(eq(sessions.id, sessionId));
+          .where(publicSessionIdFilter(sessionId));
         session = fetched[0];
       }
     }
@@ -2556,7 +2560,7 @@ export async function registerSessionRoutes(
         const fetched = await db
           .select({ id: sessions.id })
           .from(sessions)
-          .where(eq(sessions.id, sessionId));
+          .where(publicSessionIdFilter(sessionId));
         session = fetched[0];
       }
     }
@@ -2653,7 +2657,7 @@ export async function registerSessionRoutes(
         const fetched = await db
           .select({ id: sessions.id })
           .from(sessions)
-          .where(eq(sessions.id, sessionId));
+          .where(publicSessionIdFilter(sessionId));
         session = fetched[0];
       }
     }
@@ -2898,7 +2902,7 @@ export async function registerSessionRoutes(
           const beforeRow = tx
             .select()
             .from(sessions)
-            .where(useProjectScope ? eq(sessions.id, id) : sessionOwnershipFilter(id, auth.accountId))
+            .where(useProjectScope ? publicSessionIdFilter(id) : sessionOwnershipFilter(id, auth.accountId))
             .limit(1)
             .all()[0];
 

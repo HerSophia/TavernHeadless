@@ -16,6 +16,8 @@ outline: [2, 3]
 - 你要删除或归档会话
 - 你要同步角色卡的最新内容到会话
 
+如果你要基于一个现有会话派生一个不污染主叙事的草稿容器，请看 [Temporary Conversations](./temporary-conversations)。那组接口会通过 `POST /sessions/:id/temporary-conversations` 创建临时对话，而不是把草稿直接写回原会话。
+
 ## 一个简单例子
 
 ```bash

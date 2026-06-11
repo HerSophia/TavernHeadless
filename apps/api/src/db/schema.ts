@@ -269,7 +269,20 @@ export const sessions = sqliteTable(
     characterSyncPolicy: text("character_sync_policy", { enum: ["pin", "manual", "force"] }).notNull().default("pin"),
     userId: text("user_id").references(() => accountUsers.id, { onDelete: "set null" }),
     userSnapshotJson: text("user_snapshot_json"),
-    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    status: text("status", { enum: ["active", "archived", "finalized", "discarded", "expired", "cancelled"] })
+      .notNull()
+      .default("active"),
+    kind: text("kind", { enum: ["default", "temporary"] }).notNull().default("default"),
+    purpose: text("purpose"),
+    temporarySourceSessionId: text("temporary_source_session_id"),
+    temporarySnapshotDigest: text("temporary_snapshot_digest"),
+    retentionPolicy: text("retention_policy", { enum: ["delete_on_finalize", "ttl", "keep_for_debug"] }),
+    visibility: text("visibility", { enum: ["internal", "client_visible"] }),
+    expiresAt: integer("expires_at"),
+    finalizedAt: integer("finalized_at"),
+    discardedAt: integer("discarded_at"),
+    cancelledAt: integer("cancelled_at"),
+    lastActivityAt: integer("last_activity_at").notNull().default(0),
     presetId: text("preset_id"),
     regexProfileId: text("regex_profile_id"),
     worldbookProfileId: text("worldbook_profile_id"),
@@ -289,6 +302,8 @@ export const sessions = sqliteTable(
     accountWorkspaceUpdatedIdx: index("session_account_workspace_updated_idx").on(table.accountId, table.workspaceId, table.updatedAt),
     accountProjectUpdatedIdx: index("session_account_project_updated_idx").on(table.accountId, table.projectId, table.updatedAt),
     projectUpdatedIdx: index("session_project_updated_idx").on(table.projectId, table.updatedAt),
+    accountKindUpdatedIdx: index("session_account_kind_updated_idx").on(table.accountId, table.kind, table.updatedAt),
+    sourceSessionIdx: index("session_temporary_source_session_idx").on(table.temporarySourceSessionId),
   })
 );
 
@@ -468,6 +483,42 @@ export const variables = sqliteTable(
       table.scope,
       table.updatedAt
     )
+  })
+);
+
+export const pageStagedWrites = sqliteTable(
+  "page_staged_write",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    pageId: text("page_id").notNull().references(() => messagePages.id, { onDelete: "cascade" }),
+    sourceKind: text("source_kind").notNull().default("temporary_conversation"),
+    sourceSessionId: text("source_session_id").references(() => sessions.id, { onDelete: "set null" }),
+    sourcePageId: text("source_page_id").references(() => messagePages.id, { onDelete: "set null" }),
+    actorClientId: text("actor_client_id").references(() => clients.id, { onDelete: "set null" }),
+    content: text("content").notNull(),
+    contentFormat: text("content_format", { enum: ["text", "markdown", "json"] }).notNull().default("text"),
+    reason: text("reason").notNull(),
+    status: text("status", { enum: ["staged", "accepted", "applied", "discarded"] }).notNull().default("staged"),
+    metadataJson: text("metadata_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    appliedAt: integer("applied_at"),
+    discardedAt: integer("discarded_at"),
+  },
+  (table) => ({
+    pageStatusCreatedIdx: index("page_staged_write_page_status_created_idx").on(table.pageId, table.status, table.createdAt),
+    floorCreatedIdx: index("page_staged_write_floor_created_idx").on(table.floorId, table.createdAt),
+    sourceSessionCreatedIdx: index("page_staged_write_source_session_created_idx").on(table.sourceSessionId, table.createdAt),
+    accountSessionBranchCreatedIdx: index("page_staged_write_account_session_branch_created_idx").on(
+      table.accountId,
+      table.sessionId,
+      table.branchId,
+      table.createdAt,
+    ),
   })
 );
 

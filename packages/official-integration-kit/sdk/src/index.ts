@@ -3,6 +3,32 @@ export { buildAccountHeaders, resolvePath, type AccountIdHint, type TavernClient
 export type { TavernClient } from "./client/create-tavern-client.js";
 export { TavernApiError, isTavernApiError } from "./errors/tavern-api-error.js";
 export {
+  createTemporaryConversationsResource,
+  createTemporaryConversationFromProject,
+  createTemporaryConversationFromSession,
+  type ProjectsCreateTemporaryConversationOptions,
+  type SessionsCreateTemporaryConversationOptions,
+  type TemporaryConversationAppendMessageOptions,
+  type TemporaryConversationCreateInput,
+  type TemporaryConversationExportResult,
+  type TemporaryConversationExportToPageStagedWriteOptions,
+  type TemporaryConversationMessageInput,
+  type TemporaryConversationMessageRef,
+  type TemporaryConversationRecord,
+  type TemporaryConversationRespondOptions,
+  type TemporaryConversationRespondStreamOptions,
+  type TemporaryConversationResult,
+  type TemporaryConversationRetentionPolicy,
+  type TemporaryConversationStatus,
+  type TemporaryConversationTranscript,
+  type TemporaryConversationTranscriptFloor,
+  type TemporaryConversationTranscriptMessage,
+  type TemporaryConversationTranscriptPage,
+  type TemporaryConversationsRequestOptions,
+  type TemporaryConversationsResource,
+  type TemporaryConversationVisibility,
+} from "./resources/temporary-conversations.js";
+export {
   createBackupJobsResource,
   createBackupResource,
   createAccountsResource,

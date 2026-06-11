@@ -461,6 +461,7 @@ refactor(web): migrate workspace api callers to sdk resources
 - `Runtime` 只用于平台层运行时能力及其既有公开面，例如 `Background Job Runtime`、`Mutation Runtime`、`runtime_job`、`runtime_scope_state`、`/sessions/:id/tools/runtime`。
 - `Run` 用于聊天主链路中的一次业务运行快照，例如 `floor run`、`active run`、`runId`、`runType`、`attemptNo`。
 - `Execution` 用于运行中的子级执行记录，例如 `tool execution`、`tool_execution_record`。
+- 临时对话相关类型与服务统一使用 `TemporaryConversation` 命名，不要写成 `TemporaryConversationRuntime`、`TemporaryConversationRun` 或 `TemporaryConversationExecution`。
 - 新增命名不得把这三层概念混用。尤其不要用 `runtime` 命名 turn 进度快照、楼层进度接口或其持久化表。
 
 ### 命名风格
