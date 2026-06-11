@@ -522,7 +522,7 @@ export async function registerProjectAgentBindingRoutes(
     try {
       const access = new ProjectAccessService(db).requireProjectActionBySessionIdForActor(actor, params.data.id, "project.config.read");
       const service = new EffectiveConfigService(db);
-      const view = service.forSession({ sessionId: params.data.id, accountId: access.project.accountId });
+      const view = await service.forSession({ sessionId: params.data.id, accountId: access.project.accountId });
       return reply.send(view);
     } catch (error) {
       if (handleAgentError(reply, error)) return;

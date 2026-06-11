@@ -246,6 +246,7 @@ describe("prompt-runtime-execution", () => {
           toolList: {
             injected: true,
             contributorId: "builtin:tool_list",
+            placementMode: "contributor_chain",
             toolCount: 2,
           },
         },
@@ -261,6 +262,7 @@ describe("prompt-runtime-execution", () => {
       toolList: {
         injected: true,
         contributorId: "builtin:tool_list",
+        placementMode: "contributor_chain",
         toolCount: 2,
       },
     });

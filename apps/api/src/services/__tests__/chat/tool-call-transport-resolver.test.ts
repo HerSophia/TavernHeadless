@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   ToolCallTransportResolver,
+  isToolCallTransportAllowedInPromptMode,
+  listToolCallTransportsForPromptMode,
   normalizeToolCallTransportKind,
   readToolCallTransportOverride,
 } from "../../chat/tool-call-transport-resolver.js";
@@ -11,6 +13,15 @@ describe("ToolCallTransportResolver", () => {
     expect(normalizeToolCallTransportKind("text_protocol")).toBe("text_protocol");
     expect(normalizeToolCallTransportKind("native_function_call")).toBe("native_function_call");
     expect(normalizeToolCallTransportKind("bad")).toBeUndefined();
+  });
+
+  it("lists the currently allowed transports for every prompt mode", () => {
+    expect(listToolCallTransportsForPromptMode("compat_strict")).toEqual(["native_function_call", "text_protocol"]);
+    expect(listToolCallTransportsForPromptMode("compat_plus")).toEqual(["native_function_call", "text_protocol"]);
+    expect(listToolCallTransportsForPromptMode("native")).toEqual(["native_function_call", "text_protocol"]);
+    expect(isToolCallTransportAllowedInPromptMode("compat_strict", "native_function_call")).toBe(true);
+    expect(isToolCallTransportAllowedInPromptMode("compat_plus", "text_protocol")).toBe(true);
+    expect(isToolCallTransportAllowedInPromptMode("native", "none")).toBe(false);
   });
 
   it("reads an internal transport override from session metadata", () => {
@@ -54,10 +65,67 @@ describe("ToolCallTransportResolver", () => {
       sessionId: "session-1",
       promptMode: "native",
       toolsEnabled: true,
-      llmInstanceSupportsFunctionCall: false,
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: [],
+      },
     })).toEqual(expect.objectContaining({
       transport: "text_protocol",
       reasonCode: "instance_not_supports_function_call",
+    }));
+  });
+
+  it("prefers structured capabilities when choosing the default transport", () => {
+    const resolver = new ToolCallTransportResolver();
+
+    expect(resolver.resolve({
+      sessionId: "session-1",
+      promptMode: "native",
+      toolsEnabled: true,
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: [],
+      },
+    })).toEqual(expect.objectContaining({
+      transport: "text_protocol",
+      reasonCode: "instance_not_supports_function_call",
+    }));
+  });
+
+  it("rejects explicit overrides that the current prompt mode does not allow", () => {
+    const resolver = new ToolCallTransportResolver((_mode, transport) => transport === "native_function_call");
+
+    expect(resolver.resolve({
+      sessionId: "session-1",
+      promptMode: "compat_plus",
+      toolsEnabled: true,
+      explicitTransport: "text_protocol",
+    })).toEqual(expect.objectContaining({
+      transport: "none",
+      reasonCode: "override_rejected_by_mode",
+    }));
+  });
+
+  it("falls back to none when the capability-driven candidate is not allowed in the current prompt mode", () => {
+    const resolver = new ToolCallTransportResolver((_mode, transport) => transport === "native_function_call");
+
+    expect(resolver.resolve({
+      sessionId: "session-1",
+      promptMode: "compat_plus",
+      toolsEnabled: true,
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+        unsupportedGenerationParams: [],
+      },
+    })).toEqual(expect.objectContaining({
+      transport: "none",
+      reasonCode: "mode_disallows_transport",
     }));
   });
 

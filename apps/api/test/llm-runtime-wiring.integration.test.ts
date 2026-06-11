@@ -152,6 +152,8 @@ describe("buildApp LLM runtime wiring", () => {
         params: {
           temperature: 0.45,
           max_retries: 3,
+          stop_sequences: ["DONE"],
+          response_format: { type: "json_schema", json_schema: { type: "object" } },
         },
       },
     });
@@ -164,10 +166,17 @@ describe("buildApp LLM runtime wiring", () => {
         scope: "session",
         session_id: sessionId,
         preset_id: "preset-override",
+        model_id_override: "gpt-4.1-mini",
         enabled: true,
         params: {
           temperature: 0.9,
           timeout_ms: 12000,
+          stop_sequences: ["HALT"],
+          response_format: { type: "json_schema", json_schema: { type: "object" } },
+        },
+        capabilities: {
+          supports_function_call: false,
+          unsupported_generation_params: ["stopSequences"],
         },
       },
     });
@@ -178,9 +187,11 @@ describe("buildApp LLM runtime wiring", () => {
       narrator?: {
         enabled?: boolean;
         generationParams?: Record<string, unknown>;
+        model?: { providerId: string; modelId: string };
         presetId?: string;
         profileId?: string;
         source?: string;
+        capabilities?: Record<string, unknown>;
       };
     };
 
@@ -195,8 +206,17 @@ describe("buildApp LLM runtime wiring", () => {
         temperature: 0.9,
         maxRetries: 3,
         timeoutMs: 12000,
+        stopSequences: ["HALT"],
+        responseFormat: { type: "json_schema", jsonSchema: { type: "object" } },
       }),
     );
+    expect(resolved.narrator?.capabilities).toEqual({
+      supportsFunctionCall: false,
+      supportsToolChoice: false,
+      supportsStreamingToolCall: false,
+      unsupportedGenerationParams: ["stopSequences"],
+    });
+    expect(resolved.narrator?.model).toMatchObject({ modelId: "gpt-4.1-mini" });
   });
 
   it("keeps instance params and preset override even when execution falls back to env model", async () => {
@@ -209,6 +229,7 @@ describe("buildApp LLM runtime wiring", () => {
         scope: "session",
         session_id: sessionId,
         preset_id: "preset-env-override",
+        model_id_override: "gpt-4.1-mini",
         enabled: true,
         params: {
           temperature: 0.35,

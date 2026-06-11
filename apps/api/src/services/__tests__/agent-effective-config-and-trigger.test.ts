@@ -87,12 +87,37 @@ describe("EffectiveConfigService", () => {
     expect(view.toolPolicies.overrides[0]?.basePolicyId).toBe("policy_alpha");
   });
 
-  it("returns session view and leaves sessionOverrides.llmProfile null", () => {
+  it("returns session view, leaves sessionOverrides.llmProfile null, and exposes tool transport summary", async () => {
     const session = createTestSessionWithScope(database.db, { accountId: ACCOUNT_ID, id: "sess-effective-1" });
-    const view = effectiveConfigService.forSession({ sessionId: session.sessionId, accountId: ACCOUNT_ID });
+    await new (await import("../llm-instance-service.js")).LlmInstanceService(database.db).upsertConfig(
+      ACCOUNT_ID,
+      "session",
+      session.sessionId,
+      "narrator",
+      {
+        capabilities: {
+          supportsFunctionCall: false,
+          supportsToolChoice: false,
+          supportsStreamingToolCall: false,
+          unsupportedGenerationParams: [],
+        },
+      },
+    );
+
+    const view = await effectiveConfigService.forSession({ sessionId: session.sessionId, accountId: ACCOUNT_ID });
     expect(view.sessionId).toBe(session.sessionId);
     expect(view.projectId).toBe(session.projectId);
     expect(view.sessionOverrides.llmProfile).toBeNull();
+    expect(view.toolTransport).toEqual({
+      available: ["native_function_call", "text_protocol"],
+      selected: "text_protocol",
+      reasonCode: "instance_not_supports_function_call",
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+      },
+    });
   });
 });
 

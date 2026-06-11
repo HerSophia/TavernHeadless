@@ -139,6 +139,16 @@ GET /sessions/:id/effective-config
   "sessionId": "sess_001",
   "sessionOverrides": {
     "llmProfile": null
+  },
+  "toolTransport": {
+    "available": ["native_function_call", "text_protocol"],
+    "selected": "text_protocol",
+    "reasonCode": "instance_not_supports_function_call",
+    "capabilities": {
+      "supportsFunctionCall": false,
+      "supportsToolChoice": false,
+      "supportsStreamingToolCall": false
+    }
   }
 }
 ```
@@ -147,6 +157,10 @@ GET /sessions/:id/effective-config
 | ---- | ---- | ---- |
 | `sessionId` | string | Session ID |
 | `sessionOverrides.llmProfile` | object \| null | Session 级覆盖位。当前实现固定返回 `null`，字段保留给后续版本 |
+| `toolTransport.available` | string[] | 当前 prompt mode 允许的工具调用 transport 列表 |
+| `toolTransport.selected` | string | 当前会话最终选中的 transport：`native_function_call` / `text_protocol` / `none` |
+| `toolTransport.reasonCode` | string | 选择原因，例如显式 override、工具关闭、实例不支持 function call |
+| `toolTransport.capabilities` | object | 当前 narrator 实例能力摘要，用于解释 transport 为什么这样选 |
 
 ### 错误
 

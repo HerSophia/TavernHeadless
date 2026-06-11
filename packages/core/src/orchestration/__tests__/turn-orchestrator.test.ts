@@ -721,6 +721,27 @@ describe('TurnOrchestrator — Tool Integration', () => {
     expect(runCall.maxSteps).toBe(3);
   });
 
+  it('passes toolChoice auto only when native transport explicitly enables it', async () => {
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    await orchestrator.executeTurn(makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'native_function_call',
+          reasonCode: 'default_native_function_call',
+        },
+        toolChoiceApplied: true,
+      },
+    }));
+
+    const runCall = (deps.generationPipeline.run as any).mock.calls[0][0];
+    expect(runCall.toolChoice).toBe('auto');
+  });
+
   it('does not pass tools when enableTools is false', async () => {
     const registry = new ToolRegistry();
     registry.register(makeTestToolProvider());
@@ -891,6 +912,94 @@ describe('TurnOrchestrator — Tool Integration', () => {
       }),
     ]);
     expect(result.toolExecutionRecords).toBeUndefined();
+    expect((provider.executeTool as any).mock.calls).toHaveLength(0);
+  });
+
+  it('suppresses complete text_protocol blocks during streaming and forwards only visible narration', async () => {
+    const streamedChunks: string[] = [];
+    const provider = makeTestToolProvider();
+    const fullText = [
+      'Narration before ',
+      '<tool_call id="call-1" name="roll_dice">',
+      '{"args":{"sides":20}}',
+      '</tool_call>',
+      ' Narration after.',
+    ].join('');
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (_runInput, callbacks) => {
+          callbacks?.onChunk?.('Narration before ');
+          callbacks?.onChunk?.('<tool_');
+          callbacks?.onChunk?.('call id="call-1" name="roll_dice">{"args":{"sides":20}}</tool_call>');
+          callbacks?.onChunk?.(' Narration after.');
+          return makeGenOutput({ text: fullText, rawText: fullText });
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(provider);
+
+    const result = await orchestrator.executeTurn(makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+      },
+      onChunk: (chunk) => streamedChunks.push(chunk),
+    }));
+
+    expect(streamedChunks).toEqual(['Narration before ', ' Narration after.']);
+    expect(result.generatedText).not.toContain('<tool_call');
+    expect(result.toolResultWritebackText).toContain('<tool_result id="call-1" name="roll_dice" status="success">');
+  });
+
+  it('releases an unclosed text_protocol block as visible text at stream finalization', async () => {
+    const streamedChunks: string[] = [];
+    const provider = makeTestToolProvider();
+    const fullText = 'Narration before <tool_call id="call-1" name="roll_dice">{"args":{"sides":20}}';
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (_runInput, callbacks) => {
+          callbacks?.onChunk?.('Narration before ');
+          callbacks?.onChunk?.('<tool_call id="call-1"');
+          callbacks?.onChunk?.(' name="roll_dice">{"args":{"sides":20}}');
+          return makeGenOutput({ text: fullText, rawText: fullText });
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(provider);
+
+    const result = await orchestrator.executeTurn(makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+      },
+      onChunk: (chunk) => streamedChunks.push(chunk),
+    }));
+
+    expect(streamedChunks.join('')).toContain('<tool_call id="call-1"');
+    expect(result.generatedText).toContain('<tool_call id="call-1"');
+    expect(result.toolTransport?.parsing?.diagnostics).toEqual([
+      expect.objectContaining({
+        callId: 'call-1',
+        toolName: 'roll_dice',
+        reason: 'malformed_block',
+      }),
+    ]);
     expect((provider.executeTool as any).mock.calls).toHaveLength(0);
   });
 

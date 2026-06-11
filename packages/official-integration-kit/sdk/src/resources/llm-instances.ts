@@ -1,5 +1,10 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
-import type { LlmGenerationParams, LlmInstanceScope, LlmInstanceSlot } from "./llm-shared.js";
+import type {
+  LlmGenerationParams,
+  LlmInstanceCapabilities,
+  LlmInstanceScope,
+  LlmInstanceSlot,
+} from "./llm-shared.js";
 import { buildQueryString, compactObject, readArray, readBoolean, readNullableString, readRecord, readString } from "./utils.js";
 
 export type LlmInstanceConfig = {
@@ -8,8 +13,10 @@ export type LlmInstanceConfig = {
   scopeId: string;
   instanceSlot: LlmInstanceSlot;
   presetId: string | null;
+  modelIdOverride: string | null;
   enabled: boolean;
   params: LlmGenerationParams | null;
+  capabilities: LlmInstanceCapabilities | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -20,8 +27,10 @@ export type LlmResolvedInstanceSlot = {
   scope: LlmInstanceScope | null;
   configId: string | null;
   presetId: string | null;
+  modelIdOverride: string | null;
   enabled: boolean;
   params: LlmGenerationParams | null;
+  capabilities: LlmInstanceCapabilities;
 };
 
 export type LlmInstancesResource = {
@@ -34,10 +43,19 @@ export type LlmInstancesResource = {
     enabled?: boolean;
     params?: LlmGenerationParams | null;
     presetId?: string | null;
+    modelIdOverride?: string | null;
+    capabilities?: LlmInstanceCapabilities | null;
     scope?: LlmInstanceScope;
     sessionId?: string;
     slot: LlmInstanceSlot;
   }): Promise<LlmInstanceConfig>;
+};
+
+const DEFAULT_LLM_INSTANCE_CAPABILITIES: LlmInstanceCapabilities = {
+  supportsFunctionCall: true,
+  supportsToolChoice: false,
+  supportsStreamingToolCall: false,
+  unsupportedGenerationParams: [],
 };
 
 export function createLlmInstancesResource(client: TransportClient): LlmInstancesResource {
@@ -107,6 +125,8 @@ export function createLlmInstancesResource(client: TransportClient): LlmInstance
           enabled: options.enabled,
           params: options.params,
           preset_id: options.presetId,
+          model_id_override: options.modelIdOverride,
+          capabilities: mapLlmInstanceCapabilitiesRequest(options.capabilities),
           scope: options.scope,
           session_id: options.sessionId,
         }),
@@ -138,8 +158,10 @@ function mapLlmInstanceConfig(value: unknown, errorMessage: string | null): LlmI
     enabled: readBoolean(record.enabled),
     id: readString(record.id),
     instanceSlot: readString(record.instance_slot, "*") as LlmInstanceSlot,
+    modelIdOverride: readNullableString(record.model_id_override),
     params: (readRecord(record.params) as LlmGenerationParams | null) ?? null,
     presetId: readNullableString(record.preset_id),
+    capabilities: mapLlmInstanceCapabilities(record.capabilities),
     scope: readString(record.scope, "global") as LlmInstanceScope,
     scopeId: readString(record.scope_id),
     updatedAt: typeof record.updated_at === "number" ? record.updated_at : 0,
@@ -158,10 +180,49 @@ function mapResolvedSlot(value: unknown, errorMessage: string | null): LlmResolv
   return {
     configId: readNullableString(record.config_id),
     enabled: readBoolean(record.enabled),
+    modelIdOverride: readNullableString(record.model_id_override),
     params: (readRecord(record.params) as LlmGenerationParams | null) ?? null,
     presetId: readNullableString(record.preset_id),
+    capabilities: mapLlmInstanceCapabilities(record.capabilities) ?? { ...DEFAULT_LLM_INSTANCE_CAPABILITIES },
     scope: (readNullableString(record.scope) as LlmInstanceScope | null) ?? null,
     slot: readString(record.slot, "*") as LlmInstanceSlot,
     source: readString(record.source, "default") as LlmResolvedInstanceSlot["source"],
+  };
+}
+
+function mapLlmInstanceCapabilities(value: unknown): LlmInstanceCapabilities | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    supportsFunctionCall: readBoolean(record.supports_function_call, DEFAULT_LLM_INSTANCE_CAPABILITIES.supportsFunctionCall),
+    supportsToolChoice: readBoolean(record.supports_tool_choice, DEFAULT_LLM_INSTANCE_CAPABILITIES.supportsToolChoice),
+    supportsStreamingToolCall: readBoolean(
+      record.supports_streaming_tool_call,
+      DEFAULT_LLM_INSTANCE_CAPABILITIES.supportsStreamingToolCall,
+    ),
+    unsupportedGenerationParams: readArray(record.unsupported_generation_params)
+      .map((item) => readString(item))
+      .filter((item) => item.length > 0),
+  };
+}
+
+function mapLlmInstanceCapabilitiesRequest(
+  value: LlmInstanceCapabilities | null | undefined,
+): Record<string, unknown> | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+
+  return {
+    supports_function_call: value.supportsFunctionCall,
+    supports_tool_choice: value.supportsToolChoice,
+    supports_streaming_tool_call: value.supportsStreamingToolCall,
+    unsupported_generation_params: value.unsupportedGenerationParams,
   };
 }

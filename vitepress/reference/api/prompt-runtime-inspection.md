@@ -39,9 +39,14 @@ outline: [2, 3]
 - contributor resolve
 - prepare phase trace
 
-但请求级 Prompt Runtime Injection（随请求临时提交的 `prompt_runtime_injections`）是一个例外：
+但 Prompt Runtime Injection 是一个例外。这里要区分两类来源：
 
-- `preview` 会接收 `prompt_runtime_injections`
+- 请求级注入：随请求临时提交的 `prompt_runtime_injections`
+- 持久注入：提前写入 session / branch 的 injection 记录
+
+其中：
+
+- `preview` 只会接收请求级 `prompt_runtime_injections`
 - `preview` 不会把这些 injection 注入 `text`
 - `preview` 只会在 `runtime_trace.injection` 里回显解析结果
 
@@ -111,7 +116,7 @@ outline: [2, 3]
 其中：
 
 - `prompt_renderable` 只在该 contributor 有可注入文本时出现
-- `mode_scope` 用来说明该 contributor 面向 `compat_plus` 还是 `native`
+- `mode_scope` 用来说明该 contributor 面向 `compat_strict`、`compat_plus` 还是 `native`
 - `cache_scope` 现在用于表达该结果是否适合按 floor 或 page 复用
 
 ### `prepare_phase_trace`
@@ -134,7 +139,7 @@ outline: [2, 3]
 
 ### `runtime_trace.injection` 与顶层 `injections`
 
-这组字段是请求级 Prompt Runtime Injection 的观测面。它们只对应本次请求里的 `prompt_runtime_injections`，不做持久化。
+这组字段是 Prompt Runtime Injection 的统一观测面。它们会把本次请求里的 `prompt_runtime_injections`，以及当前 session / branch 上已经持久化的 injection 一并放进解析结果里。
 
 `preview`：
 
@@ -163,7 +168,8 @@ outline: [2, 3]
 当前公开边界固定为：
 
 - `source_kind` 只允许 `client_injection`
-- `scope` 只允许 `request`
+- `scope` 可能为 `request`、`session`、`branch`
+- `request` 表示本次请求临时注入，`session` / `branch` 表示持久注入记录
 - `order` 只影响同一 placement 内部顺序，默认 `100`
 
 `not_applied_reason` 当前可能为：
@@ -172,6 +178,9 @@ outline: [2, 3]
 - `unknown_placement`
 - `empty_title_or_content`
 - `prompt_section_absent`
+- `disabled`
+- `mode_scope_mismatch`
+- `expired`
 
 可用 placement 为：
 

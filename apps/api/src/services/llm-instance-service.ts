@@ -3,6 +3,12 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import type { AppDb } from "../db/client";
 import { llmInstanceConfigs, sessions } from "../db/schema";
 import {
+  parseLlmInstanceCapabilitiesJson,
+  resolveLlmInstanceCapabilities,
+  normalizeLlmInstanceCapabilities,
+  type LlmInstanceCapabilities,
+} from "../lib/llm-capabilities.js";
+import {
   normalizeBindingParams,
   parseBindingParamsJson,
   type LlmBindingGenerationParams,
@@ -33,8 +39,10 @@ export interface LlmInstanceConfigItem {
   scopeId: string;
   instanceSlot: LlmInstanceSlot;
   presetId: string | null;
+  modelIdOverride: string | null;
   enabled: boolean;
   params: LlmBindingGenerationParams | null;
+  capabilities: LlmInstanceCapabilities | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -45,14 +53,18 @@ export interface ResolvedInstanceSlot {
   scope: LlmInstanceScope | null;
   configId: string | null;
   presetId: string | null;
+  modelIdOverride: string | null;
   enabled: boolean;
   params: LlmBindingGenerationParams | null;
+  capabilities: LlmInstanceCapabilities;
 }
 
 export interface UpsertInstanceConfigInput {
   presetId?: string | null;
+  modelIdOverride?: string | null;
   enabled?: boolean;
   params?: LlmBindingGenerationParams | null;
+  capabilities?: LlmInstanceCapabilities | null;
 }
 
 export class LlmInstanceServiceError extends Error {
@@ -245,8 +257,10 @@ export class LlmInstanceService {
       scope: null,
       configId: null,
       presetId: null,
+      modelIdOverride: null,
       enabled: true,
       params: null,
+      capabilities: resolveLlmInstanceCapabilities(undefined),
     };
 
     // Build priority list: session(slot) → session(*) → global(slot) → global(*)
@@ -276,14 +290,17 @@ export class LlmInstanceService {
 
       if (found) {
         const params = normalizeBindingParams(parseBindingParamsJson(found.paramsJson), false) ?? null;
+        const capabilities = resolveLlmInstanceCapabilities(parseLlmInstanceCapabilitiesJson(found.capabilitiesJson));
         return {
           slot,
           source: found.scope === "session" ? "session_config" : "global_config",
           scope: found.scope as LlmInstanceScope,
           configId: found.id,
           presetId: found.presetId,
+          modelIdOverride: found.modelIdOverride,
           enabled: found.enabled === 1,
           params,
+          capabilities,
         };
       }
     }
@@ -328,8 +345,10 @@ function toConfigItem(row: typeof llmInstanceConfigs.$inferSelect): LlmInstanceC
     scopeId: row.scopeId,
     instanceSlot: row.instanceSlot as LlmInstanceSlot,
     presetId: row.presetId,
+    modelIdOverride: row.modelIdOverride,
     enabled: row.enabled === 1,
     params: normalizeBindingParams(parseBindingParamsJson(row.paramsJson), false) ?? null,
+    capabilities: normalizeLlmInstanceCapabilities(parseLlmInstanceCapabilitiesJson(row.capabilitiesJson)) ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

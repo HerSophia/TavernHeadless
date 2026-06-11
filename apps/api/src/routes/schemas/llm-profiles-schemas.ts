@@ -244,6 +244,41 @@ export const generationParamsJsonSchemaProperties = {
   top_k: { type: ["integer", "null"], minimum: 0 },
   frequency_penalty: { type: ["number", "null"], minimum: -2, maximum: 2 },
   presence_penalty: { type: ["number", "null"], minimum: -2, maximum: 2 },
+  stop_sequences: {
+    type: ["array", "null"],
+    items: { type: "string", minLength: 1 },
+    maxItems: 16,
+  },
+  seed: { type: ["integer", "null"] },
+  repetition_penalty: { type: ["number", "null"], exclusiveMinimum: 0, maximum: 2 },
+  min_p: { type: ["number", "null"], minimum: 0, maximum: 1 },
+  logit_bias: {
+    anyOf: [
+      {
+        type: "object",
+        additionalProperties: { type: "number", minimum: -100, maximum: 100 },
+        maxProperties: 256,
+      },
+      { type: "null" },
+    ],
+  },
+  response_format: {
+    anyOf: [
+      {
+        type: "object",
+        required: ["type"],
+        properties: {
+          type: { type: "string", enum: ["text", "json_object", "json_schema"] },
+          json_schema: {
+            type: "object",
+            additionalProperties: true,
+          },
+        },
+        additionalProperties: false,
+      },
+      { type: "null" },
+    ],
+  },
   stream: { type: ["boolean", "null"] },
   timeout_ms: { type: ["integer", "null"], minimum: 1 },
   max_retries: { type: ["integer", "null"], minimum: 0, maximum: 10 },

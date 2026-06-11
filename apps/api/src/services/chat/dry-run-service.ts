@@ -87,6 +87,7 @@ export class DryRunService {
       executionContext,
       conversationWindow: conversationState,
       resolvedTurnModels,
+      llmInstanceCapabilities: resolvedTurnModels.narrator?.capabilities,
       includeRuntimeTrace: true,
       baseRuntimeTrace: persistedUserMessage.runtimeTrace
         ? { regex: persistedUserMessage.runtimeTrace }

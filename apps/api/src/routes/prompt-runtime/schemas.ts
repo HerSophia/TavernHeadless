@@ -30,6 +30,10 @@ import { promptIntentValues } from "../schemas/chat-schemas.js";
 import type {
   PromptRuntimeClientInjectionInput,
 } from "../../services/prompt-runtime-injection-types.js";
+import type {
+  PromptRuntimeInjectionPatchInput,
+  PromptRuntimeInjectionWriteInput,
+} from "../../services/prompt-runtime/injection-service.js";
 
 export type PromptRuntimeInjectionBody = {
   source_kind: PromptRuntimeClientInjectionInput["sourceKind"];
@@ -38,6 +42,28 @@ export type PromptRuntimeInjectionBody = {
   placement: string;
   order?: number;
   scope?: PromptRuntimeClientInjectionInput["scope"];
+};
+
+export type PromptRuntimePersistedInjectionCreateBody = {
+  source_kind: PromptRuntimeInjectionWriteInput["sourceKind"];
+  title: string;
+  content: string;
+  placement: string;
+  order?: number;
+  enabled?: boolean;
+  mode_scope?: PromptMode | null;
+  ttl_ms?: number | null;
+};
+
+export type PromptRuntimePersistedInjectionPatchBody = {
+  source_kind?: PromptRuntimeInjectionPatchInput["sourceKind"];
+  title?: string;
+  content?: string;
+  placement?: string;
+  order?: number;
+  enabled?: boolean;
+  mode_scope?: PromptMode | null;
+  ttl_ms?: number | null;
 };
 
 export type PromptRuntimeInspectBody = {
@@ -57,6 +83,10 @@ export type PromptRuntimeInspectBody = {
   prompt_runtime_injections?: PromptRuntimeInjectionBody[];
 };
 
+function validateTrimmedString(field: string) {
+  return z.string().refine((value) => value.trim().length > 0, `${field} must not be empty after trimming`);
+}
+
 export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionBody> = z.object({
   source_kind: z.literal("client_injection"),
   title: z.string(),
@@ -65,6 +95,31 @@ export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionB
   order: z.number().int().optional(),
   scope: z.literal("request").optional(),
 }).strict();
+
+export const promptRuntimePersistedInjectionCreateBodySchema: z.ZodType<PromptRuntimePersistedInjectionCreateBody> = z.object({
+  source_kind: z.literal("client_injection"),
+  title: validateTrimmedString("title"),
+  content: validateTrimmedString("content"),
+  placement: validateTrimmedString("placement"),
+  order: z.number().int().optional(),
+  enabled: z.boolean().optional(),
+  mode_scope: z.enum(PROMPT_MODE_VALUES).nullable().optional(),
+  ttl_ms: z.number().int().nonnegative().nullable().optional(),
+}).strict();
+
+export const promptRuntimePersistedInjectionPatchBodySchema: z.ZodType<PromptRuntimePersistedInjectionPatchBody> = z.object({
+  source_kind: z.literal("client_injection").optional(),
+  title: validateTrimmedString("title").optional(),
+  content: validateTrimmedString("content").optional(),
+  placement: validateTrimmedString("placement").optional(),
+  order: z.number().int().optional(),
+  enabled: z.boolean().optional(),
+  mode_scope: z.enum(PROMPT_MODE_VALUES).nullable().optional(),
+  ttl_ms: z.number().int().nonnegative().nullable().optional(),
+}).strict().refine(
+  (value) => Object.values(value).some((item) => item !== undefined),
+  "At least one mutable field is required",
+);
 
 export const promptRuntimeInspectBodySchema: z.ZodType<PromptRuntimeInspectBody> = z.object({
   message: z.string().min(1),

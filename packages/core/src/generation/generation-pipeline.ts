@@ -91,6 +91,7 @@ export class GenerationPipeline {
       const request = {
         ...(input.model ? { model: input.model } : {}),
         ...(input.tools ? { tools: input.tools, maxSteps: input.maxSteps } : {}),
+        ...(input.toolChoice ? { toolChoice: input.toolChoice } : {}),
         messages: messages.map((m) => ({
           role: m.role as 'system' | 'user' | 'assistant',
           content: m.content,

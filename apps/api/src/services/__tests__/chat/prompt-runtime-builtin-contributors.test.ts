@@ -158,7 +158,7 @@ describe("prompt-runtime-builtin-contributors", () => {
 
   it("builds a tool_list contributor only for text_protocol transport", () => {
     const result = buildToolListContributor({
-      promptMode: "native",
+      promptMode: "compat_strict",
       transport: "text_protocol",
       toolsForSlot: [makeTool("roll_dice")],
     });
@@ -167,7 +167,7 @@ describe("prompt-runtime-builtin-contributors", () => {
       id: "builtin:tool_list",
       kind: "tool_list",
       sourceKind: "tool_list",
-      modeScope: "native",
+      modeScope: "compat_strict",
       payload: {
         transport: "text_protocol",
         toolNames: ["roll_dice"],

@@ -29,7 +29,7 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 | committed truth | 楼层提交时持久化下来的组装真相快照。历史查询只读这份快照，不重算 |
 | inspection | 只读检查入口的统称：`preview` / `inspect` / `explain` / `compare` |
 | contributor | 在组装提示词之前向其中注入内容的来源单元，例如记忆投影 |
-| Prompt Runtime Injection | 客户端随请求临时提交的注入内容（`prompt_runtime_injections`），只在本次请求内生效，可通过 inspection 入口回看解析结果 |
+| Prompt Runtime Injection | 分两类：一类是随请求提交的 `prompt_runtime_injections`；另一类是持久化到 session / branch 的注入记录。两者都会进入运行时解析，并可通过 inspection 入口回看结果 |
 
 ## 路由族一览
 
@@ -39,6 +39,7 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 | mode | `/prompt-runtime/mode` | 显式读取或写入 session 级 `prompt_mode` | [Mode](./prompt-runtime-mode) |
 | policy | `/prompt-runtime/policy` | 查看和修改 Prompt Runtime policy | [Policy](./prompt-runtime-policy) |
 | assets | `/prompt-runtime/assets` | 查看当前绑定的 Prompt Assets | [Assets](./prompt-runtime-assets) |
+| injections | `/prompt-runtime/injections` 及 `/prompt-runtime/branches/:branchId/injections` | 管理 session / branch 持久注入记录 | 本页 |
 | inspection | `preview` / `inspect` / `explain` / `compare` | 只读预览、请求期检查、历史解释和 committed truth 比较 | [Inspection](./prompt-runtime-inspection) |
 | capabilities | `GET /prompt-runtime/capabilities` | 查看能力边界、默认值和公开 mode 目录 | [Capabilities](./prompt-runtime-capabilities) |
 
@@ -52,6 +53,14 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 - `GET /sessions/:id/prompt-runtime/branches/:branchId/policy`
 - `PATCH /sessions/:id/prompt-runtime/branches/:branchId/policy`
 - `GET /sessions/:id/prompt-runtime/assets`
+- `GET /sessions/:id/prompt-runtime/injections`
+- `POST /sessions/:id/prompt-runtime/injections`
+- `PATCH /sessions/:id/prompt-runtime/injections/:injectionId`
+- `DELETE /sessions/:id/prompt-runtime/injections/:injectionId`
+- `GET /sessions/:id/prompt-runtime/branches/:branchId/injections`
+- `POST /sessions/:id/prompt-runtime/branches/:branchId/injections`
+- `PATCH /sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId`
+- `DELETE /sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId`
 - `POST /sessions/:id/prompt-runtime/preview`
 - `POST /sessions/:id/prompt-runtime/inspect`
 - `GET /floors/:id/prompt-runtime/explain`
@@ -65,6 +74,7 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 | 当前到底在用哪种提示词模式 | [Mode](./prompt-runtime-mode) |
 | 当前 policy 是什么，哪些字段可持久化 | [Policy](./prompt-runtime-policy) |
 | 当前绑了哪些 Prompt Assets | [Assets](./prompt-runtime-assets) |
+| 想管理 session / branch 持久注入 | 本页的 injections 路由列表 |
 | 不发起真实聊天，想看 preview / inspect / explain / compare | [Inspection](./prompt-runtime-inspection) |
 | 想知道默认值、支持字段、公开 mode 目录 | [Capabilities](./prompt-runtime-capabilities) |
 

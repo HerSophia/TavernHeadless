@@ -1,4 +1,7 @@
-import type { PromptRuntimeClientInjectionInput } from "../prompt-runtime-injection-types.js";
+import type {
+  PromptRuntimeClientInjectionInput,
+  PromptRuntimeInjectionBuilderInput,
+} from "../prompt-runtime-injection-types.js";
 import type { RegexExecutionChannel } from "@tavern/adapters-sillytavern";
 import type {
   ChatMessage,
@@ -25,8 +28,10 @@ import type {
   PromptVisibilityTrace,
 } from "../chat-history-loader.js";
 import type { AppDb } from "../../db/client.js";
+import type { LlmInstanceCapabilities } from "../../lib/llm-capabilities.js";
 import type { GenerationParamsInput } from "../../lib/llm-params.js";
 import type { PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
+import { PromptRuntimeInjectionService } from "../prompt-runtime/injection-service.js";
 import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
 
 import type { PromptLiveDebugOptions, ResolvedTurnModels } from "./contracts.js";
@@ -116,7 +121,11 @@ export interface PreparePromptArtifactsArgs {
   baseRuntimeTrace?: PromptRuntimeTrace;
   stream?: boolean;
   toolTransportOverride?: ToolCallTransportKind;
-  llmInstanceSupportsFunctionCall?: boolean;
+  llmInstanceCapabilities?: LlmInstanceCapabilities;
+}
+
+export interface PreparedPromptArtifactsBuilderOptions {
+  enablePersistentInjections?: boolean;
 }
 
 export class PreparedPromptArtifactsBuilder {
@@ -133,6 +142,7 @@ export class PreparedPromptArtifactsBuilder {
     private readonly regexInputService: RegexInputService,
     private readonly firstPartyStateContextService: FirstPartyStateContextService,
     private readonly turnToolingService: TurnToolingService,
+    private readonly options: PreparedPromptArtifactsBuilderOptions = {},
   ) {}
 
   async prepare(args: PreparePromptArtifactsArgs): Promise<PreparedPromptArtifacts> {
@@ -215,8 +225,16 @@ export class PreparedPromptArtifactsBuilder {
       toolsEnabled: turnConfig?.enableTools === true
         && toolRuntime.toolRegistry !== undefined
         && toolRuntime.toolPermissions?.enabled === true,
-      llmInstanceSupportsFunctionCall: args.llmInstanceSupportsFunctionCall,
+      capabilities: args.llmInstanceCapabilities,
     });
+    const toolChoiceApplied = toolTransportSelection.transport === "native_function_call"
+      && narratorTools.length > 0
+      ? args.llmInstanceCapabilities?.supportsToolChoice === true
+      : undefined;
+    const streamingToolCallUnsupported = args.stream === true
+      && toolTransportSelection.transport === "native_function_call"
+      && narratorTools.length > 0
+      && args.llmInstanceCapabilities?.supportsStreamingToolCall === false;
     const memoryWritePolicy = this.modelService.resolveMemoryWritePolicy(requestedTurnConfig);
     const memoryInjection = args.executionContext.resolvedPolicy.sourceSelection.memory.enabled === false
       ? undefined
@@ -245,6 +263,18 @@ export class PreparedPromptArtifactsBuilder {
       },
     });
 
+    const persistentInjectionInputs: PromptRuntimeInjectionBuilderInput[] = this.options.enablePersistentInjections === false
+      ? []
+      : new PromptRuntimeInjectionService(this.db).listPersistentInputsForPrompt(
+          args.sessionId,
+          args.branchId ?? "main",
+          args.accountId,
+        );
+    const requestInjectionInputs: PromptRuntimeInjectionBuilderInput[] = (args.request.promptRuntimeInjections ?? []).map((injection) => ({
+      ...injection,
+      scope: injection.scope ?? "request",
+    }));
+
     const contributors = this.contributorRunner.resolve({
       promptMode,
       memorySummary: effectiveMemorySummary,
@@ -255,7 +285,7 @@ export class PreparedPromptArtifactsBuilder {
     }).contributors;
     const injectionBuild = this.injectionContributorBuilder.build({
       promptMode,
-      injections: args.request.promptRuntimeInjections,
+      injections: [...persistentInjectionInputs, ...requestInjectionInputs],
     });
     const contributorRenderables = [
       ...buildPromptRuntimeContributorRenderablesForAssembly(
@@ -267,7 +297,8 @@ export class PreparedPromptArtifactsBuilder {
     preparePhaseTrace.push({
       phase: "injection",
       detail: {
-        requestedCount: args.request.promptRuntimeInjections?.length ?? 0,
+        requestedCount: requestInjectionInputs.length,
+        persistentCount: persistentInjectionInputs.length,
         appliedCount: injectionBuild.items.filter((item) => item.applied).length,
         notAppliedCount: injectionBuild.items.filter((item) => !item.applied).length,
       },
@@ -348,8 +379,13 @@ export class PreparedPromptArtifactsBuilder {
       toolList: {
         injected: Boolean(toolListContributor),
         ...(toolListContributor ? { contributorId: toolListContributor.id } : {}),
+        ...(toolListContributor
+          ? { placementMode: promptMode === "compat_strict" ? "strict_fixed" as const : "contributor_chain" as const }
+          : {}),
         toolCount: narratorTools.length,
       },
+      ...(toolChoiceApplied !== undefined ? { toolChoiceApplied } : {}),
+      ...(streamingToolCallUnsupported ? { streamingToolCallUnsupported: true } : {}),
     };
 
     const inspection = await this.promptPreparationService.buildPromptRuntimeInspection({
@@ -404,8 +440,9 @@ export class PreparedPromptArtifactsBuilder {
       requestParams: args.request.generationParams,
       narratorParams,
       narratorParamOrigins: this.modelService.getSlotGenerationParamOrigins(args.resolvedTurnModels, "narrator"),
+      capabilities: args.llmInstanceCapabilities,
       availableForReply: execution.availableForReply ?? 0,
-      stream: args.stream,
+      stream: streamingToolCallUnsupported ? false : args.stream,
     });
     const runtimeTrace = execution.runtimeTrace
       ? {
