@@ -20,6 +20,12 @@ describe("AgentRuntimeJobProcessor placeholder", () => {
     database.close();
   });
 
+  it("registers the placeholder processor for agent.run jobs", () => {
+    const processors = createAgentRuntimeJobProcessorRegistry();
+
+    expect(processors.get("agent.run")).toBeDefined();
+  });
+
   it("moves agent.run jobs to dead letter with the placeholder error", async () => {
     await database.db.insert(accounts).values({
       id: "default-admin",

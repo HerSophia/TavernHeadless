@@ -182,13 +182,6 @@ export function buildPromptRuntimeExecutionTrace(
     ...(artifacts.inspection.excludedSources.length > 0
       ? { sourceSelection: { excludedSources: artifacts.inspection.excludedSources } }
       : {}),
-    ...(artifacts.inspection.injections && artifacts.inspection.injections.length > 0
-      ? {
-          injection: {
-            items: artifacts.inspection.injections,
-          },
-        }
-      : {}),
     ...(assembledTrace ?? {}),
     ...(mergedRegexTrace ? { regex: mergedRegexTrace } : {}),
     ...(artifacts.materialized?.structureTrace ? { structure: artifacts.materialized.structureTrace } : {}),

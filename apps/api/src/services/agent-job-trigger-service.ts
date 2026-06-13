@@ -142,6 +142,7 @@ export class AgentJobTriggerService {
         id: evaluation.binding.id,
         accountId: input.accountId,
       });
+      this.assertActiveAgentType(effective.agentType);
       const payload = this.buildPayload({
         binding: evaluation.binding,
         effective,
@@ -216,13 +217,7 @@ export class AgentJobTriggerService {
       id: binding.agentTypeId,
       accountId: input.accountId,
     });
-    if (agentType.status !== "active") {
-      throw new AgentJobTriggerServiceError(
-        409,
-        "agent_type_disabled",
-        `Agent type is not active: ${binding.agentTypeId}`,
-      );
-    }
+    this.assertActiveAgentType(agentType);
 
     const effective = this.bindingService.resolveEffective({
       id: binding.id,
@@ -260,6 +255,18 @@ export class AgentJobTriggerService {
     });
 
     return { ...result, agentBindingId: binding.id };
+  }
+
+  private assertActiveAgentType(
+    agentType: Pick<AgentTypeRecord, "id" | "status">,
+  ): void {
+    if (agentType.status !== "active") {
+      throw new AgentJobTriggerServiceError(
+        409,
+        "agent_type_disabled",
+        `Agent type is not active: ${agentType.id}`,
+      );
+    }
   }
 
   private buildPayload(args: {
