@@ -28,6 +28,7 @@ import {
   ProjectToolPolicyOverrideService,
   type ProjectToolPolicyOverrideRecord,
 } from "./project-tool-policy-override-service.js";
+import { SessionEffectiveToolPolicyProvider } from "./tooling/shared/session-effective-tool-policy-provider.js";
 
 export type EffectiveConfigSource = "workspace" | "project" | "session";
 
@@ -99,6 +100,7 @@ export class EffectiveConfigService {
   private readonly toolOverrideService: ProjectToolPolicyOverrideService;
   private readonly llmInstanceService: LlmInstanceService;
   private readonly toolTransportResolver: ToolCallTransportResolver;
+  private readonly sessionToolPolicyProvider: SessionEffectiveToolPolicyProvider;
 
   constructor(
     private readonly db: AppDb | DbExecutor,
@@ -108,6 +110,7 @@ export class EffectiveConfigService {
       toolOverrideService?: ProjectToolPolicyOverrideService;
       llmInstanceService?: LlmInstanceService;
       toolTransportResolver?: ToolCallTransportResolver;
+      sessionToolPolicyProvider?: SessionEffectiveToolPolicyProvider;
     } = {},
   ) {
     this.llmOverrideService = options.llmOverrideService ?? new ProjectLlmProfileOverrideService(db);
@@ -115,6 +118,7 @@ export class EffectiveConfigService {
     this.toolOverrideService = options.toolOverrideService ?? new ProjectToolPolicyOverrideService(db);
     this.llmInstanceService = options.llmInstanceService ?? new LlmInstanceService(db as AppDb);
     this.toolTransportResolver = options.toolTransportResolver ?? new ToolCallTransportResolver();
+    this.sessionToolPolicyProvider = options.sessionToolPolicyProvider ?? new SessionEffectiveToolPolicyProvider(db as AppDb);
   }
 
   forProject(input: { projectId: string; accountId: string }): ProjectEffectiveConfigView {
@@ -206,11 +210,15 @@ export class EffectiveConfigService {
       { promptMode: input.promptMode },
       metadata,
     ).effectivePromptMode;
+    const toolPolicy = await this.sessionToolPolicyProvider.resolve({
+      sessionId: input.sessionId,
+      accountId: input.accountId,
+    });
     const selection = this.toolTransportResolver.resolve({
       sessionId: input.sessionId,
       promptMode: effectivePromptMode,
       explicitTransport: readToolCallTransportOverride(input.metadataJson),
-      toolsEnabled: true,
+      toolsEnabled: toolPolicy?.effectivePermissions?.enabled === true,
       capabilities,
     });
 
