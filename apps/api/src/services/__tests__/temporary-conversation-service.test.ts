@@ -187,6 +187,8 @@ describe("TemporaryConversationService", () => {
       completionTokens: 8,
       totalTokens: 20,
     });
+    expect(result.finishReason).toBe("assistant_message_committed");
+    expect(result.warnings).toEqual([]);
 
     const transcript = await temporaryConversationService.readTranscript({
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
@@ -213,7 +215,7 @@ describe("TemporaryConversationService", () => {
   });
 
   it("keeps the temporary snapshot stable after the source session changes", async () => {
-    const now= Date.now();
+    const now = Date.now();
     const source = await seedSourceSession(database, now);
     const handle = await temporaryConversationService.create({
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
@@ -239,6 +241,91 @@ describe("TemporaryConversationService", () => {
         allow_irreversible: false,
       },
     });
+  });
+
+  it("derives warnings and finishReason from runtime trace semantics", async () => {
+    const source = await seedSourceSession(database, Date.now());
+    const stubChatService = {
+      respondFromPreparedDraftFloor: vi.fn(async () => ({
+        floorId: "floor_stub_1",
+        floorNo: 1,
+        generatedText: "stub reply",
+        summaries: [],
+        totalUsage: {
+          promptTokens: 3,
+          completionTokens: 4,
+          totalTokens: 7,
+        },
+        finalState: "committed" as const,
+        branchId: "main",
+        outputPageId: "page_stub_output_1",
+        assistantMessageId: "msg_stub_output_1",
+        runtimeTrace: {
+          preset: {
+            selectedPromptOrderCharacterId: null,
+            ignoredPromptOrderCharacterIds: [],
+            unsupportedFields: [],
+            ignoredFields: [],
+            unresolvedMarkers: [],
+            warnings: ["trace-warning"],
+            triggerFilteredEntryIds: [],
+            inChatInsertedEntryIds: [],
+            continueNudgeApplied: false,
+          },
+          macro: {
+            warnings: [{ code: "macro_warning", message: "macro warning" }],
+            usedNames: [],
+            mutationPreview: [],
+            stagedMutations: [],
+            traces: [],
+          },
+          delivery: {
+            assistantPrefillRequested: false,
+            assistantPrefillApplied: false,
+            assistantPrefillStrategy: "none",
+            allowAssistantPrefill: true,
+            requireLastUser: false,
+            noAssistant: true,
+            lastMessageRole: "user",
+            endsWithUser: true,
+            degraded: true,
+            degradeReasons: ["no_assistant_override"],
+          },
+        },
+      })),
+    } as unknown as ChatService;
+    const semanticService = new TemporaryConversationService(database.db, stubChatService, {
+      tokenCounter: new SimpleTokenCounter(),
+    });
+
+    const handle = await semanticService.create({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sourceSessionId: source.sessionId,
+      purpose: "warning-check",
+    });
+
+    await semanticService.appendMessage({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId: handle.conversationId,
+      role: "user",
+      content: "Explain the next step.",
+    });
+
+    const result = await semanticService.respond({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId: handle.conversationId,
+      delivery: {
+        noAssistant: true,
+      },
+    });
+
+    expect(result.finishReason).toBe("delivery_degraded");
+    expect(result.finishReason).not.toBe(result.finalState);
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      "preset:trace-warning",
+      "macro:macro_warning",
+      "delivery:no_assistant_override",
+    ]));
   });
 });
 

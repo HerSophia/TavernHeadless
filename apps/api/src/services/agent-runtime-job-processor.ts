@@ -12,16 +12,16 @@ import {
 } from "./agent-runtime-job-definitions.js";
 
 /**
- *Phase 5 placeholder processor for `agent.run` jobs.
+ * Phase 5 placeholder processor for `agent.run` jobs.
  *
- * The phase 5 design draft explicitly leaves the concrete agent execution path
- * to a later phase. Until then, the processor immediately fails every job with
- * a fatal error so that:
+ * Phase 5 only closes the enqueue and audit path. It does not implement any
+ * real agent execution loop yet. Until a later phase provides that runtime,
+ * this processor fails every job immediately with a fatal error so that:
  *
  * 1. Enqueued jobs do not silently disappear.
- * 2. The runtime workerroutes them to dead-letter with
- *    `last_error_class = "validation"` so operators can audit them.
- * 3. No mutations leak into the main narrative path.
+ * 2. The runtime worker routes them to dead letter with
+ *    `last_error_class = "RuntimeJobFatalError"` for audit.
+ * 3. No placeholder path can be mistaken for a successful execution loop.
  */
 export class AgentRuntimeJobProcessor
   implements RuntimeJobProcessor<AgentRunJobPayload, never, { message: string }>
