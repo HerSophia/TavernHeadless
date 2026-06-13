@@ -6,6 +6,7 @@ import {
   SimpleTokenCounter,
   type ChatMessage,
   type TokenCounter,
+  type PromptRuntimeTrace,
 } from "@tavern/core";
 
 import type { AppDb } from "../db/client.js";
@@ -418,8 +419,8 @@ export class TemporaryConversationService {
       text: result.generatedText,
       usage: result.totalUsage,
       finalState: result.finalState,
-      finishReason: result.finalState,
-      warnings: [],
+      finishReason: resolveTemporaryConversationFinishReason(result.runtimeTrace),
+      warnings: resolveTemporaryConversationWarnings(result.runtimeTrace),
     };
   }
 
@@ -756,8 +757,8 @@ export class TemporaryConversationService {
       text: result.generatedText,
       usage: result.totalUsage,
       finalState: result.finalState,
-      finishReason: result.finalState,
-      warnings: [],
+      finishReason: resolveTemporaryConversationFinishReason(result.runtimeTrace),
+      warnings: resolveTemporaryConversationWarnings(result.runtimeTrace),
     };
   }
 
@@ -1556,6 +1557,41 @@ function resolveTemporaryConversationRetention(input: {
 function normalizeTemporaryConversationExportReason(reason: string | null | undefined): string {
   const normalized = normalizeOptionalText(reason);
   return normalized ?? "temporary_conversation_export";
+}
+
+function resolveTemporaryConversationWarnings(
+  runtimeTrace?: PromptRuntimeTrace,
+): string[] {
+  if (!runtimeTrace) {
+    return [];
+  }
+
+  const warnings = new Set<string>();
+
+  for (const warning of runtimeTrace.preset?.warnings ?? []) {
+    warnings.add(`preset:${warning}`);
+  }
+  for (const warning of runtimeTrace.macro?.warnings ?? []) {
+    warnings.add(`macro:${warning.code}`);
+  }
+  for (const reason of runtimeTrace.delivery?.degradeReasons ?? []) {
+    warnings.add(`delivery:${reason}`);
+  }
+
+  return [...warnings];
+}
+
+function resolveTemporaryConversationFinishReason(
+  runtimeTrace?: PromptRuntimeTrace,
+): string {
+  const deliveryTrace = runtimeTrace?.delivery;
+  if (deliveryTrace?.degraded) {
+    return "delivery_degraded";
+  }
+  if (deliveryTrace?.noAssistant) {
+    return "no_assistant";
+  }
+  return "assistant_message_committed";
 }
 
 function resolveHistoryMaxTurnsFromRequestMetadata(

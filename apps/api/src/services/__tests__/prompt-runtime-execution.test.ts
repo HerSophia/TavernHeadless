@@ -191,6 +191,147 @@ describe("prompt-runtime-execution", () => {
     });
   });
 
+  it("prefers inspection injections over the assembled runtime trace seed", () => {
+    const inspectionInjections = [{
+      requestIndex: 0,
+      sourceKind: "client_injection",
+      scope: "request" as const,
+      placementRequested: "before_history",
+      orderRequested: 30,
+      title: "Inspection trace",
+      contentLength: 16,
+      applied: true,
+      placementResolved: "history.before",
+    }];
+    const assembledInjections = [{
+      requestIndex: 1,
+      sourceKind: "client_injection",
+      scope: "request" as const,
+      placementRequested: "before_history",
+      orderRequested: 30,
+      title: "Assembled seed",
+      contentLength: 14,
+      applied: true,
+      placementResolved: "history.before",
+    }];
+
+    const trace = buildPromptRuntimeExecutionTrace({
+      inspection: {
+        scope: {
+          sessionId: "session-1",
+          targetBranchId: "main",
+          branchExists: true,
+          sourceFloorId: null,
+          historySourceBranchId: "main",
+          historySourceMode: "existing_branch",
+        },
+        assets: {
+          preset: null,
+          characterCard: null,
+          worldbook: null,
+          regexProfile: null,
+        },
+        resolvedPolicy: {
+          structure: {
+            mode: "default",
+            mergeAdjacentSameRole: true,
+            preserveSystemMessages: true,
+          },
+          delivery: {
+            allowAssistantPrefill: true,
+            requireLastUser: false,
+            noAssistant: false,
+          },
+          debug: {
+            includePromptSnapshot: false,
+            includeRuntimeTrace: false,
+            includeWorldbookMatches: false,
+          },
+          budget: {},
+          visibility: { mode: "allow_all_except_hidden" },
+          sourceSelection: {
+            history: { mode: "full" },
+            memory: { enabled: true },
+            worldbook: { enabled: true },
+            examples: { enabled: true },
+          },
+        },
+        sourceMap: {},
+        diagnostics: [],
+        trimReasons: [],
+        excludedSources: [],
+        sectionStats: [],
+        limitations: [],
+        injections: inspectionInjections,
+      },
+      assembled: {
+        messages: [],
+        sendDirectives: {},
+        tokenUsage: {
+          total: 10,
+          availableForReply: 4,
+        },
+        runtimeTraceSeed: {
+          worldbookHits: 0,
+          regexPreRules: [],
+          regexPostRules: [],
+          memorySummaryInjected: false,
+          selectedPromptOrderCharacterId: null,
+          ignoredPromptOrderCharacterIds: [],
+          unsupportedPresetFields: [],
+          ignoredPresetFields: [],
+          unresolvedPresetMarkers: [],
+          presetWarnings: [],
+          continueNudgeApplied: false,
+          namesBehaviorApplied: "off",
+          triggerFilteredEntryIds: [],
+          inChatInsertedEntryIds: [],
+          injectionItems: assembledInjections,
+        },
+        assemblyCompatSeed: {
+          mode: "fallback",
+          promptIntent: "normal",
+          assistantPrefillApplied: false,
+          assistantPrefillStrategy: "none",
+          presetUsed: false,
+          reservedVariableCollisions: [],
+        },
+        promptSnapshot: {
+          presetId: null,
+          presetUpdatedAt: null,
+          presetVersion: null,
+          presetVersionId: null,
+          presetContentHash: null,
+          worldbookId: null,
+          worldbookUpdatedAt: null,
+          worldbookVersion: null,
+          worldbookVersionId: null,
+          worldbookContentHash: null,
+          regexProfileId: null,
+          regexProfileUpdatedAt: null,
+          regexProfileVersion: null,
+          regexProfileVersionId: null,
+          regexProfileContentHash: null,
+          characterId: null,
+          characterVersionId: null,
+          characterImportedFormat: null,
+          characterContentHash: null,
+          worldbookActivatedEntryUids: [],
+          worldbookActivatedEntries: [],
+          regexPreRuleNames: [],
+          regexPostRuleNames: [],
+          promptMode: "compat_strict",
+          assetManifestDigest: "digest",
+          promptDigest: "digest",
+          tokenEstimate: 10,
+          createdAt: 1,
+        },
+      } as never,
+    });
+
+    expect(trace?.injection).toEqual({ items: inspectionInjections });
+  });
+
   it("includes toolTransport in the execution trace when present on inspection", () => {
     const trace = buildPromptRuntimeExecutionTrace({
       inspection: {
