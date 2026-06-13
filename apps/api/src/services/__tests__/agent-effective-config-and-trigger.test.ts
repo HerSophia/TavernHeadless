@@ -87,8 +87,18 @@ describe("EffectiveConfigService", () => {
     expect(view.toolPolicies.overrides[0]?.basePolicyId).toBe("policy_alpha");
   });
 
-  it("returns session view, leaves sessionOverrides.llmProfile null, and exposes tool transport summary", async () => {
-    const session = createTestSessionWithScope(database.db, { accountId: ACCOUNT_ID, id: "sess-effective-1" });
+  it("returns session view and uses the effective session tool policy when tools are enabled", async () => {
+    const session = createTestSessionWithScope(database.db, {
+      accountId: ACCOUNT_ID,
+      id: "sess-effective-1",
+      values: {
+        metadataJson: JSON.stringify({
+          tool_permissions: {
+            enabled: true,
+          },
+        }),
+      },
+    });
     await new (await import("../llm-instance-service.js")).LlmInstanceService(database.db).upsertConfig(
       ACCOUNT_ID,
       "session",
@@ -112,6 +122,46 @@ describe("EffectiveConfigService", () => {
       available: ["native_function_call", "text_protocol"],
       selected: "text_protocol",
       reasonCode: "instance_not_supports_function_call",
+      capabilities: {
+        supportsFunctionCall: false,
+        supportsToolChoice: false,
+        supportsStreamingToolCall: false,
+      },
+    });
+  });
+
+  it("returns tools_disabled when the effective session tool policy does not enable tools", async () => {
+    const session = createTestSessionWithScope(database.db, {
+      accountId: ACCOUNT_ID,
+      id: "sess-effective-2",
+      values: {
+        metadataJson: JSON.stringify({
+          tool_permissions: {
+            enabled: false,
+          },
+        }),
+      },
+    });
+    await new (await import("../llm-instance-service.js")).LlmInstanceService(database.db).upsertConfig(
+      ACCOUNT_ID,
+      "session",
+      session.sessionId,
+      "narrator",
+      {
+        capabilities: {
+          supportsFunctionCall: false,
+          supportsToolChoice: false,
+          supportsStreamingToolCall: false,
+          unsupportedGenerationParams: [],
+        },
+      },
+    );
+
+    const view = await effectiveConfigService.forSession({ sessionId: session.sessionId, accountId: ACCOUNT_ID });
+    expect(view.toolTransport).toEqual({
+      available: ["native_function_call", "text_protocol"],
+      selected: "none",
+      reasonCode: "tools_disabled",
       capabilities: {
         supportsFunctionCall: false,
         supportsToolChoice: false,
@@ -317,6 +367,73 @@ describe("AgentJobTriggerService", () => {
       projectId: project.projectId,
       agentBindingId: binding.id,
     }))).toThrow(/forbidden/);
+  });
+
+  it("rejects event-triggered enqueue when the resolved agent type is disabled", async () => {
+    const project = createTestProject(database.db, { accountId: ACCOUNT_ID, id: "proj-trigger-4" });
+
+    const agentType = agentTypeService.create({
+      workspaceId: project.workspaceId,
+      accountId: ACCOUNT_ID,
+      key: "disabled.event.agent",
+      name: "Disabled Event Agent",
+      scopeKind: "project",
+      defaults: {
+        grants: { allowed_output_targets: ["derived_output"] },
+        mcpBindings: [],
+        eventSubscriptions: [{ type: "floor.committed" }],
+        metadata: {},
+      },
+    });
+
+    const binding = bindingService.create({
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+      accountId: ACCOUNT_ID,
+      agentTypeId: agentType.id,
+      scopeKind: "project",
+      eventSubscriptions: [{ type: "floor.committed" }],
+      grants: { allowed_output_targets: ["derived_output"] },
+      metadata: {},
+    });
+
+    agentTypeService.update(
+      { id: agentType.id, accountId: ACCOUNT_ID },
+      { status: "disabled" },
+    );
+
+    const event = new ProjectEventService(database.db).append({
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+      type: "floor.committed",
+      payload: { floor_id: "floor_2" },
+    });
+
+    const { AgentJobTriggerService, AgentJobTriggerServiceError } = await import("../agent-job-trigger-service.js");
+    const triggerService = new AgentJobTriggerService(database.db, { bindingService, agentTypeService });
+
+    const evaluated = triggerService.evaluateEvent({
+      accountId: ACCOUNT_ID,
+      projectId: project.projectId,
+      eventId: event.id,
+    });
+    expect(evaluated).toHaveLength(1);
+    expect(evaluated[0]?.binding.id).toBe(binding.id);
+
+    try {
+      database.db.transaction((tx) => triggerService.enqueueFromEvent(tx, {
+        accountId: ACCOUNT_ID,
+        projectId: project.projectId,
+        eventId: event.id,
+      }));
+      throw new Error("Expected enqueueFromEvent to reject disabled agent types");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AgentJobTriggerServiceError);
+      expect(error).toMatchObject({
+        statusCode: 409,
+        code: "agent_type_disabled",
+      });
+    }
   });
 
   it("keeps explicit toolPolicyId in runtime job payload for later selectors", async () => {
