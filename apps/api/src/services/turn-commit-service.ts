@@ -33,6 +33,7 @@ import {
   toolCallRecords,
   toolExecutionRecords,
 } from "../db/schema.js";
+import type { PersistedMessageRef } from "./chat-message-persistence.js";
 import { ChatMessagePersistence } from "./chat-message-persistence.js";
 import { createUserInputDigest } from "./memory-job-utils.js";
 import { MemoryJobScheduler } from "./memory-job-scheduler.js";
@@ -153,6 +154,7 @@ export interface TurnCommitInput {
    * “新楼层 committed 但旧楼层未正确 supersede” 的部分成功状态。
    */
   supersedeSourceFloor?: { floorId: string };
+  assistantMessageRef?: PersistedMessageRef;
 }
 
 export interface TurnCommitMemoryReceipt {
@@ -685,7 +687,8 @@ export class TurnCommitService {
           tx,
           input.floorId,
           assistantOutputText,
-          committedAt
+          committedAt,
+          input.assistantMessageRef,
         );
 
         const legacyToolCalls = hasPrimaryToolExecutionRecords
