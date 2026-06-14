@@ -1,13 +1,15 @@
 /**
- * Agent Runtime R1 的 trace 与 post_response 信封构造 helper。
+ * Agent Runtime 的 trace 与 post_response 信封构造 helper。
  *
- * R1 不新增 agent_run 表，trace 只在内存中构造，并在 debug / runtime trace 打开时返回。
+ * R2 继续不新增 agent_run 表。trace 仍只在内存中构造，并在 debug / runtime trace 打开时返回。
  */
 import type {
   AggregatedPreResponseContext,
+  AgentInvocationSource,
   AgentRunRecord,
   AgentRunTraceItem,
   AgentRuntimeTrace,
+  AgentRuntimeTraceInvocation,
   PostResponseEnvelope,
 } from "./inline-agent-types.js";
 
@@ -24,23 +26,17 @@ function toTraceItem(record: AgentRunRecord): AgentRunTraceItem {
   };
 }
 
-/**
- * 从 post_response 执行记录构造输出信封。
- *
- * R1 规则：commitAdvice 只允许 allow / warn，不引入 reject。
- * 任何 finding 都不会自动触发 regenerate；proposal 只进 buffer。
- */
 export function buildPostResponseEnvelope(records: AgentRunRecord[]): PostResponseEnvelope {
   const envelope: PostResponseEnvelope = {
     findings: {
       continuity: [],
       agency: [],
       style: [],
-  },
+    },
     stateProposals: [],
     memoryProposals: [],
     commitAdvice: "allow",
-};
+  };
 
   for (const record of records) {
     if (record.phase !== "post_response" || !record.output) {
@@ -51,7 +47,7 @@ export function buildPostResponseEnvelope(records: AgentRunRecord[]): PostRespon
     if (output.findings?.length) {
       if (record.roleKind === "continuity_verifier") {
         envelope.findings.continuity.push(...output.findings);
-} else if (record.roleKind === "agency_guard") {
+      } else if (record.roleKind === "agency_guard") {
         envelope.findings.agency.push(...output.findings);
       } else if (record.roleKind === "style_verifier") {
         envelope.findings.style.push(...output.findings);
@@ -75,18 +71,29 @@ export function buildPostResponseEnvelope(records: AgentRunRecord[]): PostRespon
   return envelope;
 }
 
-/**
- * 构造 R1 最小 Agent Runtime trace。
- */
 export function buildAgentRuntimeTrace(args: {
   preRecords: AgentRunRecord[];
   aggregated?: AggregatedPreResponseContext;
   postRecords: AgentRunRecord[];
   postEnvelope: PostResponseEnvelope;
+  source?: AgentInvocationSource;
+  outputPageId?: string;
+  gateDecision?: {
+    status: "allow" | "warn" | "block";
+    policy: "warn_only" | "block_on_error";
+    reasons: Array<{
+      code: string;
+      severity: "info" | "warn" | "error";
+      summary: string;
+      sourceAgentId?: string;
+    }>;
+  };
+  strategy?: AgentRuntimeTrace["strategy"];
 }): AgentRuntimeTrace {
   return {
-    strategy: "inline_mvp",
+    strategy: args.strategy ?? "inline_mvp",
     scopeKind: "floor",
+    ...(args.source ? { invocation: toInvocationTrace(args.source) } : {}),
     preResponse: {
       runs: args.preRecords.map(toTraceItem),
       ...(args.aggregated
@@ -103,7 +110,8 @@ export function buildAgentRuntimeTrace(args: {
         : {}),
     },
     response: {
-   narratorCallerSlot: "narrator",
+      narratorCallerSlot: "narrator",
+      ...(args.outputPageId ? { outputPageId: args.outputPageId } : {}),
     },
     postResponse: {
       runs: args.postRecords.map(toTraceItem),
@@ -117,6 +125,32 @@ export function buildAgentRuntimeTrace(args: {
         memory: args.postEnvelope.memoryProposals.length,
       },
       commitAdvice: args.postEnvelope.commitAdvice,
+      ...(args.gateDecision
+        ? {
+            gate: {
+              status: args.gateDecision.status,
+              policy: args.gateDecision.policy,
+              reasonCount: args.gateDecision.reasons.length,
+            },
+          }
+        : {}),
     },
+  };
+}
+
+function toInvocationTrace(source: AgentInvocationSource): AgentRuntimeTraceInvocation {
+  if (source.kind === "turn_pre_response" || source.kind === "turn_post_response") {
+    return {
+      kind: source.kind,
+      mode: source.mode,
+      runType: source.runType,
+      attemptNo: source.attemptNo,
+      ...(source.pageId ? { pageId: source.pageId } : {}),
+    };
+  }
+
+  return {
+    kind: source.kind,
+    ...(source.pageId ? { pageId: source.pageId } : {}),
   };
 }

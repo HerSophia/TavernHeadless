@@ -94,7 +94,9 @@ export class AgentInvocationService {
    * 根据调用来源解析执行计划。
    */
   planForSource(source: AgentInvocationSource): AgentInvocationPlan {
-    if (source.kind === "respond_pre_response") {
+    const isPreResponse = source.kind === "turn_pre_response" || source.kind === "respond_pre_response";
+
+    if (isPreResponse) {
       return {
         source,
         phase: "pre_response",
