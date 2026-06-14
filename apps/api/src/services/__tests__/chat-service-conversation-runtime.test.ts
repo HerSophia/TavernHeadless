@@ -99,6 +99,14 @@ describe("ChatService conversation runtime replay", () => {
 
     const commitInput = turnCommitMock.mock.calls[0]?.[0];
     expect(commitInput.variableCommit?.pageId).toBeUndefined();
+    expect(commitInput.attempt).toMatchObject({
+      floorId: commitInput.floorId,
+      runType: "regenerate_page",
+      sourceFloorId: seeded.responseFloorId,
+      sourceOutputPageId: seeded.responsePageId,
+      candidateOutputPageId: expect.any(String),
+      candidateAssistantMessageId: expect.any(String),
+    });
     expect(commitInput.conversationInputSnapshot).toMatchObject({
       mode: "merged_user_tail",
       effectiveText: "first ask",
@@ -120,6 +128,17 @@ describe("ChatService conversation runtime replay", () => {
     const commitInput = turnCommitMock.mock.calls[0]?.[0];
     expect(commitInput.floorId).toBe(seeded.responseFloorId);
     expect(commitInput.variableCommit?.pageId).toBeUndefined();
+    expect(commitInput.attempt).toMatchObject({
+      floorId: seeded.responseFloorId,
+      runType: "retry_turn",
+      sourceFloorId: seeded.responseFloorId,
+      sourceOutputPageId: seeded.responsePageId,
+      candidateOutputPageId: expect.any(String),
+      candidateAssistantMessageId: expect.any(String),
+    });
+    expect(commitInput.outputReplacement).toEqual({
+      expectedActivePageId: seeded.responsePageId,
+    });
     expect(commitInput.conversationInputSnapshot).toMatchObject({
       mode: "merged_user_tail",
       effectiveText: "first ask",
@@ -130,7 +149,10 @@ describe("ChatService conversation runtime replay", () => {
     expect(result.floorId).toBe(seeded.responseFloorId);
 
     const [retriedFloor] = await database.db.select().from(floors).where(eq(floors.id, seeded.responseFloorId));
-    expect(retriedFloor?.state).toBe("draft");
+    expect(retriedFloor?.state).toBe("committed");
+
+    const [existingOutputPage] = await database.db.select().from(messagePages).where(eq(messagePages.id, seeded.responsePageId));
+    expect(existingOutputPage?.isActive).toBe(true);
   });
 });
 
@@ -202,7 +224,7 @@ function createAssembleResult(userMessage: string) {
 async function seedResponseOnlyConversation(
   database: DatabaseConnection,
   now: number,
-): Promise<{ sessionId: string; userFloorId: string; responseFloorId: string }> {
+): Promise<{ sessionId: string; userFloorId: string; responseFloorId: string; responsePageId: string }> {
   const sessionId = nanoid();
   const userFloorId = nanoid();
   const userPageId = nanoid();
@@ -302,5 +324,5 @@ async function seedResponseOnlyConversation(
     createdAt: now + 1,
   });
 
-  return { sessionId, userFloorId, responseFloorId };
+  return { sessionId, userFloorId, responseFloorId, responsePageId };
 }

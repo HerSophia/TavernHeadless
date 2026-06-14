@@ -67,6 +67,18 @@ describe("AgenticTurnStrategy", () => {
         assistantMessageId: args.assistantMessageRef.messageId,
         usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
         finalState: "committed" as const,
+        proposalPromotion: {
+          status: "staged" as const,
+          pageWriteAcceptedCount: 1,
+          pageWriteDiscardedCount: 0,
+          stateObservedCount: 1,
+          stateDiscardedCount: 0,
+          sessionStateStagedCount: 0,
+          memoryBatchCount: 1,
+          memoryProposedCount: 1,
+          memoryRejectedCount: 0,
+          memorySupersededCount: 0,
+        },
       };
     });
 
@@ -101,6 +113,17 @@ describe("AgenticTurnStrategy", () => {
           },
           records: [],
         },
+        attempt: {
+          sessionId: "session-1",
+          branchId: "main",
+          floorId: "floor-1",
+          runId: "run-attempt-1",
+          runType: "respond",
+          attemptNo: 1,
+          replayMode: "full_floor_context",
+          candidateOutputPageId: "candidate-page-1",
+          candidateAssistantMessageId: "candidate-message-1",
+        },
         attachTrace,
         notifyTrace,
       },
@@ -110,10 +133,33 @@ describe("AgenticTurnStrategy", () => {
     expect(runPostResponse).toHaveBeenCalledTimes(1);
     expect(commit).toHaveBeenCalledTimes(1);
     expect(commit.mock.calls[0]?.[0].assistantMessageRef).toMatchObject({
-      pageId: expect.any(String),
-      messageId: expect.any(String),
+      pageId: "candidate-page-1",
+      messageId: "candidate-message-1",
+    });
+    expect(commit.mock.calls[0]?.[0].proposalEnvelope).toMatchObject({
+      outputPageId: "candidate-page-1",
+      attempt: expect.objectContaining({
+        candidateOutputPageId: "candidate-page-1",
+        candidateAssistantMessageId: "candidate-message-1",
+      }),
+    });
+    expect(commit.mock.calls[0]?.[0].commitGateDecision).toMatchObject({
+      status: "allow",
+      policy: "warn_only",
     });
     expect(buildTrace).toHaveBeenCalledTimes(1);
+    expect(result.agentRuntimeTrace?.postResponse.promotion).toEqual({
+      status: "staged",
+      pageWriteAcceptedCount: 1,
+      pageWriteDiscardedCount: 0,
+      stateObservedCount: 1,
+      stateDiscardedCount: 0,
+      sessionStateStagedCount: 0,
+      memoryBatchCount: 1,
+      memoryProposedCount: 1,
+      memoryRejectedCount: 0,
+      memorySupersededCount: 0,
+    });
     expect(attachTrace).toHaveBeenCalledWith(result.agentRuntimeTrace);
     expect(notifyTrace).toHaveBeenCalledWith(result.agentRuntimeTrace);
     expect(result.commit.outputPageId).toBe(commit.mock.calls[0]?.[0].assistantMessageRef.pageId);

@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import type {
   CoreEventBus,
   CoreEventMap,
+  FloorRunType,
   ToolExecutionCommitOutcome,
   TurnExecutionResult,
   TurnInput,
@@ -26,7 +27,7 @@ import { executeWithRetry, isSqliteBusyError } from "../../lib/retry.js";
 import { normalizeNonNegativeInt, normalizePositiveInt } from "../../lib/utils.js";
 import { DrizzleFloorRepository } from "../../adapters/drizzle-floor-repository.js";
 import { DrizzleToolExecutionRepository } from "../../adapters/drizzle-tool-execution-repository.js";
-import { sessions, floors } from "../../db/schema.js";
+import { sessions, floors, messagePages } from "../../db/schema.js";
 import { ChatHistoryLoader } from "../chat-history-loader.js";
 import { ChatMessagePersistence } from "../chat-message-persistence.js";
 import {
@@ -37,7 +38,7 @@ import {
   type CoordinatorRuntime,
   type GenerationCoordinator,
 } from "../generation-guard-service.js";
-import { TurnCommitService } from "../turn-commit-service.js";
+import { TurnCommitService, TurnAttemptConflictError } from "../turn-commit-service.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
 import {
   BranchLocalVariableSnapshotService,
@@ -75,9 +76,11 @@ import { ChatTargetResolver } from "./target-resolver.js";
 import { TurnExecutionFacade } from "./turn-execution-facade.js";
 import { NaiveTurnStrategy } from "./naive-turn-strategy.js";
 import { AgenticTurnStrategy } from "./agentic-turn-strategy.js";
+import type { CommitGateDecision, CommitGatePolicy } from "./turn-commit-gate.js";
 import { NarratorTurnExecutionService } from "./narrator-turn-execution-service.js";
 import { TurnCommitCoordinator } from "./turn-commit-coordinator.js";
 import { ChatTurnWorkflowRunner } from "./turn-workflow-runner.js";
+import { TurnAttemptCoordinator } from "./turn-attempt-coordinator.js";
 import { TurnModelService } from "./turn-model-service.js";
 import { TurnToolingService } from "./turn-tooling-service.js";
 import { TurnMemoryService } from "./turn-memory-service.js";
@@ -115,6 +118,8 @@ import {
   type AgentRuntimeTrace,
 } from "../agent-runtime/index.js";
 import { AgenticTurnCoordinator } from "./agentic-turn-coordinator.js";
+import type { TurnProposalEnvelope } from "./turn-proposal-envelope.js";
+import type { TurnAttemptIdentity } from "./turn-attempt-types.js";
 
 export * from "./contracts.js";
 export { ChatServiceError } from "./errors.js";
@@ -165,6 +170,9 @@ export class ChatService {
   private readonly promptRuntimePreviewService: PromptRuntimePreviewService;
   private readonly preparedTurnInspectionService: PreparedTurnInspectionService;
   private readonly agenticTurnCoordinator: AgenticTurnCoordinator;
+  private readonly turnAttemptCoordinator: TurnAttemptCoordinator;
+  private readonly floorRunService: ChatServiceOptions["floorRunService"];
+  private readonly commitGatePolicy: CommitGatePolicy;
   private readonly enableAgenticInlineMvp: boolean;
   private readonly onAgentRuntimeTrace?: (
     trace: AgentRuntimeTrace,
@@ -188,6 +196,7 @@ export class ChatService {
         enableAsyncMemoryIngest: options.enableAsyncMemoryIngest === true,
         accountMode: options.accountMode,
         defaultAccountId: options.defaultAccountId,
+        floorRunService: options.floorRunService,
         sessionStateService: options.sessionStateService,
         projectEventLiveHub: options.projectEventLiveHub,
         toolRuntimeJobBridge: options.toolRuntimeJobBridge,
@@ -213,6 +222,7 @@ export class ChatService {
     );
     this.promptPreparationService = new PromptPreparationService(db, tokenCounter, this.historyLoader);
     this.runtimeEventBridge = new ChatRuntimeEventBridge(this.eventBus);
+    this.floorRunService = options.floorRunService;
     this.turnRunTracker = new TurnRunTracker(db, this.floorStateMachine, options.floorRunService);
     this.modelService = new TurnModelService({
       resolveTurnModel: options.resolveTurnModel,
@@ -283,6 +293,8 @@ export class ChatService {
       this.firstPartyStateContextService,
       this.preparedPromptArtifactsBuilder,
     );
+    this.turnAttemptCoordinator = new TurnAttemptCoordinator();
+    this.commitGatePolicy = options.commitGatePolicy ?? "warn_only";
     this.enableAgenticInlineMvp = options.enableAgenticInlineMvp === true;
     this.onAgentRuntimeTrace = options.onAgentRuntimeTrace;
     this.agenticTurnCoordinator = new AgenticTurnCoordinator(
@@ -298,6 +310,7 @@ export class ChatService {
       this.narratorTurnExecutionService,
       this.turnCommitCoordinator,
       this.agenticTurnCoordinator,
+      this.commitGatePolicy,
     );
     this.turnWorkflowRunner = new ChatTurnWorkflowRunner((strategyArgs) => (
       strategyArgs.turnStrategy === "inline_mvp"
@@ -482,7 +495,11 @@ export class ChatService {
             runtimeTrace: prepared.promptDebug.runtimeTrace,
           };
         } catch (error) {
-          await this.turnRunTracker.failRunAndFloorBestEffort(floorId, error, "respond_failed");
+          await this.handlePreparedFloorGenerationFailure({
+            floorId,
+            error,
+            failureCode: "respond_failed",
+          });
           throw error;
         } finally {
           unsubscribeRuntimeToolEvents();
@@ -577,6 +594,7 @@ export class ChatService {
         firstPartyStateContext,
         this.getSessionBranchAssetBinding(resolvedAccountId, sessionId, targetFloor.branchId),
       );
+      const sourceOutputPageId = await this.loadActiveOutputPageId(targetFloor.id);
 
       const newFloorId = nanoid();
       const now = Date.now();
@@ -652,6 +670,8 @@ export class ChatService {
           orchestrationFailureMessage: "Regeneration orchestration failed",
           commitFailureMessage: "Regeneration commit failed",
           supersedeSourceFloor: { floorId: targetFloor.id },
+          sourceFloorId: targetFloor.id,
+          sourceOutputPageId,
         });
 
         return {
@@ -667,7 +687,10 @@ export class ChatService {
           runtimeTrace: prepared.promptDebug.runtimeTrace,
         };
       } catch (error) {
-        await this.turnRunTracker.failRunAndFloorBestEffort(newFloorId, error, "regenerate_failed", {
+        await this.handlePreparedFloorGenerationFailure({
+          floorId: newFloorId,
+          error,
+          failureCode: "regenerate_failed",
           restoreSupersededSourceFloor: targetFloor.id,
         });
         throw error;
@@ -738,17 +761,9 @@ export class ChatService {
           firstPartyStateContext,
           this.getSessionBranchAssetBinding(resolvedAccountId, targetFloor.sessionId, targetFloor.branchId),
         );
+        const sourceOutputPageId = await this.loadActiveOutputPageId(targetFloor.id);
 
         const now = Date.now();
-        this.db.transaction((tx) => {
-          this.messagePersistence.clearOutputForRetry(tx, targetFloor.id);
-          tx
-            .update(floors)
-            .set({ state: "draft", tokenIn: 0, tokenOut: 0, updatedAt: now })
-            .where(eq(floors.id, targetFloor.id))
-            .run();
-        });
-
         await this.turnRunTracker.initializeFloorRun(targetFloor.sessionId, targetFloor.id, "retry_turn", now);
         try {
           const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
@@ -773,6 +788,8 @@ export class ChatService {
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Retry orchestration failed",
             commitFailureMessage: "Retry commit failed",
+            sourceFloorId: targetFloor.id,
+            sourceOutputPageId,
           });
 
           return {
@@ -788,7 +805,11 @@ export class ChatService {
             runtimeTrace: prepared.promptDebug.runtimeTrace,
           };
         } catch (error) {
-          await this.turnRunTracker.failRunAndFloorBestEffort(targetFloor.id, error, "retry_turn_failed");
+          await this.handlePreparedFloorGenerationFailure({
+            floorId: targetFloor.id,
+            error,
+            failureCode: "retry_turn_failed",
+          });
           throw error;
         }
       },
@@ -856,6 +877,7 @@ export class ChatService {
       const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(source.sessionId, resolvedAccountId);
       this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
       const sessionInfo = this.buildSessionPromptInfo(session, resolvedTurnModels, firstPartyStateContext);
+      const sourceOutputPageId = await this.loadActiveOutputPageId(source.floorId);
 
       let userMessageRef: import("../chat-message-persistence.js").PersistedMessageRef;
       try {
@@ -949,6 +971,8 @@ export class ChatService {
           orchestrationFailureCode: "orchestration_failed",
           orchestrationFailureMessage: "Turn orchestration failed",
           commitFailureMessage: "Turn commit failed",
+          sourceFloorId: source.floorId,
+          sourceOutputPageId,
         });
 
         return {
@@ -966,7 +990,11 @@ export class ChatService {
           sourceMessageId: source.messageId,
         };
       } catch (error) {
-        await this.turnRunTracker.failRunAndFloorBestEffort(newFloorId, error, "edit_and_regenerate_failed");
+        await this.handlePreparedFloorGenerationFailure({
+          floorId: newFloorId,
+          error,
+          failureCode: "edit_and_regenerate_failed",
+        });
         throw error;
       }
     });
@@ -1115,7 +1143,11 @@ export class ChatService {
             runtimeTrace: prepared.promptDebug.runtimeTrace,
           };
         } catch (error) {
-          await this.turnRunTracker.failRunAndFloorBestEffort(floorId, error, "respond_from_conversation_tail_failed");
+          await this.handlePreparedFloorGenerationFailure({
+            floorId,
+            error,
+            failureCode: "respond_from_conversation_tail_failed",
+          });
           throw error;
         } finally {
           unsubscribeRuntimeToolEvents();
@@ -1150,12 +1182,15 @@ export class ChatService {
   }): Promise<RespondResult & { outputPageId: string; assistantMessageId: string }> {
     this.turnSessionStateService.assertTurnSessionStateWritesAvailable(args.request.sessionStateWrites);
     const branchId = normalizeBranchId(args.branchId);
+    const preparedRunStartedAt = Date.now();
+    await this.turnRunTracker.initializeFloorRun(args.sessionId, args.floorId, "respond", preparedRunStartedAt);
 
-    return this.withGenerationCoordinator(
-      args.sessionId,
-      branchId,
-      args.runtimeOptions?.abortSignal,
-      async (generationRuntime) => {
+    try {
+      return await this.withGenerationCoordinator(
+        args.sessionId,
+        branchId,
+        args.runtimeOptions?.abortSignal,
+        async (generationRuntime) => {
         const session = await this.requireActiveSession(
           args.sessionId,
           args.accountId,
@@ -1193,7 +1228,6 @@ export class ChatService {
           this.getSessionBranchAssetBinding(args.accountId, args.sessionId, branchId),
         );
 
-        await this.turnRunTracker.initializeFloorRun(args.sessionId, args.floorId, "respond", Date.now());
         args.runtimeOptions?.onStart?.({
           floorId: args.floorId,
           floorNo: args.floorNo,
@@ -1244,7 +1278,11 @@ export class ChatService {
             assistantMessageId: commit.assistantMessageId,
           };
         } catch (error) {
-          await this.turnRunTracker.failRunAndFloorBestEffort(args.floorId, error, "respond_from_prepared_draft_floor_failed");
+          await this.handlePreparedFloorGenerationFailure({
+            floorId: args.floorId,
+            error,
+            failureCode: "respond_from_prepared_draft_floor_failed",
+          });
           throw error;
         } finally {
           unsubscribeRuntimeToolEvents();
@@ -1252,6 +1290,17 @@ export class ChatService {
         }
       },
     );
+    } catch (error) {
+      if (isChatServiceErrorCode(error, "generation_cancelled")) {
+        await this.turnRunTracker.cancelRunAndRestoreBestEffort(
+          args.floorId,
+          error,
+          "generation_cancelled",
+        );
+        await this.turnRunTracker.tryMarkFloorFailed(args.floorId, error);
+      }
+      throw error;
+    }
   }
 
   private async loadLiveConversationWindow(args: {
@@ -1351,6 +1400,8 @@ export class ChatService {
     orchestrationFailureMessage: string;
     commitFailureMessage: string;
     supersedeSourceFloor?: { floorId: string };
+    sourceFloorId?: string;
+    sourceOutputPageId?: string;
   }): Promise<{
     prepared: import("./types.js").PreparedTurnContext;
     execution: TurnExecutionResult;
@@ -1359,9 +1410,22 @@ export class ChatService {
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "semantic_resolved");
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "prechecked");
 
+    const attempt = await this.resolveTurnAttempt({
+      sessionId: args.sessionId,
+      branchId: args.branchId,
+      floorId: args.floorId,
+      runType: args.runType,
+      pageId: args.pageId,
+      sourceFloorId: args.sourceFloorId,
+      sourceOutputPageId: args.sourceOutputPageId,
+    });
     const useAgenticInlineMvp = this.shouldUseAgenticInlineMvp(args.session);
     const agenticPreResponse = useAgenticInlineMvp
-      ? await this.runAgenticPreResponse(args)
+      ? await this.runAgenticPreResponse({
+          ...args,
+          runType: args.runType,
+          attempt,
+        })
       : undefined;
 
     const prepared = await this.preparedTurnContextBuilder.prepare({
@@ -1409,11 +1473,13 @@ export class ChatService {
       persistMemory: this.memoryStoreEnabled,
       conversationInputSnapshot: prepared.conversationInputSnapshot,
       supersedeSourceFloor: args.supersedeSourceFloor,
+      attempt,
       turnStrategy: useAgenticInlineMvp ? "inline_mvp" : "naive",
       ...(useAgenticInlineMvp
         ? {
             inlineMvp: {
               ...(agenticPreResponse ? { preResponse: agenticPreResponse } : {}),
+              attempt,
               ...(args.firstPartyStateContext ? { firstPartyStateContext: args.firstPartyStateContext } : {}),
               ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),
               ...(prepared.promptDebug.runtimeTrace
@@ -1468,10 +1534,12 @@ export class ChatService {
     pageId?: string;
     accountId: string;
     mode: "respond" | "regenerate" | "retry_floor" | "edit_and_regenerate";
+    runType: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
     session: {
       promptMode: import("../prompt-assembler.js").SessionPromptInfo["promptMode"];
       metadataJson: string | null;
     };
+    attempt?: TurnAttemptIdentity;
     firstPartyStateContext?: FirstPartyStateContext;
     abortSignal?: AbortSignal;
   }): Promise<{ aggregated: AggregatedPreResponseContext; records: AgentRunRecord[] } | undefined> {
@@ -1482,7 +1550,10 @@ export class ChatService {
       });
       return await this.agenticTurnCoordinator.runPreResponse({
         source: {
-          kind: "respond_pre_response",
+          kind: "turn_pre_response",
+          mode: turn.mode,
+          runType: turn.runType,
+          attemptNo: turn.attempt?.attemptNo ?? 1,
           sessionId: turn.sessionId,
           floorId: turn.floorId,
           ...(turn.pageId ? { pageId: turn.pageId } : {}),
@@ -1572,6 +1643,7 @@ export class ChatService {
     commitFailureMessage: string;
     conversationInputSnapshot?: import("./shared/metadata.js").FloorConversationInputSnapshot;
     supersedeSourceFloor?: { floorId: string };
+    attempt?: TurnAttemptIdentity;
   }): Promise<{
     execution: TurnExecutionResult;
     commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
@@ -1658,6 +1730,15 @@ export class ChatService {
         );
       }
 
+      if (isAbortLikeError(error, turnInput.abortSignal)) {
+        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+        throw new ChatServiceError(
+          "generation_cancelled",
+          `${args.orchestrationFailureMessage}: ${error instanceof Error ? error.message : String(error)}`,
+          error,
+        );
+      }
+
       await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
       await this.turnRunTracker.failRunAndFloorBestEffort(args.floorId, error, args.orchestrationFailureCode);
       throw new ChatServiceError(
@@ -1696,7 +1777,44 @@ export class ChatService {
     conversationInputSnapshot?: import("./shared/metadata.js").FloorConversationInputSnapshot;
     supersedeSourceFloor?: { floorId: string };
     assistantMessageRef?: import("../chat-message-persistence.js").PersistedMessageRef;
+    attempt?: TurnAttemptIdentity;
+    proposalEnvelope?: TurnProposalEnvelope;
+    commitGateDecision?: CommitGateDecision;
   }): Promise<Awaited<ReturnType<TurnCommitService["commit"]>>> {
+    if (args.commitGateDecision) {
+      await this.turnRunTracker.trackFloorRunVerifier(args.floorId, {
+        status: toCommitGateVerifierStatus(args.commitGateDecision.status),
+        ...(args.commitGateDecision.reasons.length > 0
+          ? {
+              suggestion: args.commitGateDecision.reasons[0]?.summary,
+              issues: args.commitGateDecision.reasons.map((reason) => ({
+                description: reason.summary,
+                severity: reason.severity === "error" ? "error" : "warning",
+              })),
+            }
+          : {}),
+      });
+
+      if (args.commitGateDecision.status === "block") {
+        await this.markToolExecutionRunOutcome(args.toolExecutionRunId, "discarded");
+        if (args.supersedeSourceFloor) {
+          await this.turnRunTracker.restoreSupersededSourceFloorBestEffort(
+            args.supersedeSourceFloor.floorId,
+            args.floorId,
+          );
+        }
+        throw new ChatServiceError(
+          "commit_gate_blocked",
+          `Commit gate blocked turn commit for floor '${args.floorId}'`,
+          undefined,
+          {
+            attemptNo: args.attempt?.attemptNo,
+            reasons: args.commitGateDecision.reasons,
+          },
+        );
+      }
+    }
+
     try {
       this.firstPartyStateContextService.stageExecutionState({
         accountId: args.accountId,
@@ -1737,6 +1855,13 @@ export class ChatService {
 
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "transaction_prepared");
 
+    const outputReplacement =
+      args.attempt
+      && args.attempt.sourceFloorId === args.floorId
+      && args.attempt.sourceOutputPageId
+        ? { expectedActivePageId: args.attempt.sourceOutputPageId }
+        : undefined;
+
     const commitInput = {
       accountId: args.accountId,
       floorId: args.floorId,
@@ -1765,6 +1890,10 @@ export class ChatService {
       conversationInputSnapshot: args.conversationInputSnapshot,
       ...(args.supersedeSourceFloor ? { supersedeSourceFloor: args.supersedeSourceFloor } : {}),
       ...(args.assistantMessageRef ? { assistantMessageRef: args.assistantMessageRef } : {}),
+      ...(args.attempt ? { attempt: args.attempt } : {}),
+      ...(args.proposalEnvelope ? { proposalEnvelope: args.proposalEnvelope } : {}),
+      ...(args.commitGateDecision ? { commitGateDecision: args.commitGateDecision } : {}),
+      ...(outputReplacement ? { outputReplacement } : {}),
     };
 
     let commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
@@ -1822,8 +1951,19 @@ export class ChatService {
           ? "commit_conflict"
           : error instanceof FloorNotFoundError
             ? "floor_not_found"
-            : "turn_commit_failed",
+            : error instanceof TurnAttemptConflictError
+              ? "turn_attempt_stale"
+              : "turn_commit_failed",
       );
+
+      if (error instanceof TurnAttemptConflictError) {
+        throw new ChatServiceError(
+          "turn_attempt_stale",
+          `${args.commitFailureMessage}: ${error.message}`,
+          error,
+          { reason: error.code },
+        );
+      }
 
       if (error instanceof FloorNotFoundError) {
         await this.turnRunTracker.tryMarkRunFailed(args.floorId, error, "floor_not_found");
@@ -1868,6 +2008,46 @@ export class ChatService {
     } catch {
       // 执行日志本体已经先行落库；失败边界上的归宿更新保持 best-effort。
     }
+  }
+
+  private async resolveTurnAttempt(args: {
+    sessionId: string;
+    branchId?: string;
+    floorId: string;
+    runType: FloorRunType;
+    pageId?: string;
+    sourceFloorId?: string;
+    sourceOutputPageId?: string;
+  }): Promise<TurnAttemptIdentity> {
+    const currentRun = await this.floorRunService?.getRunIdentity(args.floorId);
+
+    return this.turnAttemptCoordinator.createIdentity({
+      sessionId: args.sessionId,
+      branchId: args.branchId,
+      floorId: args.floorId,
+      runId: currentRun?.runId ?? `turn-run:${args.floorId}`,
+      runType: args.runType,
+      attemptNo: currentRun?.attemptNo ?? 1,
+      ...(args.pageId ? { inputPageId: args.pageId } : {}),
+      ...(args.sourceFloorId ? { sourceFloorId: args.sourceFloorId } : {}),
+      ...(args.sourceOutputPageId ? { sourceOutputPageId: args.sourceOutputPageId } : {}),
+    });
+  }
+
+  private async loadActiveOutputPageId(floorId: string): Promise<string | undefined> {
+    const rows = await this.db
+      .select({ id: messagePages.id })
+      .from(messagePages)
+      .where(
+        and(
+          eq(messagePages.floorId, floorId),
+          eq(messagePages.pageKind, "output"),
+          eq(messagePages.isActive, true),
+        ),
+      )
+      .limit(1);
+
+    return rows[0]?.id;
   }
 
   private async emitBestEffortEvent<K extends keyof CoreEventMap>(
@@ -1945,6 +2125,39 @@ export class ChatService {
     return session;
   }
 
+  private async handlePreparedFloorGenerationFailure(args: {
+    floorId: string;
+    error: unknown;
+    failureCode: string;
+    restoreSupersededSourceFloor?: string;
+  }): Promise<void> {
+    if (isChatServiceErrorCode(args.error, "turn_attempt_stale")) {
+      return;
+    }
+
+    if (isChatServiceErrorCode(args.error, "generation_cancelled")) {
+      await this.turnRunTracker.cancelRunAndRestoreBestEffort(
+        args.floorId,
+        args.error,
+        "generation_cancelled",
+        args.restoreSupersededSourceFloor
+          ? { restoreSupersededSourceFloor: args.restoreSupersededSourceFloor }
+          : undefined,
+      );
+      await this.turnRunTracker.tryMarkFloorFailed(args.floorId, args.error);
+      return;
+    }
+
+    await this.turnRunTracker.failRunAndFloorBestEffort(
+      args.floorId,
+      args.error,
+      args.failureCode,
+      args.restoreSupersededSourceFloor
+        ? { restoreSupersededSourceFloor: args.restoreSupersededSourceFloor }
+        : undefined,
+    );
+  }
+
   private rethrowBranchLocalSnapshotError(error: unknown): never {
     if (isBranchLocalSnapshotMissingError(error)) {
       throw new ChatServiceError("branch_local_snapshot_missing", error.message, error, error.details);
@@ -1952,6 +2165,44 @@ export class ChatService {
 
     throw error;
   }
+}
+
+function toCommitGateVerifierStatus(
+  status: CommitGateDecision["status"],
+): "passed" | "warned" | "blocked" {
+  switch (status) {
+    case "allow":
+      return "passed";
+    case "warn":
+      return "warned";
+    case "block":
+      return "blocked";
+  }
+}
+
+function isChatServiceErrorCode(
+  error: unknown,
+  code: string,
+): error is ChatServiceError {
+  return error instanceof ChatServiceError && error.code === code;
+}
+
+function isAbortLikeError(error: unknown, abortSignal?: AbortSignal): boolean {
+  if (abortSignal?.aborted) {
+    return true;
+  }
+
+  const current = error instanceof Error ? error : undefined;
+  if (!current) {
+    return false;
+  }
+
+  if (current.name === "AbortError") {
+    return true;
+  }
+
+  const text = `${current.name} ${current.message}`;
+  return /\b(abort|aborted|cancelled|canceled)\b/i.test(text);
 }
 
 function resolveTurnExecutionPolicy(policy?: TurnExecutionPolicyOverrides): TurnExecutionPolicy {

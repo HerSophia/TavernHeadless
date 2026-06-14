@@ -4,7 +4,16 @@ import { SimpleTokenCounter, type TurnExecutionResult, type TurnInput, type Turn
 import { nanoid } from "nanoid";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
-import { accounts, floors, messagePages, messages, sessions, sessionStateMutations } from "../../db/schema.js";
+import {
+  accounts,
+  floors,
+  messagePages,
+  messages,
+  pageStagedMemoryProposalBatches,
+  pageStagedWrites,
+  sessions,
+  sessionStateMutations,
+} from "../../db/schema.js";
 import { ChatService, ChatServiceError } from "../chat-service.js";
 import type { AgentRuntimeTrace } from "../agent-runtime/inline-agent-types.js";
 import { FirstPartyGameStateService } from "../../session-state/first-party-game-state-service.js";
@@ -1104,8 +1113,15 @@ describe("ChatService session-state replay gate", () => {
 
     const buildSessionPromptInfoSpy = getBuildSessionPromptInfoSpy(chatService);
     const result = await chatService.regenerate(sessionId, {}, ACCOUNT_ID);
+    const commitInput = turnCommitMock.mock.calls[0]?.[0];
 
     expect(result.previousFloorId).toBe(floor2);
+    expect(commitInput?.attempt).toMatchObject({
+      runType: "regenerate_page",
+      sourceFloorId: floor2,
+      floorId: commitInput.floorId,
+      candidateOutputPageId: expect.any(String),
+    });
     const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(firstPartyContext?.scene).toMatchObject({
       resolutionMode: "source_floor",
@@ -1176,8 +1192,15 @@ describe("ChatService session-state replay gate", () => {
 
     const buildSessionPromptInfoSpy = getBuildSessionPromptInfoSpy(chatService);
     const result = await chatService.retryFloor(floor2, {}, ACCOUNT_ID);
+    const commitInput = turnCommitMock.mock.calls[0]?.[0];
 
     expect(result.floorId).toBe(floor2);
+    expect(commitInput?.attempt).toMatchObject({
+      runType: "retry_turn",
+      floorId: floor2,
+      sourceFloorId: floor2,
+      candidateOutputPageId: expect.any(String),
+    });
     const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(firstPartyContext?.scene).toMatchObject({
       resolutionMode: "source_floor",
@@ -1231,9 +1254,17 @@ describe("ChatService session-state replay gate", () => {
       { content: "Revise the archive scene." },
       ACCOUNT_ID,
     );
+    const commitInput = turnCommitMock.mock.calls[0]?.[0];
 
     expect(result.sourceFloorId).toBe(floor1);
     expect(result.sourceMessageId).toBe(userMessageId);
+    expect(commitInput?.attempt).toMatchObject({
+      runType: "edit_and_regenerate",
+      sourceFloorId: floor1,
+      branchId: result.branchId,
+      floorId: commitInput.floorId,
+      candidateOutputPageId: expect.any(String),
+    });
     const firstPartyContext = buildSessionPromptInfoSpy.mock.calls[0]?.[2] as { scene?: Record<string, unknown>; world?: Record<string, unknown> } | undefined;
     expect(firstPartyContext?.scene).toMatchObject({
       resolutionMode: "source_floor",
@@ -1255,6 +1286,59 @@ describe("ChatService session-state replay gate", () => {
         summaryLines: ["The archive index still points to the sealed shelf."],
       }),
     });
+  });
+
+  it("restores regenerate source floor when commit gate blocks before commit", async () => {
+    const { sessionId, floor2 } = await seedCommittedMainConversation(database, 1_736_020_190_000);
+    const strictTurnCommitMock = vi.fn(async () => ({
+      usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+      finalState: "committed" as const,
+      memory: undefined,
+    }));
+    const strictChatService = new ChatService(
+      database.db,
+      orchestrator,
+      new SimpleTokenCounter(),
+      {
+        resolveTurnModels: async () => ({ narrator: { source: "env", generationParams: { maxOutputTokens: 128 } } }),
+        turnCommitService: {
+          commit: strictTurnCommitMock,
+        } as never,
+        sessionStateService,
+        firstPartyGameStateService,
+        enableAgenticInlineMvp: true,
+        commitGatePolicy: "block_on_error",
+      },
+    );
+
+    const agenticCoordinator = (strictChatService as unknown as {
+      agenticTurnCoordinator: { runPostResponse: (...args: unknown[]) => Promise<unknown> };
+    }).agenticTurnCoordinator;
+    vi.spyOn(agenticCoordinator, "runPostResponse").mockResolvedValueOnce({
+      records: [],
+      envelope: {
+        findings: {
+          continuity: [{ code: "continuity_block", severity: "error", summary: "blocked" }],
+          agency: [],
+          style: [],
+        },
+        stateProposals: [{ summary: "state", payload: { raw: "storm" } }],
+        memoryProposals: [{ kind: "summary", summary: "remember this" }],
+        commitAdvice: "warn",
+      },
+    });
+
+    await expect(strictChatService.regenerate(sessionId, {}, ACCOUNT_ID)).rejects.toMatchObject({
+      code: "commit_gate_blocked",
+    });
+    expect(strictTurnCommitMock).not.toHaveBeenCalled();
+    expect(await database.db.select().from(pageStagedWrites)).toEqual([]);
+    expect(await database.db.select().from(pageStagedMemoryProposalBatches)).toEqual([]);
+
+    const [sourceFloor] = await database.db.select().from(floors).where(eq(floors.id, floor2));
+    expect(sourceFloor?.supersededAt).toBeNull();
+    expect(sourceFloor?.supersededByFloorId).toBeNull();
+    expect(sourceFloor?.state).toBe("committed");
   });
 });
 

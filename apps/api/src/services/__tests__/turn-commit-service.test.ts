@@ -16,12 +16,16 @@ import {
   accounts,
   branchLocalVariableSnapshots,
   floorResultSnapshots,
+  floorRunStates,
   floors,
   memoryEdges,
   memoryItems,
   runtimeJobs,
   messagePages,
   messages,
+  pageStagedMemoryProposalBatches,
+  pageStagedMemoryProposalItems,
+  pageStagedWrites,
   projectEvents,
   operationLogs,
   promptRuntimeExplainSnapshots,
@@ -570,6 +574,378 @@ describe("TurnCommitService", () => {
       deprecated: 2,
     }));
   });
+
+  it("replaces the active output page for committed floor retries inside the commit transaction", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const previousPageId = nanoid();
+    const previousMessageId = nanoid();
+    const nextPageId = nanoid();
+    const nextMessageId = nanoid();
+    const now = 1_735_689_730_000;
+    const committedAt = now + 1_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "committed", now });
+    await database.db.insert(messagePages).values({
+      id: previousPageId,
+      floorId,
+      pageNo: 1,
+      pageKind: "output",
+      isActive: true,
+      version: 1,
+      checksum: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.db.insert(messages).values({
+      id: previousMessageId,
+      pageId: previousPageId,
+      seq: 0,
+      role: "assistant",
+      content: "Old committed output.",
+      contentFormat: "text",
+      tokenCount: 0,
+      isHidden: false,
+      source: "narrator",
+      createdAt: now,
+    });
+    await database.db.insert(floorResultSnapshots).values({
+      floorId,
+      outputPageId: previousPageId,
+      assistantMessageId: previousMessageId,
+      generatedText: "Old committed output.",
+      summariesJson: JSON.stringify(["old summary"]),
+      usageJson: JSON.stringify({ promptTokens: 1, completionTokens: 1, totalTokens: 2 }),
+      verifierJson: null,
+      committedAt: now,
+      updatedAt: now,
+    });
+    await database.db.insert(floorRunStates).values({
+      floorId,
+      runId: "run-retry-1",
+      runType: "retry_turn",
+      status: "running",
+      phase: "page_generating",
+      publicPhase: "generating",
+      phaseSeq: 1,
+      attemptNo: 2,
+      pendingOutputJson: null,
+      verifierJson: null,
+      errorJson: null,
+      startedAt: now,
+      updatedAt: now,
+      completedAt: null,
+    });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "New committed output.",
+      rawText: "New committed output.",
+      summaries: ["new summary"],
+      totalUsage: {
+        promptTokens: 9,
+        completionTokens: 7,
+        totalTokens: 16,
+      },
+    };
+
+    const result = await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      assistantMessageRef: {
+        pageId: nextPageId,
+        messageId: nextMessageId,
+      },
+      attempt: {
+        sessionId,
+        branchId: "main",
+        floorId,
+        runId: "run-retry-1",
+        runType: "retry_turn",
+        attemptNo: 2,
+        replayMode: "with_context_refresh",
+        sourceFloorId: floorId,
+        sourceOutputPageId: previousPageId,
+        candidateOutputPageId: nextPageId,
+        candidateAssistantMessageId: nextMessageId,
+      },
+      outputReplacement: {
+        expectedActivePageId: previousPageId,
+      },
+    });
+
+    expect(result).toMatchObject({
+      floorId,
+      outputPageId: nextPageId,
+      assistantMessageId: nextMessageId,
+      finalState: "committed",
+    });
+
+    const pages = await database.db
+      .select()
+      .from(messagePages)
+      .where(eq(messagePages.floorId, floorId));
+    expect(pages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: previousPageId, pageNo: 1, version: 1, isActive: false }),
+        expect.objectContaining({ id: nextPageId, pageNo: 1, version: 2, isActive: true }),
+      ]),
+    );
+
+    const [snapshot] = await database.db
+      .select()
+      .from(floorResultSnapshots)
+      .where(eq(floorResultSnapshots.floorId, floorId));
+    expect(snapshot).toMatchObject({
+      floorId,
+      outputPageId: nextPageId,
+      assistantMessageId: nextMessageId,
+      generatedText: "New committed output.",
+      committedAt,
+      updatedAt: committedAt,
+    });
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.id, floorId));
+    expect(floor).toMatchObject({
+      id: floorId,
+      state: "committed",
+      tokenIn: 9,
+      tokenOut: 7,
+      updatedAt: committedAt,
+    });
+  });
+
+  it("rejects stale turn attempts before commit and rolls back candidate output", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const candidatePageId = nanoid();
+    const candidateMessageId = nanoid();
+    const now = 1_735_689_731_000;
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await database.db.insert(floorRunStates).values({
+      floorId,
+      runId: "run-current",
+      runType: "respond",
+      status: "running",
+      phase: "page_generating",
+      publicPhase: "generating",
+      phaseSeq: 1,
+      attemptNo: 2,
+      pendingOutputJson: null,
+      verifierJson: null,
+      errorJson: null,
+      startedAt: now,
+      updatedAt: now,
+      completedAt: null,
+    });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Should not commit.",
+      rawText: "Should not commit.",
+      summaries: [],
+      totalUsage: {
+        promptTokens: 3,
+        completionTokens: 4,
+        totalTokens: 7,
+      },
+    };
+
+    await expect(service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt: now + 500,
+      assistantMessageRef: {
+        pageId: candidatePageId,
+        messageId: candidateMessageId,
+      },
+      attempt: {
+        sessionId,
+        branchId: "main",
+        floorId,
+        runId: "run-stale",
+        runType: "respond",
+        attemptNo: 1,
+        replayMode: "full_floor_context",
+        candidateOutputPageId: candidatePageId,
+        candidateAssistantMessageId: candidateMessageId,
+      },
+    })).rejects.toMatchObject({
+      code: "attempt_not_current",
+    });
+
+    const [floor] = await database.db.select().from(floors).where(eq(floors.id, floorId));
+    expect(floor).toMatchObject({
+      id: floorId,
+      state: "generating",
+      tokenIn: 0,
+      tokenOut: 0,
+      updatedAt: now,
+    });
+
+    const pages = await database.db.select().from(messagePages).where(eq(messagePages.floorId, floorId));
+    const storedMessages = await database.db.select().from(messages).where(eq(messages.pageId, candidatePageId));
+    const snapshots = await database.db.select().from(floorResultSnapshots).where(eq(floorResultSnapshots.floorId, floorId));
+    expect(pages).toEqual([]);
+    expect(storedMessages).toEqual([]);
+    expect(snapshots).toEqual([]);
+  });
+
+  it("stages proposal envelopes during commit without promoting memory truth by default", async () => {
+    const sessionId = nanoid();
+    const floorId = nanoid();
+    const now = 1_735_689_745_000;
+    const committedAt = now + 1_000;
+    const candidatePageId = "page-output-proposal";
+    const candidateMessageId = "assistant-message-proposal";
+
+    await seedSession(database, sessionId, now);
+    await seedFloor({ database, sessionId, floorId, state: "generating", now });
+    await database.db.insert(floorRunStates).values({
+      floorId,
+      runId: "run-proposal-stage",
+      runType: "respond",
+      status: "running",
+      phase: "candidate_generated",
+      publicPhase: "verifying",
+      phaseSeq: 1,
+      attemptNo: 1,
+      pendingOutputJson: null,
+      verifierJson: null,
+      errorJson: null,
+      startedAt: now,
+      updatedAt: now,
+      completedAt: null,
+    });
+
+    const execution: TurnExecutionResult = {
+      floorId,
+      finalState: "generating",
+      generatedText: "Assistant reply with proposals.",
+      rawText: "Assistant reply with proposals.",
+      summaries: ["assistant summary"],
+      totalUsage: {
+        promptTokens: 12,
+        completionTokens: 18,
+        totalTokens: 30,
+      },
+    };
+
+    const result = await service.commit({
+      accountId: DEFAULT_ACCOUNT_ID,
+      floorId,
+      sessionId,
+      execution,
+      committedAt,
+      assistantMessageRef: {
+        pageId: candidatePageId,
+        messageId: candidateMessageId,
+      },
+      attempt: {
+        sessionId,
+        branchId: "main",
+        floorId,
+        runId: "run-proposal-stage",
+        runType: "respond",
+        attemptNo: 1,
+        replayMode: "full_floor_context",
+        candidateOutputPageId: candidatePageId,
+        candidateAssistantMessageId: candidateMessageId,
+      },
+      proposalEnvelope: {
+        attempt: {
+          sessionId,
+          branchId: "main",
+          floorId,
+          runId: "run-proposal-stage",
+          runType: "respond",
+          attemptNo: 1,
+          replayMode: "full_floor_context",
+          candidateOutputPageId: candidatePageId,
+          candidateAssistantMessageId: candidateMessageId,
+        },
+        outputPageId: candidatePageId,
+        findings: {
+          continuity: [],
+          agency: [],
+          style: [],
+        },
+        stateProposals: [
+          {
+            id: "state-1",
+            sourceAgentId: "inline:state_proposal",
+            targetNamespace: "scene",
+            targetSlot: "weather",
+            payload: { raw: "rain" },
+            promotion: "observe_only",
+          },
+        ],
+        memoryProposals: [
+          {
+            id: "memory-1",
+            sourceAgentId: "inline:memory_proposal",
+            kind: "summary",
+            summary: "Remember the rain.",
+            promotion: "stage_for_review",
+          },
+        ],
+        relationshipProposals: [],
+        openLoopProposals: [],
+      },
+      commitGateDecision: {
+        status: "allow",
+        policy: "warn_only",
+        reasons: [],
+      },
+    });
+
+    expect(result.proposalPromotion).toMatchObject({
+      status: "staged",
+ pageWriteAcceptedCount: 1,
+      pageWriteDiscardedCount: 0,
+      stateObservedCount: 1,
+      memoryBatchCount: 1,
+      memoryProposedCount: 1,
+      memoryRejectedCount: 0,
+      memorySupersededCount: 0,
+    });
+
+    const [pageWrite] = await database.db.select().from(pageStagedWrites).where(eq(pageStagedWrites.pageId, candidatePageId));
+    expect(pageWrite).toMatchObject({
+      pageId: candidatePageId,
+      status: "accepted",
+      reason: "agent:state_proposal",
+    });
+
+    const [batchRow] = await database.db.select().from(pageStagedMemoryProposalBatches).where(eq(pageStagedMemoryProposalBatches.pageId, candidatePageId));
+    expect(batchRow).toMatchObject({
+      proposalBatchId: `agent-proposal:${candidatePageId}`,
+      proposalStatus: "proposed",
+      promotionStatus: null,
+      decisionReason: null,
+      decisionCode: null,
+    });
+
+    const itemRows = await database.db.select().from(pageStagedMemoryProposalItems).where(eq(pageStagedMemoryProposalItems.batchId, `agent-proposal:${candidatePageId}`));
+    expect(itemRows).toHaveLength(1);
+    expect(itemRows[0]).toMatchObject({
+      memoryKind: "summary",
+      operationKind: "refresh_summary",
+      status: "proposed",
+    });
+    expect(await database.db.select().from(memoryItems)).toEqual([]);
+  });
+
   it("records floor commit operation logs without storing prompt, tool, or output content", async () => {
     const sessionId = nanoid();
     const floorId = nanoid();

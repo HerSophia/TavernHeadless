@@ -25,6 +25,7 @@ import { DrizzleFloorRepository } from "../adapters/drizzle-floor-repository.js"
 import {
   floors,
   floorResultSnapshots,
+  floorRunStates,
   messagePages,
   messages,
   promptRuntimeExplainSnapshots,
@@ -56,6 +57,12 @@ import type {
 import type { MutationRuntime } from "./runtime-mutation-types.js";
 import type { ToolRuntimeJobBridge } from "./tool-runtime-job-bridge.js";
 import type { FloorRunService } from "./floor-run-service.js";
+import type { CommitGateDecision } from "./chat/turn-commit-gate.js";
+import type { TurnProposalEnvelope } from "./chat/turn-proposal-envelope.js";
+import type {
+  TurnAttemptIdentity,
+  TurnAttemptStaleReason,
+} from "./chat/turn-attempt-types.js";
 import type { StMacroStagedMutation } from "./st-macros/index.js";
 import {
   buildBranchMemoryScopeId,
@@ -83,6 +90,10 @@ import {
 } from "./project-event-service.js";
 import type { ProjectEventLiveHub } from "./project-event-live-hub.js";
 import { isTemporaryConversationSessionLike } from "./temporary-conversation-types.js";
+import {
+  TurnProposalStagingService,
+  type TurnProposalPromotionSummary,
+} from "./chat/turn-proposal-staging-service.js";
 
 type FloorRow = typeof floors.$inferSelect;
 
@@ -155,6 +166,12 @@ export interface TurnCommitInput {
    */
   supersedeSourceFloor?: { floorId: string };
   assistantMessageRef?: PersistedMessageRef;
+  attempt?: TurnAttemptIdentity;
+  proposalEnvelope?: TurnProposalEnvelope;
+  commitGateDecision?: CommitGateDecision;
+  outputReplacement?: {
+    expectedActivePageId?: string;
+  };
 }
 
 export interface TurnCommitMemoryReceipt {
@@ -170,6 +187,7 @@ export interface TurnCommitResult {
   finalState: "committed";
   usage: TokenUsage;
   memory?: TurnCommitMemoryReceipt;
+  proposalPromotion?: TurnProposalPromotionSummary;
 }
 
 export interface TurnCommitServiceOptions extends AccountContextOptions {
@@ -200,6 +218,16 @@ export class SupersedeSourceFloorError extends Error {
   ) {
     super(message);
     this.name = "SupersedeSourceFloorError";
+  }
+}
+
+export class TurnAttemptConflictError extends Error {
+  constructor(
+    public readonly code: TurnAttemptStaleReason,
+    message: string,
+  ) {
+    super(message);
+    this.name = "TurnAttemptConflictError";
   }
 }
 
@@ -371,6 +399,32 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
     replayParentExecutionId: record.replayParentExecutionId ?? null,
     createdAt: record.createdAt,
   };
+}
+
+function remapConflictingLegacyToolCalls(
+  tx: DbExecutor,
+  records: ToolCallRecord[],
+  pageId: string,
+): ToolCallRecord[] {
+  if (records.length === 0) {
+    return [];
+  }
+
+  const existingRows = tx
+    .select({ id: toolCallRecords.id })
+    .from(toolCallRecords)
+    .where(inArray(toolCallRecords.id, records.map((record) => record.id)))
+    .all();
+  const existingIds = new Set(existingRows.map((row) => row.id));
+
+  return records.map((record, index) => (
+    existingIds.has(record.id)
+      ? {
+          ...record,
+          id: `${record.id}:compat:${pageId}:${index + 1}`,
+        }
+      : record
+  ));
 }
 
 function createEmptyVariableCommitResult(input: TurnCommitInput): TurnVariableCommitResult {
@@ -679,27 +733,160 @@ export class TurnCommitService {
       variableCommit: TurnVariableCommitResult;
       variableMutationApply: { runAfterCommit(): Promise<void> };
       memory?: TurnCommitMemoryReceipt;
+      proposalPromotion?: TurnProposalPromotionSummary;
       projectEvents: ProjectEventRecord[];
     };
     try {
       transactionResult = this.db.transaction((tx) => {
+        const floorRow = tx
+          .select()
+          .from(floors)
+          .where(eq(floors.id, input.floorId))
+          .limit(1)
+          .all()[0];
+
+        if (!floorRow) {
+          throw new FloorNotFoundError(input.floorId);
+        }
+
+        if (input.attempt) {
+          const currentAttemptRow = tx
+            .select({
+              runId: floorRunStates.runId,
+              runType: floorRunStates.runType,
+              attemptNo: floorRunStates.attemptNo,
+              status: floorRunStates.status,
+            })
+            .from(floorRunStates)
+            .where(eq(floorRunStates.floorId, input.floorId))
+            .limit(1)
+            .all()[0];
+
+          if (
+            currentAttemptRow
+            && (
+              currentAttemptRow.status !== "running"
+              || currentAttemptRow.runId !== input.attempt.runId
+              || currentAttemptRow.runType !== input.attempt.runType
+              || currentAttemptRow.attemptNo !== input.attempt.attemptNo
+            )
+          ) {
+            throw new TurnAttemptConflictError(
+              "attempt_not_current",
+              `Turn attempt for floor '${input.floorId}' is no longer current`,
+            );
+          }
+        }
+
+        let assistantPageOptions:
+          | {
+              pageNo?: number;
+              version?: number;
+              isActive?: boolean;
+            }
+          | undefined;
+
+        if (input.outputReplacement?.expectedActivePageId) {
+          const sourceOutputPage = tx
+            .select({
+              id: messagePages.id,
+              floorId: messagePages.floorId,
+              pageNo: messagePages.pageNo,
+              pageKind: messagePages.pageKind,
+              isActive: messagePages.isActive,
+              version: messagePages.version,
+            })
+            .from(messagePages)
+            .where(eq(messagePages.id, input.outputReplacement.expectedActivePageId))
+            .limit(1)
+            .all()[0];
+
+          if (!sourceOutputPage) {
+            throw new TurnAttemptConflictError(
+              "source_page_missing",
+              `Output page '${input.outputReplacement.expectedActivePageId}' does not exist`,
+            );
+          }
+
+          if (sourceOutputPage.floorId !== input.floorId) {
+            throw new TurnAttemptConflictError(
+              "source_page_scope_mismatch",
+              `Output page '${sourceOutputPage.id}' does not belong to floor '${input.floorId}'`,
+            );
+          }
+
+          if (sourceOutputPage.pageKind !== "output") {
+            throw new TurnAttemptConflictError(
+              "source_page_not_output",
+              `Output page '${sourceOutputPage.id}' is not an output page`,
+            );
+          }
+
+          if (!sourceOutputPage.isActive) {
+            throw new TurnAttemptConflictError(
+              "source_page_not_active",
+              `Output page '${sourceOutputPage.id}' is no longer active`,
+            );
+          }
+
+          const existingVersions = tx
+            .select({ version: messagePages.version })
+            .from(messagePages)
+            .where(
+              and(
+                eq(messagePages.floorId, input.floorId),
+                eq(messagePages.pageNo, sourceOutputPage.pageNo),
+              ),
+            )
+            .all();
+          const nextVersion = Math.max(
+            sourceOutputPage.version,
+            ...existingVersions.map((row) => row.version),
+          ) + 1;
+
+          tx
+            .update(messagePages)
+            .set({
+              isActive: false,
+              updatedAt: committedAt,
+            })
+            .where(
+              and(
+                eq(messagePages.floorId, input.floorId),
+                eq(messagePages.pageNo, sourceOutputPage.pageNo),
+                eq(messagePages.isActive, true),
+              ),
+            )
+            .run();
+
+          assistantPageOptions = {
+            pageNo: sourceOutputPage.pageNo,
+            version: nextVersion,
+            isActive: true,
+          };
+        }
+
         const assistantMessage = this.messagePersistence.saveAssistantMessageWithExecutor(
           tx,
           input.floorId,
           assistantOutputText,
           committedAt,
           input.assistantMessageRef,
+          assistantPageOptions,
         );
 
         const legacyToolCalls = hasPrimaryToolExecutionRecords
           ? projectLegacyToolCallRecords(actualToolExecutionRecords, { pageId: assistantMessage.pageId })
           : explicitLegacyToolCalls;
+        const materializedLegacyToolCalls = legacyToolCalls.length === 0
+          ? []
+          : remapConflictingLegacyToolCalls(tx, legacyToolCalls, assistantMessage.pageId);
 
-        if (legacyToolCalls.length > 0) {
+        if (materializedLegacyToolCalls.length > 0) {
           tx
             .insert(toolCallRecords)
             .values(
-              legacyToolCalls.map((record, index) => ({
+              materializedLegacyToolCalls.map((record, index) => ({
                 id: record.id,
                 pageId: hasPrimaryToolExecutionRecords ? record.pageId : assistantMessage.pageId,
                 seq: record.seq > 0 ? record.seq : index + 1,
@@ -836,65 +1023,89 @@ export class TurnCommitService {
         let variableCommit: TurnVariableCommitResult = { ...createEmptyVariableCommitResult(input), pageId: assistantMessage.pageId };
         let sessionStateMutationCount = 0;
 
-        const floorRow = tx
-          .select()
-          .from(floors)
-          .where(eq(floors.id, input.floorId))
-          .limit(1)
-          .all()[0];
-
-        if (!floorRow) {
-          throw new FloorNotFoundError(input.floorId);
-        }
-
-        let preparedFloorTransition: ReturnType<FloorStateMachine["prepareTransition"]>;
-        try {
-          preparedFloorTransition = this.floorStateMachine.prepareTransition(
-            toFloorEntity(floorRow),
-            "committed",
-          );
-        } catch (error) {
-          if (error instanceof InvalidStateTransitionError) {
-            throw new FloorStateConflictError(input.floorId, "generating", floorRow.state);
-          }
-
-          throw error;
-        }
-
         const mergedFloorMetadataJson = mergeFloorMetadataConversationInput(
           floorRow.metadataJson,
           input.conversationInputSnapshot,
         );
 
-        const updatedFloorRow = tx
-          .update(floors)
-          .set({
-            metadataJson: mergedFloorMetadataJson,
-            tokenIn: usage.promptTokens,
-            tokenOut: usage.completionTokens,
-            updatedAt: committedAt,
-            state: preparedFloorTransition.newState,
-          })
-          .where(and(eq(floors.id, input.floorId), eq(floors.state, preparedFloorTransition.previousState)))
-          .returning()
-          .all()[0];
+        const usesCommittedOutputReplacement =
+          floorRow.state === "committed"
+          && Boolean(input.outputReplacement?.expectedActivePageId);
 
-        if (!updatedFloorRow) {
-          const currentRow = tx
-            .select({ id: floors.id, state: floors.state })
-            .from(floors)
+        let floorTransition: ReturnType<FloorStateMachine["completeTransition"]>;
+
+        if (usesCommittedOutputReplacement) {
+          const updatedFloorRow = tx
+            .update(floors)
+            .set({
+              metadataJson: mergedFloorMetadataJson,
+              tokenIn: usage.promptTokens,
+              tokenOut: usage.completionTokens,
+              updatedAt: committedAt,
+              state: "committed",
+            })
             .where(eq(floors.id, input.floorId))
-            .limit(1)
+            .returning()
             .all()[0];
 
-          if (!currentRow) {
+          if (!updatedFloorRow) {
             throw new FloorNotFoundError(input.floorId);
           }
 
-          throw new FloorStateConflictError(input.floorId, preparedFloorTransition.previousState, currentRow.state);
-        }
+          floorTransition = {
+            floorId: updatedFloorRow.id,
+            previousState: "committed",
+            newState: "committed",
+            floor: toFloorEntity(updatedFloorRow),
+          };
+        } else {
+          let preparedFloorTransition: ReturnType<FloorStateMachine["prepareTransition"]>;
+          try {
+            preparedFloorTransition = this.floorStateMachine.prepareTransition(
+              toFloorEntity(floorRow),
+              "committed",
+            );
+          } catch (error) {
+            if (error instanceof InvalidStateTransitionError) {
+              throw new FloorStateConflictError(input.floorId, "generating", floorRow.state);
+            }
 
-        const floorTransition = this.floorStateMachine.completeTransition(preparedFloorTransition, toFloorEntity(updatedFloorRow));
+            throw error;
+          }
+
+          const updatedFloorRow = tx
+            .update(floors)
+            .set({
+              metadataJson: mergedFloorMetadataJson,
+              tokenIn: usage.promptTokens,
+              tokenOut: usage.completionTokens,
+              updatedAt: committedAt,
+              state: preparedFloorTransition.newState,
+            })
+            .where(and(eq(floors.id, input.floorId), eq(floors.state, preparedFloorTransition.previousState)))
+            .returning()
+            .all()[0];
+
+          if (!updatedFloorRow) {
+            const currentRow = tx
+              .select({ id: floors.id, state: floors.state })
+              .from(floors)
+              .where(eq(floors.id, input.floorId))
+              .limit(1)
+              .all()[0];
+
+            if (!currentRow) {
+              throw new FloorNotFoundError(input.floorId);
+            }
+
+            throw new FloorStateConflictError(input.floorId, preparedFloorTransition.previousState, currentRow.state);
+          }
+
+          floorTransition = this.floorStateMachine.completeTransition(
+            preparedFloorTransition,
+            toFloorEntity(updatedFloorRow),
+          );
+        }
 
         if (input.supersedeSourceFloor) {
           const sourceFloorId = input.supersedeSourceFloor.floorId;
@@ -943,8 +1154,8 @@ export class TurnCommitService {
             sourceRow.supersededByFloorId !== null &&
             sourceRow.supersededByFloorId !== input.floorId
           ) {
-            throw new SupersedeSourceFloorError(
-              "supersede_source_floor_already_superseded",
+            throw new TurnAttemptConflictError(
+              "source_floor_superseded",
               `Supersede source floor '${sourceFloorId}' is already superseded by a different floor`,
             );
           }
@@ -994,6 +1205,19 @@ export class TurnCommitService {
             },
           })
           .run();
+
+        let proposalPromotion: TurnProposalPromotionSummary | undefined;
+        proposalPromotion = new TurnProposalStagingService(tx).stageCommittedProposals({
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          branchId: effectiveBranchId,
+          floorId: input.floorId,
+          outputPageId: assistantMessage.pageId,
+          assistantMessageId: assistantMessage.messageId,
+          committedAt,
+          proposalEnvelope: input.proposalEnvelope,
+          commitGateDecision: input.commitGateDecision,
+        });
 
         variableCommit = isTemporarySession
           ? { ...createEmptyVariableCommitResult(input), pageId: assistantMessage.pageId }
@@ -1236,6 +1460,7 @@ export class TurnCommitService {
           variableCommit,
           variableMutationApply,
           ...(memory ? { memory } : {}),
+          ...(proposalPromotion ? { proposalPromotion } : {}),
           projectEvents,
         };
       });
@@ -1297,6 +1522,7 @@ export class TurnCommitService {
       finalState: "committed",
       usage,
       memory: transactionResult.memory,
+      proposalPromotion: transactionResult.proposalPromotion,
     };
   }
 

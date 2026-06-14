@@ -115,6 +115,11 @@ export class ChatMessagePersistence {
     content: string,
     timestamp: number,
     refs?: PersistedMessageRef,
+    options?: {
+      pageNo?: number;
+      version?: number;
+      isActive?: boolean;
+    },
   ): PersistedMessageRef {
     const pageId = refs?.pageId ?? nanoid();
     const messageId = refs?.messageId ?? nanoid();
@@ -122,10 +127,10 @@ export class ChatMessagePersistence {
     executor.insert(messagePages).values({
       id: pageId,
       floorId,
-      pageNo: 1,
+      pageNo: options?.pageNo ?? 1,
       pageKind: "output",
-      isActive: true,
-      version: 1,
+      isActive: options?.isActive ?? true,
+      version: options?.version ?? 1,
       checksum: null,
       createdAt: timestamp,
       updatedAt: timestamp
