@@ -34,6 +34,14 @@ export interface FloorRunRecord {
   run: FloorRunSnapshot | null;
 }
 
+export interface FloorRunIdentity {
+  floorId: string;
+  runId: string;
+  runType: FloorRunType;
+  attemptNo: number;
+  status: FloorRunStatus;
+}
+
 interface PendingOutputPersistState {
   attemptNo: number;
   lastPersistedAt: number;
@@ -209,6 +217,47 @@ export class FloorRunService {
     return snapshot;
   }
 
+  async startAttempt(
+    floorId: string,
+    input: {
+      attemptNo: number;
+      phase?: FloorRunPhase;
+      updatedAt?: number;
+    },
+  ): Promise<FloorRunSnapshot | null> {
+    const row = await this.getRunRow(floorId);
+    if (!row) {
+      return null;
+    }
+
+    const updatedAt = input.updatedAt ?? Date.now();
+    const phase = input.phase ?? "page_generating";
+    this.pendingOutputStates.delete(floorId);
+
+    await this.db
+      .update(floorRunStates)
+      .set({
+        status: "running",
+        phase,
+        publicPhase: toPublicPhase(phase),
+        phaseSeq: row.phaseSeq + 1,
+        attemptNo: input.attemptNo,
+        pendingOutputJson: null,
+        verifierJson: null,
+        errorJson: null,
+        completedAt: null,
+        updatedAt,
+      })
+      .where(eq(floorRunStates.floorId, floorId))
+      .run();
+
+    const snapshot = await this.getSnapshot(floorId);
+    if (snapshot) {
+      this.emitSnapshot(snapshot);
+    }
+    return snapshot;
+  }
+
   async updatePendingOutput(
     floorId: string,
     input: {
@@ -352,6 +401,48 @@ export class FloorRunService {
     return snapshot;
   }
 
+  async markCancelled(
+    floorId: string,
+    error: Error | FloorRunError = {
+      code: "floor_run_cancelled",
+      message: "Floor run was cancelled",
+    },
+    options: {
+      updatedAt?: number;
+    } = {},
+  ): Promise<FloorRunSnapshot | null> {
+    const row = await this.getRunRow(floorId);
+    if (!row) {
+      return null;
+    }
+
+    const updatedAt = options.updatedAt ?? Date.now();
+    const payload: FloorRunError = {
+      code: toErrorCode(error),
+      message: toErrorMessage(error),
+    };
+
+    await this.db
+      .update(floorRunStates)
+      .set({
+        status: "cancelled",
+        errorJson: JSON.stringify(payload),
+        completedAt: updatedAt,
+        phaseSeq: row.phaseSeq + 1,
+        updatedAt,
+      })
+      .where(eq(floorRunStates.floorId, floorId))
+      .run();
+
+    this.pendingOutputStates.delete(floorId);
+
+    const snapshot = await this.getSnapshot(floorId);
+    if (snapshot) {
+      this.emitSnapshot(snapshot);
+    }
+    return snapshot;
+  }
+
   async markCompleted(
     floorId: string,
     options: {
@@ -407,6 +498,35 @@ export class FloorRunService {
   async getActiveRunForFloor(floorId: string): Promise<FloorRunSnapshot | null> {
     const snapshot = await this.getSnapshot(floorId);
     return snapshot?.status === "running" ? snapshot : null;
+  }
+
+  async getRunIdentity(floorId: string): Promise<FloorRunIdentity | null> {
+    const row = await this.getRunRow(floorId);
+    if (!row) {
+      return null;
+    }
+
+    return {
+      floorId: row.floorId,
+      runId: row.runId,
+      runType: row.runType as FloorRunType,
+      attemptNo: row.attemptNo,
+      status: row.status as FloorRunStatus,
+    };
+  }
+
+  async isCurrentAttempt(input: {
+    floorId: string;
+    runId: string;
+    attemptNo: number;
+  }): Promise<boolean> {
+    const row = await this.getRunRow(input.floorId);
+    return Boolean(
+      row &&
+    row.status === "running" &&
+      row.runId === input.runId &&
+      row.attemptNo === input.attemptNo,
+    );
   }
 
   async getActiveRunSummary(sessionId: string, branchId?: string): Promise<SessionActiveRunSummary | null> {

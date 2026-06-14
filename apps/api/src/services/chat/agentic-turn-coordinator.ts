@@ -32,6 +32,7 @@ import type {
   AgentRuntimeTrace,
   PostResponseEnvelope,
 } from "../agent-runtime/inline-agent-types.js";
+import type { CommitGateDecision } from "./turn-commit-gate.js";
 
 export interface AgenticPreResponseResult {
   aggregated: AggregatedPreResponseContext;
@@ -51,23 +52,23 @@ export class AgenticTurnCoordinator {
   ) {}
 
   async runPreResponse(args: {
-    source: Extract<AgentInvocationSource, { kind: "respond_pre_response" }>;
- context: InlineAgentExecutorContext;
+    source: Extract<AgentInvocationSource, { kind: "turn_pre_response" }>;
+    context: InlineAgentExecutorContext;
   }): Promise<AgenticPreResponseResult> {
     const plan = this.invocationService.planForSource(args.source);
-    const result =await this.executor.execute(plan, args.context);
+    const result = await this.executor.execute(plan, args.context);
     const aggregated = this.aggregator.aggregate(result.records);
     return { aggregated, records: result.records };
   }
 
   async runPostResponse(args: {
-    source: Extract<AgentInvocationSource, { kind: "respond_post_response" }>;
+    source: Extract<AgentInvocationSource, { kind: "turn_post_response" }>;
     context: InlineAgentExecutorContext;
   }): Promise<AgenticPostResponseResult> {
     const plan = this.invocationService.planForSource(args.source);
     const result = await this.executor.execute(plan, args.context);
     const envelope = buildPostResponseEnvelope(result.records);
-    return { envelope, records: result.records};
+    return { envelope, records: result.records };
   }
 
   buildTrace(args: {
@@ -75,6 +76,9 @@ export class AgenticTurnCoordinator {
     aggregated?: AggregatedPreResponseContext;
     postRecords: AgentRunRecord[];
     postEnvelope: PostResponseEnvelope;
+    source?: AgentInvocationSource;
+    outputPageId?: string;
+    gateDecision?: CommitGateDecision;
   }): AgentRuntimeTrace {
     return buildAgentRuntimeTrace(args);
   }
