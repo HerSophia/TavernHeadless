@@ -8,7 +8,7 @@ import type {
 
 import type { PromptLiveDebugOptions, ResolvedTurnModels } from "./contracts.js";
 import type { GenerationParamsInput } from "../../lib/llm-params.js";
-import type { FirstPartyStateContext, PreparedTurnContext } from "./types.js";
+import type { FirstPartyStateContext, PreparedTurnContext, PromptRuntimeContributorOutput } from "./types.js";
 import type { PromptRuntimeConversationWindow } from "./prompt-preparation-service.js";
 import { PreparedPromptArtifactsBuilder } from "./prepared-prompt-artifacts-builder.js";
 import { TurnModelService } from "./turn-model-service.js";
@@ -61,6 +61,7 @@ export class PreparedTurnContextBuilder {
     abortSignal?: AbortSignal;
     onChunk?: (chunk: string) => void;
     stream?: boolean;
+    agentContributors?: PromptRuntimeContributorOutput[];
   }): Promise<PreparedTurnContext> {
     const artifacts = await this.preparedPromptArtifactsBuilder.prepare({
       mode: args.mode,
@@ -84,6 +85,7 @@ export class PreparedTurnContextBuilder {
       includeRuntimeTrace: args.request.debugOptions?.includeRuntimeTrace === true,
       baseRuntimeTrace: args.baseRuntimeTrace,
       stream: args.stream,
+      ...(args.agentContributors ? { agentContributors: args.agentContributors } : {}),
     });
     const inspection = {
       ...artifacts.inspection,
