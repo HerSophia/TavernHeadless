@@ -92,6 +92,16 @@ export class TurnRunTracker {
     }
   }
 
+  async tryMarkRunCancelled(floorId: string, error?: unknown, code = "floor_run_cancelled"): Promise<void> {
+    const normalizedError = error instanceof Error ? error : new Error(error === undefined ? "Floor run was cancelled" : String(error));
+
+    try {
+      await this.floorRunService?.markCancelled(floorId, { code, message: normalizedError.message });
+    } catch {
+      // best-effort run tracking
+    }
+  }
+
   async tryMarkFloorFailed(floorId: string, error: unknown): Promise<void> {
     const normalizedError = error instanceof Error ? error : new Error(String(error));
 
@@ -119,17 +129,47 @@ export class TurnRunTracker {
     }
   }
 
+  async cancelRunAndRestoreBestEffort(
+    floorId: string,
+    error?: unknown,
+    code = "floor_run_cancelled",
+    options?: { restoreSupersededSourceFloor?: string },
+  ): Promise<void> {
+    await this.tryMarkRunCancelled(floorId, error, code);
+
+    if (options?.restoreSupersededSourceFloor) {
+      await this.restoreSupersededSourceFloorBestEffort(
+        options.restoreSupersededSourceFloor,
+        floorId,
+      );
+    }
+  }
+
   async restoreSupersededSourceFloorBestEffort(
     sourceFloorId: string,
     supersededByFloorId: string,
   ): Promise<void> {
     try {
-      this.db
+      const updatedAt = Date.now();
+
+      if (supersededByFloorId !== sourceFloorId) {
+        await this.db
+          .update(floors)
+          .set({
+            supersededAt: updatedAt,
+            supersededByFloorId: null,
+            updatedAt,
+          })
+          .where(eq(floors.id, supersededByFloorId))
+          .run();
+      }
+
+      await this.db
         .update(floors)
         .set({
           supersededAt: null,
           supersededByFloorId: null,
-          updatedAt: Date.now(),
+          updatedAt,
         })
         .where(
           and(

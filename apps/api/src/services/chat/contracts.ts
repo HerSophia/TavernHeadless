@@ -59,6 +59,7 @@ import type { FirstPartyGameStateService } from "../../session-state/first-party
 import type { SessionStateNamespace } from "../../session-state/session-state-types.js";
 import type { SessionStateService } from "../../session-state/session-state-service.js";
 import type { SessionStateOperationLogContext } from "../../session-state/session-state-operation-log.js";
+import type { CommitGatePolicy } from "./turn-commit-gate.js";
 
 export interface PromptLiveDebugOptions {
   includePromptSnapshot?: boolean;
@@ -304,6 +305,12 @@ export interface ChatServiceOptions {
    * 打开时在 respond 单回合生成路径前后串联 inline Agent。
    */
   enableAgenticInlineMvp?: boolean;
+  /**
+   * R2 commit gate 内部策略。
+   *
+   * 默认仍为 warn_only。只有显式传入严格策略时，post_response 的 error finding 才会阻断提交。
+   */
+  commitGatePolicy?: CommitGatePolicy;
   /**
    * R1 Agent Runtime trace 观察回调。仅在 inline_mvp 打开且提供本回调时触发。
    * R1 仅用于观察，不参与 commit 决策；Phase 6 再接入 debug / runtime trace。

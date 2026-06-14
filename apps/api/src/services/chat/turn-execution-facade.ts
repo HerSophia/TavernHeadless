@@ -4,6 +4,8 @@ import type { PromptRuntimeInspectionResult } from "../prompt-runtime-control-se
 import type { PromptRuntimeExecutionResult } from "../prompt-runtime-execution.js";
 import type { StMacroStagedMutation } from "../st-macros/index.js";
 import type { TurnCommitOperationLogContext, TurnCommitService } from "../turn-commit-service.js";
+import type { CommitGateDecision } from "./turn-commit-gate.js";
+import type { TurnProposalEnvelope } from "./turn-proposal-envelope.js";
 import type {
   AggregatedPreResponseContext,
   AgentRunRecord,
@@ -13,6 +15,7 @@ import type { PersistedMessageRef } from "../chat-message-persistence.js";
 import type { FloorConversationInputSnapshot } from "./shared/metadata.js";
 import type { ResolvedTurnModels, TurnSessionStateWriteRequest } from "./contracts.js";
 import type { SessionStateOperationLogContext } from "../../session-state/session-state-operation-log.js";
+import type { TurnAttemptIdentity } from "./turn-attempt-types.js";
 import type { FirstPartyStateContext } from "./types.js";
 
 export type ChatTurnStrategyKind = "naive" | "inline_mvp";
@@ -24,6 +27,7 @@ export interface InlineMvpExecutionContext {
   };
   firstPartyStateContext?: FirstPartyStateContext;
   abortSignal?: AbortSignal;
+  attempt?: TurnAttemptIdentity;
   attachTrace?: (trace: AgentRuntimeTrace) => void;
   notifyTrace?: (trace: AgentRuntimeTrace) => void;
 }
@@ -49,6 +53,7 @@ export interface ExecuteTurnAndCommitArgs {
   commitFailureMessage: string;
   conversationInputSnapshot?: FloorConversationInputSnapshot;
   supersedeSourceFloor?: { floorId: string };
+  attempt?: TurnAttemptIdentity;
   turnStrategy?: ChatTurnStrategyKind;
   inlineMvp?: InlineMvpExecutionContext;
 }
@@ -81,6 +86,9 @@ export interface CommitNarratorTurnArgs {
   conversationInputSnapshot?: FloorConversationInputSnapshot;
   supersedeSourceFloor?: { floorId: string };
   assistantMessageRef?: PersistedMessageRef;
+  attempt?: TurnAttemptIdentity;
+  proposalEnvelope?: TurnProposalEnvelope;
+  commitGateDecision?: CommitGateDecision;
 }
 
 export type CommitNarratorTurnResult = Awaited<ReturnType<TurnCommitService["commit"]>>;
