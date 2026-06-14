@@ -6,6 +6,7 @@ import { nanoid } from "nanoid";
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
 import { accounts, floors, messagePages, messages, sessions, sessionStateMutations } from "../../db/schema.js";
 import { ChatService, ChatServiceError } from "../chat-service.js";
+import type { AgentRuntimeTrace } from "../agent-runtime/inline-agent-types.js";
 import { FirstPartyGameStateService } from "../../session-state/first-party-game-state-service.js";
 import { SessionStateCustomNamespaceService } from "../../session-state/session-state-custom-namespace-service.js";
 import { SessionStateService } from "../../session-state/session-state-service.js";
@@ -192,6 +193,196 @@ describe("ChatService session-state replay gate", () => {
       actorClientId: null,
       rerouteToSessionState: false,
     });
+  });
+
+  it("attaches agentRuntime trace into respond runtimeTrace when inline_mvp and debug runtime trace are enabled", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_180_000;
+    const observedTraces: AgentRuntimeTrace[] = [];
+
+    await seedSession(database, sessionId, now);
+
+    const tracedChatService = new ChatService(
+      database.db,
+      createMockTurnOrchestrator(),
+      new SimpleTokenCounter(),
+      {
+        resolveTurnModels: async () => ({ narrator: { source: "env", generationParams: { maxOutputTokens: 128 } } }),
+        turnCommitService: {
+          commit: vi.fn(async () => ({
+            outputPageId: "page-output-1",
+            assistantMessageId: "assistant-message-1",
+            usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+            finalState: "committed" as const,
+            memory: undefined,
+          })),
+        } as never,
+        sessionStateService,
+        firstPartyGameStateService,
+        enableAgenticInlineMvp: true,
+        onAgentRuntimeTrace: (trace) => observedTraces.push(trace),
+      },
+    );
+
+    const result = await tracedChatService.respond(
+      sessionId,
+      {
+        message: "I choose the left path.",
+        debugOptions: {
+          includeRuntimeTrace: true,
+        },
+      },
+      {},
+      ACCOUNT_ID,
+    );
+
+    expect(observedTraces).toHaveLength(1);
+    expect(result.runtimeTrace?.agentRuntime).toMatchObject({
+      strategy: "inline_mvp",
+      scopeKind: "floor",
+      response: {
+        narratorCallerSlot: "narrator",
+      },
+      preResponse: {
+        aggregator: {
+          contributorIds: expect.arrayContaining(["agent:director", "agent:agency_guard_pre"]),
+        },
+      },
+      postResponse: {
+        commitAdvice: "allow",
+      },
+    });
+    expect(result.runtimeTrace?.agentRuntime).toEqual(observedTraces[0]);
+  });
+
+  it("keeps runtimeTrace.agentRuntime absent when inline_mvp is disabled", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_181_000;
+    const observedTraces: AgentRuntimeTrace[] = [];
+
+    await seedSession(database, sessionId, now);
+
+    const tracedChatService = new ChatService(
+      database.db,
+      createMockTurnOrchestrator(),
+      new SimpleTokenCounter(),
+      {
+        resolveTurnModels: async () => ({ narrator: { source: "env", generationParams: { maxOutputTokens: 128 } } }),
+        turnCommitService: {
+          commit: vi.fn(async () => ({
+            outputPageId: "page-output-2",
+            assistantMessageId: "assistant-message-2",
+            usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+            finalState: "committed" as const,
+            memory: undefined,
+          })),
+        } as never,
+        sessionStateService,
+        firstPartyGameStateService,
+        onAgentRuntimeTrace: (trace) => observedTraces.push(trace),
+      },
+    );
+
+    const result = await tracedChatService.respond(
+      sessionId,
+      {
+        message: "I choose the right path.",
+        debugOptions: {
+          includeRuntimeTrace: true,
+        },
+      },
+      {},
+      ACCOUNT_ID,
+    );
+
+    expect(observedTraces).toHaveLength(0);
+    expect(result.runtimeTrace?.agentRuntime).toBeUndefined();
+  });
+
+  it("keeps respond success when pre_response coordination fails", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_182_000;
+
+    await seedSession(database, sessionId, now);
+
+    const tracedChatService = new ChatService(
+      database.db,
+      createMockTurnOrchestrator(),
+      new SimpleTokenCounter(),
+      {
+        resolveTurnModels: async () => ({ narrator: { source: "env", generationParams: { maxOutputTokens: 128 } } }),
+        turnCommitService: {
+          commit: vi.fn(async () => ({
+            outputPageId: "page-output-3",
+            assistantMessageId: "assistant-message-3",
+            usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+            finalState: "committed" as const,
+            memory: undefined,
+          })),
+        } as never,
+        sessionStateService,
+        firstPartyGameStateService,
+        enableAgenticInlineMvp: true,
+      },
+    );
+
+    const agenticCoordinator = (tracedChatService as unknown as {
+      agenticTurnCoordinator: { runPreResponse: (...args: unknown[]) => Promise<unknown> };
+    }).agenticTurnCoordinator;
+    vi.spyOn(agenticCoordinator, "runPreResponse").mockRejectedValueOnce(new Error("pre failed"));
+
+    const result = await tracedChatService.respond(
+      sessionId,
+      { message: "Continue the scene." },
+      {},
+      ACCOUNT_ID,
+    );
+
+    expect(result.finalState).toBe("committed");
+    expect(result.generatedText).toContain("Generated scene for");
+  });
+
+  it("keeps respond success when post_response coordination fails", async () => {
+    const sessionId = nanoid();
+    const now = 1_736_020_183_000;
+
+    await seedSession(database, sessionId, now);
+
+    const tracedChatService = new ChatService(
+      database.db,
+      createMockTurnOrchestrator(),
+      new SimpleTokenCounter(),
+      {
+        resolveTurnModels: async () => ({ narrator: { source: "env", generationParams: { maxOutputTokens: 128 } } }),
+        turnCommitService: {
+          commit: vi.fn(async () => ({
+            outputPageId: "page-output-4",
+            assistantMessageId: "assistant-message-4",
+            usage: { promptTokens: 12, completionTokens: 34, totalTokens: 46 },
+            finalState: "committed" as const,
+            memory: undefined,
+          })),
+        } as never,
+        sessionStateService,
+        firstPartyGameStateService,
+        enableAgenticInlineMvp: true,
+      },
+    );
+
+    const agenticCoordinator = (tracedChatService as unknown as {
+      agenticTurnCoordinator: { runPostResponse: (...args: unknown[]) => Promise<unknown> };
+    }).agenticTurnCoordinator;
+    vi.spyOn(agenticCoordinator, "runPostResponse").mockRejectedValueOnce(new Error("post failed"));
+
+    const result = await tracedChatService.respond(
+      sessionId,
+      { message: "Continue the scene." },
+      {},
+      ACCOUNT_ID,
+    );
+
+    expect(result.finalState).toBe("committed");
+    expect(result.generatedText).toContain("Generated scene for");
   });
 
   it("requires explicit confirmation for session-state replay blockers", async () => {
