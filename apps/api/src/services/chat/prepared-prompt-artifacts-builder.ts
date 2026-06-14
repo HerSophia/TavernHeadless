@@ -40,6 +40,7 @@ import type {
   PreparedPromptArtifacts,
   PreparedPromptArtifactsMode,
   PreparedPromptArtifactsPhaseTraceEntry,
+  PromptRuntimeContributorOutput,
 } from "./types.js";
 import {
   PromptPreparationService,
@@ -122,6 +123,11 @@ export interface PreparePromptArtifactsArgs {
   stream?: boolean;
   toolTransportOverride?: ToolCallTransportKind;
   llmInstanceCapabilities?: LlmInstanceCapabilities;
+  /**
+   * R1 Agent Runtime aggregator 产出的额外 contributor。默认 undefined。
+   * 仅在 inline_mvp 打开时由上层传入；compat_strict 不会渲染它们。
+   */
+  agentContributors?: PromptRuntimeContributorOutput[];
 }
 
 export interface PreparedPromptArtifactsBuilderOptions {
@@ -282,6 +288,7 @@ export class PreparedPromptArtifactsBuilder {
       firstPartyStateContext: args.firstPartyStateContext,
       transport: toolTransportSelection.transport,
       toolsForSlot: narratorTools,
+      ...(args.agentContributors ?{ agentContributors: args.agentContributors } : {}),
     }).contributors;
     const injectionBuild = this.injectionContributorBuilder.build({
       promptMode,

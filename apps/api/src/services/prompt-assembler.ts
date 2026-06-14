@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { normalizePositiveInt } from "../lib/utils.js";
+import type { AgentRuntimeTrace } from "./agent-runtime/inline-agent-types.js";
 import { parseSessionCharacterSnapshot, type SessionCharacterSnapshot } from "../lib/character-snapshot.js";
 import {
   buildPromptRuntimeGovernanceSeed,
@@ -482,6 +483,11 @@ export interface PromptRuntimeTrace extends CorePromptRuntimeTrace<WorldbookMatc
   macro?: PromptRuntimeMacroTrace;
   historyNormalization?: PromptRuntimeHistoryNormalizationSummary;
   injection?: PromptRuntimeInjectionTrace;
+  /**
+   * Agent Runtime R1 单回合 inline trace。
+   * 仅在 live debug 的 runtime trace 打开时出现；preview / dry-run 不默认携带。
+   */
+  agentRuntime?: AgentRuntimeTrace;
 }
 
 export type PromptRuntimePreviewTrace = Pick<

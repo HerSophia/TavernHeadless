@@ -270,6 +270,89 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
     });
   });
 
+  it("forwards agent contributors into contributor resolution", async () => {
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+    });
+
+    await builder.prepare({
+      ...createPrepareArgs(),
+      session: {
+        ...createPrepareArgs().session,
+        promptMode: "compat_plus",
+      },
+      sessionInfo: {
+        ...createPrepareArgs().sessionInfo,
+        promptMode: "compat_plus",
+      },
+      agentContributors: [
+        {
+          id: "agent:director",
+          kind: "director_hint",
+          sourceKind: "director_hint",
+          modeScope: "compat_plus",
+          payload: { intent: "stay focused" },
+          promptRenderable: {
+            title: "Director hint",
+            content: "Intent: stay focused",
+          },
+          trace: {
+            deterministic: true,
+            cacheScope: "floor",
+          },
+        },
+      ],
+    } as never);
+
+    const assembleOptions = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7];
+    expect(assembleOptions?.contributors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Director hint",
+          content: "Intent: stay focused",
+        }),
+      ]),
+    );
+  });
+
+  it("does not inject agent contributors into compat_strict by default", async () => {
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+    });
+
+    await builder.prepare({
+      ...createPrepareArgs(),
+      agentContributors: [
+        {
+          id: "agent:director",
+          kind: "director_hint",
+          sourceKind: "director_hint",
+          modeScope: "compat_plus",
+          payload: { intent: "stay focused" },
+          promptRenderable: {
+            title: "Director hint",
+            content: "Intent: stay focused",
+          },
+          trace: {
+            deterministic: true,
+            cacheScope: "floor",
+          },
+        },
+      ],
+    } as never);
+
+    const contributors = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7]?.contributors ?? [];
+    expect(contributors.some((contributor: { sourceKind?: string }) => contributor.sourceKind === "director_hint")).toBe(false);
+  });
+
   it("records native tool choice application and disables stream when streaming tool calls are unsupported", async () => {
     modelService.resolveRequestedTurnConfig.mockReturnValueOnce({ enableTools: true });
     modelService.toOrchestratorTurnConfig.mockReturnValueOnce({ enableTools: true });

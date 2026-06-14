@@ -74,6 +74,9 @@ import { ChatRuntimeEventBridge } from "./runtime-event-bridge.js";
 import { ChatTargetResolver } from "./target-resolver.js";
 import { TurnExecutionFacade } from "./turn-execution-facade.js";
 import { NaiveTurnStrategy } from "./naive-turn-strategy.js";
+import { AgenticTurnStrategy } from "./agentic-turn-strategy.js";
+import { NarratorTurnExecutionService } from "./narrator-turn-execution-service.js";
+import { TurnCommitCoordinator } from "./turn-commit-coordinator.js";
 import { ChatTurnWorkflowRunner } from "./turn-workflow-runner.js";
 import { TurnModelService } from "./turn-model-service.js";
 import { TurnToolingService } from "./turn-tooling-service.js";
@@ -88,6 +91,7 @@ import { PreparedTurnContextBuilder } from "./prepared-turn-context-builder.js";
 import { DryRunService } from "./dry-run-service.js";
 import { PromptRuntimePreviewService } from "./prompt-runtime-preview-service.js";
 import { PreparedTurnInspectionService } from "../prompt-runtime/prepared-turn-inspection-service.js";
+import { isTemporaryConversationSessionLike } from "../temporary-conversation-types.js";
 import { findErrorByConstructor } from "./shared/error-utils.js";
 import { normalizeBranchId } from "./shared/branch.js";
 import { buildLivePromptRuntimeRequestPolicy } from "./shared/request-policy.js";
@@ -100,6 +104,17 @@ import {
   PROMPT_RUNTIME_REGEX_SUBSTITUTION_MODE,
 } from "../prompt-runtime/regex/index.js";
 import type { FirstPartyStateContext } from "./types.js";
+import { resolvePreparedPromptArtifactsPromptMode } from "./prompt-runtime-contributors.js";
+import {
+  AgentContextAggregator,
+  AgentInvocationService,
+  createBuiltinInlineAgentRegistry,
+  InlineAgentExecutor,
+  type AggregatedPreResponseContext,
+  type AgentRunRecord,
+  type AgentRuntimeTrace,
+} from "../agent-runtime/index.js";
+import { AgenticTurnCoordinator } from "./agentic-turn-coordinator.js";
 
 export * from "./contracts.js";
 export { ChatServiceError } from "./errors.js";
@@ -130,8 +145,11 @@ export class ChatService {
   private readonly replayGuardService: ReplayGuardService;
   private readonly promptPreparationService: PromptPreparationService;
   private readonly runtimeEventBridge: ChatRuntimeEventBridge;
+  private readonly narratorTurnExecutionService: NarratorTurnExecutionService;
+  private readonly turnCommitCoordinator: TurnCommitCoordinator;
   private readonly turnExecutionFacade: TurnExecutionFacade;
   private readonly naiveTurnStrategy: NaiveTurnStrategy;
+  private readonly agenticTurnStrategy: AgenticTurnStrategy;
   private readonly turnWorkflowRunner: ChatTurnWorkflowRunner;
   private readonly modelService: TurnModelService;
   private readonly toolingService: TurnToolingService;
@@ -146,6 +164,12 @@ export class ChatService {
   private readonly dryRunService: DryRunService;
   private readonly promptRuntimePreviewService: PromptRuntimePreviewService;
   private readonly preparedTurnInspectionService: PreparedTurnInspectionService;
+  private readonly agenticTurnCoordinator: AgenticTurnCoordinator;
+  private readonly enableAgenticInlineMvp: boolean;
+  private readonly onAgentRuntimeTrace?: (
+    trace: AgentRuntimeTrace,
+    context: { sessionId: string; floorId: string; branchId?: string },
+  ) => void;
 
   constructor(
     private readonly db: AppDb,
@@ -259,9 +283,27 @@ export class ChatService {
       this.firstPartyStateContextService,
       this.preparedPromptArtifactsBuilder,
     );
+    this.enableAgenticInlineMvp = options.enableAgenticInlineMvp === true;
+    this.onAgentRuntimeTrace = options.onAgentRuntimeTrace;
+    this.agenticTurnCoordinator = new AgenticTurnCoordinator(
+      new AgentInvocationService(),
+      new InlineAgentExecutor(createBuiltinInlineAgentRegistry()),
+      new AgentContextAggregator(),
+    );
+    this.narratorTurnExecutionService = new NarratorTurnExecutionService((args) => this.executeNarratorTurn(args));
+    this.turnCommitCoordinator = new TurnCommitCoordinator((args) => this.commitNarratorTurn(args));
     this.turnExecutionFacade = new TurnExecutionFacade((args) => this.performTurnExecutionAndCommit(args));
     this.naiveTurnStrategy = new NaiveTurnStrategy(this.turnExecutionFacade);
-    this.turnWorkflowRunner = new ChatTurnWorkflowRunner(this.naiveTurnStrategy);
+    this.agenticTurnStrategy = new AgenticTurnStrategy(
+      this.narratorTurnExecutionService,
+      this.turnCommitCoordinator,
+      this.agenticTurnCoordinator,
+    );
+    this.turnWorkflowRunner = new ChatTurnWorkflowRunner((strategyArgs) => (
+      strategyArgs.turnStrategy === "inline_mvp"
+        ? this.agenticTurnStrategy
+        : this.naiveTurnStrategy
+    ));
   }
 
   async respond(
@@ -1317,6 +1359,11 @@ export class ChatService {
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "semantic_resolved");
     await this.turnRunTracker.trackFloorRunPhase(args.floorId, "prechecked");
 
+    const useAgenticInlineMvp = this.shouldUseAgenticInlineMvp(args.session);
+    const agenticPreResponse = useAgenticInlineMvp
+      ? await this.runAgenticPreResponse(args)
+      : undefined;
+
     const prepared = await this.preparedTurnContextBuilder.prepare({
       mode: args.mode,
       runType: args.runType,
@@ -1339,6 +1386,7 @@ export class ChatService {
       abortSignal: args.abortSignal,
       onChunk: args.onChunk,
       stream: args.stream,
+      ...(agenticPreResponse ? { agentContributors: agenticPreResponse.aggregated.contributors } : {}),
     });
     const { execution, commit } = await this.turnWorkflowRunner.runPreparedTurnWorkflow({
       floorId: args.floorId,
@@ -1361,6 +1409,37 @@ export class ChatService {
       persistMemory: this.memoryStoreEnabled,
       conversationInputSnapshot: prepared.conversationInputSnapshot,
       supersedeSourceFloor: args.supersedeSourceFloor,
+      turnStrategy: useAgenticInlineMvp ? "inline_mvp" : "naive",
+      ...(useAgenticInlineMvp
+        ? {
+            inlineMvp: {
+              ...(agenticPreResponse ? { preResponse: agenticPreResponse } : {}),
+              ...(args.firstPartyStateContext ? { firstPartyStateContext: args.firstPartyStateContext } : {}),
+              ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),
+              ...(prepared.promptDebug.runtimeTrace
+                ? {
+                    attachTrace: (trace: AgentRuntimeTrace) => {
+                      prepared.promptDebug.runtimeTrace = {
+                        ...prepared.promptDebug.runtimeTrace,
+                        agentRuntime: trace,
+                      };
+                    },
+                  }
+                : {}),
+              ...(this.onAgentRuntimeTrace
+                ? {
+                    notifyTrace: (trace: AgentRuntimeTrace) => {
+                      this.onAgentRuntimeTrace?.(trace, {
+                        sessionId: args.sessionId,
+                        floorId: args.floorId,
+                        ...(args.branchId ? { branchId: args.branchId } : {}),
+                      });
+                    },
+                  }
+                : {}),
+            },
+          }
+        : {}),
     });
 
     if (prepared.promptDebug.runtimeTrace && execution.toolTransport) {
@@ -1380,6 +1459,53 @@ export class ChatService {
     }
 
     return { prepared, execution, commit };
+  }
+
+  private async runAgenticPreResponse(turn: {
+    sessionId: string;
+    branchId?: string;
+    floorId: string;
+    pageId?: string;
+    accountId: string;
+    mode: "respond" | "regenerate" | "retry_floor" | "edit_and_regenerate";
+    session: {
+      promptMode: import("../prompt-assembler.js").SessionPromptInfo["promptMode"];
+      metadataJson: string | null;
+    };
+    firstPartyStateContext?: FirstPartyStateContext;
+    abortSignal?: AbortSignal;
+  }): Promise<{ aggregated: AggregatedPreResponseContext; records: AgentRunRecord[] } | undefined> {
+    try {
+      const promptMode = resolvePreparedPromptArtifactsPromptMode({
+        mode: turn.mode,
+        session: turn.session,
+      });
+      return await this.agenticTurnCoordinator.runPreResponse({
+        source: {
+          kind: "respond_pre_response",
+          sessionId: turn.sessionId,
+          floorId: turn.floorId,
+          ...(turn.pageId ? { pageId: turn.pageId } : {}),
+        },
+        context: {
+          sessionId: turn.sessionId,
+          ...(turn.branchId ? { branchId: turn.branchId } : {}),
+          floorId: turn.floorId,
+          ...(turn.pageId ? { pageId: turn.pageId } : {}),
+          accountId: turn.accountId,
+          ...(turn.firstPartyStateContext ? { firstPartyStateContext: turn.firstPartyStateContext } : {}),
+          promptMode,
+          ...(turn.abortSignal ? { abortSignal: turn.abortSignal } : {}),
+        },
+      });
+    } catch {
+      // pre_response Agent 失败 fail-open：不阻断本回合，仅放弃 contributor 注入。
+      return undefined;
+    }
+  }
+
+  private shouldUseAgenticInlineMvp(session: { kind?: string | null }): boolean {
+    return this.enableAgenticInlineMvp && !isTemporaryConversationSessionLike(session);
   }
 
   private composeAssistantOutputText(
@@ -1450,6 +1576,43 @@ export class ChatService {
     execution: TurnExecutionResult;
     commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
   }> {
+    const narrator = await this.executeNarratorTurn(args);
+    const commit = await this.commitNarratorTurn({
+      ...args,
+      execution: narrator.execution,
+      turnInput: narrator.turnInput,
+      toolExecutionRunId: narrator.toolExecutionRunId,
+    });
+
+    return { execution: narrator.execution, commit };
+  }
+
+  private async executeNarratorTurn(args: {
+    floorId: string;
+    sessionId: string;
+    branchId?: string;
+    accountId: string;
+    turnInput: TurnInput;
+    promptSnapshot?: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
+    promptRuntimeInspection?: import("../prompt-runtime-control-service.js").PromptRuntimeInspectionResult;
+    macroStagedMutations?: import("../st-macros/index.js").StMacroStagedMutation[];
+    sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
+    sessionStateOperationLog?: import("../../session-state/session-state-operation-log.js").SessionStateOperationLogContext;
+    turnOperationLog?: import("../turn-commit-service.js").TurnCommitOperationLogContext;
+    resolvedTurnModels: ResolvedTurnModels;
+    orchestrationFailureCode: string;
+    orchestrationFailureMessage: string;
+    persistMemory: boolean;
+    runType: import("@tavern/core").FloorRunType;
+    memoryConsolidationRequested: boolean;
+    commitFailureMessage: string;
+    conversationInputSnapshot?: import("./shared/metadata.js").FloorConversationInputSnapshot;
+    supersedeSourceFloor?: { floorId: string };
+  }): Promise<{
+    execution: TurnExecutionResult;
+    turnInput: TurnInput;
+    toolExecutionRunId: string;
+  }> {
     const turnInput: TurnInput = args.turnInput.toolExecutionRunId
       ? args.turnInput
       : {
@@ -1471,8 +1634,8 @@ export class ChatService {
           replayBlockedError.message,
           error,
           {
-            blocking_executions: replayBlockedError.blockingExecutions.map((execution) =>
-              toReplayBlockingExecutionDetailFromBlockedError(execution)),
+            blocking_executions: replayBlockedError.blockingExecutions.map((executionDetail) =>
+              toReplayBlockingExecutionDetailFromBlockedError(executionDetail)),
           },
         );
       }
@@ -1504,6 +1667,36 @@ export class ChatService {
       );
     }
 
+    return {
+      execution,
+      turnInput,
+      toolExecutionRunId,
+    };
+  }
+
+  private async commitNarratorTurn(args: {
+    floorId: string;
+    sessionId: string;
+    branchId?: string;
+    accountId: string;
+    turnInput: TurnInput;
+    execution: TurnExecutionResult;
+    toolExecutionRunId: string;
+    promptSnapshot?: NonNullable<PromptRuntimeExecutionResult["promptSnapshotRecord"]>;
+    promptRuntimeInspection?: import("../prompt-runtime-control-service.js").PromptRuntimeInspectionResult;
+    macroStagedMutations?: import("../st-macros/index.js").StMacroStagedMutation[];
+    sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
+    sessionStateOperationLog?: import("../../session-state/session-state-operation-log.js").SessionStateOperationLogContext;
+    turnOperationLog?: import("../turn-commit-service.js").TurnCommitOperationLogContext;
+    resolvedTurnModels: ResolvedTurnModels;
+    persistMemory: boolean;
+    runType: import("@tavern/core").FloorRunType;
+    memoryConsolidationRequested: boolean;
+    commitFailureMessage: string;
+    conversationInputSnapshot?: import("./shared/metadata.js").FloorConversationInputSnapshot;
+    supersedeSourceFloor?: { floorId: string };
+    assistantMessageRef?: import("../chat-message-persistence.js").PersistedMessageRef;
+  }): Promise<Awaited<ReturnType<TurnCommitService["commit"]>>> {
     try {
       this.firstPartyStateContextService.stageExecutionState({
         accountId: args.accountId,
@@ -1511,7 +1704,7 @@ export class ChatService {
         branchId: args.branchId ?? "main",
         floorId: args.floorId,
         runType: args.runType,
-        execution,
+        execution: args.execution,
         promptSnapshot: args.promptSnapshot,
       });
       this.turnSessionStateService.stageTurnBoundSessionStateWrites({
@@ -1530,7 +1723,7 @@ export class ChatService {
         args.floorId,
         "session_state_stage_failed",
       );
-      await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+      await this.markToolExecutionRunOutcome(args.toolExecutionRunId, "discarded");
       await this.turnRunTracker.failRunAndFloorBestEffort(args.floorId, error, "session_state_stage_failed");
       if (error instanceof ChatServiceError) {
         throw error;
@@ -1549,28 +1742,29 @@ export class ChatService {
       floorId: args.floorId,
       sessionId: args.sessionId,
       branchId: args.branchId,
-      execution,
-      runId: toolExecutionRunId,
+      execution: args.execution,
+      runId: args.toolExecutionRunId,
       operationLog: args.turnOperationLog,
       variableCommit: {
-        pageId: turnInput.pageId,
-        rerouteToSessionState: (execution.bufferedVariableMutations ?? []).some((mutation) => mutation.source?.targetSurface === "session_state"),
+        pageId: args.turnInput.pageId,
+        rerouteToSessionState: (args.execution.bufferedVariableMutations ?? []).some((mutation) => mutation.source?.targetSurface === "session_state"),
         actorClientId: null,
       },
       promptSnapshot: args.promptSnapshot,
       promptRuntimeInspection: args.promptRuntimeInspection,
-      toolExecutionRecords: execution.toolExecutionRecords,
-      pendingToolJobs: execution.pendingToolJobs,
+      toolExecutionRecords: args.execution.toolExecutionRecords,
+      pendingToolJobs: args.execution.pendingToolJobs,
       macroStagedMutations: args.macroStagedMutations,
       memoryCommit: args.persistMemory
         ? {
             enableConsolidation: args.memoryConsolidationRequested,
-            summaries: execution.summaries,
-            consolidationOutput: execution.consolidationResult?.output,
+            summaries: args.execution.summaries,
+            consolidationOutput: args.execution.consolidationResult?.output,
           }
         : undefined,
       conversationInputSnapshot: args.conversationInputSnapshot,
       ...(args.supersedeSourceFloor ? { supersedeSourceFloor: args.supersedeSourceFloor } : {}),
+      ...(args.assistantMessageRef ? { assistantMessageRef: args.assistantMessageRef } : {}),
     };
 
     let commit: Awaited<ReturnType<TurnCommitService["commit"]>>;
@@ -1597,7 +1791,7 @@ export class ChatService {
         },
       );
     } catch (error) {
-      await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+      await this.markToolExecutionRunOutcome(args.toolExecutionRunId, "discarded");
       if (isSqliteBusyError(error)) {
         await this.emitBestEffortEvent("commit.busy", {
           sessionId: args.sessionId,
@@ -1637,12 +1831,12 @@ export class ChatService {
       }
 
       if (error instanceof FloorStateConflictError) {
-        await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+        await this.markToolExecutionRunOutcome(args.toolExecutionRunId, "discarded");
         await this.turnRunTracker.tryMarkRunFailed(args.floorId, error, "commit_conflict");
         throw new ChatServiceError("commit_conflict", `${args.commitFailureMessage}: ${error.message}`, error);
       }
 
-      await this.markToolExecutionRunOutcome(toolExecutionRunId, "discarded");
+      await this.markToolExecutionRunOutcome(args.toolExecutionRunId, "discarded");
       await this.turnRunTracker.failRunAndFloorBestEffort(args.floorId, error, "turn_commit_failed");
       throw new ChatServiceError(
         "turn_commit_failed",
@@ -1662,7 +1856,7 @@ export class ChatService {
 
     await this.modelService.markTurnModelUsed(args.resolvedTurnModels, args.accountId);
 
-    return { execution, commit };
+    return commit;
   }
 
   private async markToolExecutionRunOutcome(
