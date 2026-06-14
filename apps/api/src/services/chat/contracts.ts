@@ -298,5 +298,19 @@ export interface ChatServiceOptions {
   accountMode?: AccountContextOptions["accountMode"];
   defaultAccountId?: string;
   projectEventLiveHub?: ProjectEventLiveHub;
+  /**
+   * 是否启用 R1 Agent Runtime单回合 inline MVP（inline_mvp）。
+   * 默认关闭。关闭时主链走 NaiveTurnStrategy，行为与现状一致；
+   * 打开时在 respond 单回合生成路径前后串联 inline Agent。
+   */
+  enableAgenticInlineMvp?: boolean;
+  /**
+   * R1 Agent Runtime trace 观察回调。仅在 inline_mvp 打开且提供本回调时触发。
+   * R1 仅用于观察，不参与 commit 决策；Phase 6 再接入 debug / runtime trace。
+   */
+  onAgentRuntimeTrace?: (
+    trace: import("../agent-runtime/inline-agent-types.js").AgentRuntimeTrace,
+    context: { sessionId: string; floorId: string; branchId?:string },
+  ) => void;
 }
 

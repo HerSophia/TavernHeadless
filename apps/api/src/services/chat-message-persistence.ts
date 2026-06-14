@@ -113,10 +113,11 @@ export class ChatMessagePersistence {
     executor: DbExecutor,
     floorId: string,
     content: string,
-    timestamp: number
+    timestamp: number,
+    refs?: PersistedMessageRef,
   ): PersistedMessageRef {
-    const pageId = nanoid();
-    const messageId = nanoid();
+    const pageId = refs?.pageId ?? nanoid();
+    const messageId = refs?.messageId ?? nanoid();
 
     executor.insert(messagePages).values({
       id: pageId,

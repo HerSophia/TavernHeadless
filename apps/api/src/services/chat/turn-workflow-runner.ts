@@ -2,9 +2,11 @@ import type { ExecuteTurnAndCommitArgs, ExecuteTurnAndCommitResult } from "./tur
 import type { ChatTurnExecutionStrategy } from "./naive-turn-strategy.js";
 
 export class ChatTurnWorkflowRunner {
-  constructor(private readonly strategy: ChatTurnExecutionStrategy) {}
+  constructor(
+    private readonly resolveStrategy: (args: ExecuteTurnAndCommitArgs) => ChatTurnExecutionStrategy,
+  ) {}
 
   async runPreparedTurnWorkflow(args: ExecuteTurnAndCommitArgs): Promise<ExecuteTurnAndCommitResult> {
-    return this.strategy.execute(args);
+    return this.resolveStrategy(args).execute(args);
   }
 }
