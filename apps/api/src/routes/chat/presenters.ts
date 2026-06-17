@@ -218,22 +218,97 @@ export function mapPromptRuntimeToolTransportToSnakeCase(
   };
 }
 
-function mapPromptRuntimeInjectionTraceToSnakeCase(
+type PromptRuntimeInjectionTraceItemShape =
+  NonNullable<PromptRuntimeTrace["injection"]>["items"][number];
+
+/**
+ * I3 placement_params trace 转换：camelCase -> snake_case，不输出未声明字段。
+ */
+function mapInjectionPlacementParamsToSnakeCase(
+  params: PromptRuntimeInjectionTraceItemShape["placementParamsRequested"] | undefined,
+): Record<string, unknown> | null {
+  if (!params) {
+    return null;
+  }
+  return {
+    ...(params.floorNo !== undefined ? { floor_no: params.floorNo } : {}),
+    ...(params.offset !== undefined ? { offset: params.offset } : {}),
+    ...(params.depth !== undefined ? { depth: params.depth } : {}),
+  };
+}
+
+/**
+ * I3 锚点 trace 转换：camelCase -> snake_case，不暴露内部数字 order。
+ */
+function mapInjectionAnchorToSnakeCase(
+  anchor: PromptRuntimeInjectionTraceItemShape["anchorResolved"] | undefined,
+): Record<string, unknown> | null {
+  if (!anchor) {
+    return null;
+  }
+  switch (anchor.kind) {
+    case "section":
+      return { kind: anchor.kind, internal_key: anchor.internalKey };
+    case "floor_by_no":
+      return {
+        kind: anchor.kind,
+        floor_no: anchor.floorNo,
+        edge: anchor.edge,
+        ...(anchor.resolvedDepth !== undefined ? { resolved_depth: anchor.resolvedDepth } : {}),
+      };
+    case "floor_from_end":
+      return { kind: anchor.kind, offset: anchor.offset, edge: anchor.edge };
+    case "worldbook_depth":
+      return { kind: anchor.kind, depth: anchor.depth };
+    case "worldbook_edge":
+      return { kind: anchor.kind, edge: anchor.edge };
+    case "worldbook_author_note_top":
+      return { kind: anchor.kind };
+    case "contributor_block":
+      return { kind: anchor.kind, edge: anchor.edge };
+    default:
+      return null;
+  }
+}
+
+/**
+ * I3 来源链 trace 转换：camelCase -> snake_case。
+ */
+function mapInjectionSourceChainToSnakeCase(
+  sourceChain: PromptRuntimeInjectionTraceItemShape["sourceChain"] | undefined,
+): Record<string, unknown> | null {
+  if (!sourceChain) {
+    return null;
+  }
+  return {
+    ...(sourceChain.agentTypeId !== undefined ? { agent_type_id: sourceChain.agentTypeId } : {}),
+    ...(sourceChain.agentRunId !== undefined ? { agent_run_id: sourceChain.agentRunId } : {}),
+    ...(sourceChain.temporaryConversationId !== undefined
+      ? { temporary_conversation_id: sourceChain.temporaryConversationId }
+      : {}),
+    ...(sourceChain.debugSessionTag !== undefined ? { debug_session_tag: sourceChain.debugSessionTag } : {}),
+  };
+}
+
+export function mapPromptRuntimeInjectionTraceToSnakeCase(
   injection: NonNullable<PromptRuntimeTrace["injection"]>,
 ): Record<string, unknown> {
   return {
-    items: injection.items.map((item: NonNullable<PromptRuntimeTrace["injection"]>["items"][number]) => ({
+    items: injection.items.map((item: PromptRuntimeInjectionTraceItemShape) => ({
       request_index: item.requestIndex,
       source_kind: item.sourceKind,
       injection_id: item.injectionId ?? null,
       enabled: item.enabled ?? null,
       scope: item.scope,
       placement_requested: item.placementRequested,
+      placement_params_requested: mapInjectionPlacementParamsToSnakeCase(item.placementParamsRequested),
       order_requested: item.orderRequested,
       title: item.title,
       content_length: item.contentLength,
       applied: item.applied,
       placement_resolved: item.placementResolved ?? null,
+      anchor_resolved: mapInjectionAnchorToSnakeCase(item.anchorResolved),
+      source_chain: mapInjectionSourceChainToSnakeCase(item.sourceChain),
       not_applied_reason: item.notAppliedReason ?? null,
     })),
   };

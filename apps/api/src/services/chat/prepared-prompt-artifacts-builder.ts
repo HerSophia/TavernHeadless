@@ -132,6 +132,13 @@ export interface PreparePromptArtifactsArgs {
 
 export interface PreparedPromptArtifactsBuilderOptions {
   enablePersistentInjections?: boolean;
+  /**
+   * I3 阶段5：是否把 inline Agent 产出的 contributor 改走 prompt runtime injection 通路。
+   * 默认 false：保持原有 contributor 渲染路径，行为不变。
+   * true：agentContributors 转为 agent_injection 走注入通路，获得 placement / 排序 / trace，
+   * 且不再进入 contributor 渲染路径，避免两条管线重复注入。
+   */
+  routeAgentContributorsAsInjections?: boolean;
 }
 
 export class PreparedPromptArtifactsBuilder {
@@ -281,18 +288,28 @@ export class PreparedPromptArtifactsBuilder {
       scope: injection.scope ?? "request",
     }));
 
+    // I3 阶段5：开启 routeAgentContributorsAsInjections 后，agentContributors 改走 injection 通路，
+    // 不再进入 contributor 渲染通路，避免两条管线重复注入。
+    const renderAgentContributors =
+      this.options.routeAgentContributorsAsInjections !== true && args.agentContributors !== undefined;
     const contributors = this.contributorRunner.resolve({
       promptMode,
       memorySummary: effectiveMemorySummary,
-      memoryTrace,
+ memoryTrace,
       firstPartyStateContext: args.firstPartyStateContext,
       transport: toolTransportSelection.transport,
       toolsForSlot: narratorTools,
-      ...(args.agentContributors ?{ agentContributors: args.agentContributors } : {}),
+      ...(renderAgentContributors ? { agentContributors: args.agentContributors } : {}),
     }).contributors;
     const injectionBuild = this.injectionContributorBuilder.build({
       promptMode,
-      injections: [...persistentInjectionInputs, ...requestInjectionInputs],
+      injections: [
+        ...persistentInjectionInputs,
+        ...requestInjectionInputs,
+        ...(this.options.routeAgentContributorsAsInjections === true
+          ? mapAgentContributorsToInjectionInputs(args.agentContributors, promptMode)
+          : []),
+      ],
     });
     const contributorRenderables = [
       ...buildPromptRuntimeContributorRenderablesForAssembly(
@@ -354,6 +371,7 @@ export class PreparedPromptArtifactsBuilder {
         budget: args.executionContext.effectivePolicy?.budget,
         contributors: contributorRenderables,
         injectionItems: injectionBuild.items,
+        historyFloorNos: buildHistoryFloorNos(conversationState),
         sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
         memoryRuntimeTrace,
       },
@@ -648,4 +666,55 @@ function resolveHistoryMaxTurns(
   }
 
   return value;
+}
+
+
+/**
+ * I3：构造与历史消息等长的楼层编号序列，供楼层相对位置 injection 解析。
+ *
+ * conversationState.history 与 selectedTurns 的历史部分一一对应（selectedTurns 去掉末尾 user turn
+ * 即 historyTurns）。每个 turn 取 floorRange.end 作为代表楼层编号；turn 无楼层信息时为 null。
+ */
+/**
+ * I3 阶段5：把 inline Agent 产出的 contributor 改写为 agent_injection 注入输入。
+ *
+ * - 仅取有 promptRenderable 的 contributor（title/content），空渲染跳过。
+ * - 默认 placement 为 after_contributor_block（仅 native 可用），非 native 回退 after_history；
+ *   mode 不开放时由 resolver 给出 placement_not_available_in_mode 跟踪，不静默吞掉。
+ * - sourceChain.agentTypeId 记录 contributor.sourceKind 作为来源追踪，不伪造 runId。
+ */
+function mapAgentContributorsToInjectionInputs(
+  agentContributors: PromptRuntimeContributorOutput[] | undefined,
+  promptMode: string,
+): PromptRuntimeInjectionBuilderInput[] {
+  const contributors = agentContributors ?? [];
+  if (contributors.length === 0) {
+    return [];
+  }
+  const placement = promptMode === "native" ? "after_contributor_block" : "after_history";
+  const inputs: PromptRuntimeInjectionBuilderInput[] = [];
+  for (const contributor of contributors) {
+    const renderable = contributor.promptRenderable;
+    if (!renderable) {
+      continue;
+    }
+    inputs.push({
+      sourceKind: "agent_injection",
+      title: renderable.title,
+      content: renderable.content,
+      placement,
+      scope: "request",
+      sourceChain: { agentTypeId: contributor.sourceKind },
+    });
+ }
+  return inputs;
+}
+
+function buildHistoryFloorNos(
+  conversationState: PromptRuntimeConversationWindow,
+): Array<number | null> {
+  return conversationState.history.map((_message, index) => {
+    const turn = conversationState.selectedTurns[index];
+    return turn?.floorRange?.end ?? null;
+  });
 }

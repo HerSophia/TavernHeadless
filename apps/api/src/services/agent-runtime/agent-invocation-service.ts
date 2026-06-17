@@ -12,6 +12,7 @@ import type {
   AgentInvocationSource,
   InlineAgentSpec,
 } from "./inline-agent-types.js";
+import { AgentMediumResolver } from "./agent-medium-resolver.js";
 
 const PRE_RESPONSE_AGENTS: InlineAgentSpec[] = [
   {
@@ -90,6 +91,8 @@ const POST_RESPONSE_AGENTS: InlineAgentSpec[] = [
 ];
 
 export class AgentInvocationService {
+  private readonly mediumResolver = new AgentMediumResolver();
+
   /**
    * 根据调用来源解析执行计划。
    */
@@ -104,7 +107,10 @@ export class AgentInvocationService {
           {
             groupId: "pre_response_parallel",
             parallel: true,
-            agents: PRE_RESPONSE_AGENTS.map((spec) => ({ ...spec })),
+            agents: PRE_RESPONSE_AGENTS.map((spec) => ({
+              ...spec,
+              medium: this.mediumResolver.resolve({ spec }),
+            })),
           },
         ],
       };
@@ -117,7 +123,10 @@ export class AgentInvocationService {
         {
           groupId: "post_response_parallel",
           parallel: true,
-          agents: POST_RESPONSE_AGENTS.map((spec) => ({ ...spec })),
+          agents: POST_RESPONSE_AGENTS.map((spec) => ({
+            ...spec,
+            medium: this.mediumResolver.resolve({ spec }),
+          })),
         },
       ],
     };

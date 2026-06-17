@@ -13,6 +13,7 @@ outline: [2, 3]
 - 你要创建新消息页
 - 你要切换激活页
 - 你要查看或修改某个页的属性
+- 你要对 committed floor 的当前正文做页级人工修订
 
 ## 一个简单例子
 
@@ -127,6 +128,8 @@ PATCH /pages/:id
 - 公开请求体不再接受 `is_active`
 - 如果需要切换当前激活版本，必须使用 `PATCH /pages/:id/activate`
 - 旧客户端如果继续发送 `is_active`，会收到 `400 validation_error`
+- 如果目标页已经位于 committed floor，这个通用更新入口仍然会返回 `409 content_target_locked`
+- committed floor 的人工修订必须走下面的专用 `manual-revisions` 路由
 
 ### 错误
 
@@ -135,6 +138,61 @@ PATCH /pages/:id
 | `400` | `validation_error` | 请求体校验失败 |
 | `404` | `not_found` | 消息页不存在 |
 | `409` | `page_conflict` | 更新后会命中页版本唯一性或 active 槽位唯一性约束 |
+| `409` | `content_target_locked` | 目标页所在楼层处于 committed 或 superseded，只允许走专用人工修订入口 |
+
+## 查看页级人工修订历史
+
+```http
+GET /pages/:id/manual-revisions
+```
+
+这个端点用于读取 committed floor 页级人工修订历史。
+它本质上会解析该 page 对应的唯一可编辑 message，然后返回该 message 的修订时间线。
+
+### 响应 `200`
+
+返回值结构与 message 级人工修订历史相同，至少包含：
+
+- `target_kind`、`target_id`
+- `session_id`、`branch_id`、`floor_id`、`page_id`、`message_id`
+- `current_content`、`current_token_count`
+- `latest_revision_no`
+- `items[]`
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 消息页不存在 |
+| `409` | `manual_revision_invalid_state` | 目标不满足人工修订条件 |
+| `409` | `manual_revision_shape_not_supported` | 这个 page 不能稳定映射到单条可编辑 message |
+
+## 提交页级人工修订
+
+```http
+POST /pages/:id/manual-revisions
+```
+
+这个端点只修改当前展示正文，也就是 page 下那条目标 message 的 `messages.content` 与 `messages.token_count`。
+它不会改 `GET /floors/:id/result` 返回的 committed snapshot，也不会改 prompt snapshot、memory、session state、tool audit。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `content` | string | **是** | 修订后的目标正文 |
+| `expected_latest_revision_no` | integer | **是** | 期望的最新修订号，用于乐观锁 |
+| `reason` | string | 否 | 本次人工修订原因 |
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `404` | `not_found` | 消息页不存在 |
+| `409` | `manual_revision_invalid_state` | 目标不满足人工修订条件 |
+| `409` | `manual_revision_shape_not_supported` | 这个 page 不能稳定映射到单条可编辑 message |
+| `409` | `manual_revision_conflict` | `expected_latest_revision_no` 与当前最新修订号不一致 |
 
 ## 删除消息页
 

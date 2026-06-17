@@ -23,6 +23,7 @@ describe("PromptRuntimeInjectionContributorBuilder", () => {
       requestedPlacement: "before_history",
       requestedOrder: 100,
       scope: "request",
+      anchor: { kind: "section", internalKey: "history.before" },
     }]);
 
     expect(result.items).toEqual([{
@@ -36,6 +37,7 @@ describe("PromptRuntimeInjectionContributorBuilder", () => {
       contentLength: "Keep the north pass in focus.".length,
       applied: true,
       placementResolved: "history.before",
+      anchorResolved: { kind: "section", internalKey: "history.before" },
     }]);
   });
 
@@ -151,6 +153,7 @@ describe("PromptRuntimeInjectionContributorBuilder", () => {
       contentLength: 4,
       applied: false,
       placementResolved: "history.before",
+      anchorResolved: { kind: "section", internalKey: "history.before" },
       notAppliedReason: "empty_title_or_content",
     }]);
   });

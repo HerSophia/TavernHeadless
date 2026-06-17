@@ -126,10 +126,11 @@ POST /sessions/:id/respond
 | `title` | string | 是 | 注入标题 |
 | `content` | string | 是 | 注入正文 |
 | `placement` | string | 是 | 语义锚点位置 |
+| `placement_params` | object | 否 | 高级位置参数，字段为 `floor_no` / `offset` / `depth`，均为可选非负整数 |
 | `order` | integer | 否 | 同一 placement 内部排序，默认 `100` |
 | `scope` | string | 否 | 当前固定为 `request` |
 
-当前开放的 `placement` 为：
+通用结构 `placement`（三种 prompt mode 都开放）：
 
 - `before_system_prompt` / `after_system_prompt`
 - `before_character` / `after_character`
@@ -141,6 +142,12 @@ POST /sessions/:id/respond
 - `before_current_user_input` / `after_current_user_input`
 - `before_output_instruction`
 - `before_assistant_prefill`
+
+高级 `placement`（需要 `placement_params` 或受 prompt mode 限制）：
+
+- 楼层相对位置：`before_floor` / `after_floor`（需 `placement_params.floor_no`）、`before_floor_from_end` / `after_floor_from_end`（需 `placement_params.offset`）
+- 世界书细分位置（仅 `compat_plus` / `native`）：`worldbook_depth`（需 `placement_params.depth`）、`worldbook_before` / `worldbook_after`、`worldbook_author_note_top`
+- native 专属位置（仅 `native`）：`before_contributor_block` / `after_contributor_block`
 
 示例：
 
@@ -209,17 +216,23 @@ POST /sessions/:id/respond
 - `source_kind`
 - `scope`
 - `placement_requested`
+- `placement_params_requested`
 - `order_requested`
 - `title`
 - `content_length`
 - `applied`
 - `placement_resolved`
+- `anchor_resolved`
+- `source_chain`
 - `not_applied_reason`
 
 其中：
 
 - `applied=true` 表示这条 injection 在本轮组装中成功落到了目标语义锚点
-- `not_applied_reason` 用于说明未生效原因，当前可能为 `placement_not_available_in_mode`、`unknown_placement`、`empty_title_or_content`、`prompt_section_absent`
+- `placement_params_requested` 回显客户端声明的 `placement_params`，未声明时为 `null`
+- `anchor_resolved` 是解析后的锚点描述，不暴露内部数字顺序；无法解析时为 `null`
+- `source_chain` 是来源链，客户端来源的 injection 该字段为 `null`
+- `not_applied_reason` 用于说明未生效原因，当前可能为 `placement_not_available_in_mode`、`unknown_placement`、`empty_title_or_content`、`prompt_section_absent`、`disabled`、`mode_scope_mismatch`、`expired`、`missing_placement_params`、`invalid_placement_params`、`floor_no_out_of_history_window`、`floor_offset_out_of_history_window`
 
 如果本轮 prompt 组装实际命中了宏系统，`runtime_trace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
 

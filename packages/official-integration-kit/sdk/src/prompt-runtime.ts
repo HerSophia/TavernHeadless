@@ -255,7 +255,20 @@ export type PromptRuntimeInjectionPlacement =
   | "before_current_user_input"
   | "after_current_user_input"
   | "before_output_instruction"
-  | "before_assistant_prefill";
+  | "before_assistant_prefill"
+  // I3 楼层相对位置
+  | "before_floor"
+  | "after_floor"
+  | "before_floor_from_end"
+  | "after_floor_from_end"
+  // I3 世界书细分位置（compat_plus / native）
+  | "worldbook_depth"
+  | "worldbook_before"
+  | "worldbook_after"
+  | "worldbook_author_note_top"
+  // I3 native 专属位置
+  | "before_contributor_block"
+  | "after_contributor_block";
 export type PromptRuntimeInjectionScope = "request" | "session" | "branch";
 export type PromptRuntimeInjectionSourceKind = "client_injection";
 export type PromptRuntimeInjectionNotAppliedReason =
@@ -265,26 +278,71 @@ export type PromptRuntimeInjectionNotAppliedReason =
   | "prompt_section_absent"
   | "disabled"
   | "mode_scope_mismatch"
-  | "expired";
+  | "expired"
+  // I3 楼层 / 参数相关
+  | "missing_placement_params"
+  | "invalid_placement_params"
+  | "floor_no_out_of_history_window"
+  | "floor_offset_out_of_history_window";
+/**
+ * I3 高级位置参数。仅在需要参数的 placement 上有意义，字段均为可选非负整数。
+ */
+export type PromptRuntimeInjectionPlacementParams = {
+  floorNo?: number;
+  offset?: number;
+  depth?: number;
+};
+/**
+ * I3 锚点描述。客户端不接触内部数字 order，只读取语义锚点。
+ */
+export type PromptRuntimeInjectionAnchor ={
+  kind:
+    | "section"
+    | "floor_by_no"
+    | "floor_from_end"
+    | "worldbook_depth"
+    | "worldbook_edge"
+    | "worldbook_author_note_top"
+    | "contributor_block";
+  internalKey?: string;
+  floorNo?: number;
+  offset?: number;
+  depth?: number;
+  edge?: "before" | "after";
+  resolvedDepth?: number;
+};
+/**
+ * I3 来源链。用于追踪一条 injection 的来源（client / agent / temporary conversation / debug）。
+ */
+export type PromptRuntimeInjectionSourceChain = {
+  agentTypeId?: string;
+  agentRunId?: string;
+  temporaryConversationId?: string;
+  debugSessionTag?: string;
+};
 export type PromptRuntimeInjectionInput = {
   sourceKind: PromptRuntimeInjectionSourceKind;
   title: string;
   content: string;
   placement: PromptRuntimeInjectionPlacement;
+  placementParams?: PromptRuntimeInjectionPlacementParams;
   order?: number;
   scope?: PromptRuntimeInjectionScope;
 };
 export type PromptRuntimeInjectionResult = {
-  requestIndex: number;
+requestIndex: number;
   sourceKind: string;
   scope: PromptRuntimeInjectionScope;
   placementRequested: string;
+  placementParamsRequested?: PromptRuntimeInjectionPlacementParams;
   orderRequested: number;
   title: string;
   contentLength: number;
   applied: boolean;
   notAppliedReason?: PromptRuntimeInjectionNotAppliedReason;
   placementResolved?: string;
+  anchorResolved?: PromptRuntimeInjectionAnchor;
+  sourceChain?: PromptRuntimeInjectionSourceChain;
 };
 export type PromptRuntimeInjectionTrace = { items: PromptRuntimeInjectionResult[] };
 
@@ -629,9 +687,24 @@ export function mapPromptRuntimeInjectionsRequest(
     title: injection.title,
     content: injection.content,
     placement: injection.placement,
+    placement_params: mapPromptRuntimeInjectionPlacementParamsRequest(injection.placementParams),
     order: injection.order,
     scope: injection.scope,
   }));
+}
+
+function mapPromptRuntimeInjectionPlacementParamsRequest(
+  params?: PromptRuntimeInjectionPlacementParams,
+): Record<string, number> | undefined {
+  if (!params) {
+    return undefined;
+  }
+  const mapped = compactObject({
+    floor_no: params.floorNo,
+    offset: params.offset,
+    depth: params.depth,
+  }) as Record<string, number>;
+  return Object.keys(mapped).length > 0? mapped : undefined;
 }
 
 export function mapPromptSnapshotPayload(value: unknown): PromptSnapshotPreview | undefined {
@@ -1065,16 +1138,20 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
 
   const scope = readString(record.scope, "request");
   const notAppliedReason = readOptionalString(record.not_applied_reason);
+  const placementParamsRequested = mapPromptRuntimeInjectionPlacementParamsResult(record.placement_params_requested);
+  const anchorResolved = mapPromptRuntimeInjectionAnchorResult(record.anchor_resolved);
+  const sourceChain = mapPromptRuntimeInjectionSourceChainResult(record.source_chain);
 
   return {
     requestIndex: readNumber(record.request_index),
     sourceKind: readString(record.source_kind),
     scope: scope === "session"
-      ? "session"
+   ? "session"
       : scope === "branch"
         ? "branch"
         : "request",
-    placementRequested: readString(record.placement_requested),
+ placementRequested: readString(record.placement_requested),
+    ...(placementParamsRequested ? { placementParamsRequested } : {}),
     orderRequested: readNumber(record.order_requested),
     title: readString(record.title),
     contentLength: readNumber(record.content_length),
@@ -1082,19 +1159,115 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
     ...(notAppliedReason
       && (
         notAppliedReason === "placement_not_available_in_mode"
-        || notAppliedReason === "unknown_placement"
+       || notAppliedReason === "unknown_placement"
         || notAppliedReason === "empty_title_or_content"
         || notAppliedReason === "prompt_section_absent"
         || notAppliedReason === "disabled"
         || notAppliedReason === "mode_scope_mismatch"
         || notAppliedReason === "expired"
+        || notAppliedReason === "missing_placement_params"
+        || notAppliedReason === "invalid_placement_params"
+        || notAppliedReason === "floor_no_out_of_history_window"
+        || notAppliedReason === "floor_offset_out_of_history_window"
       )
       ? { notAppliedReason }
       : {}),
     ...(readOptionalString(record.placement_resolved)
       ? { placementResolved: readOptionalString(record.placement_resolved) }
       : {}),
+    ...(anchorResolved ? { anchorResolved } : {}),
+    ...(sourceChain ? { sourceChain } : {}),
   };
+}
+
+function mapPromptRuntimeInjectionPlacementParamsResult(
+  value: unknown,
+): PromptRuntimeInjectionPlacementParams | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const mapped: PromptRuntimeInjectionPlacementParams = {};
+  if (typeof record.floor_no === "number") {
+    mapped.floorNo = record.floor_no;
+  }
+  if (typeof record.offset === "number") {
+    mapped.offset = record.offset;
+  }
+  if (typeof record.depth === "number") {
+    mapped.depth = record.depth;
+  }
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
+}
+
+function mapPromptRuntimeInjectionAnchorResult(
+  value: unknown,
+): PromptRuntimeInjectionAnchor | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const kind = readOptionalString(record.kind);
+  if (
+    kind !== "section"
+    && kind !== "floor_by_no"
+    && kind !== "floor_from_end"
+    && kind !== "worldbook_depth"
+    && kind !== "worldbook_edge"
+    && kind !== "worldbook_author_note_top"
+  && kind !== "contributor_block"
+  ) {
+    return undefined;
+  }
+  const edge = readOptionalString(record.edge);
+  const anchor: PromptRuntimeInjectionAnchor = { kind };
+  const internalKey = readOptionalString(record.internal_key);
+  if (internalKey) {
+    anchor.internalKey = internalKey;
+  }
+  if (typeof record.floor_no === "number") {
+    anchor.floorNo = record.floor_no;
+  }
+  if (typeof record.offset === "number") {
+   anchor.offset = record.offset;
+  }
+  if (typeof record.depth === "number") {
+    anchor.depth = record.depth;
+  }
+  if (edge === "before" || edge === "after") {
+    anchor.edge = edge;
+  }
+  if (typeof record.resolved_depth === "number") {
+    anchor.resolvedDepth = record.resolved_depth;
+  }
+  return anchor;
+}
+
+function mapPromptRuntimeInjectionSourceChainResult(
+  value: unknown,
+): PromptRuntimeInjectionSourceChain | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const mapped: PromptRuntimeInjectionSourceChain = {};
+  const agentTypeId = readOptionalString(record.agent_type_id);
+  if (agentTypeId) {
+    mapped.agentTypeId = agentTypeId;
+  }
+  const agentRunId = readOptionalString(record.agent_run_id);
+  if (agentRunId) {
+    mapped.agentRunId = agentRunId;
+  }
+  const temporaryConversationId = readOptionalString(record.temporary_conversation_id);
+  if (temporaryConversationId) {
+    mapped.temporaryConversationId = temporaryConversationId;
+  }
+  const debugSessionTag = readOptionalString(record.debug_session_tag);
+  if (debugSessionTag) {
+    mapped.debugSessionTag = debugSessionTag;
+  }
+  return Object.keys(mapped).length > 0 ? mapped : undefined;
 }
 
 function mapPromptRuntimeHistoryNormalization(value: unknown): PromptRuntimeHistoryNormalizationTrace | undefined {

@@ -6520,17 +6520,39 @@ export interface paths {
                                     };
                                     injection?: {
                                         items: {
+                                            anchor_resolved: {
+                                                depth?: number;
+                                                /** @enum {string} */
+                                                edge?: "before" | "after";
+                                                floor_no?: number;
+                                                internal_key?: string;
+                                                /** @enum {string} */
+                                                kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                                offset?: number;
+                                                resolved_depth?: number;
+                                            } | null;
                                             applied: boolean;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
+                                            placement_params_requested: {
+                                                depth?: number;
+                                                floor_no?: number;
+                                                offset?: number;
+                                            } | null;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
+                                            source_chain: {
+                                                agent_run_id?: string;
+                                                agent_type_id?: string;
+                                                debug_session_tag?: string;
+                                                temporary_conversation_id?: string;
+                                            } | null;
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -11406,17 +11428,39 @@ export interface paths {
                                     };
                                     injection?: {
                                         items: {
+                                            anchor_resolved: {
+                                                depth?: number;
+                                                /** @enum {string} */
+                                                edge?: "before" | "after";
+                                                floor_no?: number;
+                                                internal_key?: string;
+                                                /** @enum {string} */
+                                                kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                                offset?: number;
+                                                resolved_depth?: number;
+                                            } | null;
                                             applied: boolean;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
+                                            placement_params_requested: {
+                                                depth?: number;
+                                                floor_no?: number;
+                                                offset?: number;
+                                            } | null;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
+                                            source_chain: {
+                                                agent_run_id?: string;
+                                                agent_type_id?: string;
+                                                debug_session_tag?: string;
+                                                temporary_conversation_id?: string;
+                                            } | null;
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -11839,6 +11883,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/messages/{id}/manual-revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get committed content manual revisions for a message */
+        get: operations["getMessageManualRevisions"];
+        put?: never;
+        /** Apply committed content manual revision to a message */
+        post: operations["createMessageManualRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/messages/batch/delete": {
         parameters: {
             query?: never;
@@ -11975,6 +12037,24 @@ export interface paths {
         head?: never;
         /** Activate page within floor */
         patch: operations["activatePage"];
+        trace?: never;
+    };
+    "/pages/{id}/manual-revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get committed content manual revisions for a page */
+        get: operations["getPageManualRevisions"];
+        put?: never;
+        /** Apply committed content manual revision to a page */
+        post: operations["createPageManualRevision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/pages/{id}/memory/promotions": {
@@ -18362,17 +18442,39 @@ export interface paths {
                                     };
                                     injection?: {
                                         items: {
+                                            anchor_resolved: {
+                                                depth?: number;
+                                                /** @enum {string} */
+                                                edge?: "before" | "after";
+                                                floor_no?: number;
+                                                internal_key?: string;
+                                                /** @enum {string} */
+                                                kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                                offset?: number;
+                                                resolved_depth?: number;
+                                            } | null;
                                             applied: boolean;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
+                                            placement_params_requested: {
+                                                depth?: number;
+                                                floor_no?: number;
+                                                offset?: number;
+                                            } | null;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
+                                            source_chain: {
+                                                agent_run_id?: string;
+                                                agent_type_id?: string;
+                                                debug_session_tag?: string;
+                                                temporary_conversation_id?: string;
+                                            } | null;
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -20242,17 +20344,39 @@ export interface paths {
                                     };
                                     injection?: {
                                         items: {
+                                            anchor_resolved: {
+                                                depth?: number;
+                                                /** @enum {string} */
+                                                edge?: "before" | "after";
+                                                floor_no?: number;
+                                                internal_key?: string;
+                                                /** @enum {string} */
+                                                kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                                offset?: number;
+                                                resolved_depth?: number;
+                                            } | null;
                                             applied: boolean;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
+                                            placement_params_requested: {
+                                                depth?: number;
+                                                floor_no?: number;
+                                                offset?: number;
+                                            } | null;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
+                                            source_chain: {
+                                                agent_run_id?: string;
+                                                agent_type_id?: string;
+                                                debug_session_tag?: string;
+                                                temporary_conversation_id?: string;
+                                            } | null;
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -22050,17 +22174,39 @@ export interface paths {
                                     };
                                     injection?: {
                                         items: {
+                                            anchor_resolved: {
+                                                depth?: number;
+                                                /** @enum {string} */
+                                                edge?: "before" | "after";
+                                                floor_no?: number;
+                                                internal_key?: string;
+                                                /** @enum {string} */
+                                                kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                                offset?: number;
+                                                resolved_depth?: number;
+                                            } | null;
                                             applied: boolean;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
+                                            placement_params_requested: {
+                                                depth?: number;
+                                                floor_no?: number;
+                                                offset?: number;
+                                            } | null;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
+                                            source_chain: {
+                                                agent_run_id?: string;
+                                                agent_type_id?: string;
+                                                debug_session_tag?: string;
+                                                temporary_conversation_id?: string;
+                                            } | null;
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -33684,6 +33830,217 @@ export interface operations {
             };
         };
     };
+    getMessageManualRevisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            current_content: string;
+                            current_token_count: number;
+                            floor_id: string;
+                            items: {
+                                actor_account_id: string;
+                                actor_client_id: string | null;
+                                actor_id: string;
+                                /** @enum {string} */
+                                actor_type: "account" | "client";
+                                branch_id: string;
+                                created_at: number;
+                                edited_content: string;
+                                floor_id: string;
+                                id: string;
+                                message_id: string;
+                                operation_log_id: string;
+                                original_content: string;
+                                page_id: string;
+                                previous_content: string;
+                                reason: string | null;
+                                requested_target_id: string;
+                                /** @enum {string} */
+                                requested_target_kind: "message" | "page";
+                                revision_no: number;
+                                session_id: string;
+                            }[];
+                            latest_revision_no: number;
+                            message_id: string;
+                            page_id: string;
+                            session_id: string;
+                            target_id: string;
+                            /** @enum {string} */
+                            target_kind: "message" | "page";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createMessageManualRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    expected_latest_revision_no: number;
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            current_content: string;
+                            current_token_count: number;
+                            floor_id: string;
+                            items: {
+                                actor_account_id: string;
+                                actor_client_id: string | null;
+                                actor_id: string;
+                                /** @enum {string} */
+                                actor_type: "account" | "client";
+                                branch_id: string;
+                                created_at: number;
+                                edited_content: string;
+                                floor_id: string;
+                                id: string;
+                                message_id: string;
+                                operation_log_id: string;
+                                original_content: string;
+                                page_id: string;
+                                previous_content: string;
+                                reason: string | null;
+                                requested_target_id: string;
+                                /** @enum {string} */
+                                requested_target_kind: "message" | "page";
+                                revision_no: number;
+                                session_id: string;
+                            }[];
+                            latest_revision_no: number;
+                            message_id: string;
+                            page_id: string;
+                            session_id: string;
+                            target_id: string;
+                            /** @enum {string} */
+                            target_kind: "message" | "page";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
     batchDeleteMessages: {
         parameters: {
             query?: never;
@@ -34480,6 +34837,217 @@ export interface operations {
             };
             /** @description Default Response */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    getPageManualRevisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            current_content: string;
+                            current_token_count: number;
+                            floor_id: string;
+                            items: {
+                                actor_account_id: string;
+                                actor_client_id: string | null;
+                                actor_id: string;
+                                /** @enum {string} */
+                                actor_type: "account" | "client";
+                                branch_id: string;
+                                created_at: number;
+                                edited_content: string;
+                                floor_id: string;
+                                id: string;
+                                message_id: string;
+                                operation_log_id: string;
+                                original_content: string;
+                                page_id: string;
+                                previous_content: string;
+                                reason: string | null;
+                                requested_target_id: string;
+                                /** @enum {string} */
+                                requested_target_kind: "message" | "page";
+                                revision_no: number;
+                                session_id: string;
+                            }[];
+                            latest_revision_no: number;
+                            message_id: string;
+                            page_id: string;
+                            session_id: string;
+                            target_id: string;
+                            /** @enum {string} */
+                            target_kind: "message" | "page";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createPageManualRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    content: string;
+                    expected_latest_revision_no: number;
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Default Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            branch_id: string;
+                            current_content: string;
+                            current_token_count: number;
+                            floor_id: string;
+                            items: {
+                                actor_account_id: string;
+                                actor_client_id: string | null;
+                                actor_id: string;
+                                /** @enum {string} */
+                                actor_type: "account" | "client";
+                                branch_id: string;
+                                created_at: number;
+                                edited_content: string;
+                                floor_id: string;
+                                id: string;
+                                message_id: string;
+                                operation_log_id: string;
+                                original_content: string;
+                                page_id: string;
+                                previous_content: string;
+                                reason: string | null;
+                                requested_target_id: string;
+                                /** @enum {string} */
+                                requested_target_kind: "message" | "page";
+                                revision_no: number;
+                                session_id: string;
+                            }[];
+                            latest_revision_no: number;
+                            message_id: string;
+                            page_id: string;
+                            session_id: string;
+                            target_id: string;
+                            /** @enum {string} */
+                            target_kind: "message" | "page";
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            code: string;
+                            details?: unknown;
+                            message: string;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Default Response */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -39098,6 +39666,7 @@ export interface operations {
                      *           "mode_scope": null,
                      *           "order": 100,
                      *           "placement": "before_history",
+                     *           "placement_params": null,
                      *           "scope": "session",
                      *           "source_kind": "client_injection",
                      *           "title": "History guard",
@@ -39117,6 +39686,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -39183,6 +39757,9 @@ export interface operations {
                  *       "mode_scope": null,
                  *       "order": 100,
                  *       "placement": "before_history",
+                 *       "placement_params": {
+                 *         "floor_no": 12
+                 *       },
                  *       "source_kind": "client_injection",
                  *       "title": "History guard",
                  *       "ttl_ms": null
@@ -39194,6 +39771,11 @@ export interface operations {
                     mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
                     order?: number;
                     placement: string;
+                    placement_params?: {
+                        depth?: number;
+                        floor_no?: number;
+                        offset?: number;
+                    };
                     /** @enum {string} */
                     source_kind: "client_injection";
                     title: string;
@@ -39219,6 +39801,7 @@ export interface operations {
                      *         "mode_scope": null,
                      *         "order": 100,
                      *         "placement": "before_history",
+                     *         "placement_params": null,
                      *         "scope": "session",
                      *         "source_kind": "client_injection",
                      *         "title": "History guard",
@@ -39237,6 +39820,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -39348,6 +39936,7 @@ export interface operations {
                      *         "mode_scope": null,
                      *         "order": 100,
                      *         "placement": "before_history",
+                     *         "placement_params": null,
                      *         "scope": "session",
                      *         "source_kind": "client_injection",
                      *         "title": "History guard",
@@ -39366,6 +39955,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -39456,6 +40050,11 @@ export interface operations {
                     mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
                     order?: number;
                     placement?: string;
+                    placement_params?: {
+                        depth?: number;
+                        floor_no?: number;
+                        offset?: number;
+                    } | null;
                     /** @enum {string} */
                     source_kind?: "client_injection";
                     title?: string;
@@ -39481,6 +40080,7 @@ export interface operations {
                      *         "mode_scope": null,
                      *         "order": 100,
                      *         "placement": "before_history",
+                     *         "placement_params": null,
                      *         "scope": "session",
                      *         "source_kind": "client_injection",
                      *         "title": "History guard",
@@ -39499,6 +40099,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -40628,6 +41233,7 @@ export interface operations {
                      *           "mode_scope": null,
                      *           "order": 100,
                      *           "placement": "before_history",
+                     *           "placement_params": null,
                      *           "scope": "session",
                      *           "source_kind": "client_injection",
                      *           "title": "History guard",
@@ -40647,6 +41253,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -40712,6 +41323,9 @@ export interface operations {
                  *       "mode_scope": null,
                  *       "order": 100,
                  *       "placement": "before_history",
+                 *       "placement_params": {
+                 *         "floor_no": 12
+                 *       },
                  *       "source_kind": "client_injection",
                  *       "title": "History guard",
                  *       "ttl_ms": null
@@ -40723,6 +41337,11 @@ export interface operations {
                     mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
                     order?: number;
                     placement: string;
+                    placement_params?: {
+                        depth?: number;
+                        floor_no?: number;
+                        offset?: number;
+                    };
                     /** @enum {string} */
                     source_kind: "client_injection";
                     title: string;
@@ -40748,6 +41367,7 @@ export interface operations {
                      *         "mode_scope": null,
                      *         "order": 100,
                      *         "placement": "before_history",
+                     *         "placement_params": null,
                      *         "scope": "session",
                      *         "source_kind": "client_injection",
                      *         "title": "History guard",
@@ -40766,6 +41386,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -40876,6 +41501,7 @@ export interface operations {
                      *         "mode_scope": null,
                      *         "order": 100,
                      *         "placement": "before_history",
+                     *         "placement_params": null,
                      *         "scope": "session",
                      *         "source_kind": "client_injection",
                      *         "title": "History guard",
@@ -40894,6 +41520,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -40983,6 +41614,11 @@ export interface operations {
                     mode_scope?: ("compat_strict" | "compat_plus" | "native") | null;
                     order?: number;
                     placement?: string;
+                    placement_params?: {
+                        depth?: number;
+                        floor_no?: number;
+                        offset?: number;
+                    } | null;
                     /** @enum {string} */
                     source_kind?: "client_injection";
                     title?: string;
@@ -41008,6 +41644,7 @@ export interface operations {
                      *         "mode_scope": null,
                      *         "order": 100,
                      *         "placement": "before_history",
+                     *         "placement_params": null,
                      *         "scope": "session",
                      *         "source_kind": "client_injection",
                      *         "title": "History guard",
@@ -41026,6 +41663,11 @@ export interface operations {
                             mode_scope: ("compat_strict" | "compat_plus" | "native") | null;
                             order: number;
                             placement: string;
+                            placement_params: {
+                                depth?: number;
+                                floor_no?: number;
+                                offset?: number;
+                            } | null;
                             /** @enum {string} */
                             scope: "session" | "branch";
                             /** @enum {string} */
@@ -41283,6 +41925,11 @@ export interface operations {
                         content: string;
                         order?: number;
                         placement: string;
+                        placement_params?: {
+                            depth?: number;
+                            floor_no?: number;
+                            offset?: number;
+                        };
                         /** @enum {string} */
                         scope?: "request";
                         /** @enum {string} */
@@ -42036,17 +42683,39 @@ export interface operations {
                                 }[];
                             };
                             injections: {
+                                anchor_resolved: {
+                                    depth?: number;
+                                    /** @enum {string} */
+                                    edge?: "before" | "after";
+                                    floor_no?: number;
+                                    internal_key?: string;
+                                    /** @enum {string} */
+                                    kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                    offset?: number;
+                                    resolved_depth?: number;
+                                } | null;
                                 applied: boolean;
                                 content_length: number;
                                 enabled: boolean | null;
                                 injection_id: string | null;
-                                not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                 order_requested: number;
+                                placement_params_requested: {
+                                    depth?: number;
+                                    floor_no?: number;
+                                    offset?: number;
+                                } | null;
                                 placement_requested: string;
                                 placement_resolved: string | null;
                                 request_index: number;
                                 /** @enum {string} */
                                 scope: "request" | "session" | "branch";
+                                source_chain: {
+                                    agent_run_id?: string;
+                                    agent_type_id?: string;
+                                    debug_session_tag?: string;
+                                    temporary_conversation_id?: string;
+                                } | null;
                                 source_kind: string;
                                 title: string;
                             }[];
@@ -42432,17 +43101,39 @@ export interface operations {
                                     };
                                     injection?: {
                                         items: {
+                                            anchor_resolved: {
+                                                depth?: number;
+                                                /** @enum {string} */
+                                                edge?: "before" | "after";
+                                                floor_no?: number;
+                                                internal_key?: string;
+                                                /** @enum {string} */
+                                                kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                                offset?: number;
+                                                resolved_depth?: number;
+                                            } | null;
                                             applied: boolean;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
+                                            placement_params_requested: {
+                                                depth?: number;
+                                                floor_no?: number;
+                                                offset?: number;
+                                            } | null;
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
+                                            source_chain: {
+                                                agent_run_id?: string;
+                                                agent_type_id?: string;
+                                                debug_session_tag?: string;
+                                                temporary_conversation_id?: string;
+                                            } | null;
                                             source_kind: string;
                                             title: string;
                                         }[];
@@ -43990,6 +44681,11 @@ export interface operations {
                         content: string;
                         order?: number;
                         placement: string;
+                        placement_params?: {
+                            depth?: number;
+                            floor_no?: number;
+                            offset?: number;
+                        };
                         /** @enum {string} */
                         scope?: "request";
                         /** @enum {string} */
@@ -44601,17 +45297,39 @@ export interface operations {
                                 };
                                 injection?: {
                                     items: {
+                                        anchor_resolved: {
+                                            depth?: number;
+                                            /** @enum {string} */
+                                            edge?: "before" | "after";
+                                            floor_no?: number;
+                                            internal_key?: string;
+                                            /** @enum {string} */
+                                            kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                            offset?: number;
+                                            resolved_depth?: number;
+                                        } | null;
                                         applied: boolean;
                                         content_length: number;
                                         enabled: boolean | null;
                                         injection_id: string | null;
-                                        not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch") | null;
+                                        not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                         order_requested: number;
+                                        placement_params_requested: {
+                                            depth?: number;
+                                            floor_no?: number;
+                                            offset?: number;
+                                        } | null;
                                         placement_requested: string;
                                         placement_resolved: string | null;
                                         request_index: number;
                                         /** @enum {string} */
                                         scope: "request" | "session" | "branch";
+                                        source_chain: {
+                                            agent_run_id?: string;
+                                            agent_type_id?: string;
+                                            debug_session_tag?: string;
+                                            temporary_conversation_id?: string;
+                                        } | null;
                                         source_kind: string;
                                         title: string;
                                     }[];
