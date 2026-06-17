@@ -29,6 +29,7 @@ export type AgentAllowedOutputTarget =
   | "derived_output"
   | "project_inbox"
   | "session_state_proposal"
+  | "prompt_runtime_injection"
   | "client_data"
   | "plugin_data";
 
@@ -37,6 +38,7 @@ export const DEFAULT_AGENT_ALLOWED_OUTPUT_TARGETS: ReadonlySet<AgentAllowedOutpu
   "derived_output",
   "project_inbox",
   "session_state_proposal",
+  "prompt_runtime_injection",
   "client_data",
   "plugin_data",
 ]);

@@ -122,11 +122,22 @@ export type TurnSessionStateWriteDeleteBody = {
   delete: true;
 };
 
+/**
+ * I3 高级位置参数（snake_case 公共面）。
+ * 字段全部为可选非负整数；具体校验语义由 placement resolver 负责。
+ */
+export type PromptRuntimeInjectionPlacementParamsBody = {
+  floor_no?: number;
+  offset?: number;
+  depth?: number;
+};
+
 export type PromptRuntimeInjectionBody = {
   source_kind: PromptRuntimeClientInjectionInput["sourceKind"];
   title: string;
   content: string;
   placement: string;
+  placement_params?: PromptRuntimeInjectionPlacementParamsBody;
   order?: number;
   scope?: PromptRuntimeClientInjectionInput["scope"];
 };
@@ -217,13 +228,20 @@ export const turnSessionStateWriteBodySchema: z.ZodType<TurnSessionStateWriteVal
   turnSessionStateWriteDeleteBodySchema,
 ]);
 
+export const promptRuntimeInjectionPlacementParamsBodySchema: z.ZodType<PromptRuntimeInjectionPlacementParamsBody> = z.object({
+  floor_no: z.number().int().nonnegative().optional(),
+  offset: z.number().int().nonnegative().optional(),
+  depth: z.number().int().nonnegative().optional(),
+}).strict();
+
 export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionBody> = z.object({
   source_kind: z.literal("client_injection"),
   title: z.string(),
   content: z.string(),
   placement: z.string().min(1),
+  placement_params: promptRuntimeInjectionPlacementParamsBodySchema.optional(),
   order: z.number().int().optional(),
-  scope: z.literal("request").optional(),
+    scope: z.literal("request").optional(),
 }).strict();
 
 export const respondBodySchema: z.ZodType<RespondBody> = z.object({

@@ -158,11 +158,14 @@ outline: [2, 3]
 - `source_kind`
 - `scope`
 - `placement_requested`
+- `placement_params_requested`
 - `order_requested`
 - `title`
 - `content_length`
 - `applied`
 - `placement_resolved`
+- `anchor_resolved`
+- `source_chain`
 - `not_applied_reason`
 
 当前公开边界固定为：
@@ -171,6 +174,12 @@ outline: [2, 3]
 - `scope` 可能为 `request`、`session`、`branch`
 - `request` 表示本次请求临时注入，`session` / `branch` 表示持久注入记录
 - `order` 只影响同一 placement 内部顺序，默认 `100`
+
+`placement_params_requested`、`anchor_resolved`、`source_chain` 是为高级位置与来源追踪准备的字段：
+
+- `placement_params_requested` 回显客户端声明的 `placement_params`（`floor_no` / `offset` / `depth`），未声明时为 `null`
+- `anchor_resolved` 是解析后的锚点描述，例如 `{ "kind": "section", "internal_key": "history.before" }` 或 `{"kind": "floor_by_no", "floor_no": 12, "edge": "before" }`，不暴露内部数字顺序；无法解析时为 `null`
+- `source_chain` 是来源链。客户端来源的 injection该字段为 `null`
 
 `not_applied_reason` 当前可能为：
 
@@ -181,8 +190,14 @@ outline: [2, 3]
 - `disabled`
 - `mode_scope_mismatch`
 - `expired`
+- `missing_placement_params`
+- `invalid_placement_params`
+- `floor_no_out_of_history_window`
+- `floor_offset_out_of_history_window`
 
-可用 placement 为：
+可用 placement 分为两类。
+
+通用结构位置（三种 prompt mode 都开放）：
 
 - `before_system_prompt` / `after_system_prompt`
 - `before_character` / `after_character`
@@ -194,6 +209,20 @@ outline: [2, 3]
 - `before_current_user_input` / `after_current_user_input`
 - `before_output_instruction`
 - `before_assistant_prefill`
+
+高级位置（需要 `placement_params` 或受 prompt mode 限制）：
+
+- 楼层相对位置（三种 mode 都开放，实际生效仍受历史窗口约束）：
+  - `before_floor` / `after_floor`：需要 `placement_params.floor_no`
+  - `before_floor_from_end` / `after_floor_from_end`：需要 `placement_params.offset`，`0` 表示历史窗口最后一条楼层
+- 世界书细分位置（仅 `compat_plus` / `native`）：
+  - `worldbook_depth`：需要 `placement_params.depth`
+  - `worldbook_before` / `worldbook_after`：落到世界书整体内容内部前 / 后
+  - `worldbook_author_note_top`：落到作者注顶部
+- native 专属位置（仅 `native`）：
+  - `before_contributor_block` / `after_contributor_block`
+
+`placement_params` 的字段集合固定为 `floor_no`、`offset`、`depth`，均为可选非负整数。需要参数的 placement在缺参数或参数非法时不会生效，并在 `not_applied_reason` 给出明确原因；楼层越出历史窗口时同样不生效并标注原因，不会抛错，也不会被静默丢弃。
 
 这组字段用于回答两个问题：
 
