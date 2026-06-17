@@ -133,7 +133,9 @@ export class AgentJobTriggerService {
     tx: DbExecutor,
     input: EnqueueFromEventInput,
   ): EnqueueFromEventResult {
-    const evaluations = this.evaluateEvent(input);
+       const evaluations = this.evaluateEvent(input);
+       // R4 dry_run 默认语义：事件触发保持保守默认 true，避免一次性把所有
+       // 入队切成真实执行。调用方可显式传 dryRun=false 开启真实执行，保证可回退。
     const dryRun = input.dryRun ?? true;
     const triggered: EnqueueFromEventResult["triggered"] = [];
 
@@ -224,6 +226,8 @@ export class AgentJobTriggerService {
       accountId: input.accountId,
     });
 
+    // R4 dry_run 默认语义：手动触发也保持保守默认 true，/run 请求体可显式
+    // 传 dry_run 覆盖；真实 Processor 按 payload.dryRun 决定是否真正执行与写入。
     const dryRun = input.dryRun ?? true;
     const payload = this.buildPayload({
       binding,

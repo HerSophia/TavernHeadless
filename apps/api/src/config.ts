@@ -132,6 +132,17 @@ export interface AppConfig {
     maxRetryDelayMs?: number;
     candidateScanLimit?: number;
   };
+  /** 是否启用后台 Agent worker（默认关闭，保证可回退） */
+  enableAgentRuntimeWorker: boolean;
+  /** 可选：AgentRuntimeWorker 运行参数 */
+  agentRuntimeWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?:number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
   /** 是否启用聊天 transfer worker（供独立 worker 进程或可选内嵌模式使用） */
   enableChatTransferWorker: boolean;
   /** 可选：ChatTransferWorker 运行参数 */
@@ -258,6 +269,15 @@ export function loadConfig(): AppConfig {
     process.env.MEMORY_WORKER_MAX_RETRY_DELAY_MS,
     process.env.MEMORY_WORKER_CANDIDATE_SCAN_LIMIT,
   );
+  const enableAgentRuntimeWorker = process.env.ENABLE_AGENT_RUNTIME_WORKER === "true";
+  const agentRuntimeWorker = parseAgentRuntimeWorkerConfig(
+    process.env.AGENT_RUNTIME_WORKER_POLL_INTERVAL_MS,
+    process.env.AGENT_RUNTIME_WORKER_LEASE_TTL_MS,
+    process.env.AGENT_RUNTIME_WORKER_MAX_CONCURRENT_JOBS,
+    process.env.AGENT_RUNTIME_WORKER_RETRY_BASE_DELAY_MS,
+    process.env.AGENT_RUNTIME_WORKER_MAX_RETRY_DELAY_MS,
+    process.env.AGENT_RUNTIME_WORKER_CANDIDATE_SCAN_LIMIT,
+  );
   const enableChatTransferWorker = process.env.ENABLE_CHAT_TRANSFER_WORKER === "true";
   const chatTransferWorker = parseChatTransferWorkerConfig(
     process.env.CHAT_TRANSFER_WORKER_POLL_INTERVAL_MS,
@@ -337,6 +357,8 @@ export function loadConfig(): AppConfig {
       enableDeferredIrreversibleTools,
       deferredIrreversibleMcpTools,
       memoryWorker,
+      enableAgentRuntimeWorker,
+      agentRuntimeWorker,
       enableChatTransferWorker,
       chatTransferWorker,
       chatTransferArtifactDir,
@@ -417,6 +439,8 @@ export function loadConfig(): AppConfig {
     enableDeferredIrreversibleTools,
     deferredIrreversibleMcpTools,
     memoryWorker,
+    enableAgentRuntimeWorker,
+    agentRuntimeWorker,
     enableChatTransferWorker,
     chatTransferWorker,
     chatTransferArtifactDir,
@@ -594,6 +618,42 @@ function parseMemoryWorkerConfig(
   if (
     pollIntervalMs === undefined
     && leaseTtlMs === undefined
+    && maxConcurrentJobs === undefined
+    && retryBaseDelayMs === undefined
+    && maxRetryDelayMs === undefined
+    && candidateScanLimit === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+    ...(leaseTtlMs !== undefined ? { leaseTtlMs } : {}),
+    ...(maxConcurrentJobs !== undefined ? { maxConcurrentJobs } : {}),
+    ...(retryBaseDelayMs !== undefined ? { retryBaseDelayMs } : {}),
+    ...(maxRetryDelayMs !== undefined ? { maxRetryDelayMs } : {}),
+    ...(candidateScanLimit !== undefined ? { candidateScanLimit } : {}),
+  };
+}
+
+function parseAgentRuntimeWorkerConfig(
+  pollIntervalMsRaw: string | undefined,
+  leaseTtlMsRaw: string | undefined,
+  maxConcurrentJobsRaw: string | undefined,
+  retryBaseDelayMsRaw: string | undefined,
+  maxRetryDelayMsRaw: string | undefined,
+  candidateScanLimitRaw: string | undefined,
+): AppConfig["agentRuntimeWorker"] | undefined {
+  const pollIntervalMs = parsePositiveInt(pollIntervalMsRaw);
+  const leaseTtlMs = parsePositiveInt(leaseTtlMsRaw);
+  const maxConcurrentJobs = parsePositiveInt(maxConcurrentJobsRaw);
+  const retryBaseDelayMs = parsePositiveInt(retryBaseDelayMsRaw);
+  const maxRetryDelayMs = parsePositiveInt(maxRetryDelayMsRaw);
+  const candidateScanLimit = parsePositiveInt(candidateScanLimitRaw);
+
+  if (
+    pollIntervalMs === undefined
+    &&leaseTtlMs === undefined
     && maxConcurrentJobs === undefined
     && retryBaseDelayMs === undefined
     && maxRetryDelayMs === undefined
