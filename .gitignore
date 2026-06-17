@@ -51,3 +51,4 @@ packages/shared/src/generated/.openapi-types.check.ts
 Thumbs.db
 .idea/
 .vscode/
+.cursor/

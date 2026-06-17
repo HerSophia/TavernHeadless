@@ -49,7 +49,7 @@ curl -X POST http://localhost:3000/projects/proj_main/agent-bindings/agb_001/run
 | Agent Binding | 某个 Project 对某个 Agent Type 的启用记录 |
 | 收窄 override | Binding 上的配置只能是 Agent Type 默认值的子集，不能新增 |
 | run | 手动创建一个 `agent.run` 后台作业 |
-| `dry_run` | 试运行标记，默认 `true`。即使改成 `false`，当前占位 Processor 也不会真正执行 |
+| `dry_run` | 试运行标记，默认 `true`。改成 `false` 时后台 Agent会真实执行并写入派生输出 |
 | dead letter | 后台作业多次重试失败后停止重试的终态 |
 
 ## 响应格式说明
@@ -256,12 +256,14 @@ POST /projects/:id/agent-bindings/:binding_id/run
 
 ## 当前能力说明
 
-- 手动 run 默认 `dry_run = true`。
-- 当前 Agent Processor 还是占位实现，Worker 处理 `agent.run` 时会进入 dead letter。
-- 这组接口是为后续自动化调度做准备，不代表 Agent 已具备真实执行能力。
+- 手动 run 默认 `dry_run = true`，保持保守、可回退。
+- 后台 Agent Processor 已可真实执行。`dry_run = false` 时会在 project / workspace scope 下执行并写入派生输出（如 `derived_output`）。
+- 后台 Agent 不写主叙事正史，所有持久输出都经过受控的输出目标校验。
+- run 之后的作业状态、错误与取消，可通过 [Agent Jobs（后台作业看板）](./project-agent-jobs) 查询。
 
 ## 相关页面
 
 - 模板定义：[Agent Types](./agent-types)
+- 后台作业看板：[Agent Jobs](./project-agent-jobs)
 - 路由族总览：[Workspace / Project](./workspace-project)
 - 生效配置视图：[Effective Config](./effective-config)

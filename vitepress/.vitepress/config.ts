@@ -138,6 +138,7 @@ export default defineConfig({
                 { text: 'Inbox（项目收件箱）', link: '/reference/api/projects-inbox' },
                 { text: 'Agent Types（Agent 类型）', link: '/reference/api/agent-types' },
                 { text: 'Agent Bindings（Agent 启用）', link: '/reference/api/project-agent-bindings' },
+                { text: 'Agent Jobs（后台作业看板）', link: '/reference/api/project-agent-jobs' },
                 { text: 'Settings（设置覆盖）', link: '/reference/api/project-settings' },
                 { text: 'Effective Config（生效配置）', link: '/reference/api/effective-config' },
               ],
