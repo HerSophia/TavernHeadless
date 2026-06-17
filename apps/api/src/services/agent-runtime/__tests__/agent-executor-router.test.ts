@@ -79,17 +79,80 @@ describe("AgentExecutorRouter", () => {
     expect(temporaryExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
-  it("background_job 在 R3 返回明确拒绝结果", async () => {
-    const router = new AgentExecutorRouter(makeTemporaryExecutorStub(temporaryResult));
+  it("background_job 配置 enqueuer 时真实入队（dry_run 演练记为 planned）", async () => {
+    const enqueue = vi.fn(async () => ({ jobId: "job_1", created: true, dryRun: true }));
+    const router = new AgentExecutorRouter(makeTemporaryExecutorStub(temporaryResult), {
+      backgroundJobEnqueuer: { enqueue },
+    });
     const route = await router.routeByMedium(
-      { kind: "background_job",deliveryTarget: "derived_output" },
-      {},
+      { kind: "background_job", deliveryTarget: "derived_output" },
+      {
+        backgroundJobRequest: {
+          accountId: "acc_1",
+          workspaceId: "ws_1",
+          projectId: "proj_1",
+          agentBindingId: "agb_1",
+          dryRun: true,
+        },
+},
+    );
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(route.kind).toBe("background_job");
+    if (route.kind === "background_job" && route.result.status === "enqueued") {
+      expect(route.result.jobId).toBe("job_1");
+      expect(route.result.dryRun).toBe(true);
+      expect(route.result.mediumTrace.status).toBe("planned");
+      expect(route.result.mediumTrace.dryRun).toBe(true);
+    } else {
+      throw new Error("expected enqueued background_job result");
+    }
+  });
+
+  it("background_job 真实执行入队记为 running", async ()=> {
+    const enqueue = vi.fn(async () => ({ jobId: "job_2", created: true, dryRun: false }));
+    const router = new AgentExecutorRouter(makeTemporaryExecutorStub(temporaryResult), {
+      backgroundJobEnqueuer: { enqueue },
+    });
+    const route = await router.routeByMedium(
+      { kind: "background_job", deliveryTarget: "derived_output" },
+      {
+        backgroundJobRequest: {
+          accountId: "acc_1",
+          workspaceId: "ws_1",
+          projectId: "proj_1",
+          agentBindingId: "agb_1",
+          dryRun: false,
+        },
+      },
+    );
+
+    expect(route.kind).toBe("background_job");
+    if (route.kind === "background_job" && route.result.status === "enqueued") {
+      expect(route.result.mediumTrace.status).toBe("running");
+      expect(route.result.dryRun).toBe(false);
+    } else {
+      throw new Error("expected enqueued background_job result");
+    }
+  });
+
+  it("background_job 未配置 enqueuer 时回退到拒绝结果", async () => {
+    const router = new AgentExecutorRouter(makeTemporaryExecutorStub(temporaryResult));
+   const route = await router.routeByMedium(
+      { kind: "background_job", deliveryTarget: "derived_output" },
+      {
+     backgroundJobRequest: {
+          accountId: "acc_1",
+          workspaceId: "ws_1",
+          projectId: "proj_1",
+          agentBindingId: "agb_1",
+        },
+      },
     );
 
     expect(route.kind).toBe("background_job");
     if (route.kind === "background_job") {
-      expect(route.result.status).toBe("rejected");
-      expect(route.result.code).toBe("background_job_not_activated_until_r4");
+         expect(route.result.status).toBe("rejected");
     }
   });
 
