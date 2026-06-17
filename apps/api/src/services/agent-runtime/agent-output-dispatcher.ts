@@ -225,6 +225,7 @@ export class AgentOutputDispatchError extends Error {
     public readonly code:
       | "agent_output_target_not_activated"
       | "agent_output_sink_not_configured"
+      | "agent_output_target_sync_unsupported"
       | "agent_injection_source_kind_invalid"
       | "agent_injection_persist_scope_invalid"
       | "temporary_conversation_injection_persist_not_allowed",
@@ -237,6 +238,97 @@ export class AgentOutputDispatchError extends Error {
 
 export class AgentOutputDispatcher {
  constructor(private readonly deps: AgentOutputDispatcherDeps = {}) {}
+
+  /**
+   * 同步分发入口，供后台 Agent 的 Runtime Job commit 阶段在同步事务内调用。
+   *
+   * Background Job Runtime 的 commit 运行在 better-sqlite3 同步事务回调内，
+   * 不能 await 异步 dispatch。本方法复用与 dispatch 一致的权限校验与路由，
+   * 但只支持同步 sink 的持久目标：derived_output / project_inbox /
+   * session_state_proposal。page_staged_write 与 prompt_runtime_injection
+   * 依赖异步 / 跨会话语义，后台 commit 不走同步路径。
+   */
+  dispatchSync(request: AgentOutputDispatchRequest): AgentOutputDispatchResult {
+    if (request.target === "return_inline") {
+      return { target: "return_inline", inline: request.payload };
+    }
+
+    this.assertPersistedTargetAllowed(request.target);
+
+    switch (request.target) {
+      case "derived_output": {
+        const sink = this.requireSink(this.deps.derivedOutput, "derived_output");
+        const record = sink.create({
+          actorAccountId: request.actorAccountId,
+          actor: request.actor,
+          projectId: request.projectId,
+          domain: request.domain,
+          value: request.value,
+          status: request.status,
+          sourceSessionId: request.sourceSessionId,
+          sourceFloorId: request.sourceFloorId,
+          sourcePageId: request.sourcePageId,
+          correlationId: request.correlationId,
+          requestId: request.requestId,
+        });
+        return { target: "derived_output", record };
+      }
+
+      case "project_inbox": {
+        const sink = this.requireSink(this.deps.projectInbox, "project_inbox");
+        const record = sink.create({
+          actorAccountId: request.actorAccountId,
+          actor: request.actor,
+          projectId: request.projectId,
+          type: request.type,
+          title: request.title,
+          payload: request.payload,
+          sourceSessionId: request.sourceSessionId,
+          sourceFloorId: request.sourceFloorId,
+          sourcePageId: request.sourcePageId,
+          correlationId: request.correlationId,
+          requestId: request.requestId,
+        });
+        return { target: "project_inbox", record };
+      }
+
+      case "session_state_proposal": {
+        const sink = this.requireSink(this.deps.sessionStateProposal, "session_state_proposal");
+        const result = sink.stage({
+          accountId: request.accountId,
+          sessionId: request.sessionId,
+          summary: request.summary,
+          namespace: request.namespace,
+          slot: request.slot,
+          value: request.value,
+          lineage: request.lineage,
+        });
+        if (result instanceof Promise) {
+          throw new AgentOutputDispatchError(
+            "agent_output_target_sync_unsupported",
+            "session_state_proposal sink returned a Promise; synchronous background commit requires a synchronous sink.",
+          );
+        }
+        return { target: "session_state_proposal", proposalId: result.proposalId };
+      }
+
+      case "page_staged_write":
+      case "prompt_runtime_injection": {
+        throw new AgentOutputDispatchError(
+          "agent_output_target_sync_unsupported",
+          `Output target '${request.target}' is not supported in synchronous background dispatch.`,
+        );
+      }
+
+      case "client_data":
+      case "plugin_data": {
+        throw new AgentOutputDispatchError(
+          "agent_output_target_not_activated",
+          `Output target '${request.target}' keeps a contract slotbut is not activated yet.`,
+        );
+      }
+    }
+  }
 
   async dispatch(request: AgentOutputDispatchRequest): Promise<AgentOutputDispatchResult> {
     if (request.target === "return_inline") {
