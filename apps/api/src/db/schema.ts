@@ -891,6 +891,42 @@ export const operationLogs = sqliteTable(
   })
 );
 
+export const committedContentManualRevisions = sqliteTable(
+  "committed_content_manual_revision",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    pageId: text("page_id").notNull().references(() => messagePages.id, { onDelete: "cascade" }),
+    messageId: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    requestedTargetKind: text("requested_target_kind", { enum: ["message", "page"] }).notNull(),
+    requestedTargetId: text("requested_target_id").notNull(),
+    revisionNo: integer("revision_no").notNull(),
+    originalContent: text("original_content").notNull(),
+    previousContent: text("previous_content").notNull(),
+    editedContent: text("edited_content").notNull(),
+    reason: text("reason"),
+    actorType: text("actor_type", { enum: ["account", "client"] }).notNull(),
+    actorId: text("actor_id").notNull(),
+    actorAccountId: text("actor_account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    actorClientId: text("actor_client_id").references(() => clients.id, { onDelete: "set null" }),
+    operationLogId: text("operation_log_id").references(() => operationLogs.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    messageRevisionUnique: uniqueIndex("committed_content_manual_revision_message_no_uq").on(table.messageId, table.revisionNo),
+    operationLogUnique: uniqueIndex("committed_content_manual_revision_operation_log_uq").on(table.operationLogId),
+    floorCreatedIdx: index("committed_content_manual_revision_floor_created_idx").on(table.floorId, table.createdAt),
+    pageCreatedIdx: index("committed_content_manual_revision_page_created_idx").on(table.pageId, table.createdAt),
+    sessionBranchCreatedIdx: index("committed_content_manual_revision_session_branch_created_idx").on(
+      table.sessionId,
+      table.branchId,
+      table.createdAt,
+    ),
+  })
+);
+
 export const projectEvents = sqliteTable(
   "project_event",
   {
@@ -1834,7 +1870,7 @@ export const promptRuntimeInjections = sqliteTable(
     id: text("id").primaryKey(),
     sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
     branchId: text("branch_id"),
-    sourceKind: text("source_kind", { enum: ["client_injection"] }).notNull().default("client_injection"),
+    sourceKind: text("source_kind", { enum: ["client_injection", "agent_injection"] }).notNull().default("client_injection"),
     title: text("title").notNull(),
     content: text("content").notNull(),
     placement: text("placement").notNull(),
@@ -1842,7 +1878,9 @@ export const promptRuntimeInjections = sqliteTable(
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     modeScope: text("mode_scope", { enum: ["compat_strict", "compat_plus", "native"] }),
     ttlMs: integer("ttl_ms"),
-    createdBy: text("created_by").references(() => accounts.id, { onDelete: "set null" }),
+    // I3 高级位置参数（floor_no / offset / depth）以JSON 持久化；null 表示无参数。
+    placementParamsJson: text("placement_params_json"),
+    createdBy: text("created_by").references(() =>accounts.id, { onDelete: "set null" }),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },

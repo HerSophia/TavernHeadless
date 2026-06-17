@@ -240,6 +240,8 @@ export {
   type PageKind,
   type PageRecord,
   type PagesBatchDeleteResult,
+  type PagesCreateManualRevisionOptions,
+  type PagesGetManualRevisionsOptions,
   type PagesResource,
 } from "./pages.js";
 export {
@@ -264,8 +266,13 @@ export {
 } from "./preset-entries.js";
 export {
   createMessagesResource,
+  type CommittedContentManualRevisionRecord,
+  type CommittedContentManualRevisionTimeline,
+  type ManualRevisionTargetKind,
   type MessageRecord,
   type MessageUpdateResult,
+  type MessagesCreateManualRevisionOptions,
+  type MessagesGetManualRevisionsOptions,
   type MessagesResource,
   type RegenerateResult,
 } from "./messages.js";
@@ -506,12 +513,15 @@ export {
   type PromptRuntimeInspectPreparedTurnMessage,
   type PromptRuntimeInspectResult,
   type PromptRuntimeInspectSessionStateWrite,
+  type PromptRuntimeInjectionAnchor,
   type PromptRuntimeInjectionInput,
   type PromptRuntimeInjectionNotAppliedReason,
   type PromptRuntimeInjectionPlacement,
+  type PromptRuntimeInjectionPlacementParams,
   type PromptRuntimeInjectionResult,
   type PromptRuntimeInjectionScope,
   type PromptRuntimeInjectionScopeSummary,
+  type PromptRuntimeInjectionSourceChain,
   type PromptRuntimeInjectionSourceKind,
   type PromptRuntimeInjectionSummary,
   type PromptRuntimePreparePhase,

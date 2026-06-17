@@ -39,7 +39,7 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 | mode | `/prompt-runtime/mode` | 显式读取或写入 session 级 `prompt_mode` | [Mode](./prompt-runtime-mode) |
 | policy | `/prompt-runtime/policy` | 查看和修改 Prompt Runtime policy | [Policy](./prompt-runtime-policy) |
 | assets | `/prompt-runtime/assets` | 查看当前绑定的 Prompt Assets | [Assets](./prompt-runtime-assets) |
-| injections | `/prompt-runtime/injections` 及 `/prompt-runtime/branches/:branchId/injections` | 管理 session / branch 持久注入记录 | 本页 |
+| injections | `/prompt-runtime/injections` 及 `/prompt-runtime/branches/:branchId/injections` | 管理 session / branch 持久注入记录 | [Injections](./prompt-runtime-injections) |
 | inspection | `preview` / `inspect` / `explain` / `compare` | 只读预览、请求期检查、历史解释和 committed truth 比较 | [Inspection](./prompt-runtime-inspection) |
 | capabilities | `GET /prompt-runtime/capabilities` | 查看能力边界、默认值和公开 mode 目录 | [Capabilities](./prompt-runtime-capabilities) |
 
@@ -74,7 +74,7 @@ Prompt Runtime 用来回答一个具体问题：**当前这次聊天，会按什
 | 当前到底在用哪种提示词模式 | [Mode](./prompt-runtime-mode) |
 | 当前 policy 是什么，哪些字段可持久化 | [Policy](./prompt-runtime-policy) |
 | 当前绑了哪些 Prompt Assets | [Assets](./prompt-runtime-assets) |
-| 想管理 session / branch 持久注入 | 本页的 injections 路由列表 |
+| 想管理 session / branch 持久注入，或了解 placement / placement_params | [Injections](./prompt-runtime-injections) |
 | 不发起真实聊天，想看 preview / inspect / explain / compare | [Inspection](./prompt-runtime-inspection) |
 | 想知道默认值、支持字段、公开 mode 目录 | [Capabilities](./prompt-runtime-capabilities) |
 

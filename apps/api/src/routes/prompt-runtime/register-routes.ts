@@ -86,6 +86,7 @@ import {
 import {
   mapPromptRuntimeHistoryNormalizationToSnakeCase,
   mapMemoryInjectionResultToSnakeCase,
+  mapPromptRuntimeInjectionTraceToSnakeCase,
   mapPromptRuntimeMemoryTraceToSnakeCase,
   mapPromptRuntimeToolTransportToSnakeCase,
 } from "../chat/presenters.js";
@@ -1477,22 +1478,7 @@ function mapPreviewRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimePreviewRes
       : {}),
     ...(runtimeTrace.injection
       ? {
-          injection: {
-            items: runtimeTrace.injection.items.map((item) => ({
-              request_index: item.requestIndex,
-              source_kind: item.sourceKind,
-              injection_id: item.injectionId ?? null,
-              enabled: item.enabled ?? null,
-              scope: item.scope,
-              placement_requested: item.placementRequested,
-              order_requested: item.orderRequested,
-              title: item.title,
-              content_length: item.contentLength,
-              applied: item.applied,
-              placement_resolved: item.placementResolved ?? null,
-              not_applied_reason: item.notAppliedReason ?? null,
-            })),
-          },
+          injection: mapPromptRuntimeInjectionTraceToSnakeCase(runtimeTrace.injection),
         }
       : {}),
   };

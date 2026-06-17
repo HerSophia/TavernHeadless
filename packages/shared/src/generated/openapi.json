@@ -22385,6 +22385,60 @@
                                   "items": {
                                     "additionalProperties": false,
                                     "properties": {
+                                      "anchor_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "edge": {
+                                                "enum": [
+                                                  "before",
+                                                  "after"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "internal_key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "section",
+                                                  "floor_by_no",
+                                                  "floor_from_end",
+                                                  "worldbook_depth",
+                                                  "worldbook_edge",
+                                                  "worldbook_author_note_top",
+                                                  "contributor_block"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "resolved_depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "applied": {
                                         "type": "boolean"
                                       },
@@ -22422,7 +22476,11 @@
                                               "prompt_section_absent",
                                               "disabled",
                                               "expired",
-                                              "mode_scope_mismatch"
+                                              "mode_scope_mismatch",
+                                              "missing_placement_params",
+                                              "invalid_placement_params",
+                                              "floor_no_out_of_history_window",
+                                              "floor_offset_out_of_history_window"
                                             ],
                                             "type": "string"
                                           },
@@ -22433,6 +22491,31 @@
                                       },
                                       "order_requested": {
                                         "type": "integer"
+                                      },
+                                      "placement_params_requested": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
                                       },
                                       "placement_requested": {
                                         "type": "string"
@@ -22459,6 +22542,31 @@
                                         ],
                                         "type": "string"
                                       },
+                                      "source_chain": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "agent_run_id": {
+                                                "type": "string"
+                                              },
+                                              "agent_type_id": {
+                                                "type": "string"
+                                              },
+                                              "debug_session_tag": {
+                                                "type": "string"
+                                              },
+                                              "temporary_conversation_id": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "source_kind": {
                                         "type": "string"
                                       },
@@ -22473,11 +22581,14 @@
                                       "enabled",
                                       "scope",
                                       "placement_requested",
+                                      "placement_params_requested",
                                       "order_requested",
                                       "title",
                                       "content_length",
                                       "applied",
                                       "placement_resolved",
+                                      "anchor_resolved",
+                                      "source_chain",
                                       "not_applied_reason"
                                     ],
                                     "type": "object"
@@ -43879,6 +43990,60 @@
                                   "items": {
                                     "additionalProperties": false,
                                     "properties": {
+                                      "anchor_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "edge": {
+                                                "enum": [
+                                                  "before",
+                                                  "after"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "internal_key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "section",
+                                                  "floor_by_no",
+                                                  "floor_from_end",
+                                                  "worldbook_depth",
+                                                  "worldbook_edge",
+                                                  "worldbook_author_note_top",
+                                                  "contributor_block"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "resolved_depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "applied": {
                                         "type": "boolean"
                                       },
@@ -43916,7 +44081,11 @@
                                               "prompt_section_absent",
                                               "disabled",
                                               "expired",
-                                              "mode_scope_mismatch"
+                                              "mode_scope_mismatch",
+                                              "missing_placement_params",
+                                              "invalid_placement_params",
+                                              "floor_no_out_of_history_window",
+                                              "floor_offset_out_of_history_window"
                                             ],
                                             "type": "string"
                                           },
@@ -43927,6 +44096,31 @@
                                       },
                                       "order_requested": {
                                         "type": "integer"
+                                      },
+                                      "placement_params_requested": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
                                       },
                                       "placement_requested": {
                                         "type": "string"
@@ -43953,6 +44147,31 @@
                                         ],
                                         "type": "string"
                                       },
+                                      "source_chain": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "agent_run_id": {
+                                                "type": "string"
+                                              },
+                                              "agent_type_id": {
+                                                "type": "string"
+                                              },
+                                              "debug_session_tag": {
+                                                "type": "string"
+                                              },
+                                              "temporary_conversation_id": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "source_kind": {
                                         "type": "string"
                                       },
@@ -43967,11 +44186,14 @@
                                       "enabled",
                                       "scope",
                                       "placement_requested",
+                                      "placement_params_requested",
                                       "order_requested",
                                       "title",
                                       "content_length",
                                       "applied",
                                       "placement_resolved",
+                                      "anchor_resolved",
+                                      "source_chain",
                                       "not_applied_reason"
                                     ],
                                     "type": "object"
@@ -45505,6 +45727,606 @@
         "summary": "Edit a user message and regenerate",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/messages/{id}/manual-revisions": {
+      "get": {
+        "operationId": "getMessageManualRevisions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "branch_id": {
+                          "type": "string"
+                        },
+                        "current_content": {
+                          "type": "string"
+                        },
+                        "current_token_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "items": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "actor_account_id": {
+                                "type": "string"
+                              },
+                              "actor_client_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "actor_id": {
+                                "type": "string"
+                              },
+                              "actor_type": {
+                                "enum": [
+                                  "account",
+                                  "client"
+                                ],
+                                "type": "string"
+                              },
+                              "branch_id": {
+                                "type": "string"
+                              },
+                              "created_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "edited_content": {
+                                "type": "string"
+                              },
+                              "floor_id": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "message_id": {
+                                "type": "string"
+                              },
+                              "operation_log_id": {
+                                "type": "string"
+                              },
+                              "original_content": {
+                                "type": "string"
+                              },
+                              "page_id": {
+                                "type": "string"
+                              },
+                              "previous_content": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "requested_target_id": {
+                                "type": "string"
+                              },
+                              "requested_target_kind": {
+                                "enum": [
+                                  "message",
+                                  "page"
+                                ],
+                                "type": "string"
+                              },
+                              "revision_no": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "session_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "session_id",
+                              "branch_id",
+                              "floor_id",
+                              "page_id",
+                              "message_id",
+                              "requested_target_kind",
+                              "requested_target_id",
+                              "revision_no",
+                              "original_content",
+                              "previous_content",
+                              "edited_content",
+                              "reason",
+                              "actor_type",
+                              "actor_id",
+                              "actor_account_id",
+                              "actor_client_id",
+                              "operation_log_id",
+                              "created_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "latest_revision_no": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "message_id": {
+                          "type": "string"
+                        },
+                        "page_id": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "target_id": {
+                          "type": "string"
+                        },
+                        "target_kind": {
+                          "enum": [
+                            "message",
+                            "page"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "target_kind",
+                        "target_id",
+                        "session_id",
+                        "branch_id",
+                        "floor_id",
+                        "page_id",
+                        "message_id",
+                        "current_content",
+                        "current_token_count",
+                        "latest_revision_no",
+                        "items"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get committed content manual revisions for a message",
+        "tags": [
+          "messages"
+        ]
+      },
+      "post": {
+        "operationId": "createMessageManualRevision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "expected_latest_revision_no": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "content",
+                  "expected_latest_revision_no"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "branch_id": {
+                          "type": "string"
+                        },
+                        "current_content": {
+                          "type": "string"
+                        },
+                        "current_token_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "items": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "actor_account_id": {
+                                "type": "string"
+                              },
+                              "actor_client_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "actor_id": {
+                                "type": "string"
+                              },
+                              "actor_type": {
+                                "enum": [
+                                  "account",
+                                  "client"
+                                ],
+                                "type": "string"
+                              },
+                              "branch_id": {
+                                "type": "string"
+                              },
+                              "created_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "edited_content": {
+                                "type": "string"
+                              },
+                              "floor_id": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "message_id": {
+                                "type": "string"
+                              },
+                              "operation_log_id": {
+                                "type": "string"
+                              },
+                              "original_content": {
+                                "type": "string"
+                              },
+                              "page_id": {
+                                "type": "string"
+                              },
+                              "previous_content": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "requested_target_id": {
+                                "type": "string"
+                              },
+                              "requested_target_kind": {
+                                "enum": [
+                                  "message",
+                                  "page"
+                                ],
+                                "type": "string"
+                              },
+                              "revision_no": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "session_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "session_id",
+                              "branch_id",
+                              "floor_id",
+                              "page_id",
+                              "message_id",
+                              "requested_target_kind",
+                              "requested_target_id",
+                              "revision_no",
+                              "original_content",
+                              "previous_content",
+                              "edited_content",
+                              "reason",
+                              "actor_type",
+                              "actor_id",
+                              "actor_account_id",
+                              "actor_client_id",
+                              "operation_log_id",
+                              "created_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "latest_revision_no": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "message_id": {
+                          "type": "string"
+                        },
+                        "page_id": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "target_id": {
+                          "type": "string"
+                        },
+                        "target_kind": {
+                          "enum": [
+                            "message",
+                            "page"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "target_kind",
+                        "target_id",
+                        "session_id",
+                        "branch_id",
+                        "floor_id",
+                        "page_id",
+                        "message_id",
+                        "current_content",
+                        "current_token_count",
+                        "latest_revision_no",
+                        "items"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Apply committed content manual revision to a message",
+        "tags": [
+          "messages"
         ]
       }
     },
@@ -47703,6 +48525,606 @@
           }
         },
         "summary": "Activate page within floor",
+        "tags": [
+          "pages"
+        ]
+      }
+    },
+    "/pages/{id}/manual-revisions": {
+      "get": {
+        "operationId": "getPageManualRevisions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "branch_id": {
+                          "type": "string"
+                        },
+                        "current_content": {
+                          "type": "string"
+                        },
+                        "current_token_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "items": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "actor_account_id": {
+                                "type": "string"
+                              },
+                              "actor_client_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "actor_id": {
+                                "type": "string"
+                              },
+                              "actor_type": {
+                                "enum": [
+                                  "account",
+                                  "client"
+                                ],
+                                "type": "string"
+                              },
+                              "branch_id": {
+                                "type": "string"
+                              },
+                              "created_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "edited_content": {
+                                "type": "string"
+                              },
+                              "floor_id": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "message_id": {
+                                "type": "string"
+                              },
+                              "operation_log_id": {
+                                "type": "string"
+                              },
+                              "original_content": {
+                                "type": "string"
+                              },
+                              "page_id": {
+                                "type": "string"
+                              },
+                              "previous_content": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "requested_target_id": {
+                                "type": "string"
+                              },
+                              "requested_target_kind": {
+                                "enum": [
+                                  "message",
+                                  "page"
+                                ],
+                                "type": "string"
+                              },
+                              "revision_no": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "session_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "session_id",
+                              "branch_id",
+                              "floor_id",
+                              "page_id",
+                              "message_id",
+                              "requested_target_kind",
+                              "requested_target_id",
+                              "revision_no",
+                              "original_content",
+                              "previous_content",
+                              "edited_content",
+                              "reason",
+                              "actor_type",
+                              "actor_id",
+                              "actor_account_id",
+                              "actor_client_id",
+                              "operation_log_id",
+                              "created_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "latest_revision_no": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "message_id": {
+                          "type": "string"
+                        },
+                        "page_id": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "target_id": {
+                          "type": "string"
+                        },
+                        "target_kind": {
+                          "enum": [
+                            "message",
+                            "page"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "target_kind",
+                        "target_id",
+                        "session_id",
+                        "branch_id",
+                        "floor_id",
+                        "page_id",
+                        "message_id",
+                        "current_content",
+                        "current_token_count",
+                        "latest_revision_no",
+                        "items"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Get committed content manual revisions for a page",
+        "tags": [
+          "pages"
+        ]
+      },
+      "post": {
+        "operationId": "createPageManualRevision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "content": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "expected_latest_revision_no": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "reason": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "content",
+                  "expected_latest_revision_no"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "branch_id": {
+                          "type": "string"
+                        },
+                        "current_content": {
+                          "type": "string"
+                        },
+                        "current_token_count": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "floor_id": {
+                          "type": "string"
+                        },
+                        "items": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "actor_account_id": {
+                                "type": "string"
+                              },
+                              "actor_client_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "actor_id": {
+                                "type": "string"
+                              },
+                              "actor_type": {
+                                "enum": [
+                                  "account",
+                                  "client"
+                                ],
+                                "type": "string"
+                              },
+                              "branch_id": {
+                                "type": "string"
+                              },
+                              "created_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "edited_content": {
+                                "type": "string"
+                              },
+                              "floor_id": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "message_id": {
+                                "type": "string"
+                              },
+                              "operation_log_id": {
+                                "type": "string"
+                              },
+                              "original_content": {
+                                "type": "string"
+                              },
+                              "page_id": {
+                                "type": "string"
+                              },
+                              "previous_content": {
+                                "type": "string"
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "requested_target_id": {
+                                "type": "string"
+                              },
+                              "requested_target_kind": {
+                                "enum": [
+                                  "message",
+                                  "page"
+                                ],
+                                "type": "string"
+                              },
+                              "revision_no": {
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "session_id": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "session_id",
+                              "branch_id",
+                              "floor_id",
+                              "page_id",
+                              "message_id",
+                              "requested_target_kind",
+                              "requested_target_id",
+                              "revision_no",
+                              "original_content",
+                              "previous_content",
+                              "edited_content",
+                              "reason",
+                              "actor_type",
+                              "actor_id",
+                              "actor_account_id",
+                              "actor_client_id",
+                              "operation_log_id",
+                              "created_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "latest_revision_no": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "message_id": {
+                          "type": "string"
+                        },
+                        "page_id": {
+                          "type": "string"
+                        },
+                        "session_id": {
+                          "type": "string"
+                        },
+                        "target_id": {
+                          "type": "string"
+                        },
+                        "target_kind": {
+                          "enum": [
+                            "message",
+                            "page"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "target_kind",
+                        "target_id",
+                        "session_id",
+                        "branch_id",
+                        "floor_id",
+                        "page_id",
+                        "message_id",
+                        "current_content",
+                        "current_token_count",
+                        "latest_revision_no",
+                        "items"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Apply committed content manual revision to a page",
         "tags": [
           "pages"
         ]
@@ -69135,6 +70557,7 @@
                       "mode_scope": null,
                       "order": 100,
                       "placement": "before_history",
+                      "placement_params": null,
                       "scope": "session",
                       "source_kind": "client_injection",
                       "title": "History guard",
@@ -69194,6 +70617,31 @@
                           "placement": {
                             "type": "string"
                           },
+                          "placement_params": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "depth": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "floor_no": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "offset": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "scope": {
                             "enum": [
                               "session",
@@ -69233,6 +70681,7 @@
                           "title",
                           "content",
                           "placement",
+                          "placement_params",
                           "order",
                           "enabled",
                           "mode_scope",
@@ -69358,6 +70807,9 @@
                 "mode_scope": null,
                 "order": 100,
                 "placement": "before_history",
+                "placement_params": {
+                  "floor_no": 12
+                },
                 "source_kind": "client_injection",
                 "title": "History guard",
                 "ttl_ms": null
@@ -69393,6 +70845,24 @@
                   "placement": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "placement_params": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "depth": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "floor_no": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "offset": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
                   },
                   "source_kind": {
                     "enum": [
@@ -69442,6 +70912,7 @@
                     "mode_scope": null,
                     "order": 100,
                     "placement": "before_history",
+                    "placement_params": null,
                     "scope": "session",
                     "source_kind": "client_injection",
                     "title": "History guard",
@@ -69499,6 +70970,31 @@
                         "placement": {
                           "type": "string"
                         },
+                        "placement_params": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "depth": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "floor_no": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "offset": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "scope": {
                           "enum": [
                             "session",
@@ -69538,6 +71034,7 @@
                         "title",
                         "content",
                         "placement",
+                        "placement_params",
                         "order",
                         "enabled",
                         "mode_scope",
@@ -69743,6 +71240,7 @@
                     "mode_scope": null,
                     "order": 100,
                     "placement": "before_history",
+                    "placement_params": null,
                     "scope": "session",
                     "source_kind": "client_injection",
                     "title": "History guard",
@@ -69800,6 +71298,31 @@
                         "placement": {
                           "type": "string"
                         },
+                        "placement_params": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "depth": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "floor_no": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "offset": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "scope": {
                           "enum": [
                             "session",
@@ -69839,6 +71362,7 @@
                         "title",
                         "content",
                         "placement",
+                        "placement_params",
                         "order",
                         "enabled",
                         "mode_scope",
@@ -70035,6 +71559,31 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "placement_params": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "depth": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "floor_no": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offset": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "source_kind": {
                     "enum": [
                       "client_injection"
@@ -70077,6 +71626,7 @@
                     "mode_scope": null,
                     "order": 100,
                     "placement": "before_history",
+                    "placement_params": null,
                     "scope": "session",
                     "source_kind": "client_injection",
                     "title": "History guard",
@@ -70134,6 +71684,31 @@
                         "placement": {
                           "type": "string"
                         },
+                        "placement_params": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "depth": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "floor_no": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "offset": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "scope": {
                           "enum": [
                             "session",
@@ -70173,6 +71748,7 @@
                         "title",
                         "content",
                         "placement",
+                        "placement_params",
                         "order",
                         "enabled",
                         "mode_scope",
@@ -72929,6 +74505,7 @@
                       "mode_scope": null,
                       "order": 100,
                       "placement": "before_history",
+                      "placement_params": null,
                       "scope": "session",
                       "source_kind": "client_injection",
                       "title": "History guard",
@@ -72988,6 +74565,31 @@
                           "placement": {
                             "type": "string"
                           },
+                          "placement_params": {
+                            "anyOf": [
+                              {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "depth": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "floor_no": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  "offset": {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "scope": {
                             "enum": [
                               "session",
@@ -73027,6 +74629,7 @@
                           "title",
                           "content",
                           "placement",
+                          "placement_params",
                           "order",
                           "enabled",
                           "mode_scope",
@@ -73143,6 +74746,9 @@
                 "mode_scope": null,
                 "order": 100,
                 "placement": "before_history",
+                "placement_params": {
+                  "floor_no": 12
+                },
                 "source_kind": "client_injection",
                 "title": "History guard",
                 "ttl_ms": null
@@ -73178,6 +74784,24 @@
                   "placement": {
                     "minLength": 1,
                     "type": "string"
+                  },
+                  "placement_params": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "depth": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "floor_no": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "offset": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "type": "object"
                   },
                   "source_kind": {
                     "enum": [
@@ -73227,6 +74851,7 @@
                     "mode_scope": null,
                     "order": 100,
                     "placement": "before_history",
+                    "placement_params": null,
                     "scope": "session",
                     "source_kind": "client_injection",
                     "title": "History guard",
@@ -73284,6 +74909,31 @@
                         "placement": {
                           "type": "string"
                         },
+                        "placement_params": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "depth": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "floor_no": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "offset": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "scope": {
                           "enum": [
                             "session",
@@ -73323,6 +74973,7 @@
                         "title",
                         "content",
                         "placement",
+                        "placement_params",
                         "order",
                         "enabled",
                         "mode_scope",
@@ -73519,6 +75170,7 @@
                     "mode_scope": null,
                     "order": 100,
                     "placement": "before_history",
+                    "placement_params": null,
                     "scope": "session",
                     "source_kind": "client_injection",
                     "title": "History guard",
@@ -73576,6 +75228,31 @@
                         "placement": {
                           "type": "string"
                         },
+                        "placement_params": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "depth": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "floor_no": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "offset": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "scope": {
                           "enum": [
                             "session",
@@ -73615,6 +75292,7 @@
                         "title",
                         "content",
                         "placement",
+                        "placement_params",
                         "order",
                         "enabled",
                         "mode_scope",
@@ -73802,6 +75480,31 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "placement_params": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "depth": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "floor_no": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "offset": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "source_kind": {
                     "enum": [
                       "client_injection"
@@ -73844,6 +75547,7 @@
                     "mode_scope": null,
                     "order": 100,
                     "placement": "before_history",
+                    "placement_params": null,
                     "scope": "session",
                     "source_kind": "client_injection",
                     "title": "History guard",
@@ -73901,6 +75605,31 @@
                         "placement": {
                           "type": "string"
                         },
+                        "placement_params": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "depth": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "floor_no": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "offset": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "scope": {
                           "enum": [
                             "session",
@@ -73940,6 +75669,7 @@
                         "title",
                         "content",
                         "placement",
+                        "placement_params",
                         "order",
                         "enabled",
                         "mode_scope",
@@ -74476,6 +76206,24 @@
                         "placement": {
                           "minLength": 1,
                           "type": "string"
+                        },
+                        "placement_params": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "depth": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "floor_no": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "offset": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
                         },
                         "scope": {
                           "enum": [
@@ -75668,6 +77416,60 @@
                           "items": {
                             "additionalProperties": false,
                             "properties": {
+                              "anchor_resolved": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "depth": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "edge": {
+                                        "enum": [
+                                          "before",
+                                          "after"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "floor_no": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "internal_key": {
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "enum": [
+                                          "section",
+                                          "floor_by_no",
+                                          "floor_from_end",
+                                          "worldbook_depth",
+                                          "worldbook_edge",
+                                          "worldbook_author_note_top",
+                                          "contributor_block"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "offset": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "resolved_depth": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "applied": {
                                 "type": "boolean"
                               },
@@ -75705,7 +77507,11 @@
                                       "prompt_section_absent",
                                       "disabled",
                                       "expired",
-                                      "mode_scope_mismatch"
+                                      "mode_scope_mismatch",
+                                      "missing_placement_params",
+                                      "invalid_placement_params",
+                                      "floor_no_out_of_history_window",
+                                      "floor_offset_out_of_history_window"
                                     ],
                                     "type": "string"
                                   },
@@ -75716,6 +77522,31 @@
                               },
                               "order_requested": {
                                 "type": "integer"
+                              },
+                              "placement_params_requested": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "depth": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "floor_no": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "offset": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "placement_requested": {
                                 "type": "string"
@@ -75742,6 +77573,31 @@
                                 ],
                                 "type": "string"
                               },
+                              "source_chain": {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "agent_run_id": {
+                                        "type": "string"
+                                      },
+                                      "agent_type_id": {
+                                        "type": "string"
+                                      },
+                                      "debug_session_tag": {
+                                        "type": "string"
+                                      },
+                                      "temporary_conversation_id": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "source_kind": {
                                 "type": "string"
                               },
@@ -75756,11 +77612,14 @@
                               "enabled",
                               "scope",
                               "placement_requested",
+                              "placement_params_requested",
                               "order_requested",
                               "title",
                               "content_length",
                               "applied",
                               "placement_resolved",
+                              "anchor_resolved",
+                              "source_chain",
                               "not_applied_reason"
                             ],
                             "type": "object"
@@ -77767,6 +79626,60 @@
                                           "items": {
                                             "additionalProperties": false,
                                             "properties": {
+                                              "anchor_resolved": {
+                                                "anyOf": [
+                                                  {
+                                                    "additionalProperties": false,
+                                                    "properties": {
+                                                      "depth": {
+                                                        "minimum": 0,
+                                                        "type": "integer"
+                                                      },
+                                                      "edge": {
+                                                        "enum": [
+                                                          "before",
+                                                          "after"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "floor_no": {
+                                                        "minimum": 0,
+                                                        "type": "integer"
+                                                      },
+                                                      "internal_key": {
+                                                        "type": "string"
+                                                      },
+                                                      "kind": {
+                                                        "enum": [
+                                                          "section",
+                                                          "floor_by_no",
+                                                          "floor_from_end",
+                                                          "worldbook_depth",
+                                                          "worldbook_edge",
+                                                          "worldbook_author_note_top",
+                                                          "contributor_block"
+                                                        ],
+                                                        "type": "string"
+                                                      },
+                                                      "offset": {
+                                                        "minimum": 0,
+                                                        "type": "integer"
+                                                      },
+                                                      "resolved_depth": {
+                                                        "minimum": 0,
+                                                        "type": "integer"
+                                                      }
+                                                    },
+                                                    "required": [
+                                                      "kind"
+                                                    ],
+                                                    "type": "object"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
                                               "applied": {
                                                 "type": "boolean"
                                               },
@@ -77804,7 +79717,11 @@
                                                       "prompt_section_absent",
                                                       "disabled",
                                                       "expired",
-                                                      "mode_scope_mismatch"
+                                                      "mode_scope_mismatch",
+                                                      "missing_placement_params",
+                                                      "invalid_placement_params",
+                                                      "floor_no_out_of_history_window",
+                                                      "floor_offset_out_of_history_window"
                                                     ],
                                                     "type": "string"
                                                   },
@@ -77815,6 +79732,31 @@
                                               },
                                               "order_requested": {
                                                 "type": "integer"
+                                              },
+                                              "placement_params_requested": {
+                                                "anyOf": [
+                                                  {
+                                                    "additionalProperties": false,
+                                                    "properties": {
+                                                      "depth": {
+                                                        "minimum": 0,
+                                                        "type": "integer"
+                                                      },
+                                                      "floor_no": {
+                                                        "minimum": 0,
+                                                        "type": "integer"
+                                                      },
+                                                      "offset": {
+                                                        "minimum": 0,
+                                                        "type": "integer"
+                                                      }
+                                                    },
+                                                    "type": "object"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
                                               },
                                               "placement_requested": {
                                                 "type": "string"
@@ -77841,6 +79783,31 @@
                                                 ],
                                                 "type": "string"
                                               },
+                                              "source_chain": {
+                                                "anyOf": [
+                                                  {
+                                                    "additionalProperties": false,
+                                                    "properties": {
+                                                      "agent_run_id": {
+                                                        "type": "string"
+                                                      },
+                                                      "agent_type_id": {
+                                                        "type": "string"
+                                                      },
+                                                      "debug_session_tag": {
+                                                        "type": "string"
+                                                      },
+                                                      "temporary_conversation_id": {
+                                                        "type": "string"
+                                                      }
+                                                    },
+                                                    "type": "object"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
                                               "source_kind": {
                                                 "type": "string"
                                               },
@@ -77855,11 +79822,14 @@
                                               "enabled",
                                               "scope",
                                               "placement_requested",
+                                              "placement_params_requested",
                                               "order_requested",
                                               "title",
                                               "content_length",
                                               "applied",
                                               "placement_resolved",
+                                              "anchor_resolved",
+                                              "source_chain",
                                               "not_applied_reason"
                                             ],
                                             "type": "object"
@@ -82452,6 +84422,24 @@
                           "minLength": 1,
                           "type": "string"
                         },
+                        "placement_params": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "depth": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "floor_no": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "offset": {
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
                         "scope": {
                           "enum": [
                             "request"
@@ -83995,6 +85983,60 @@
                                   "items": {
                                     "additionalProperties": false,
                                     "properties": {
+                                      "anchor_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "edge": {
+                                                "enum": [
+                                                  "before",
+                                                  "after"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "internal_key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "section",
+                                                  "floor_by_no",
+                                                  "floor_from_end",
+                                                  "worldbook_depth",
+                                                  "worldbook_edge",
+                                                  "worldbook_author_note_top",
+                                                  "contributor_block"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "resolved_depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "applied": {
                                         "type": "boolean"
                                       },
@@ -84032,7 +86074,11 @@
                                               "prompt_section_absent",
                                               "disabled",
                                               "expired",
-                                              "mode_scope_mismatch"
+                                              "mode_scope_mismatch",
+                                              "missing_placement_params",
+                                              "invalid_placement_params",
+                                              "floor_no_out_of_history_window",
+                                              "floor_offset_out_of_history_window"
                                             ],
                                             "type": "string"
                                           },
@@ -84043,6 +86089,31 @@
                                       },
                                       "order_requested": {
                                         "type": "integer"
+                                      },
+                                      "placement_params_requested": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
                                       },
                                       "placement_requested": {
                                         "type": "string"
@@ -84069,6 +86140,31 @@
                                         ],
                                         "type": "string"
                                       },
+                                      "source_chain": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "agent_run_id": {
+                                                "type": "string"
+                                              },
+                                              "agent_type_id": {
+                                                "type": "string"
+                                              },
+                                              "debug_session_tag": {
+                                                "type": "string"
+                                              },
+                                              "temporary_conversation_id": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "source_kind": {
                                         "type": "string"
                                       },
@@ -84083,11 +86179,14 @@
                                       "enabled",
                                       "scope",
                                       "placement_requested",
+                                      "placement_params_requested",
                                       "order_requested",
                                       "title",
                                       "content_length",
                                       "applied",
                                       "placement_resolved",
+                                      "anchor_resolved",
+                                      "source_chain",
                                       "not_applied_reason"
                                     ],
                                     "type": "object"
@@ -87351,6 +89450,60 @@
                                   "items": {
                                     "additionalProperties": false,
                                     "properties": {
+                                      "anchor_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "edge": {
+                                                "enum": [
+                                                  "before",
+                                                  "after"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "internal_key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "section",
+                                                  "floor_by_no",
+                                                  "floor_from_end",
+                                                  "worldbook_depth",
+                                                  "worldbook_edge",
+                                                  "worldbook_author_note_top",
+                                                  "contributor_block"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "resolved_depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "applied": {
                                         "type": "boolean"
                                       },
@@ -87388,7 +89541,11 @@
                                               "prompt_section_absent",
                                               "disabled",
                                               "expired",
-                                              "mode_scope_mismatch"
+                                              "mode_scope_mismatch",
+                                              "missing_placement_params",
+                                              "invalid_placement_params",
+                                              "floor_no_out_of_history_window",
+                                              "floor_offset_out_of_history_window"
                                             ],
                                             "type": "string"
                                           },
@@ -87399,6 +89556,31 @@
                                       },
                                       "order_requested": {
                                         "type": "integer"
+                                      },
+                                      "placement_params_requested": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
                                       },
                                       "placement_requested": {
                                         "type": "string"
@@ -87425,6 +89607,31 @@
                                         ],
                                         "type": "string"
                                       },
+                                      "source_chain": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "agent_run_id": {
+                                                "type": "string"
+                                              },
+                                              "agent_type_id": {
+                                                "type": "string"
+                                              },
+                                              "debug_session_tag": {
+                                                "type": "string"
+                                              },
+                                              "temporary_conversation_id": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "source_kind": {
                                         "type": "string"
                                       },
@@ -87439,11 +89646,14 @@
                                       "enabled",
                                       "scope",
                                       "placement_requested",
+                                      "placement_params_requested",
                                       "order_requested",
                                       "title",
                                       "content_length",
                                       "applied",
                                       "placement_resolved",
+                                      "anchor_resolved",
+                                      "source_chain",
                                       "not_applied_reason"
                                     ],
                                     "type": "object"
@@ -91324,6 +93534,60 @@
                                   "items": {
                                     "additionalProperties": false,
                                     "properties": {
+                                      "anchor_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "edge": {
+                                                "enum": [
+                                                  "before",
+                                                  "after"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "internal_key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "section",
+                                                  "floor_by_no",
+                                                  "floor_from_end",
+                                                  "worldbook_depth",
+                                                  "worldbook_edge",
+                                                  "worldbook_author_note_top",
+                                                  "contributor_block"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "resolved_depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "applied": {
                                         "type": "boolean"
                                       },
@@ -91361,7 +93625,11 @@
                                               "prompt_section_absent",
                                               "disabled",
                                               "expired",
-                                              "mode_scope_mismatch"
+                                              "mode_scope_mismatch",
+                                              "missing_placement_params",
+                                              "invalid_placement_params",
+                                              "floor_no_out_of_history_window",
+                                              "floor_offset_out_of_history_window"
                                             ],
                                             "type": "string"
                                           },
@@ -91372,6 +93640,31 @@
                                       },
                                       "order_requested": {
                                         "type": "integer"
+                                      },
+                                      "placement_params_requested": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
                                       },
                                       "placement_requested": {
                                         "type": "string"
@@ -91398,6 +93691,31 @@
                                         ],
                                         "type": "string"
                                       },
+                                      "source_chain": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "agent_run_id": {
+                                                "type": "string"
+                                              },
+                                              "agent_type_id": {
+                                                "type": "string"
+                                              },
+                                              "debug_session_tag": {
+                                                "type": "string"
+                                              },
+                                              "temporary_conversation_id": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "source_kind": {
                                         "type": "string"
                                       },
@@ -91412,11 +93730,14 @@
                                       "enabled",
                                       "scope",
                                       "placement_requested",
+                                      "placement_params_requested",
                                       "order_requested",
                                       "title",
                                       "content_length",
                                       "applied",
                                       "placement_resolved",
+                                      "anchor_resolved",
+                                      "source_chain",
                                       "not_applied_reason"
                                     ],
                                     "type": "object"
@@ -95653,6 +97974,60 @@
                                   "items": {
                                     "additionalProperties": false,
                                     "properties": {
+                                      "anchor_resolved": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "edge": {
+                                                "enum": [
+                                                  "before",
+                                                  "after"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "internal_key": {
+                                                "type": "string"
+                                              },
+                                              "kind": {
+                                                "enum": [
+                                                  "section",
+                                                  "floor_by_no",
+                                                  "floor_from_end",
+                                                  "worldbook_depth",
+                                                  "worldbook_edge",
+                                                  "worldbook_author_note_top",
+                                                  "contributor_block"
+                                                ],
+                                                "type": "string"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "resolved_depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "required": [
+                                              "kind"
+                                            ],
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "applied": {
                                         "type": "boolean"
                                       },
@@ -95690,7 +98065,11 @@
                                               "prompt_section_absent",
                                               "disabled",
                                               "expired",
-                                              "mode_scope_mismatch"
+                                              "mode_scope_mismatch",
+                                              "missing_placement_params",
+                                              "invalid_placement_params",
+                                              "floor_no_out_of_history_window",
+                                              "floor_offset_out_of_history_window"
                                             ],
                                             "type": "string"
                                           },
@@ -95701,6 +98080,31 @@
                                       },
                                       "order_requested": {
                                         "type": "integer"
+                                      },
+                                      "placement_params_requested": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "depth": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "floor_no": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "offset": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
                                       },
                                       "placement_requested": {
                                         "type": "string"
@@ -95727,6 +98131,31 @@
                                         ],
                                         "type": "string"
                                       },
+                                      "source_chain": {
+                                        "anyOf": [
+                                          {
+                                            "additionalProperties": false,
+                                            "properties": {
+                                              "agent_run_id": {
+                                                "type": "string"
+                                              },
+                                              "agent_type_id": {
+                                                "type": "string"
+                                              },
+                                              "debug_session_tag": {
+                                                "type": "string"
+                                              },
+                                              "temporary_conversation_id": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "type": "object"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "source_kind": {
                                         "type": "string"
                                       },
@@ -95741,11 +98170,14 @@
                                       "enabled",
                                       "scope",
                                       "placement_requested",
+                                      "placement_params_requested",
                                       "order_requested",
                                       "title",
                                       "content_length",
                                       "applied",
                                       "placement_resolved",
+                                      "anchor_resolved",
+                                      "source_chain",
                                       "not_applied_reason"
                                     ],
                                     "type": "object"

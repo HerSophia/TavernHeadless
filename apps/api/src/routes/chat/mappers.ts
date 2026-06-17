@@ -46,17 +46,38 @@ export function mapGenerationParams(
   ) as RespondRequest["generationParams"];
 }
 
+/**
+ * I3 placement_params 身份转换：snake_case 请求体 -> camelCase 内部表示。
+ * 返回 undefined 表示请求未携带 placement_params。
+ */
+export function mapPlacementParamsBody(
+  params: PromptRuntimeInjectionBody["placement_params"] | null | undefined,
+): { floorNo?: number; offset?: number; depth?: number } | undefined {
+  if (!params) {
+    return undefined;
+  }
+  return {
+    ...(params.floor_no !== undefined ? { floorNo: params.floor_no } : {}),
+    ...(params.offset !== undefined ? { offset: params.offset } : {}),
+    ...(params.depth !== undefined ? { depth: params.depth } : {}),
+  };
+}
+
 export function mapPromptRuntimeInjectionsRequest(
   injections: PromptRuntimeInjectionBody[] | undefined,
 ): PromptRuntimeClientInjectionInput[] | undefined {
-  return injections?.map((injection) => ({
-    sourceKind: injection.source_kind,
-    title: injection.title,
-    content: injection.content,
-    placement: injection.placement,
-    order: injection.order,
-    scope: injection.scope,
-  }));
+  return injections?.map((injection) => {
+    const placementParams = mapPlacementParamsBody(injection.placement_params);
+    return {
+      sourceKind: injection.source_kind,
+      title: injection.title,
+      content: injection.content,
+      placement: injection.placement,
+      ...(placementParams ? { placementParams } : {}),
+      order: injection.order,
+      scope: injection.scope,
+    };
+  });
 }
 
 export function mapTurnSessionStateWritesRequest(

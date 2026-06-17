@@ -649,6 +649,11 @@ export interface AssemblePromptOptions {
   memoryRuntimeTrace?: Omit<CorePromptRuntimeMemoryTrace, "summaryInjected">;
   contributors?: PromptRuntimeAssemblyContributor[];
   injectionItems?: PromptRuntimeInjectionTraceItem[];
+  /**
+   * I3：与选定历史消息等长的楼层编号序列，供楼层相对位置 injection解析。
+   * 未传入时视为空数组，楼层锁定类 injection 会被标记越界。
+   */
+  historyFloorNos?: Array<number | null>;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -1017,10 +1022,11 @@ export async function assemblePrompt(
           })
         : assembleCompat({ ...compatInput, chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }> });
 
-    const appliedPromptRuntimeInjections = applyPromptRuntimeInjectionSections({
+     const appliedPromptRuntimeInjections = applyPromptRuntimeInjectionSections({
       promptIr: promptIR,
       contributors: structuredPromptRuntimeInjectionContributors,
       traceItems: finalInjectionTraceItems,
+      historyFloorNos: options.historyFloorNos ?? [],
     });
     promptIR = appliedPromptRuntimeInjections.promptIr;
     finalInjectionTraceItems = appliedPromptRuntimeInjections.traceItems;
@@ -1538,6 +1544,32 @@ function isPromptRuntimeOutputInstructionSection(section: { name: string; messag
     || section.messages.some((message) => message.source === "character:post_history_instructions");
 }
 
+/**
+ * I3：识别 native contributor 区块 section。
+ * 与 buildNativeContributorNodes 产出的 section 命名 / source 对齐。
+ */
+function isPromptRuntimeContributorSection(section: { name: string; messages: Array<{ source?: string }> }): boolean {
+  if (section.name === "State Projection" || section.name.startsWith("Contributor ")) {
+    return true;
+  }
+  return section.messages.some(
+    (message) => typeof message.source === "string" && message.source.includes("native:contributor:"),
+  );
+}
+
+/**
+ * I3：识别世界书作者注 section。
+ * 找不到时调用方按 prompt_section_absent 降级。
+ */
+function isPromptRuntimeAuthorNoteSection(section: { name: string; messages: Array<{ source?: string }> }): boolean {
+  if (section.name === "Author's Note" || section.name.startsWith("Author Note")) {
+    return true;
+  }
+  return section.messages.some(
+    (message) => typeof message.source === "string" && message.source.includes("author_note"),
+  );
+}
+
 function buildPromptRuntimeRelativeOrders(
   anchorOrder: number,
   direction: "before" | "after",
@@ -1588,6 +1620,7 @@ function applyPromptRuntimeInjectionSections(args: {
     requestedOrder: number;
   }>;
   traceItems: PromptRuntimeInjectionTraceItem[];
+  historyFloorNos: Array<number | null>;
 }): {
   promptIr: import("@tavern/core").PromptIR;
   traceItems: PromptRuntimeInjectionTraceItem[];
@@ -1604,7 +1637,14 @@ function applyPromptRuntimeInjectionSections(args: {
   const traceItemByRequestIndex = new Map(nextTraceItems.map((item) => [item.requestIndex, item]));
   const grouped = new Map<string, typeof args.contributors>();
 
+  // I3：高级锚点（楼层 / 世界书细分 / contributor block）不走 section 分组，
+  // 由 applyAdvancedAnchoredInjections 单独处理；其余按 section 锁定分组。
+  const advancedContributors: typeof args.contributors = [];
   for (const contributor of args.contributors) {
+    if (contributor.anchor && contributor.anchor.kind !== "section") {
+      advancedContributors.push(contributor);
+      continue;
+    }
     const bucket = grouped.get(contributor.internalPlacementKey) ?? [];
     bucket.push(contributor);
     grouped.set(contributor.internalPlacementKey, bucket);
@@ -1740,6 +1780,17 @@ function applyPromptRuntimeInjectionSections(args: {
       }
     });
   }
+  // I3：处理高级锚点（楼层 / 世界书细分 / native contributor block）。
+  applyAdvancedAnchoredInjections({
+    advancedContributors,
+    nextSections,
+    sortedSections,
+  historySection,
+    worldbookSections,
+    historyFloorNos: args.historyFloorNos,
+    traceItemByRequestIndex,
+  });
+
 
   return {
     promptIr: {
@@ -1750,6 +1801,168 @@ function applyPromptRuntimeInjectionSections(args: {
     deferredContributors,
   };
 }
+
+/**
+ * I3：把高级锚点 injection 落到 PromptIR section。
+ *
+ * - 楼层锚点（floor_by_no / floor_from_end）按选定历史窗口解析为 in_chat 插入深度，
+ *   越界则标记对应 not-applied 原因，不抛错、不静默吞掉。
+ * - worldbook_depth 复用 in_chat 深度机制，与世界书 atDepth 坐标对齐。
+ * - worldbook_edge / worldbook_author_note_top / contributor_block 落到对应 section 相对位置，
+ *   对应 section缺失时标记 prompt_section_absent。
+ *
+ * 该函数直接修改传入的 nextSections 与 traceItemByRequestIndex。
+ */
+function applyAdvancedAnchoredInjections(args: {
+  advancedContributors: Array<PromptRuntimeAssemblyContributor & {
+    internalPlacementKey: string;
+    requestIndex: number;
+    requestedPlacement: string;
+    requestedOrder: number;
+  }>;
+  nextSections: import("@tavern/core").IRSection[];
+  sortedSections: import("@tavern/core").IRSection[];
+  historySection: import("@tavern/core").IRSection | undefined;
+  worldbookSections: import("@tavern/core").IRSection[];
+  historyFloorNos: Array<number | null>;
+  traceItemByRequestIndex: Map<number, PromptRuntimeInjectionTraceItem>;
+}): void {
+  const contributorSections = args.sortedSections.filter((section) => isPromptRuntimeContributorSection(section));
+  const authorNoteSections = args.sortedSections.filter((section) => isPromptRuntimeAuthorNoteSection(section));
+  const historyLength = args.historyFloorNos.length;
+
+  const markNotApplied = (requestIndex: number, reason: PromptRuntimeInjectionTraceItem["notAppliedReason"]): void => {
+    const item = args.traceItemByRequestIndex.get(requestIndex);
+    if (item) {
+      item.applied = false;
+      item.notAppliedReason = reason;
+    }
+  };
+
+  const markApplied = (requestIndex: number): void => {
+    const item = args.traceItemByRequestIndex.get(requestIndex);
+    if (item) {
+      item.applied = true;
+      delete item.notAppliedReason;
+    }
+  };
+
+  const pushInChatSection = (
+    contributor: PromptRuntimeAssemblyContributor & {
+      internalPlacementKey: string;
+      requestIndex: number;
+      requestedPlacement: string;
+      requestedOrder: number;
+    },
+    depth: number,
+    orderHint: number,
+  ): void => {
+    args.nextSections.push(createPromptRuntimeInjectionSection({
+      contributor,
+      order: (args.historySection?.order ?? 0) + 0.0001 + orderHint * 0.00001,
+      insertion: {
+        kind: "in_chat",
+        depth: Math.max(0, depth),
+        order: orderHint + 1,
+      },
+    }));
+  };
+
+  const pushRelativeSection = (
+    contributor: PromptRuntimeAssemblyContributor & {
+      internalPlacementKey: string;
+      requestIndex: number;
+      requestedPlacement: string;
+      requestedOrder: number;
+    },
+    anchorOrder: number,
+    direction: "before" | "after",
+    orderHint: number,
+  ): void => {
+    const step =0.0001;
+    const order = direction === "before"
+      ? anchorOrder - 0.5 - (orderHint + 1) * step
+      : anchorOrder + (orderHint + 1) * step;
+    args.nextSections.push(createPromptRuntimeInjectionSection({ contributor, order }));
+  };
+
+  args.advancedContributors.forEach((contributor, index) => {
+    const anchor = contributor.anchor;
+    if (!anchor || anchor.kind === "section") {
+      return;
+    }
+
+    switch (anchor.kind) {
+      case "floor_by_no": {
+        if (!args.historySection || historyLength === 0) {
+          markNotApplied(contributor.requestIndex, "floor_no_out_of_history_window");
+          return;
+        }
+        const messageIndex = args.historyFloorNos.findIndex((floorNo) => floorNo === anchor.floorNo);
+        if (messageIndex < 0) {
+          markNotApplied(contributor.requestIndex, "floor_no_out_of_history_window");
+          return;
+        }
+        // depth 以历史末尾倒数：before 落在该消息前，after 落在该消息后。
+        const depth = anchor.edge === "before"
+          ? historyLength - messageIndex
+          : historyLength - (messageIndex + 1);
+        pushInChatSection(contributor, depth, index);
+        markApplied(contributor.requestIndex);
+        return;
+      }
+      case "floor_from_end": {
+        if (!args.historySection || historyLength === 0 || anchor.offset >= historyLength) {
+          markNotApplied(contributor.requestIndex, "floor_offset_out_of_history_window");
+          return;
+        }
+        const depth = anchor.edge === "after" ? anchor.offset : anchor.offset + 1;
+        pushInChatSection(contributor, depth, index);
+        markApplied(contributor.requestIndex);
+        return;
+      }
+      case "worldbook_depth": {
+        pushInChatSection(contributor, anchor.depth, index);
+        markApplied(contributor.requestIndex);
+        return;
+      }
+      case "worldbook_edge": {
+        if (args.worldbookSections.length === 0) {
+          markNotApplied(contributor.requestIndex, "prompt_section_absent");
+          return;
+        }
+        const anchorSection = anchor.edge === "before"
+          ? args.worldbookSections[0]!
+          : args.worldbookSections[args.worldbookSections.length - 1]!;
+        pushRelativeSection(contributor, anchorSection.order, anchor.edge, index);
+        markApplied(contributor.requestIndex);
+        return;
+      }
+  case "worldbook_author_note_top": {
+        if (authorNoteSections.length === 0) {
+          markNotApplied(contributor.requestIndex, "prompt_section_absent");
+          return;
+        }
+        pushRelativeSection(contributor, authorNoteSections[0]!.order, "before", index);
+        markApplied(contributor.requestIndex);
+        return;
+      }
+      case "contributor_block": {
+        if (contributorSections.length === 0) {
+          markNotApplied(contributor.requestIndex, "prompt_section_absent");
+          return;
+        }
+        const anchorSection = anchor.edge === "before"
+          ? contributorSections[0]!
+          : contributorSections[contributorSections.length - 1]!;
+        pushRelativeSection(contributor, anchorSection.order, anchor.edge, index);
+        markApplied(contributor.requestIndex);
+        return;
+      }
+    }
+  });
+}
+
 
 function applyDeferredPromptRuntimeInjections(args: {
   messages: ChatMessage[];

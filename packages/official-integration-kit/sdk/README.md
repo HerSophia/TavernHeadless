@@ -136,6 +136,45 @@ console.log(result.generatedText);
 - 如果要把结果送回正式页面，必须显式调用 `exportToPageStagedWrite(...)`
 - 公开路由只返回 `client_visible` 的临时对话
 
+## committed floor 用户人工修订
+
+如果目标正文已经位于 committed floor，普通 `client.messages.update(...)` 和 `client.pages.update(...)` 仍然会受到只读限制。
+
+这时要使用专用入口：
+
+- `client.messages.getManualRevisions(...)`
+- `client.messages.createManualRevision(...)`
+- `client.pages.getManualRevisions(...)`
+- `client.pages.createManualRevision(...)`
+
+最小示例：
+
+```ts
+const applied = await client.messages.createManualRevision({
+  messageId: "msg_1",
+  content: "修订后的正文",
+  expectedLatestRevisionNo: 0,
+  reason: "人工润色",
+});
+
+console.log(applied.currentContent);
+console.log(applied.latestRevisionNo);
+
+const history = await client.messages.getManualRevisions({
+  messageId: "msg_1",
+});
+
+console.log(history.items[0]?.originalContent);
+```
+
+这组入口的边界固定为：
+
+- 只修改当前展示正文，也就是 `messages.content` 与 `messages.token_count`
+- 不改 `floors.getResult(...)` 返回的 committed snapshot
+- 不改 prompt snapshot、memory、session state、tool audit
+- page 路由只支持能够稳定映射到单条可编辑 message 的页
+- 并发通过 `expectedLatestRevisionNo` 做乐观锁控制
+
 ## Prompt Runtime 资源补充
 
 Prompt Runtime 资源当前有两条需要特别区分的只读入口：
