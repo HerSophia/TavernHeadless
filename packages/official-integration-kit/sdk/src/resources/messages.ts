@@ -42,6 +42,44 @@ export type MessageUpdateResult = {
   role: string;
 };
 
+export type ManualRevisionTargetKind = "message" | "page";
+
+export type CommittedContentManualRevisionRecord = {
+  actorAccountId: string;
+  actorClientId: string | null;
+  actorId: string;
+  actorType: "account" | "client";
+  branchId: string;
+  createdAt: number;
+  editedContent: string;
+  floorId: string;
+  id: string;
+  messageId: string;
+  operationLogId: string;
+  originalContent: string;
+  pageId: string;
+  previousContent: string;
+  reason: string | null;
+  requestedTargetId: string;
+  requestedTargetKind: ManualRevisionTargetKind;
+  revisionNo: number;
+  sessionId: string;
+};
+
+export type CommittedContentManualRevisionTimeline = {
+  branchId: string;
+  currentContent: string;
+  currentTokenCount: number;
+  floorId: string;
+  items: CommittedContentManualRevisionRecord[];
+  latestRevisionNo: number;
+  messageId: string;
+  pageId: string;
+  sessionId: string;
+  targetId: string;
+  targetKind: ManualRevisionTargetKind;
+};
+
 export type RegenerateResult = RespondResult & {
   sourceFloorId?: string;
   sourceMessageId?: string;
@@ -71,6 +109,11 @@ export type MessagesListOptions = {
 };
 
 export type MessagesGetDetailOptions = {
+  accountId?: AccountIdHint;
+  messageId: string;
+};
+
+export type MessagesGetManualRevisionsOptions = {
   accountId?: AccountIdHint;
   messageId: string;
 };
@@ -145,12 +188,22 @@ export type MessagesEditAndRegenerateOptions = {
   sessionStateWrites?: TurnSessionStateWrite[];
 };
 
+export type MessagesCreateManualRevisionOptions = {
+  accountId?: AccountIdHint;
+  content: string;
+  expectedLatestRevisionNo: number;
+  messageId: string;
+  reason?: string;
+};
+
 export type MessagesResource = {
   batchDelete(options: MessagesBatchDeleteOptions): Promise<MessagesBatchDeleteResult>;
   batchUpdateVisibility(options: MessagesBatchUpdateVisibilityOptions): Promise<MessagesBatchUpdateVisibilityResult>;
   create(options: MessagesCreateOptions): Promise<MessageRecord>;
+  createManualRevision(options: MessagesCreateManualRevisionOptions): Promise<CommittedContentManualRevisionTimeline>;
   editAndRegenerate(options: MessagesEditAndRegenerateOptions): Promise<RegenerateResult>;
   getDetail(options: MessagesGetDetailOptions): Promise<MessageRecord>;
+  getManualRevisions(options: MessagesGetManualRevisionsOptions): Promise<CommittedContentManualRevisionTimeline>;
   list(options?: MessagesListOptions): Promise<MessageRecord[]>;
   remove(options: MessagesRemoveOptions): Promise<boolean>;
   update(options: MessagesUpdateOptions): Promise<MessageUpdateResult | null>;
@@ -204,6 +257,27 @@ export function createMessagesResource(client: TransportClient): MessagesResourc
 
       return payload;
     },
+    async createManualRevision(options): Promise<CommittedContentManualRevisionTimeline> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/messages/${encodeURIComponent(options.messageId)}/manual-revisions`,
+        {
+          body: compactObject({
+            content: options.content,
+            expected_latest_revision_no: options.expectedLatestRevisionNo,
+            reason: options.reason,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const payload = mapCommittedContentManualRevisionTimeline(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Message manual revision payload is missing");
+      }
+
+      return payload;
+    },
     async editAndRegenerate(options): Promise<RegenerateResult> {
       const response = await client.fetchJson<Record<string, unknown>>(
         `/messages/${encodeURIComponent(options.messageId)}/edit-and-regenerate`,
@@ -235,6 +309,22 @@ export function createMessagesResource(client: TransportClient): MessagesResourc
       const payload = mapMessageRecord(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Message detail payload is missing");
+      }
+
+      return payload;
+    },
+    async getManualRevisions(options): Promise<CommittedContentManualRevisionTimeline> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/messages/${encodeURIComponent(options.messageId)}/manual-revisions`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+
+      const payload = mapCommittedContentManualRevisionTimeline(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Message manual revision detail payload is missing");
       }
 
       return payload;
@@ -334,6 +424,62 @@ function mapMessageRecord(value: unknown): MessageRecord | null {
     seq: readNumber(record.seq),
     source: readNullableString(record.source),
     tokenCount: readNumber(record.token_count),
+  };
+}
+
+function mapCommittedContentManualRevisionRecord(
+  value: unknown,
+): CommittedContentManualRevisionRecord | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    actorAccountId: readString(record.actor_account_id),
+    actorClientId: readNullableString(record.actor_client_id),
+    actorId: readString(record.actor_id),
+    actorType: readString(record.actor_type) as "account" | "client",
+    branchId: readString(record.branch_id),
+    createdAt: readNumber(record.created_at),
+    editedContent: readString(record.edited_content),
+    floorId: readString(record.floor_id),
+    id: readString(record.id),
+    messageId: readString(record.message_id),
+    operationLogId: readString(record.operation_log_id),
+    originalContent: readString(record.original_content),
+    pageId: readString(record.page_id),
+    previousContent: readString(record.previous_content),
+    reason: readNullableString(record.reason),
+    requestedTargetId: readString(record.requested_target_id),
+    requestedTargetKind: readString(record.requested_target_kind) as ManualRevisionTargetKind,
+    revisionNo: readNumber(record.revision_no),
+    sessionId: readString(record.session_id),
+  };
+}
+
+export function mapCommittedContentManualRevisionTimeline(
+  value: unknown,
+): CommittedContentManualRevisionTimeline | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  return {
+    branchId: readString(record.branch_id),
+    currentContent: readString(record.current_content),
+    currentTokenCount: readNumber(record.current_token_count),
+    floorId: readString(record.floor_id),
+    items: readArray(record.items)
+      .map(mapCommittedContentManualRevisionRecord)
+      .filter((item): item is CommittedContentManualRevisionRecord => item !== null),
+    latestRevisionNo: readNumber(record.latest_revision_no),
+    messageId: readString(record.message_id),
+    pageId: readString(record.page_id),
+    sessionId: readString(record.session_id),
+ targetId: readString(record.target_id),
+    targetKind: readString(record.target_kind) as ManualRevisionTargetKind,
   };
 }
 

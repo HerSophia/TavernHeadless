@@ -352,6 +352,106 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
     const contributors = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7]?.contributors ?? [];
     expect(contributors.some((contributor: { sourceKind?: string }) => contributor.sourceKind === "director_hint")).toBe(false);
   });
+  it("routes agent contributors through the injection pipeline as agent_injection when enabled", async () => {
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+      routeAgentContributorsAsInjections: true,
+    });
+
+    await builder.prepare({
+      ...createPrepareArgs(),
+      session: {
+        ...createPrepareArgs().session,
+        promptMode: "native",
+      },
+      sessionInfo: {
+        ...createPrepareArgs().sessionInfo,
+        promptMode: "native",
+      },
+      agentContributors: [
+        {
+          id: "agent:director",
+          kind: "director_hint",
+          sourceKind: "director_hint",
+          modeScope: "native",
+          payload: { intent: "stay focused" },
+          promptRenderable: {
+            title: "Director hint",
+            content: "Intent: stay focused",
+          },
+          trace: {
+            deterministic: true,
+            cacheScope: "floor",
+          },
+        },
+      ],
+    } as never);
+
+    const assembleOptions = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7];
+    // 不再走 contributor 渲染通路，避免双管线重复注入。
+    const contributors = assembleOptions?.contributors ?? [];
+    expect(contributors.some((contributor: { sourceKind?: string }) => contributor.sourceKind === "director_hint")).toBe(false);
+    // 改走 injection 通路，获得 agent_injection 来源与 placement 解析。
+    const injectionItems= assembleOptions?.injectionItems ?? [];
+    const agentItem = injectionItems.find((item: { sourceKind?: string }) => item.sourceKind === "agent_injection");
+    expect(agentItem).toBeDefined();
+    expect(agentItem?.title).toBe("Director hint");
+    expect(agentItem?.placementRequested).toBe("after_contributor_block");
+    expect(agentItem?.sourceChain?.agentTypeId).toBe("director_hint");
+  });
+
+  it("falls back to after_history placement for agent injections outside native mode", async () => {
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+      routeAgentContributorsAsInjections: true,
+    });
+
+    await builder.prepare({
+      ...createPrepareArgs(),
+      session: {
+    ...createPrepareArgs().session,
+        promptMode: "compat_plus",
+      },
+      sessionInfo: {
+        ...createPrepareArgs().sessionInfo,
+        promptMode: "compat_plus",
+      },
+      agentContributors: [
+        {
+          id: "agent:director",
+          kind: "director_hint",
+          sourceKind: "director_hint",
+          modeScope: "compat_plus",
+          payload: { intent: "stay focused" },
+          promptRenderable: {
+            title: "Director hint",
+            content: "Intent: stay focused",
+          },
+          trace: {
+      deterministic: true,
+            cacheScope: "floor",
+          },
+        },
+      ],
+    } as never);
+
+    const assembleOptions= promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7];
+    const injectionItems = assembleOptions?.injectionItems ?? [];
+    const agentItem = injectionItems.find((item: { sourceKind?: string }) => item.sourceKind ==="agent_injection");
+    expect(agentItem).toBeDefined();
+    expect(agentItem?.placementRequested).toBe("after_history");
+    expect(agentItem?.applied).toBe(true);
+  });
+
+
 
   it("records native tool choice application and disables stream when streaming tool calls are unsupported", async () => {
     modelService.resolveRequestedTurnConfig.mockReturnValueOnce({ enableTools: true });
@@ -434,6 +534,7 @@ function createBuilder(args: {
   turnToolingService: {
     resolveTurnToolingForTurn: ReturnType<typeof vi.fn>;
   };
+  routeAgentContributorsAsInjections?: boolean;
 }): PreparedPromptArtifactsBuilder {
   return new PreparedPromptArtifactsBuilder(
     {} as never,
@@ -443,10 +544,15 @@ function createBuilder(args: {
     args.memoryService as never,
     {
       applyPersistedUserInputRegex: vi.fn(),
-    } as never,
+        } as never,
     args.firstPartyStateContextService as never,
     args.turnToolingService as never,
-    { enablePersistentInjections: false },
+    {
+      enablePersistentInjections: false,
+      ...(args.routeAgentContributorsAsInjections === true
+        ? { routeAgentContributorsAsInjections: true }
+        : {}),
+    },
   );
 }
 

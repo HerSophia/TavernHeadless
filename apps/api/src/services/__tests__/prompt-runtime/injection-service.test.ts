@@ -198,6 +198,60 @@ describe("PromptRuntimeInjectionService", () => {
     expect(service.deleteBranchScopeInjections(sessionId, "alt-branch")).toBe(1);
     expect(service.listBranchInjections(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID)).toEqual([]);
   });
+
+  it("persists placement_params across create patch and prepared inputs", async() => {
+    const sessionId = await insertSession(database, { branchId: "alt-branch" });
+
+    const created = service.createSessionInjection(
+      sessionId,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      {
+        sourceKind: "client_injection",
+        title: "Floor guard",
+        content: "Keep floor 12 in focus.",
+        placement: "before_floor",
+        placementParams: { floorNo: 12 },
+      },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+    );
+
+    expect(created.placement).toBe("before_floor");
+    expect(created.placementParams).toEqual({ floorNo: 12 });
+
+    // 持久读路径回填 placement_params
+    expect(service.listSessionInjections(sessionId, DEFAULT_ADMIN_ACCOUNT_ID)[0]?.placementParams).toEqual({
+      floorNo: 12,
+    });
+
+    // prepared builder 输入透传 placementParams，使持久 injection 也能用高级位置
+    const inputs = service.listPersistentInputsForPrompt(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID);
+    expect(inputs[0]).toMatchObject({ placement: "before_floor", placementParams: { floorNo: 12 } });
+
+    // patch 用 null 显式清空参数
+    const cleared = service.updateSessionInjection(
+      sessionId,
+      created.id,
+      DEFAULT_ADMIN_ACCOUNT_ID,
+      { placementParams: null },
+      DEFAULT_ADMIN_ACCOUNT_ID,
+    );
+    expect(cleared.placementParams).toBeNull();
+  });
+
+  it("rejects non-negative-integer placement_params on persisted write", async () => {
+    const sessionId = await insertSession(database);
+
+    expect(() =>
+      service.createSessionInjection(sessionId, DEFAULT_ADMIN_ACCOUNT_ID, {
+        sourceKind: "client_injection",
+        title: "Floor guard",
+        content: "Keep floor 12 in focus.",
+        placement: "before_floor",
+        placementParams: { floorNo: -1 },
+      }),
+    ).toThrowError(PromptRuntimeInjectionServiceError);
+  });
+
 });
 
 async function insertSession(

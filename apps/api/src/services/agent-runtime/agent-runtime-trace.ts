@@ -8,10 +8,13 @@ import type {
   AgentInvocationSource,
   AgentRunRecord,
   AgentRunTraceItem,
+  AgentRuntimeMediumTrace,
   AgentRuntimeTrace,
   AgentRuntimeTraceInvocation,
   PostResponseEnvelope,
 } from "./inline-agent-types.js";
+import type { AgentDeliveryTarget, AgentMediumKind } from "./agent-medium-types.js";
+import type { AgentLineageRef } from "./agent-lineage-types.js";
 
 function toTraceItem(record: AgentRunRecord): AgentRunTraceItem {
   return {
@@ -152,5 +155,32 @@ function toInvocationTrace(source: AgentInvocationSource): AgentRuntimeTraceInvo
   return {
     kind: source.kind,
     ...(source.pageId ? { pageId: source.pageId } : {}),
+  };
+}
+
+/**
+ * 构造 R3 介质段 trace。
+ *
+ * 仅在内存中构造，不新增表。空值字段不写入结果。
+ */
+export function buildAgentRuntimeMediumTrace(args: {
+  kind: AgentMediumKind;
+    deliveryTarget: AgentDeliveryTarget;
+  status: AgentRuntimeMediumTrace["status"];
+  conversationId?: string;
+  runtimeJobId?: string;
+  purpose?: string;
+  rejectionCode?: string;
+  lineage?: AgentLineageRef;
+}): AgentRuntimeMediumTrace {
+  return {
+    kind: args.kind,
+    deliveryTarget: args.deliveryTarget,
+    status: args.status,
+    ...(args.conversationId ? { conversationId: args.conversationId } : {}),
+    ...(args.runtimeJobId ? { runtimeJobId: args.runtimeJobId } : {}),
+    ...(args.purpose ? { purpose: args.purpose } : {}),
+    ...(args.rejectionCode ? { rejectionCode: args.rejectionCode } : {}),
+    ...(args.lineage ? { lineage: args.lineage } : {}),
   };
 }

@@ -475,6 +475,9 @@ export type PromptRuntimeInjectionSourceKind = import("../prompt-runtime.js").Pr
 export type PromptRuntimeInjectionNotAppliedReason = import("../prompt-runtime.js").PromptRuntimeInjectionNotAppliedReason;
 export type PromptRuntimeInjectionInput = import("../prompt-runtime.js").PromptRuntimeInjectionInput;
 export type PromptRuntimeInjectionResult = import("../prompt-runtime.js").PromptRuntimeInjectionResult;
+export type PromptRuntimeInjectionPlacementParams = import("../prompt-runtime.js").PromptRuntimeInjectionPlacementParams;
+export type PromptRuntimeInjectionAnchor = import("../prompt-runtime.js").PromptRuntimeInjectionAnchor;
+export type PromptRuntimeInjectionSourceChain = import("../prompt-runtime.js").PromptRuntimeInjectionSourceChain;
 export type PromptRuntimePersistedInjectionRecord = {
   id: string;
   scope: "session" | "branch";
@@ -482,6 +485,7 @@ export type PromptRuntimePersistedInjectionRecord = {
   title: string;
   content: string;
   placement: string;
+  placementParams: PromptRuntimeInjectionPlacementParams | null;
   order: number;
   enabled: boolean;
   modeScope: PromptRuntimeModeName | null;
@@ -495,8 +499,9 @@ export type PromptRuntimePersistedInjectionWriteInput = {
   title: string;
   content: string;
   placement: string;
+  placementParams?: PromptRuntimeInjectionPlacementParams | null;
   order?: number;
-  enabled?: boolean;
+enabled?: boolean;
   modeScope?: PromptRuntimeModeName | null;
   ttlMs?: number | null;
 };
@@ -505,6 +510,7 @@ export type PromptRuntimePersistedInjectionPatchInput = {
   title?: string;
   content?: string;
   placement?: string;
+  placementParams?: PromptRuntimeInjectionPlacementParams | null;
   order?: number;
   enabled?: boolean;
   modeScope?: PromptRuntimeModeName | null;
@@ -1208,6 +1214,7 @@ function mapPromptRuntimePersistedInjectionRecord(value: unknown): PromptRuntime
     title: readString(record.title),
     content: readString(record.content),
     placement: readString(record.placement),
+    placementParams: mapPromptRuntimePersistedPlacementParams(record.placement_params),
     order: readNumber(record.order),
     enabled: readBoolean(record.enabled),
     modeScope: modeScope === "compat_strict" || modeScope === "compat_plus" || modeScope === "native"
@@ -1717,14 +1724,52 @@ function mapPromptRuntimeInspectRequestBody(options: PromptRuntimeInspectOptions
   });
 }
 
+function mapPromptRuntimePersistedPlacementParams(
+  value: unknown,
+): PromptRuntimeInjectionPlacementParams | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+  const mapped: PromptRuntimeInjectionPlacementParams = {};
+  if (typeof record.floor_no === "number") {
+    mapped.floorNo = record.floor_no;
+  }
+  if (typeof record.offset === "number") {
+    mapped.offset = record.offset;
+  }
+  if (typeof record.depth === "number") {
+    mapped.depth = record.depth;
+  }
+  return Object.keys(mapped).length > 0 ? mapped : null;
+}
+
+function mapPromptRuntimePersistedInjectionPlacementParamsBody(
+  value: PromptRuntimeInjectionPlacementParams | null | undefined,
+): Record<string, number> | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  const mapped = compactObject({
+    floor_no: value.floorNo,
+    offset: value.offset,
+    depth: value.depth,
+  }) as Record<string, number>;
+  return Object.keys(mapped).length > 0 ? mapped : null;
+}
+
 function mapPromptRuntimePersistedInjectionBody(
   value: PromptRuntimePersistedInjectionWriteInput | PromptRuntimePersistedInjectionPatchInput,
 ): Record<string, unknown> {
-  return compactObject({
+return compactObject({
     source_kind: value.sourceKind,
     title: value.title,
     content: value.content,
     placement: value.placement,
+    placement_params: mapPromptRuntimePersistedInjectionPlacementParamsBody(value.placementParams),
     order: value.order,
     enabled: value.enabled,
     mode_scope: value.modeScope,

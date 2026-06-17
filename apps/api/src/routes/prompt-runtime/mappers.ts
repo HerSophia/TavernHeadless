@@ -18,6 +18,7 @@ import type {
 import {
   mapGenerationParams,
   mapLiveDebugOptionsRequest,
+  mapPlacementParamsBody,
   mapPromptBudgetRequest,
   mapPromptDeliveryRequest,
   mapPromptSourceSelectionRequest,
@@ -122,11 +123,13 @@ export function mapPromptRuntimeLiveRequestBodyToCamelCase(
 export function mapPromptRuntimePersistedInjectionCreateBodyToCamelCase(
   body: PromptRuntimePersistedInjectionCreateBody,
 ): PromptRuntimeInjectionWriteInput {
+  const placementParams = mapPlacementParamsBody(body.placement_params);
   return {
     sourceKind: body.source_kind,
     title: body.title,
     content: body.content,
     placement: body.placement,
+    ...(placementParams ? { placementParams } : {}),
     ...(body.order !== undefined ? { order: body.order } : {}),
     ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
     ...(body.mode_scope !== undefined ? { modeScope: body.mode_scope } : {}),
@@ -142,6 +145,9 @@ export function mapPromptRuntimePersistedInjectionPatchBodyToCamelCase(
     ...(body.title !== undefined ? { title: body.title } : {}),
     ...(body.content !== undefined ? { content: body.content } : {}),
     ...(body.placement !== undefined ? { placement: body.placement } : {}),
+    ...(body.placement_params !== undefined
+      ? { placementParams: mapPlacementParamsBody(body.placement_params) ?? null }
+      : {}),
     ...(body.order !== undefined ? { order: body.order } : {}),
     ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
     ...(body.mode_scope !== undefined ? { modeScope: body.mode_scope } : {}),

@@ -155,6 +155,25 @@ console.log(result.generatedText);
 - 如果要把结果送回正式页面，必须显式导出到 `page_staged_write`
 - 公共资源面只返回 `client_visible` 的临时对话
 
+## committed floor 用户人工修订
+
+`@tavern/sdk` 现在直接覆盖 committed floor 用户人工修订的专用入口：
+
+- `messages.getManualRevisions(...)`
+- `messages.createManualRevision(...)`
+- `pages.getManualRevisions(...)`
+- `pages.createManualRevision(...)`
+
+这组入口只处理 committed floor 的当前展示正文。
+
+它们的边界固定为：
+
+- 普通 `messages.update(...)` 与 `pages.update(...)` 不会因此放开 committed floor 写权限
+- 人工修订只改 `messages.content` 与 `messages.token_count`
+- `floors.getResult(...)` 里的 committed snapshot 不会随之变化
+- page 路由只支持能稳定映射到单条可编辑 message 的页
+- 并发通过 `expectedLatestRevisionNo` 做乐观锁控制
+
 ## 阶段五新增接入面
 
 ### Workspace Agent Types
@@ -264,7 +283,20 @@ await client.promptRuntime.patchBranchInjection({
   accountId: "acc_1",
   enabled: false,
 });
+
+// 高级位置：楼层相对位置需要 placementParams
+const floorScoped = await client.promptRuntime.createSessionInjection({
+  sessionId: "sess_1",
+  accountId: "acc_1",
+  sourceKind: "client_injection",
+  title: "Floor guard",
+  content: "Keep floor 12 in focus.",
+  placement: "before_floor",
+  placementParams: { floorNo: 12 },
+});
 ```
+
+`placement` 除了通用结构位置，还支持高级位置：楼层相对位置（`before_floor` / `after_floor` / `before_floor_from_end` / `after_floor_from_end`）、世界书细分位置（`worldbook_depth` / `worldbook_before` / `worldbook_after` / `worldbook_author_note_top`，仅 `compat_plus` /`native`）、native 专属位置（`before_contributor_block` / `after_contributor_block`，仅 `native`）。需要参数的位置通过 `placementParams`（`floorNo` / `offset` / `depth`）表达。trace 侧的 `placementParamsRequested`、`anchorResolved`、`sourceChain` 可用于回看解析结果与来源链。
 
 ### Tools 与会话运行时目录
 

@@ -12,6 +12,7 @@ import type {
 import { OperationLogService } from "../operation-log-service.js";
 import type {
   PromptRuntimeInjectionBuilderInput,
+  PromptRuntimeInjectionPlacementParams,
   PromptRuntimeInjectionPromptMode,
   PromptRuntimeInjectionScope,
 } from "../prompt-runtime-injection-types.js";
@@ -41,6 +42,7 @@ export interface PromptRuntimeInjectionRecord {
   title: string;
   content: string;
   placement: string;
+  placementParams: PromptRuntimeInjectionPlacementParams | null;
   order: number;
   enabled: boolean;
   modeScope: PromptRuntimeInjectionPromptMode | null;
@@ -51,10 +53,11 @@ export interface PromptRuntimeInjectionRecord {
 }
 
 export interface PromptRuntimeInjectionWriteInput {
-  sourceKind: "client_injection";
+  sourceKind: "client_injection" | "agent_injection";
   title: string;
   content: string;
   placement: string;
+  placementParams?: PromptRuntimeInjectionPlacementParams | null;
   order?: number;
   enabled?: boolean;
   modeScope?: PromptRuntimeInjectionPromptMode | null;
@@ -66,10 +69,11 @@ export interface PromptRuntimeInjectionPatchInput {
   title?: string;
   content?: string;
   placement?: string;
+  placementParams?: PromptRuntimeInjectionPlacementParams | null;
   order?: number;
   enabled?: boolean;
   modeScope?: PromptRuntimeInjectionPromptMode | null;
-  ttlMs?: number | null;
+  ttlMs?: number| null;
 }
 
 export interface PromptRuntimeInjectionScopeSummary {
@@ -137,7 +141,7 @@ export class PromptRuntimeInjectionService {
           beforeRecord: null,
           afterRecord: created,
           operationLog,
-          requestFields: ["sourceKind", "title", "content", "placement", "order", "enabled", "modeScope", "ttlMs"],
+          requestFields: ["sourceKind", "title", "content", "placement", "placementParams", "order", "enabled", "modeScope", "ttlMs"],
         });
       }
       return created;
@@ -171,8 +175,8 @@ export class PromptRuntimeInjectionService {
           recordId: created.id,
           beforeRecord: null,
           afterRecord: created,
-          operationLog,
-          requestFields: ["sourceKind", "title", "content", "placement", "order", "enabled", "modeScope", "ttlMs"],
+        operationLog,
+        requestFields: ["sourceKind", "title", "content", "placement", "placementParams", "order", "enabled", "modeScope", "ttlMs"],
         });
       }
       return created;
@@ -404,10 +408,11 @@ export class PromptRuntimeInjectionService {
         id: nanoid(),
         sessionId: args.sessionId,
         branchId: args.branchId,
-        sourceKind: normalized.sourceKind,
+         sourceKind: normalized.sourceKind,
         title: normalized.title,
         content: normalized.content,
         placement: normalized.placement,
+        placementParamsJson: serializePlacementParams(normalized.placementParams),
         order: normalized.order,
         enabled: normalized.enabled,
         modeScope: normalized.modeScope,
@@ -436,9 +441,10 @@ export class PromptRuntimeInjectionService {
       .update(promptRuntimeInjections)
       .set({
         sourceKind: normalized.sourceKind,
-        title: normalized.title,
+       title: normalized.title,
         content: normalized.content,
         placement: normalized.placement,
+        placementParamsJson: serializePlacementParams(normalized.placementParams),
         order: normalized.order,
         enabled: normalized.enabled,
         modeScope: normalized.modeScope,
@@ -588,6 +594,7 @@ function toInjectionRecord(
     title: row.title,
     content: row.content,
     placement: row.placement,
+    placementParams: deserializePlacementParams(row.placementParamsJson),
     order: row.order,
     enabled: row.enabled,
     modeScope: row.modeScope,
@@ -604,6 +611,7 @@ function toBuilderInput(record: PromptRuntimeInjectionRecord): PromptRuntimeInje
     title: record.title,
     content: record.content,
     placement: record.placement,
+    ...(record.placementParams ? { placementParams: record.placementParams } : {}),
     order: record.order,
     scope: record.scope,
     injectionId: record.id,
@@ -627,6 +635,7 @@ function normalizeWriteInput(input: PromptRuntimeInjectionWriteInput): Required<
     title: requireTrimmedText(input.title, "title"),
     content: requireTrimmedText(input.content, "content"),
     placement: requireTrimmedText(input.placement, "placement"),
+    placementParams: normalizePlacementParams(input.placementParams),
     order: normalizeOrder(input.order),
     enabled: input.enabled ?? true,
     modeScope: input.modeScope ?? null,
@@ -643,11 +652,68 @@ function normalizePatchInput(
     title: patch.title !== undefined ? requireTrimmedText(patch.title, "title") : existing.title,
     content: patch.content !== undefined ? requireTrimmedText(patch.content, "content") : existing.content,
     placement: patch.placement !== undefined ? requireTrimmedText(patch.placement, "placement") : existing.placement,
+    placementParams: patch.placementParams !== undefined ? normalizePlacementParams(patch.placementParams) : existing.placementParams,
     order: patch.order !== undefined ? normalizeOrder(patch.order) : existing.order,
     enabled: patch.enabled ?? existing.enabled,
     modeScope: patch.modeScope !== undefined ? patch.modeScope : existing.modeScope,
     ttlMs: patch.ttlMs !== undefined ? normalizeNullableTtl(patch.ttlMs) : existing.ttlMs,
   };
+}
+
+/**
+ * I3 placement_params 归一化。
+ *
+ * 只接受 floor_no / offset / depth 三个非负整数字段；空对象视为无参数并返回 null。
+ * 被动列出字段，以免意外持久化未知键。
+ */
+function normalizePlacementParams(
+  params: PromptRuntimeInjectionPlacementParams | null | undefined,
+): PromptRuntimeInjectionPlacementParams | null {
+  if (params === undefined || params === null) {
+    return null;
+  }
+  const normalized: PromptRuntimeInjectionPlacementParams = {};
+  if (params.floorNo !== undefined) {
+    normalized.floorNo = requireNonNegativeInteger(params.floorNo, "floor_no");
+  }
+  if (params.offset !== undefined) {
+    normalized.offset = requireNonNegativeInteger(params.offset, "offset");
+  }
+  if (params.depth !== undefined) {
+    normalized.depth = requireNonNegativeInteger(params.depth, "depth");
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
+function requireNonNegativeInteger(value: number, field: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new PromptRuntimeInjectionServiceError(
+      400,
+      "invalid_injection_payload",
+      `Prompt runtime injection placement_params.${field} must be a non-negative integer`,
+    );
+  }
+  return value;
+}
+
+function serializePlacementParams(
+  params: PromptRuntimeInjectionPlacementParams | null,
+): string | null {
+  return params ? JSON.stringify(params) : null;
+}
+
+function deserializePlacementParams(
+  raw: string | null,
+): PromptRuntimeInjectionPlacementParams | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as PromptRuntimeInjectionPlacementParams;
+    return normalizePlacementParams(parsed);
+  } catch {
+    return null;
+  }
 }
 
 function asClientInjectionSourceKind(value: string): "client_injection" {
@@ -713,6 +779,7 @@ function toOperationRef(record: PromptRuntimeInjectionRecord): Record<string, un
     branch_id: record.branchId,
     source_kind: record.sourceKind,
     placement: record.placement,
+    placement_params: record.placementParams,
     order: record.order,
     enabled: record.enabled,
     mode_scope: record.modeScope,
