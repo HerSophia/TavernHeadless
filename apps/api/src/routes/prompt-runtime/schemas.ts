@@ -8,6 +8,7 @@ import type {
   LiveDebugOptionsBody,
   PromptBudgetBody,
   PromptDeliveryBody,
+  PromptRuntimeInjectionPlacementParamsBody,
   PromptSourceSelectionBody,
   PromptStructureBody,
   TurnConfigBody,
@@ -20,6 +21,7 @@ import {
   liveDebugOptionsBodySchema,
   promptBudgetBodySchema,
   promptDeliveryBodySchema,
+  promptRuntimeInjectionPlacementParamsBodySchema,
   promptSourceSelectionBodySchema,
   promptStructureBodySchema,
   turnConfigBodySchema,
@@ -36,10 +38,11 @@ import type {
 } from "../../services/prompt-runtime/injection-service.js";
 
 export type PromptRuntimeInjectionBody = {
-  source_kind: PromptRuntimeClientInjectionInput["sourceKind"];
+   source_kind: PromptRuntimeClientInjectionInput["sourceKind"];
   title: string;
   content: string;
   placement: string;
+  placement_params?: PromptRuntimeInjectionPlacementParamsBody;
   order?: number;
   scope?: PromptRuntimeClientInjectionInput["scope"];
 };
@@ -49,6 +52,7 @@ export type PromptRuntimePersistedInjectionCreateBody = {
   title: string;
   content: string;
   placement: string;
+  placement_params?: PromptRuntimeInjectionPlacementParamsBody;
   order?: number;
   enabled?: boolean;
   mode_scope?: PromptMode | null;
@@ -60,6 +64,7 @@ export type PromptRuntimePersistedInjectionPatchBody = {
   title?: string;
   content?: string;
   placement?: string;
+  placement_params?: PromptRuntimeInjectionPlacementParamsBody | null;
   order?: number;
   enabled?: boolean;
   mode_scope?: PromptMode | null;
@@ -92,6 +97,7 @@ export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionB
   title: z.string(),
   content: z.string(),
   placement: z.string().min(1),
+  placement_params: promptRuntimeInjectionPlacementParamsBodySchema.optional(),
   order: z.number().int().optional(),
   scope: z.literal("request").optional(),
 }).strict();
@@ -101,6 +107,7 @@ export const promptRuntimePersistedInjectionCreateBodySchema: z.ZodType<PromptRu
   title: validateTrimmedString("title"),
   content: validateTrimmedString("content"),
   placement: validateTrimmedString("placement"),
+  placement_params: promptRuntimeInjectionPlacementParamsBodySchema.optional(),
   order: z.number().int().optional(),
   enabled: z.boolean().optional(),
   mode_scope: z.enum(PROMPT_MODE_VALUES).nullable().optional(),
@@ -110,8 +117,9 @@ export const promptRuntimePersistedInjectionCreateBodySchema: z.ZodType<PromptRu
 export const promptRuntimePersistedInjectionPatchBodySchema: z.ZodType<PromptRuntimePersistedInjectionPatchBody> = z.object({
   source_kind: z.literal("client_injection").optional(),
   title: validateTrimmedString("title").optional(),
-  content: validateTrimmedString("content").optional(),
+  content:validateTrimmedString("content").optional(),
   placement: validateTrimmedString("placement").optional(),
+  placement_params: promptRuntimeInjectionPlacementParamsBodySchema.nullable().optional(),
   order: z.number().int().optional(),
   enabled: z.boolean().optional(),
   mode_scope: z.enum(PROMPT_MODE_VALUES).nullable().optional(),

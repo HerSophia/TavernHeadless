@@ -69,6 +69,23 @@ export interface TemporaryConversationHandle
   conversationId: string;
 }
 
+/**
+ * 临时对话的 Agent 来源血缘。
+ *
+ * R3 阶段五先以 metadata 下的 `agent_origin` 过渡存储（设计里允许的过渡方案）。
+ * 是否拆成独立列（source_agent_run_id 等）由 T3 决定。字段名与 AgentLineageRef 保持一致。
+ */
+export interface TemporaryConversationAgentOrigin {
+  sourceAgentRunId?: string;
+  parentRunId?: string;
+  rootRunId?: string;
+  sourceNodeRunId?: string;
+  sourcePageId?: string;
+  sourceFloorId?: string;
+  sourceSessionId?: string;
+  sourceAttemptNo?: number;
+}
+
 export interface TemporaryConversationCreateInput {
   accountId: string;
   sourceSessionId: string;
@@ -78,6 +95,7 @@ export interface TemporaryConversationCreateInput {
   retentionPolicy?: TemporaryConversationRetentionPolicy | null;
   ttlSeconds?: number | null;
   visibility?: TemporaryConversationVisibility | null;
+  agentOrigin?: TemporaryConversationAgentOrigin | null;
 }
 
 export interface TemporaryConversationCreateFromProjectInput {
@@ -88,6 +106,7 @@ export interface TemporaryConversationCreateFromProjectInput {
   retentionPolicy?: TemporaryConversationRetentionPolicy | null;
   ttlSeconds?: number | null;
   visibility?: TemporaryConversationVisibility | null;
+  agentOrigin?: TemporaryConversationAgentOrigin | null;
 }
 
 export interface TemporaryConversationMessageInput {

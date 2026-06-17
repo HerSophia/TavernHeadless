@@ -1657,6 +1657,53 @@ const runtimeTraceGenerationParamResolutionJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const promptRuntimeInjectionPlacementParamsTraceJsonSchema = {
+  type: "object",
+  properties: {
+    floor_no: { type: "integer", minimum: 0 },
+    offset: { type: "integer", minimum: 0 },
+    depth: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimeInjectionAnchorTraceJsonSchema = {
+  type: "object",
+  required: ["kind"],
+  properties: {
+    kind: {
+      type: "string",
+      enum: [
+        "section",
+        "floor_by_no",
+        "floor_from_end",
+        "worldbook_depth",
+        "worldbook_edge",
+        "worldbook_author_note_top",
+        "contributor_block",
+      ],
+    },
+    internal_key: { type: "string" },
+    floor_no: { type: "integer", minimum: 0 },
+    offset: { type: "integer", minimum: 0 },
+    depth: { type: "integer", minimum: 0 },
+    edge: { type: "string",enum: ["before", "after"] },
+    resolved_depth: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const promptRuntimeInjectionSourceChainTraceJsonSchema = {
+  type: "object",
+  properties: {
+    agent_type_id: { type: "string" },
+    agent_run_id: { type: "string" },
+    temporary_conversation_id: { type: "string" },
+    debug_session_tag: { type: "string" },
+  },
+  additionalProperties: false,
+} as const;
+
 const promptRuntimeInjectionTraceItemJsonSchema = {
   type: "object",
   required: [
@@ -1666,11 +1713,14 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
     "enabled",
     "scope",
     "placement_requested",
+    "placement_params_requested",
     "order_requested",
     "title",
     "content_length",
     "applied",
     "placement_resolved",
+    "anchor_resolved",
+    "source_chain",
     "not_applied_reason",
   ],
   properties: {
@@ -1680,11 +1730,20 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
     enabled: { anyOf: [{ type: "boolean" }, { type: "null" }] },
     scope: { type: "string", enum: ["request", "session", "branch"] },
     placement_requested: { type: "string" },
+    placement_params_requested: {
+      anyOf: [promptRuntimeInjectionPlacementParamsTraceJsonSchema, { type: "null" }],
+    },
     order_requested: { type: "integer" },
     title: { type: "string" },
     content_length: { type: "integer", minimum: 0 },
     applied: { type: "boolean" },
     placement_resolved: { anyOf: [{ type: "string" }, { type: "null" }] },
+    anchor_resolved: {
+      anyOf: [promptRuntimeInjectionAnchorTraceJsonSchema, { type: "null" }],
+    },
+    source_chain: {
+      anyOf: [promptRuntimeInjectionSourceChainTraceJsonSchema, { type: "null" }],
+ },
     not_applied_reason: {
       anyOf: [
         {
@@ -1697,6 +1756,10 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
             "disabled",
             "expired",
             "mode_scope_mismatch",
+            "missing_placement_params",
+            "invalid_placement_params",
+            "floor_no_out_of_history_window",
+            "floor_offset_out_of_history_window",
           ],
         },
         { type: "null" },

@@ -10,6 +10,12 @@ import type {
   PreparedTurnContext,
   PromptRuntimeContributorOutput,
 } from "../chat/types.js";
+import type {
+  AgentDeliveryTarget,
+  AgentMediumKind,
+  AgentMediumSelection,
+} from "./agent-medium-types.js";
+import type { AgentLineageRef } from "./agent-lineage-types.js";
 
 export type InlineAgentPhase = "pre_response" | "post_response";
 
@@ -66,6 +72,8 @@ export interface InlineAgentSpec {
   /** R2 中该字段会与 checkpoint manifest 一起使用，单独不代表可复用承诺。 */
   stabilityHint: "floor" | "page";
   failurePolicy: InlineAgentFailurePolicy;
+  /** R3 执行介质选择。现有 inline 主链默认使用 single_call。 */
+  medium?: AgentMediumSelection;
 }
 
 export interface AgentRunContext {
@@ -198,6 +206,7 @@ export interface AgentRunTraceItem {
   status: "ok" | "skipped" | "failed";
   durationMs: number;
   stabilityHint: "floor" | "page";
+  medium?: AgentMediumSelection;
   outputSummary?: string;
   errorCode?: string;
 }
@@ -259,3 +268,23 @@ export interface AgentRuntimeTrace {
     };
   };
 }
+
+/**
+ * R3 介质段 trace。
+ *
+ * 描述一次 Agent 运行所使用的执行介质、投递目标、来源血缘与终态。
+ * single_call 沿用现有 run trace，并可补 medium 字段；
+ * temporary_conversation 记录 conversation id、purpose、投递目标、finalize 结果；
+ * background_job 在 R3 只记录 planned medium 与拒绝原因，不记录真实 runtime job。
+ */
+export interface AgentRuntimeMediumTrace {
+  kind: AgentMediumKind;
+  deliveryTarget: AgentDeliveryTarget;
+  status: "planned" | "running" | "completed" | "failed" | "cancelled" | "rejected";
+  conversationId?: string;
+  runtimeJobId?: string;
+  purpose?: string;
+  rejectionCode?: string;
+  lineage?: AgentLineageRef;
+}
+

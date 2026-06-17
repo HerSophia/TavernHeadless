@@ -1,4 +1,6 @@
 import { buildAccountHeaders, type AccountIdHint, type TransportClient } from "../client/transport.js";
+import type { CommittedContentManualRevisionTimeline } from "./messages.js";
+import { mapCommittedContentManualRevisionTimeline } from "./messages.js";
 import {
   compactObject,
   readArray,
@@ -48,6 +50,11 @@ export type PagesGetDetailOptions = {
   pageId: string;
 };
 
+export type PagesGetManualRevisionsOptions = {
+  accountId?: AccountIdHint;
+  pageId: string;
+};
+
 export type PagesUpdateOptions = {
   accountId?: AccountIdHint;
   checksum?: string;
@@ -85,11 +92,21 @@ export type PagesBatchDeleteResult = {
   }>;
 };
 
+export type PagesCreateManualRevisionOptions = {
+  accountId?: AccountIdHint;
+  content: string;
+  expectedLatestRevisionNo: number;
+  pageId: string;
+  reason?: string;
+};
+
 export type PagesResource = {
   activate(options: PagesActivateOptions): Promise<PageRecord>;
   batchDelete(options: PagesBatchDeleteOptions): Promise<PagesBatchDeleteResult>;
   create(options: PagesCreateOptions): Promise<PageRecord>;
+  createManualRevision(options: PagesCreateManualRevisionOptions): Promise<CommittedContentManualRevisionTimeline>;
   getDetail(options: PagesGetDetailOptions): Promise<PageRecord>;
+  getManualRevisions(options: PagesGetManualRevisionsOptions): Promise<CommittedContentManualRevisionTimeline>;
   list(options?: PagesListOptions): Promise<PageRecord[]>;
   remove(options: PagesRemoveOptions): Promise<boolean>;
   update(options: PagesUpdateOptions): Promise<PageRecord>;
@@ -141,6 +158,27 @@ export function createPagesResource(client: TransportClient): PagesResource {
 
       return payload;
     },
+    async createManualRevision(options): Promise<CommittedContentManualRevisionTimeline> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/pages/${encodeURIComponent(options.pageId)}/manual-revisions`,
+        {
+          body: compactObject({
+            content: options.content,
+            expected_latest_revision_no: options.expectedLatestRevisionNo,
+            reason: options.reason,
+          }),
+          headers: buildAccountHeaders(options.accountId),
+          method: "POST",
+        },
+      );
+
+      const payload = mapCommittedContentManualRevisionTimeline(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Page manual revision payload is missing");
+      }
+
+      return payload;
+    },
     async getDetail(options): Promise<PageRecord> {
       const response = await client.fetchJson<Record<string, unknown>>(`/pages/${encodeURIComponent(options.pageId)}`, {
         headers: buildAccountHeaders(options.accountId),
@@ -150,6 +188,22 @@ export function createPagesResource(client: TransportClient): PagesResource {
       const payload = mapPageRecord(readRecord(response.body)?.data);
       if (!payload) {
         throw new Error("Page detail returned an invalid payload");
+      }
+
+      return payload;
+    },
+    async getManualRevisions(options): Promise<CommittedContentManualRevisionTimeline> {
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/pages/${encodeURIComponent(options.pageId)}/manual-revisions`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+
+      const payload = mapCommittedContentManualRevisionTimeline(readRecord(response.body)?.data);
+      if (!payload) {
+        throw new Error("Page manual revision detail payload is missing");
       }
 
       return payload;

@@ -45,6 +45,7 @@ import {
   TEMPORARY_CONVERSATION_SESSION_KIND,
   TEMPORARY_CONVERSATION_STATUSES,
   TEMPORARY_CONVERSATION_VISIBILITIES,
+  type TemporaryConversationAgentOrigin,
   type TemporaryConversationAppendInput,
   type TemporaryConversationCreateFromProjectInput,
   type TemporaryConversationCreateInput,
@@ -138,6 +139,7 @@ export class TemporaryConversationService {
       sourceSession,
       sourceBranch,
     });
+    const storedMetadataJson = mergeAgentOriginIntoMetadataJson(metadataJson, input.agentOrigin);
 
     this.db.transaction((tx) => {
       tx.insert(sessions).values({
@@ -175,7 +177,7 @@ export class TemporaryConversationService {
         modelName: sourceSession.modelName,
         modelParamsJson: sourceSession.modelParamsJson,
         promptMode: sourceSession.promptMode,
-        metadataJson,
+        metadataJson: storedMetadataJson,
         createdAt: now,
         updatedAt: now,
       }).run();
@@ -229,10 +231,11 @@ export class TemporaryConversationService {
     });
     const metadataJson = buildTemporaryConversationMetadataJson(null);
     const snapshotDigest = buildTemporaryConversationProjectSnapshotDigest({
-      title,
+            title,
       metadataJson,
       sourceProject,
     });
+    const storedMetadataJson = mergeAgentOriginIntoMetadataJson(metadataJson, input.agentOrigin);
 
     this.db.transaction((tx) => {
       tx.insert(sessions).values({
@@ -270,7 +273,7 @@ export class TemporaryConversationService {
         modelName: null,
         modelParamsJson: null,
         promptMode: "native",
-        metadataJson,
+        metadataJson: storedMetadataJson,
         createdAt: now,
         updatedAt: now,
       }).run();
@@ -1484,6 +1487,121 @@ function buildTemporaryConversationMetadataJson(metadataJson: string | null): st
     },
   });
 }
+function mergeAgentOriginIntoMetadataJson(
+  metadataJson: string | null,
+  agentOrigin: TemporaryConversationAgentOrigin | null | undefined,
+): string | null {
+  if (!agentOrigin) {
+    return metadataJson;
+  }
+
+  const compact = compactAgentOrigin(agentOrigin);
+  if (Object.keys(compact).length === 0) {
+    return metadataJson;
+  }
+
+  let base: Record<string, unknown> = {};
+  if (metadataJson) {
+    try {
+      const parsed = JSON.parse(metadataJson);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        base = parsed as Record<string, unknown>;
+      }
+    } catch {
+      base = {};
+    }
+  }
+
+  base.agent_origin = compact;
+  return JSON.stringify(base);
+}
+
+function compactAgentOrigin(
+  agentOrigin: TemporaryConversationAgentOrigin,
+): Record<string, unknown> {
+  const entries: Array<[string, unknown]> = [
+    ["source_agent_run_id", agentOrigin.sourceAgentRunId],
+    ["parent_run_id", agentOrigin.parentRunId],
+    ["root_run_id", agentOrigin.rootRunId],
+    ["source_node_run_id", agentOrigin.sourceNodeRunId],
+    ["source_page_id", agentOrigin.sourcePageId],
+    ["source_floor_id", agentOrigin.sourceFloorId],
+    ["source_session_id", agentOrigin.sourceSessionId],
+    ["source_attempt_no", agentOrigin.sourceAttemptNo],
+  ];
+  const compact: Record<string, unknown> = {};
+  for (const [key, value] of entries) {
+    if (value !== undefined && value !== null) {
+      compact[key] = value;
+    }
+  }
+  return compact;
+}
+
+/**
+ * 把 metadata_json 中的 `agent_origin` 反序列化回 TemporaryConversationAgentOrigin。
+ *
+ * 与 compactAgentOrigin 互为逆操作：compactAgentOrigin 写入 snake_case 字段，
+ * 这里按 snake_case 读取并映射回 camelCase。
+ *
+ * 解析失败、缺少 agent_origin、或没有任何有效字段时返回 null，不抛错。
+ * 供 Agent 介质 trace、审计与内部排障读取，默认不进入公共资源响应。
+ */
+export function readAgentOriginFromMetadataJson(
+  metadataJson: string | null,
+): TemporaryConversationAgentOrigin | null {
+  if (!metadataJson) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(metadataJson);
+  } catch {
+    return null;
+  }
+
+  if (!parsed|| typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+const origin = (parsed as Record<string, unknown>).agent_origin;
+  if (!origin || typeof origin !== "object" || Array.isArray(origin)) {
+    return null;
+  }
+
+  const record = origin as Record<string, unknown>;
+  const readString = (value: unknown): string | undefined =>
+    typeof value === "string" && value.length > 0 ? value : undefined;
+  const readNumber = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+  const result: TemporaryConversationAgentOrigin = {};
+  const sourceAgentRunId = readString(record.source_agent_run_id);
+  if (sourceAgentRunId !== undefined) result.sourceAgentRunId = sourceAgentRunId;
+  const parentRunId = readString(record.parent_run_id);
+  if (parentRunId !== undefined) result.parentRunId = parentRunId;
+  const rootRunId =readString(record.root_run_id);
+  if (rootRunId !== undefined) result.rootRunId = rootRunId;
+  const sourceNodeRunId = readString(record.source_node_run_id);
+  if (sourceNodeRunId !== undefined) result.sourceNodeRunId = sourceNodeRunId;
+  const sourcePageId = readString(record.source_page_id);
+  if (sourcePageId !== undefined) result.sourcePageId = sourcePageId;
+  const sourceFloorId = readString(record.source_floor_id);
+  if (sourceFloorId !== undefined) result.sourceFloorId = sourceFloorId;
+  const sourceSessionId = readString(record.source_session_id);
+  if (sourceSessionId !== undefined) result.sourceSessionId = sourceSessionId;
+  const sourceAttemptNo = readNumber(record.source_attempt_no);
+  if (sourceAttemptNo !== undefined) result.sourceAttemptNo = sourceAttemptNo;
+
+  if (Object.keys(result).length === 0) {
+    return null;
+  }
+  return result;
+}
+
+
+
 
 function normalizeOptionalText(value: string | null | undefined): string | null {
   if (typeof value !== "string") {
