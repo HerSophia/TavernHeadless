@@ -37,6 +37,7 @@ import { registerOperationLogRoutes } from "./operation-logs.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerWorkspaceRoutes } from "./workspaces.js";
 import { registerProjectAgentBindingRoutes } from "./project-agent-bindings.js";
+import { registerProjectAgentJobRoutes } from "./project-agent-jobs.js";
 import { registerVcTagRoutes } from "./vc-tags.js";
 import type { AccountMode } from "../accounts/constants.js";
 
@@ -80,6 +81,7 @@ export async function registerCrudRoutes(
   });
   await registerWorkspaceRoutes(app, connection);
   await registerProjectAgentBindingRoutes(app, connection);
+  await registerProjectAgentJobRoutes(app, connection);
   await registerCharacterRoutes(app, connection);
   await registerFloorRoutes(app, connection, {
     floorRun: options.floorRun,

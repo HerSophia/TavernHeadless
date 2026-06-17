@@ -183,7 +183,8 @@ WebSocket 也遵循相同边界：
 | Workspace / Project | 工作区与项目路由族总览 | [Workspace / Project](./api/workspace-project) |
 | Projects | Project 列表、会话、事件、SSE 订阅与成员管理 | [Projects](./api/projects) |
 | Agent Types | Workspace 级 Agent 类型 | [Agent Types](./api/agent-types) |
-| Project Agent Bindings | Project 级 Agent 启用与手动触发 | [Project Agent Bindings](./api/project-agent-bindings) |
+| Project Agent Bindings | Project 级 Agent启用与手动触发 | [Project Agent Bindings](./api/project-agent-bindings) |
+| Project Agent Jobs | Project 级后台 Agent 作业看板 | [Project Agent Jobs](./api/project-agent-jobs) |
 | Project Settings | Project 级 LLM、MCP、Tool Policy 覆盖 | [Project Settings](./api/project-settings) |
 | Effective Config | Project / Session 生效配置视图 | [Effective Config](./api/effective-config) |
 | Project Derived Outputs | Project 派生结果 | [Project Derived Outputs](./api/projects-derived-outputs) |
@@ -219,6 +220,7 @@ WebSocket 也遵循相同边界：
 - [Temporary Conversations](./api/temporary-conversations)
 - [Agent Types](./api/agent-types)
 - [Project Agent Bindings](./api/project-agent-bindings)
+- [Project Agent Jobs](./api/project-agent-jobs)
 - [Project Settings](./api/project-settings)
 - [Effective Config](./api/effective-config)
 - [Project Derived Outputs](./api/projects-derived-outputs)

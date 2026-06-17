@@ -164,13 +164,14 @@ function toInvocationTrace(source: AgentInvocationSource): AgentRuntimeTraceInvo
  * 仅在内存中构造，不新增表。空值字段不写入结果。
  */
 export function buildAgentRuntimeMediumTrace(args: {
-  kind: AgentMediumKind;
+kind: AgentMediumKind;
     deliveryTarget: AgentDeliveryTarget;
   status: AgentRuntimeMediumTrace["status"];
   conversationId?: string;
   runtimeJobId?: string;
   purpose?: string;
   rejectionCode?: string;
+  dryRun?: boolean;
   lineage?: AgentLineageRef;
 }): AgentRuntimeMediumTrace {
   return {
@@ -181,6 +182,7 @@ export function buildAgentRuntimeMediumTrace(args: {
     ...(args.runtimeJobId ? { runtimeJobId: args.runtimeJobId } : {}),
     ...(args.purpose ? { purpose: args.purpose } : {}),
     ...(args.rejectionCode ? { rejectionCode: args.rejectionCode } : {}),
+    ...(args.dryRun !== undefined ? { dryRun: args.dryRun } : {}),
     ...(args.lineage ? { lineage: args.lineage } : {}),
   };
 }

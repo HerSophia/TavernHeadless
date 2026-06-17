@@ -63,6 +63,7 @@ import { SessionToolRegistryService } from "./services/tooling/session-tool-regi
 import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 import { ResourceToolProvider } from "./tools/index.js";
 import { MemoryWorker } from "./services/memory-worker.js";
+import { AgentRuntimeWorker } from "./services/agent-runtime-worker.js";
 import { MemoryJobScheduler } from "./services/memory-job-scheduler.js";
 import { createDefaultMutationRuntimeComponents } from "./services/default-mutation-runtime.js";
 import { createMutationRuntimeJobBridge } from "./services/mutation-runtime-job-bridge.js";
@@ -219,12 +220,23 @@ export type BuildAppOptions = {
   memoryWorker?: {
     pollIntervalMs?: number;
     leaseTtlMs?: number;
-    maxConcurrentJobs?: number;
+   maxConcurrentJobs?: number;
     retryBaseDelayMs?: number;
     maxRetryDelayMs?: number;
     candidateScanLimit?: number;
   };
-  llmDefaultTimeoutMs?: number;
+  /** 是否启用后台 Agent worker（默认关闭，保证可回退）。 */
+  enableAgentRuntimeWorker?: boolean;
+  /** 可选：AgentRuntimeWorker 运行参数。 */
+  agentRuntimeWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
+    maxConcurrentJobs?: number;
+   retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
+ llmDefaultTimeoutMs?: number;
   chatTransferArtifactDir?: string;
   chatImportMaxBytes?: number;
   chatExportSyncMaxMessages?: number;
@@ -340,6 +352,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   let memoryWorker: MemoryWorker | undefined;
   let mutationWorker: MutationWorker | undefined;
   let toolWorker: ToolWorker | undefined;
+  let agentRuntimeWorker: AgentRuntimeWorker | undefined;
 
   app.addHook("onClose", async () => {
     if (memoryMaintenanceTimer) {
@@ -365,6 +378,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     if (toolWorker) {
       await toolWorker.stop();
       toolWorker = undefined;
+    }
+    if (agentRuntimeWorker) {
+      await agentRuntimeWorker.stop();
+      agentRuntimeWorker = undefined;
     }
     database.close();
   });
@@ -714,6 +731,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       toolRuntimePolicy: toolRuntimeComponents.policy,
       ...(mcpToolProviderFactory ? { mcpToolProviderFactory } : {}),
     });
+  }
+
+  if (options.enableAgentRuntimeWorker === true) {
+    agentRuntimeWorker = new AgentRuntimeWorker(database.db, {
+      ...(orchestrationContext?.eventBus ? { eventBus: orchestrationContext.eventBus } : {}),
+      ...(options.agentRuntimeWorker?.pollIntervalMs !== undefined ? { pollIntervalMs: options.agentRuntimeWorker.pollIntervalMs } : {}),
+      ...(options.agentRuntimeWorker?.leaseTtlMs !== undefined ? { leaseTtlMs: options.agentRuntimeWorker.leaseTtlMs } : {}),
+      ...(options.agentRuntimeWorker?.maxConcurrentJobs !== undefined ? { maxConcurrentJobs: options.agentRuntimeWorker.maxConcurrentJobs } : {}),
+    ...(options.agentRuntimeWorker?.retryBaseDelayMs !== undefined ? { retryBaseDelayMs: options.agentRuntimeWorker.retryBaseDelayMs } : {}),
+      ...(options.agentRuntimeWorker?.maxRetryDelayMs !== undefined ? { maxRetryDelayMs: options.agentRuntimeWorker.maxRetryDelayMs } : {}),
+      ...(options.agentRuntimeWorker?.candidateScanLimit !== undefined ? { candidateScanLimit: options.agentRuntimeWorker.candidateScanLimit } : {}),
+      logger: app.log,
+    });
+    agentRuntimeWorker.start();
   }
 
   await registerCrudRoutes(app, database, {

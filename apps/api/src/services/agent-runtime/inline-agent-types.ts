@@ -285,6 +285,13 @@ export interface AgentRuntimeMediumTrace {
   runtimeJobId?: string;
   purpose?: string;
   rejectionCode?: string;
+  /**
+   * 后台 Agent 介质标注本次运行是否为 dry_run 演练。
+   *
+   * dry_run = true 表示只做计划解析与校验，未真正写持久输出，
+   * 避免演练结果被误认为真实产出。
+   */
+  dryRun?: boolean;
   lineage?: AgentLineageRef;
 }
 
