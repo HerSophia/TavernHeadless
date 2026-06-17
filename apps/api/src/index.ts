@@ -26,6 +26,8 @@ const { app } = await buildApp({
   enableDeferredIrreversibleTools: config.enableDeferredIrreversibleTools,
   deferredIrreversibleMcpTools: config.deferredIrreversibleMcpTools,
   memoryWorker: config.memoryWorker,
+  enableAgentRuntimeWorker: config.enableAgentRuntimeWorker,
+  agentRuntimeWorker: config.agentRuntimeWorker,
   llmDefaultTimeoutMs: config.llmDefaultTimeoutMs,
   chatTransferArtifactDir: config.chatTransferArtifactDir,
   chatImportMaxBytes: config.chatImportMaxBytes,
