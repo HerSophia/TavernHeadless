@@ -187,6 +187,7 @@ const promptRuntimePersistedInjectionExample = {
   title: "History guard",
   content: "Keep the north pass in focus.",
   placement: "before_history",
+  placement_params: null,
   order: 100,
   enabled: true,
   mode_scope: null,
@@ -1710,8 +1711,17 @@ export const promptRuntimePreviewBodyJsonSchema = {
         properties: {
           source_kind: { type: "string", enum: ["client_injection"] },
           title: { type: "string" },
-          content: { type: "string" },
+            content: { type: "string" },
           placement: { type: "string", minLength: 1 },
+          placement_params: {
+            type: "object",
+            properties: {
+              floor_no: { type: "integer", minimum:0 },
+              offset: { type: "integer", minimum: 0 },
+              depth: { type: "integer", minimum: 0 },
+            },
+            additionalProperties: false,
+          },
           order: { type: "integer" },
           scope: { type: "string", enum: ["request"] },
         },
@@ -1749,7 +1759,16 @@ export const promptRuntimeInspectBodyJsonSchema = {
           source_kind: { type: "string", enum: ["client_injection"] },
           title: { type: "string" },
           content: { type: "string" },
-          placement: { type: "string", minLength: 1 },
+       placement: { type: "string", minLength: 1 },
+          placement_params: {
+            type: "object",
+            properties: {
+              floor_no: { type: "integer", minimum: 0 },
+              offset: { type: "integer", minimum: 0 },
+              depth: { type: "integer", minimum: 0 },
+            },
+            additionalProperties: false,
+          },
           order: { type: "integer" },
           scope: { type: "string", enum: ["request"] },
         },
@@ -1805,9 +1824,10 @@ export const promptRuntimeInjectionResponseJsonSchema = {
         "id",
         "scope",
         "source_kind",
-        "title",
+             "title",
         "content",
         "placement",
+        "placement_params",
         "order",
         "enabled",
         "mode_scope",
@@ -1823,6 +1843,20 @@ export const promptRuntimeInjectionResponseJsonSchema = {
         title: { type: "string" },
         content: { type: "string" },
         placement: { type: "string" },
+        placement_params: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+            floor_no: { type: "integer", minimum: 0 },
+                offset: { type: "integer", minimum: 0 },
+                depth: { type: "integer", minimum: 0 },
+              },
+              additionalProperties: false,
+            },
+            { type: "null" },
+          ],
+        },
         order: { type: "integer" },
         enabled: { type: "boolean" },
         mode_scope: { anyOf: [{ type: "string", enum: ["compat_strict", "compat_plus", "native"] }, { type: "null" }] },
@@ -1855,10 +1889,19 @@ export const promptRuntimeInjectionCreateBodyJsonSchema = {
   type: "object",
   required: ["source_kind", "title", "content", "placement"],
   properties: {
-    source_kind: { type: "string", enum: ["client_injection"] },
+    source_kind:{type: "string", enum: ["client_injection"] },
     title: { type: "string", minLength: 1 },
     content: { type: "string", minLength: 1 },
     placement: { type: "string", minLength: 1 },
+    placement_params: {
+      type: "object",
+  properties: {
+        floor_no: { type: "integer", minimum: 0 },
+        offset: { type: "integer", minimum: 0 },
+        depth: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    },
     order: { type: "integer" },
     enabled: { type: "boolean" },
     mode_scope: { anyOf: [{ type: "string", enum: ["compat_strict", "compat_plus", "native"] }, { type: "null" }] },
@@ -1869,11 +1912,12 @@ export const promptRuntimeInjectionCreateBodyJsonSchema = {
     title: "History guard",
     content: "Keep the north pass in focus.",
     placement: "before_history",
+    placement_params: { floor_no: 12 },
     order: 100,
     enabled: true,
     mode_scope: null,
     ttl_ms: null,
-  }],
+    }],
   additionalProperties: false,
 } as const;
 
@@ -1884,6 +1928,20 @@ export const promptRuntimeInjectionPatchBodyJsonSchema = {
     title: { type: "string", minLength: 1 },
     content: { type: "string", minLength: 1 },
     placement: { type: "string", minLength: 1 },
+    placement_params: {
+      anyOf: [
+        {
+          type: "object",
+          properties: {
+            floor_no: { type: "integer", minimum: 0 },
+            offset: { type: "integer", minimum: 0 },
+            depth: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        { type: "null" },
+      ],
+    },
     order: { type: "integer" },
     enabled: { type: "boolean" },
     mode_scope: { anyOf: [{ type: "string", enum: ["compat_strict", "compat_plus", "native"] }, { type: "null" }] },

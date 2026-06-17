@@ -312,6 +312,129 @@ describe("sdk messages expanded resource", () => {
     });
   });
 
+  it("creates and reads manual revision timelines for committed messages", async () => {
+    const timelinePayload = {
+      target_kind: "message",
+      target_id: "msg-1",
+      session_id: "session-1",
+      branch_id: "main",
+      floor_id: "floor-1",
+      page_id: "page-1",
+      message_id: "msg-1",
+      current_content: "Edited content",
+      current_token_count: 7,
+      latest_revision_no: 1,
+      items: [
+        {
+          id: "rev-1",
+          session_id: "session-1",
+          branch_id: "main",
+          floor_id: "floor-1",
+          page_id: "page-1",
+          message_id: "msg-1",
+          requested_target_kind: "message",
+          requested_target_id: "msg-1",
+          revision_no: 1,
+          original_content: "Original content",
+          previous_content: "Original content",
+          edited_content: "Edited content",
+          reason: "fix wording",
+          actor_type: "account",
+          actor_id: "acc-1",
+          actor_account_id: "acc-1",
+          actor_client_id: null,
+          operation_log_id: "op-1",
+          created_at: 200,
+        },
+      ],
+    };
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ data: timelinePayload }))
+      .mockResolvedValueOnce(jsonResponse({ data: timelinePayload }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(
+      client.messages.createManualRevision({
+        accountId: "acc-1",
+        content: "Edited content",
+        expectedLatestRevisionNo: 0,
+        messageId: "msg-1",
+        reason: "fix wording",
+      }),
+    ).resolves.toEqual({
+      targetKind: "message",
+      targetId: "msg-1",
+      sessionId: "session-1",
+      branchId: "main",
+      floorId: "floor-1",
+      pageId: "page-1",
+      messageId: "msg-1",
+      currentContent: "Edited content",
+      currentTokenCount: 7,
+      latestRevisionNo: 1,
+      items: [
+        {
+          id: "rev-1",
+          sessionId: "session-1",
+          branchId: "main",
+          floorId: "floor-1",
+          pageId: "page-1",
+          messageId: "msg-1",
+          requestedTargetKind: "message",
+          requestedTargetId: "msg-1",
+          revisionNo: 1,
+          originalContent: "Original content",
+          previousContent: "Original content",
+          editedContent: "Edited content",
+          reason: "fix wording",
+          actorType: "account",
+          actorId: "acc-1",
+          actorAccountId: "acc-1",
+          actorClientId: null,
+          operationLogId: "op-1",
+          createdAt: 200,
+        },
+      ],
+    });
+
+    await expect(
+      client.messages.getManualRevisions({
+        accountId: "acc-1",
+        messageId: "msg-1",
+      }),
+    ).resolves.toEqual({
+      targetKind: "message",
+      targetId: "msg-1",
+      sessionId: "session-1",
+      branchId: "main",
+      floorId: "floor-1",
+      pageId: "page-1",
+      messageId: "msg-1",
+      currentContent: "Edited content",
+      currentTokenCount: 7,
+      latestRevisionNo: 1,
+      items: [
+        expect.objectContaining({
+          id: "rev-1",
+          requestedTargetKind: "message",
+          operationLogId: "op-1",
+        }),
+      ],
+    });
+
+    const [, createInit] = fetchImpl.mock.calls[0]!;
+    const [detailUrl, detailInit] = fetchImpl.mock.calls[1]!;
+    expect(createInit?.method).toBe("POST");
+    expect(createInit?.body).toBe(JSON.stringify({
+      content: "Edited content",
+      expected_latest_revision_no: 0,
+      reason: "fix wording",
+    }));
+    expect(String(detailUrl)).toBe("http://localhost:3000/messages/msg-1/manual-revisions");
+    expect(detailInit?.method).toBe("GET");
+  });
+
   it("supports branch and generation overrides when editing and regenerating", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       jsonResponse({

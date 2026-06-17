@@ -4,11 +4,18 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client";
-import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
 import { floors, messagePages, sessions } from "../db/schema";
 import { parseWithSchema, requireRow, sendError } from "../lib/http";
 import { buildListMeta, listQuerySchemaBase, toOrderBy } from "../lib/pagination";
 import { getRequestAuthContext } from "../plugins/auth";
+import {
+  manualRevisionBodyJsonSchema,
+  manualRevisionBodySchema,
+  manualRevisionResponseJsonSchema,
+  toManualRevisionTimelineResponse,
+} from "./schemas/manual-revisions.js";
+import { errorResponseJsonSchema, idParamsJsonSchema, batchIdArraySchema, batchDeleteBodyJsonSchema, batchResultResponseJsonSchema } from "./schemas/common.js";
+import { CommittedContentManualRevisionService, CommittedContentManualRevisionServiceError } from "../services/committed-content-manual-revision-service.js";
 import { ProjectAccessService, ProjectAccessServiceError, type ProjectAction, type ProjectActorInput } from "../services/project-access-service.js";
 import { getFloorContentMutationRejection, type FloorContentMutationRejection } from "../services/floor-content-mutability-policy";
 import {
@@ -571,6 +578,13 @@ function sendConversationShapeRejection(
   });
 }
 
+function sendManualRevisionServiceError(
+  reply: Parameters<typeof sendError>[0],
+  error: CommittedContentManualRevisionServiceError,
+) {
+  return sendError(reply, error.statusCode, error.code, error.message, error.details);
+}
+
 const PAGE_CONSTRAINT_MAPPINGS: SqliteConstraintErrorMapping[] = [
   {
     constraintName: "message_page_floor_no_version_uq",
@@ -744,6 +758,7 @@ export async function registerMessagePageRoutes(
   const variablePromotionTraceService = new VariablePromotionTraceService(db);
   const sessionStateObservationService = options.sessionStateObservationService;
   const projectAccessService = new ProjectAccessService(db);
+  const manualRevisionService = new CommittedContentManualRevisionService(db);
   function toActorInput(auth: ReturnType<typeof getRequestAuthContext>): ProjectActorInput {
     return{
       actorType: auth.actorType,
@@ -1080,6 +1095,104 @@ export async function registerMessagePageRoutes(
 
 
     return reply.send({ data: toPageResponse(row) });
+  });
+
+  app.get("/pages/:id/manual-revisions", {
+    schema: {
+      tags: ["pages"],
+      summary: "Get committed content manual revisions for a page",
+      operationId: "getPageManualRevisions",
+      params: idParamsJsonSchema,
+      response: {
+        200: manualRevisionResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(pageParamsSchema, request.params, reply);
+
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    let row = ownedPages.getContextById(auth.accountId, parsedParams.data.id);
+    if (!row && canReadProjectByPageId(auth.accountId, parsedParams.data.id)) {
+      row = ownedPages.getContextByIdAnyAccount(parsedParams.data.id);
+    }
+
+    if (!row) {
+      return sendError(reply, 404, "not_found", "Message page not found");
+    }
+
+    try {
+      const timeline = manualRevisionService.getPageTimeline(parsedParams.data.id);
+      return reply.send({ data: toManualRevisionTimelineResponse(timeline) });
+    } catch (error) {
+      if (error instanceof CommittedContentManualRevisionServiceError) {
+        return sendManualRevisionServiceError(reply, error);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/pages/:id/manual-revisions", {
+    schema: {
+      tags: ["pages"],
+      summary: "Apply committed content manual revision to a page",
+      operationId: "createPageManualRevision",
+      params: idParamsJsonSchema,
+      body: manualRevisionBodyJsonSchema,
+      response: {
+        200: manualRevisionResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(pageParamsSchema, request.params, reply);
+    if (!parsedParams.ok) {
+      return;
+    }
+
+    const parsedBody = parseWithSchema(manualRevisionBodySchema, request.body, reply);
+    if (!parsedBody.ok) {
+      return;
+    }
+
+    const auth = getRequestAuthContext(request);
+    const writeAuth = authorizeProjectWriteByPageId(reply, auth, parsedParams.data.id);
+    if (!writeAuth.ok) {
+      return;
+    }
+
+    const existingPage = writeAuth.hasProjectScope
+      ? ownedPages.getContextByIdAnyAccount(parsedParams.data.id)
+      : ownedPages.getContextById(auth.accountId, parsedParams.data.id);
+
+    if (!existingPage) {
+      return sendError(reply, 404, "not_found", "Message page not found");
+    }
+
+    try {
+      const timeline = manualRevisionService.applyManualRevision({
+        actor: auth,
+        content: parsedBody.data.content,
+        expectedLatestRevisionNo: parsedBody.data.expected_latest_revision_no,
+        reason: parsedBody.data.reason,
+        requestId: typeof request.id === "string" ? request.id : null,
+        targetId: parsedParams.data.id,
+        targetKind: "page",
+      });
+      return reply.send({ data: toManualRevisionTimelineResponse(timeline) });
+    } catch (error) {
+      if (error instanceof CommittedContentManualRevisionServiceError) {
+        return sendManualRevisionServiceError(reply, error);
+      }
+      throw error;
+    }
   });
 
   app.get("/pages/:id/variables/staged", {

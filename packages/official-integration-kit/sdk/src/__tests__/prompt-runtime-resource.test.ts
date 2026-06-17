@@ -152,6 +152,7 @@ const promptRuntimePersistedInjectionRecord = {
   title: "History guard",
   content: "Keep the north pass in focus.",
   placement: "before_history",
+  placementParams: null,
   order: 100,
   enabled: true,
   modeScope: "native",
@@ -1084,6 +1085,45 @@ describe("sdk prompt runtime resource", () => {
       ttl_ms: null,
     });
   });
+  it("maps placement_params on persistent injection create and response", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse(
+        {
+          data: {
+            ...promptRuntimePersistedInjectionPayload,
+            placement: "before_floor",
+            placement_params: { floor_no: 12 },
+          },
+        },
+        201,
+      ),
+    );
+
+    const transport = createTransportClient({ baseUrl, fetchImpl });
+    const promptRuntime = createPromptRuntimeResource(transport);
+
+    const created = await promptRuntime.createSessionInjection({
+      sessionId: "session 1",
+      accountId: "acc-1",
+      sourceKind: "client_injection",
+      title: "Floor guard",
+      content: "Keep floor 12 in focus.",
+      placement: "before_floor",
+      placementParams: { floorNo: 12 },
+    });
+
+    expect(created.placement).toBe("before_floor");
+    expect(created.placementParams).toEqual({ floorNo: 12 });
+
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body))).toEqual({
+      source_kind: "client_injection",
+      title: "Floor guard",
+      content: "Keep floor 12 in focus.",
+      placement: "before_floor",
+      placement_params: { floor_no: 12 },
+    });
+  });
+
 
   it("maps dedicated mode requests and mode responses", async () => {
     const fetchImpl = vi.fn<typeof fetch>()

@@ -124,6 +124,7 @@ export default defineConfig({
                 { text: 'Mode（提示词模式）', link: '/reference/api/prompt-runtime-mode' },
                 { text: 'Policy（策略面）', link: '/reference/api/prompt-runtime-policy' },
                 { text: 'Assets（资源绑定）', link: '/reference/api/prompt-runtime-assets' },
+                { text: 'Injections（注入与高级位置）', link: '/reference/api/prompt-runtime-injections' },
                 { text: 'Inspection（预览与检查）', link: '/reference/api/prompt-runtime-inspection' },
                 { text: 'Capabilities（能力目录）', link: '/reference/api/prompt-runtime-capabilities' },
               ],

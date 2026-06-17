@@ -13,6 +13,7 @@ outline: [2, 3]
 - 你要查看某个楼层里的所有消息
 - 你要写入或修改消息内容
 - 你要批量切换消息的可见性
+- 你要对 committed floor 的当前正文做人工修订
 
 ## 一个简单例子
 
@@ -121,6 +122,9 @@ PATCH /messages/:id
 
 至少提供一个字段。可更新：`seq`、`role`、`content`、`content_format`、`token_count`、`is_hidden`、`source`。
 
+如果目标 message 已经位于 committed floor，这个通用更新入口仍然会返回 `409 content_target_locked`。
+如果要做 committed floor 的人工修订，必须使用下面的专用 `manual-revisions` 路由。
+
 ### 错误
 
 | 状态码 | code | 说明 |
@@ -128,6 +132,72 @@ PATCH /messages/:id
 | `400` | `validation_error` | 请求体校验失败 |
 | `404` | `not_found` | 消息不存在 |
 | `409` | `message_conflict` | 更新后的 `seq` 会与同页其他消息冲突 |
+| `409` | `content_target_locked` | 目标 message 所在楼层处于 committed 或 superseded，只允许走专用人工修订入口 |
+
+## 查看人工修订历史
+
+```http
+GET /messages/:id/manual-revisions
+```
+
+这个端点只用于 committed floor 的人工修订历史读取。
+
+### 响应 `200`
+
+返回值结构为：
+
+- 当前目标信息：`target_kind`、`target_id`、`session_id`、`branch_id`、`floor_id`、`page_id`、`message_id`
+- 当前展示正文：`current_content`、`current_token_count`
+- 当前最新修订号：`latest_revision_no`
+- 全量修订历史：`items[]`
+
+其中每条 `items[]` 至少包含：
+
+- `revision_no`
+- `original_content`
+- `previous_content`
+- `edited_content`
+- `reason`
+- `actor_type`、`actor_id`、`actor_account_id`、`actor_client_id`
+- `operation_log_id`
+- `created_at`
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `404` | `not_found` | 消息不存在 |
+| `409` | `manual_revision_invalid_state` | 目标不满足人工修订条件，例如不是 live committed floor、消息被隐藏、角色不在允许范围内 |
+
+## 提交人工修订
+
+```http
+POST /messages/:id/manual-revisions
+```
+
+这个端点只修改当前展示正文，也就是 `messages.content` 与 `messages.token_count`。
+它不会改 `GET /floors/:id/result` 返回的 committed snapshot，也不会改 prompt snapshot、memory、session state、tool audit。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `content` | string | **是** | 修订后的目标正文 |
+| `expected_latest_revision_no` | integer | **是** | 期望的最新修订号，用于乐观锁 |
+| `reason` | string | 否 | 本次人工修订原因 |
+
+### 响应 `200`
+
+返回结构与 `GET /messages/:id/manual-revisions` 相同，但 `items[]` 会包含本次新追加的修订记录。
+
+### 错误
+
+| 状态码 | code | 说明 |
+| ------ | ---- | ---- |
+| `400` | `validation_error` | 请求体校验失败 |
+| `404` | `not_found` | 消息不存在 |
+| `409` | `manual_revision_invalid_state` | 目标不满足人工修订条件 |
+| `409` | `manual_revision_conflict` | `expected_latest_revision_no` 与当前最新修订号不一致 |
 
 ## 删除消息
 

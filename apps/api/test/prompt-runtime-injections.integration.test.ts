@@ -50,11 +50,15 @@ describe("prompt runtime injection integration", () => {
         source_kind: "client_injection",
         title: "Session guard",
         content: "Keep the session in focus.",
-        placement: "before_history",
+        placement: "before_floor",
+        placement_params: { floor_no: 12 },
       },
     });
     expect(createSessionResponse.statusCode, createSessionResponse.body).toBe(201);
     const sessionInjectionId = createSessionResponse.json<{ data: { id: string } }>().data.id;
+    expect(createSessionResponse.json<{ data: { placement_params: unknown } }>().data.placement_params).toEqual({
+      floor_no: 12,
+    });
 
     const listSessionResponse = await app.inject({
       method: "GET",
@@ -62,13 +66,15 @@ describe("prompt runtime injection integration", () => {
     });
     expect(listSessionResponse.statusCode, listSessionResponse.body).toBe(200);
     expect(listSessionResponse.json()).toMatchObject({
-      data: [
+    data: [
         {
           id: sessionInjectionId,
-          scope: "session",
+    scope: "session",
           source_kind: "client_injection",
           title: "Session guard",
-        },
+          placement: "before_floor",
+          placement_params: { floor_no: 12 },
+         },
       ],
     });
 
@@ -469,6 +475,13 @@ describe("prompt runtime injection inspect integration", () => {
             placement: "before_current_user_input",
             order: 50,
           },
+          {
+            source_kind: "client_injection",
+            title: "Floor guide missing params",
+            content: "Floor layer.",
+            placement: "before_floor",
+            order: 60,
+          },
         ],
       },
     });
@@ -476,15 +489,20 @@ describe("prompt runtime injection inspect integration", () => {
 
     const body = inspectResponse.json<{
       data: {
-        injections: Array<{
+   injections: Array<{
           request_index: number;
           injection_id: string | null;
           scope: "session" | "branch" | "request";
           title: string;
           order_requested: number;
           applied: boolean;
+          placement_requested: string;
+          placement_params_requested: Record<string, unknown> | null;
+          anchor_resolved: Record<string, unknown> | null;
+          source_chain: Record<string, unknown> | null;
+          not_applied_reason: string | null;
         }>;
-        prepared_turn: {
+   prepared_turn: {
           messages: Array<{ content: string }>;
         };
       };
@@ -515,13 +533,35 @@ describe("prompt runtime injection inspect integration", () => {
         order_requested: 50,
         applied: true,
       },
-    ]);
+      {
+        request_index: 3,
+        injection_id: null,
+      scope: "request",
+        title: "Floor guide missing params",
+        order_requested: 60,
+        applied: false,
+        not_applied_reason: "missing_placement_params",
+      },
+        ]);
 
     expect(body.data.injections.map((item) => item.scope)).toEqual([
       "session",
       "branch",
       "request",
+      "request",
     ]);
+
+    // I3 trace 来源链 / 锚点 / 参数字段完整呈现
+    const sectionItem = body.data.injections.find((item) => item.title === "Request guide");
+    expect(sectionItem?.placement_params_requested).toBeNull();
+    expect(sectionItem?.source_chain).toBeNull();
+    expect(sectionItem?.anchor_resolved).toMatchObject({ kind: "section" });
+
+    // 楼层位置缺少必需参数时不生效，但仍在 trace 中明确原因，不静默吞掉
+    const floorItem = body.data.injections.find((item) => item.title === "Floor guide missing params");
+    expect(floorItem?.applied).toBe(false);
+    expect(floorItem?.not_applied_reason).toBe("missing_placement_params");
+    expect(floorItem?.placement_requested).toBe("before_floor");
   });
 });
 
