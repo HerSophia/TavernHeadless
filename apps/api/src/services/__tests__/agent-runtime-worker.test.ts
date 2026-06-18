@@ -66,6 +66,7 @@ function enqueue(
   database: DatabaseConnection,
   dryRun: boolean,
   overrides: Partial<AgentRunJobPayload> = {},
+  enqueueOptions: { availableAt?: number } = {},
 ): void {
   const catalog = createAgentRuntimeJobCatalog();
   const scheduler = new RuntimeJobScheduler(catalog, { eventBus: createEventBus() });
@@ -103,6 +104,7 @@ function enqueue(
       agentTypeId: "agt_1",
       agentBindingId: "agb_1",
       payload,
+      ...(enqueueOptions.availableAt !== undefined ? { availableAt: enqueueOptions.availableAt } : {}),
     });
   });
 }
@@ -293,8 +295,10 @@ describe("AgentRuntimeWorker", () => {
         };
       },
     };
-    enqueue(database, false);
-    enqueue(database, false);
+    // 用显式且严格递增的 availableAt（= createdAt）保证两个同 scope 作业的 FIFO 先后关系确定，
+    // 避免两次 enqueue 落在同一毫秒导致 `lt(createdAt)` 判不出更早作业（CI 高负载下的偶发竞态）。
+    enqueue(database, false, {}, { availableAt: 1_000 });
+    enqueue(database, false, {}, { availableAt: 2_000 });
     const worker = new AgentRuntimeWorker(database.db, {
       workerId: "agent-runtime-worker-fifo",
       pollIntervalMs: 60_000,
