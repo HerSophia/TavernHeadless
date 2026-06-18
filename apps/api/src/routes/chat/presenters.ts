@@ -6,6 +6,17 @@ import { ChatServiceError } from "../../services/chat/errors.js";
 import { SessionStateServiceError } from "../../session-state/session-state-service.js";
 import { sendError } from "../../lib/http.js";
 import { findNativePipelineError } from "../../lib/native-pipeline-error.js";
+import { shouldRedactInjectionContent } from "../../services/prompt-runtime/injection-governance.js";
+
+/**
+ * I4 injection trace 呈现选项。
+ *
+ * `includeRestrictedInjectionContent` 为 true 时，受限来源（agent_private / debug / system）的
+ * 正文 title 与内部 source_chain 完整返回；默认（false / 未传）裁剪这些字段并标记 restricted。
+ */
+export interface RuntimeTracePresentationOptions {
+  includeRestrictedInjectionContent?: boolean;
+}
 
 export function mapUsageToSnakeCase(usage: { promptTokens: number; completionTokens: number; totalTokens: number }) {
   return {
@@ -191,6 +202,12 @@ export function mapPromptRuntimeToolTransportToSnakeCase(
               ? { placement_mode: toolTransport.toolList.placementMode }
               : {}),
             tool_count: toolTransport.toolList.toolCount,
+            ...(toolTransport.toolList.tokenCount !== undefined
+              ? { token_count: toolTransport.toolList.tokenCount }
+              : {}),
+            ...(toolTransport.toolList.budgetGroup !== undefined
+              ? { budget_group: toolTransport.toolList.budgetGroup }
+              : {}),
           },
         }
       : {}),
@@ -212,6 +229,19 @@ export function mapPromptRuntimeToolTransportToSnakeCase(
               reason: diagnostic.reason,
               excerpt: diagnostic.excerpt,
             })),
+            ...(toolTransport.parsing.diagnosticsByReason !== undefined
+              ? { diagnostics_by_reason: toolTransport.parsing.diagnosticsByReason }
+              : {}),
+          },
+        }
+      : {}),
+    ...(toolTransport.toolResult
+      ? {
+          tool_result: {
+            written_back: toolTransport.toolResult.writtenBack,
+            block_count: toolTransport.toolResult.blockCount,
+            token_count: toolTransport.toolResult.tokenCount,
+            budget_group: toolTransport.toolResult.budgetGroup,
           },
         }
       : {}),
@@ -292,29 +322,61 @@ function mapInjectionSourceChainToSnakeCase(
 
 export function mapPromptRuntimeInjectionTraceToSnakeCase(
   injection: NonNullable<PromptRuntimeTrace["injection"]>,
+  options?: RuntimeTracePresentationOptions,
 ): Record<string, unknown> {
   return {
-    items: injection.items.map((item: PromptRuntimeInjectionTraceItemShape) => ({
-      request_index: item.requestIndex,
-      source_kind: item.sourceKind,
-      injection_id: item.injectionId ?? null,
-      enabled: item.enabled ?? null,
-      scope: item.scope,
-      placement_requested: item.placementRequested,
-      placement_params_requested: mapInjectionPlacementParamsToSnakeCase(item.placementParamsRequested),
-      order_requested: item.orderRequested,
-      title: item.title,
-      content_length: item.contentLength,
-      applied: item.applied,
-      placement_resolved: item.placementResolved ?? null,
-      anchor_resolved: mapInjectionAnchorToSnakeCase(item.anchorResolved),
-      source_chain: mapInjectionSourceChainToSnakeCase(item.sourceChain),
-      not_applied_reason: item.notAppliedReason ?? null,
-    })),
+    items: injection.items.map((item: PromptRuntimeInjectionTraceItemShape) =>
+      mapInjectionTraceItemToSnakeCase(item, options),
+    ),
+    requested_count: injection.requestedCount ?? injection.items.length,
+    applied_count: injection.appliedCount ?? injection.items.filter((item) => item.applied).length,
+    rejected_count: injection.rejectedCount ?? injection.items.filter((item) => !item.applied).length,
+    token_count: injection.tokenCount ?? injection.items.filter((item) => item.applied).reduce((sum, item) => sum + (item.tokenCount ?? 0), 0),
+    budget_group: injection.budgetGroup ?? null,
   };
 }
 
-export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Record<string, unknown> {
+/**
+ * I4 单条 injection trace 呈现：按可见性矩阵裁剪受限来源的正文与来源链。
+ *
+ * 结构性字段（位置、是否生效、不生效原因、预算状态、token、可见性）始终保留；
+ * 仅 title 与 source_chain 在受限且未授权时被裁剪，并通过 `restricted: true` 透明标注。
+ */
+function mapInjectionTraceItemToSnakeCase(
+  item: PromptRuntimeInjectionTraceItemShape,
+  options?: RuntimeTracePresentationOptions,
+): Record<string, unknown> {
+  const redacted = shouldRedactInjectionContent(item.visibility, {
+    includeRestrictedContent: options?.includeRestrictedInjectionContent === true,
+  });
+  return {
+    request_index: item.requestIndex,
+    source_kind: item.sourceKind,
+    visibility: item.visibility,
+    injection_id: item.injectionId ?? null,
+    enabled: item.enabled ?? null,
+    scope: item.scope,
+    placement_requested: item.placementRequested,
+    placement_params_requested: mapInjectionPlacementParamsToSnakeCase(item.placementParamsRequested),
+    order_requested: item.orderRequested,
+    title: redacted ? null : item.title,
+    content_length: item.contentLength,
+    token_count: item.tokenCount ?? null,
+    budget_group: item.budgetGroup ?? null,
+    budget_status: item.budgetStatus ?? null,
+    applied: item.applied,
+    placement_resolved: item.placementResolved ?? null,
+    anchor_resolved: mapInjectionAnchorToSnakeCase(item.anchorResolved),
+    source_chain: redacted ? null : mapInjectionSourceChainToSnakeCase(item.sourceChain),
+    not_applied_reason: item.notAppliedReason ?? null,
+    restricted: redacted,
+  };
+}
+
+export function mapRuntimeTraceToSnakeCase(
+  runtimeTrace: PromptRuntimeTrace,
+  options?: RuntimeTracePresentationOptions,
+): Record<string, unknown> {
   return {
     ...(runtimeTrace.preset
       ? {
@@ -474,7 +536,7 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
       : {}),
     ...(runtimeTrace.injection
       ? {
-          injection: mapPromptRuntimeInjectionTraceToSnakeCase(runtimeTrace.injection),
+          injection: mapPromptRuntimeInjectionTraceToSnakeCase(runtimeTrace.injection, options),
         }
       : {}),
     ...(runtimeTrace.toolTransport
@@ -497,9 +559,12 @@ export function mapRuntimeTraceToSnakeCase(runtimeTrace: PromptRuntimeTrace): Re
   };
 }
 
-export function mapOptionalRuntimeTraceResponseField(runtimeTrace?: PromptRuntimeTrace): Record<string, unknown> {
+export function mapOptionalRuntimeTraceResponseField(
+  runtimeTrace?: PromptRuntimeTrace,
+  options?: RuntimeTracePresentationOptions,
+): Record<string, unknown> {
   return runtimeTrace
-    ? { runtime_trace: mapRuntimeTraceToSnakeCase(runtimeTrace) }
+    ? { runtime_trace: mapRuntimeTraceToSnakeCase(runtimeTrace, options) }
     : {};
 }
 

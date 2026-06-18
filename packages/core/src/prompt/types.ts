@@ -306,7 +306,9 @@ export type PromptRuntimeSourceKind =
   | 'worldbook'
   | 'examples'
   | 'authors_note'
-  | 'state_projection';
+  | 'state_projection'
+  | 'tool_list'
+  | 'tool_result';
 
 export type PromptSourceExclusionReasonCode =
   | 'disabled_by_policy'
@@ -559,12 +561,21 @@ export interface PromptRuntimeToolTransportTrace {
     injected: boolean;
     contributorId?: string;
     toolCount: number;
+    tokenCount?: number;
+    budgetGroup?: string;
     placementMode?: 'strict_fixed' | 'contributor_chain';
   };
   toolChoiceApplied?: boolean;
   streamingToolCallUnsupported?: boolean;
   parsing?: ToolCallParseStats & {
     diagnostics: ToolCallParseDiagnostic[];
+    diagnosticsByReason?: Record<string, number>;
+  };
+  toolResult?: {
+    writtenBack: boolean;
+    blockCount: number;
+    tokenCount: number;
+    budgetGroup: string;
   };
 }
 

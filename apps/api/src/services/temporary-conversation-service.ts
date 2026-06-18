@@ -50,8 +50,11 @@ import {
   type TemporaryConversationCreateFromProjectInput,
   type TemporaryConversationCreateInput,
   type TemporaryConversationExportInput,
+  type TemporaryConversationExportRecord,
   type TemporaryConversationExportResult,
   type TemporaryConversationHandle,
+  type TemporaryConversationInspect,
+  type TemporaryConversationInspectTranscriptFloor,
   type TemporaryConversationMessageRef,
   type TemporaryConversationResource,
   type TemporaryConversationRespondInput,
@@ -467,7 +470,96 @@ export class TemporaryConversationService {
 }): Promise<TemporaryConversationTranscript> {
     const session = await this.getTemporaryConversation(input.accountId, input.conversationId);
     const branchId = normalizeTemporaryConversationBranchId(input.branchId);
+    const floors = await this.loadTranscriptFloors(session.id, branchId);
 
+    return {
+      conversationId: session.id,
+      branchId,
+      floors,
+    };
+  }
+
+  async inspect(input: {
+    accountId: string;
+    conversationId: string;
+    branchId?: string;
+    includeAgentPrivateContent?: boolean;
+  }): Promise<TemporaryConversationInspect> {
+    const session = await this.getTemporaryConversation(input.accountId, input.conversationId);
+    const branchId = normalizeTemporaryConversationBranchId(input.branchId);
+    const resource = this.toTemporaryConversationResource(session);
+    const agentOrigin = readAgentOriginFromMetadataJson(session.metadataJson);
+    const agentPrivate = resource.visibility === "internal" || agentOrigin !== null;
+    const includeAgentPrivateContent = input.includeAgentPrivateContent === true;
+    const transcriptRestricted = agentPrivate && !includeAgentPrivateContent;
+
+    const floors = await this.loadTranscriptFloors(session.id, branchId);
+    const inspectFloors = floors.map((floor) => toInspectTranscriptFloor(floor, transcriptRestricted));
+    const exports = await this.loadExportRecords(session.id);
+
+    return {
+      conversation: resource,
+      agentPrivate,
+      transcriptRestricted,
+      sourceSnapshot: {
+        digest: session.temporarySnapshotDigest,
+        sourceSessionId: session.temporarySourceSessionId,
+      },
+      agentOrigin: transcriptRestricted ? null : agentOrigin,
+      cleanup: {
+        cleaned: session.cleanedAt !== null,
+        cleanedAt: session.cleanedAt,
+        retentionPolicy: resource.retentionPolicy,
+      },
+      transcript: {
+        conversationId: session.id,
+        branchId,
+        floors: inspectFloors,
+      },
+      exports,
+    };
+  }
+
+  private async loadExportRecords(
+    conversationId: string,
+  ): Promise<TemporaryConversationExportRecord[]> {
+    const rows = await this.db
+      .select({
+        stagedWriteId: pageStagedWrites.id,
+        sourceKind: pageStagedWrites.sourceKind,
+        targetSessionId: pageStagedWrites.sessionId,
+        targetPageId: pageStagedWrites.pageId,
+        sourcePageId: pageStagedWrites.sourcePageId,
+        status: pageStagedWrites.status,
+        reason: pageStagedWrites.reason,
+        createdAt: pageStagedWrites.createdAt,
+        updatedAt: pageStagedWrites.updatedAt,
+        appliedAt: pageStagedWrites.appliedAt,
+        discardedAt: pageStagedWrites.discardedAt,
+      })
+      .from(pageStagedWrites)
+      .where(eq(pageStagedWrites.sourceSessionId, conversationId))
+      .orderBy(desc(pageStagedWrites.createdAt), desc(pageStagedWrites.id));
+
+    return rows.map((row) => ({
+      stagedWriteId: row.stagedWriteId,
+      deliveryTarget: "page_staged_write",
+      targetSessionId: row.targetSessionId,
+      targetPageId: row.targetPageId,
+      sourcePageId: row.sourcePageId,
+      status: row.status,
+      reason: row.reason,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      appliedAt: row.appliedAt,
+      discardedAt: row.discardedAt,
+    }));
+  }
+
+  private async loadTranscriptFloors(
+    sessionId: string,
+    branchId: string,
+  ): Promise<TemporaryConversationTranscriptFloor[]> {
     const floorRows = await this.db
       .select({
         id: floors.id,
@@ -482,7 +574,7 @@ export class TemporaryConversationService {
       })
       .from(floors)
       .where(and(
-        eq(floors.sessionId, session.id),
+        eq(floors.sessionId, sessionId),
         eq(floors.branchId, branchId),
         isNull(floors.supersededAt),
       ))
@@ -577,11 +669,7 @@ export class TemporaryConversationService {
       };
     });
 
-    return {
-      conversationId: session.id,
-      branchId,
-      floors: transcriptFloors,
-    };
+    return transcriptFloors;
   }
 
   async finalize(input: {
@@ -1019,6 +1107,7 @@ export class TemporaryConversationService {
       finalizedAt: row.finalizedAt,
       discardedAt: row.discardedAt,
       cancelledAt: row.cancelledAt,
+      cleanedAt: row.cleanedAt,
     };
   }
 
@@ -1759,6 +1848,45 @@ function mapDbMessageRole(role: typeof messages.$inferSelect["role"]): ChatMessa
     return "system";
   }
   return "user";
+}
+
+function toInspectTranscriptFloor(
+  floor: TemporaryConversationTranscriptFloor,
+  restricted: boolean,
+): TemporaryConversationInspectTranscriptFloor {
+  return {
+    id: floor.id,
+    floorNo: floor.floorNo,
+    branchId: floor.branchId,
+    parentFloorId: floor.parentFloorId,
+    state: floor.state,
+    tokenIn: floor.tokenIn,
+    tokenOut: floor.tokenOut,
+    createdAt: floor.createdAt,
+    updatedAt: floor.updatedAt,
+    pages: floor.pages.map((page) => ({
+      id: page.id,
+      pageNo: page.pageNo,
+      pageKind: page.pageKind,
+      isActive: page.isActive,
+      version: page.version,
+      checksum: page.checksum,
+      createdAt: page.createdAt,
+      updatedAt: page.updatedAt,
+      messages: page.messages.map((message) => ({
+        id: message.id,
+        seq: message.seq,
+        role: message.role,
+        content: restricted ? null : message.content,
+        contentLength: message.content.length,
+        contentFormat: message.contentFormat,
+        isHidden: message.isHidden,
+        source: message.source,
+        restricted,
+        createdAt: message.createdAt,
+      })),
+    })),
+  };
 }
 
 function createAsyncQueue<T>() {

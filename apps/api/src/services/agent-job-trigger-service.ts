@@ -8,6 +8,7 @@ import {
   buildAgentRuntimeScopeKey,
   makeAgentRunJobId,
   type AgentRunJobPayload,
+  type AgentRunLineage,
 } from "./agent-runtime-job-definitions.js";
 import {
   ProjectAgentBindingService,
@@ -76,6 +77,13 @@ export interface EnqueueManualInput {
   actorClientId?: string | null;
   dryRun?: boolean;
   inputJson?: Record<string, unknown>;
+  /**
+   * B8-GOV R6-1 nested lineage（缺口 3）。
+   *
+   * 当后台 Agent 由另一条运行入队时（例如 NodeGraph run 的 `agent.call` 节点），
+   * 调用方传入父级 run 引用，让被入队的 `agent.run` job 能反查父级运行（子 -> 父）。
+   */
+  lineage?: AgentRunLineage;
 }
 
 export class AgentJobTriggerService {
@@ -238,6 +246,7 @@ export class AgentJobTriggerService {
       actorClientId: input.actorClientId ?? null,
       dryRun,
       inputJson: input.inputJson,
+      lineage: input.lineage,
     });
 
     const result = this.scheduler.enqueue(tx, {
@@ -282,6 +291,7 @@ export class AgentJobTriggerService {
     actorClientId: string | null;
     dryRun: boolean;
     inputJson?: Record<string, unknown>;
+    lineage?: AgentRunLineage;
   }): AgentRunJobPayload {
     const { binding, effective } = args;
     for (const target of effective.effective.allowedOutputTargets) {
@@ -294,6 +304,8 @@ export class AgentJobTriggerService {
         );
       }
     }
+
+    const lineage = normalizeAgentRunLineage(args.lineage);
 
     return {
       accountId: binding.accountId,
@@ -316,8 +328,37 @@ export class AgentJobTriggerService {
       },
       dryRun: args.dryRun,
       inputJson: args.inputJson ?? {},
+      ...(lineage ? { lineage } : {}),
     };
   }
+}
+
+/**
+ * 归一化 nested lineage：去掉空字段；当三项都为空时返回 undefined，避免写入空对象。
+ */
+function normalizeAgentRunLineage(lineage: AgentRunLineage | undefined): AgentRunLineage | undefined {
+  if (!lineage) {
+    return undefined;
+  }
+  const rootRunId = normalizeLineageField(lineage.rootRunId);
+  const parentRunId = normalizeLineageField(lineage.parentRunId);
+  const parentRuntimeKind = normalizeLineageField(lineage.parentRuntimeKind);
+  if (!rootRunId && !parentRunId && !parentRuntimeKind) {
+    return undefined;
+  }
+  return {
+    ...(rootRunId ? { rootRunId } : {}),
+    ...(parentRunId ? { parentRunId } : {}),
+    ...(parentRuntimeKind ? { parentRuntimeKind } : {}),
+  };
+}
+
+function normalizeLineageField(value: string | null | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 // Re-export for convenience.

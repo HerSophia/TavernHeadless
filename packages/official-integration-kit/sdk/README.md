@@ -245,13 +245,25 @@ await client.promptRuntime.patchBranchInjection({
 - 请求级 `scope` 仍然使用 `"request"`
 - inspection 返回的注入结果里，`scope` 可能为 `request`、`session`、`branch`
 - `order` 默认 `100`，只影响同一 placement 内部顺序
+- 单次请求最多 32 条 injection；session / branch 持久作用域各最多 128 条
+- 单条 `title` 最多 256 字符，单条 `content` 最多 8000 字符
+- 单条 `content` 最多 2000 token，本次实际生效 injection `content` 合计最多 4000 token
 
 其中：
 
 - `previewText(...)` 不会把 injection 注入返回的 `text`
 - `previewText(...)` 只会在 `runtimeTrace.injection` 中回显解析结果
 - `inspect(...)` 会在顶层 `injections` 和 `preparedTurn.runtimeTrace.injection` 中返回同一组结果
+- `runtimeTrace.injection` 会包含 `requestedCount`、`appliedCount`、`rejectedCount`、`tokenCount`、`budgetGroup` 汇总字段
+- 每条 `PromptRuntimeInjectionResult` 会包含 `tokenCount` 与 `budgetGroup`
 - `inspect(...)` 的 `preparePhaseTrace` 会新增 `phase: "injection"`
+
+可见性与裁剪（阶段 6）：
+
+- 每条 `PromptRuntimeInjectionResult` 会包含 `visibility`（`client` / `agent_private` / `debug` / `system`）、`budgetStatus` 与 `restricted`
+- 受限来源（`agent_private` / `debug` / `system`）默认裁剪：`title` 返回 `null`、`sourceChain` 省略，并把 `restricted` 置为 `true`；结构性字段（位置、是否生效、原因、预算状态、token）仍完整保留
+- `client` 来源永不裁剪
+- `inspect(...)` 支持 `includeRestrictedInjectionContent: true`，用于 owner 调试时取回受限来源的完整正文；`previewText(...)` 始终裁剪受限来源
 
 如需直接写类型，SDK 根导出现在还提供：
 

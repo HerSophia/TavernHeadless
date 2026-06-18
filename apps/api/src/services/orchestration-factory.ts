@@ -144,6 +144,7 @@ export function createOrchestrationContext(
     verifier,
     eventBus,
     toolExecutionRepository: toolExecutionRepo,
+    tokenCounter,
   });
 
   return {

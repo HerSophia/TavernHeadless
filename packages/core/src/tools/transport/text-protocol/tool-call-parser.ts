@@ -6,7 +6,6 @@ import type {
 } from '../transport-types.js';
 
 import {
-  TEXT_PROTOCOL_AUTO_CALL_ID_PREFIX,
   TEXT_PROTOCOL_DIAGNOSTIC_EXCERPT_LIMIT,
   TEXT_PROTOCOL_TOOL_CALL_CLOSE,
 } from './constants.js';
@@ -33,19 +32,40 @@ function truncateExcerpt(value: string): string {
   return `${trimmed.slice(0, TEXT_PROTOCOL_DIAGNOSTIC_EXCERPT_LIMIT - 1)}…`;
 }
 
-function parseAttributes(attributeText: string): Record<string, string> {
+function parseAttributes(attributeText: string): {
+  attributes: Record<string, string>;
+  malformed: boolean;
+} {
   const attributes: Record<string, string> = {};
-  const pattern = /([a-zA-Z_][a-zA-Z0-9_-]*)\s*=\s*"([^"]*)"/g;
+  const pattern = /([a-z][a-z0-9_-]*)\s*=\s*"([^"]*)"/g;
   let match: RegExpExecArray | null;
+  let cursor = 0;
+  let malformed = false;
+
   while ((match = pattern.exec(attributeText)) !== null) {
-    const key = match[1];
-    if (!key) {
-      continue;
+    const leading = attributeText.slice(cursor, match.index).trim();
+    if (leading.length > 0) {
+      malformed = true;
     }
 
-    attributes[key] = match[2] ?? '';
+    const key = match[1];
+    if (!key || Object.prototype.hasOwnProperty.call(attributes, key)) {
+      malformed = true;
+    } else {
+      attributes[key] = match[2] ?? '';
+    }
+    cursor = pattern.lastIndex;
   }
-  return attributes;
+
+  if (attributeText.slice(cursor).trim().length > 0) {
+    malformed = true;
+  }
+
+  return { attributes, malformed };
+}
+
+function isValidToolName(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$/.test(value);
 }
 
 function findNextToolCallStart(text: string, startIndex: number): number {
@@ -136,7 +156,7 @@ function scanToolCallBlocks(text: string): ScannedToolCallBlock[] {
       attributeText: text.slice(start + '<tool_call'.length, openEnd),
       bodyText: text.slice(openEnd + 1, Math.max(openEnd + 1, closeStart)),
       excerpt: truncateExcerpt(text.slice(start, end)),
-            malformed: matched.malformed,
+      malformed: matched.malformed,
     });
     cursor = end;
   }
@@ -151,14 +171,14 @@ function buildParsingDiagnostics(
   const calls: ParsedToolCall[] = [];
   const diagnostics: ToolCallParseDiagnostic[] = [];
   const seenCallIds = new Set<string>();
-  let autoCallIndex = 1;
 
   for (const block of blocks) {
-    const attributes = parseAttributes(block.attributeText);
+    const parsedAttributes = parseAttributes(block.attributeText);
+    const attributes = parsedAttributes.attributes;
     const rawCallId = attributes.id?.trim();
     const toolName = attributes.name?.trim() || null;
 
-    if (block.malformed || !toolName) {
+    if (block.malformed) {
       diagnostics.push({
         callId: rawCallId && rawCallId.length > 0 ? rawCallId : null,
         toolName,
@@ -168,9 +188,47 @@ function buildParsingDiagnostics(
       continue;
     }
 
-    const callId = rawCallId && rawCallId.length > 0
-      ? rawCallId
-      : `${TEXT_PROTOCOL_AUTO_CALL_ID_PREFIX}${autoCallIndex++}`;
+    if (parsedAttributes.malformed) {
+      diagnostics.push({
+        callId: rawCallId && rawCallId.length > 0 ? rawCallId : null,
+        toolName,
+        reason: 'malformed_attributes',
+        excerpt: block.excerpt,
+      });
+      continue;
+    }
+
+    if (!toolName) {
+      diagnostics.push({
+        callId: rawCallId && rawCallId.length > 0 ? rawCallId : null,
+        toolName: null,
+        reason: 'missing_tool_name',
+        excerpt: block.excerpt,
+      });
+      continue;
+    }
+
+    if (!isValidToolName(toolName)) {
+      diagnostics.push({
+        callId: rawCallId && rawCallId.length > 0 ? rawCallId : null,
+        toolName,
+        reason: 'invalid_tool_name',
+        excerpt: block.excerpt,
+      });
+      continue;
+    }
+
+    if (!rawCallId || rawCallId.length === 0) {
+      diagnostics.push({
+        callId: null,
+        toolName,
+        reason: 'missing_call_id',
+        excerpt: block.excerpt,
+      });
+      continue;
+    }
+
+    const callId = rawCallId;
 
     if (seenCallIds.has(callId)) {
       diagnostics.push({
@@ -181,7 +239,16 @@ function buildParsingDiagnostics(
       });
       continue;
     }
-    seenCallIds.add(callId);
+
+    if (!allowedToolNames.has(toolName)) {
+      diagnostics.push({
+        callId,
+        toolName,
+        reason: 'tool_not_registered',
+        excerpt: block.excerpt,
+      });
+      continue;
+    }
 
     let parsedBody: unknown;
     try {
@@ -206,15 +273,7 @@ function buildParsingDiagnostics(
       continue;
     }
 
-    if (!allowedToolNames.has(toolName)) {
-      diagnostics.push({
-        callId,
-        toolName,
-        reason: 'tool_not_registered',
-        excerpt: block.excerpt,
-      });
-      continue;
-    }
+    seenCallIds.add(callId);
 
     calls.push({
       callId,

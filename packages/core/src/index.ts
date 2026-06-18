@@ -258,6 +258,57 @@ export type {
 } from './prompt-graph/index.js';
 export { compilePromptGraph, PromptGraphCompileError } from './prompt-graph/index.js';
 
+// ── Node Graph Runtime ─────────────────────────────────
+export type {
+  CompiledNodeGraph,
+  NodeGraphCompilerOptions,
+  NodeGraphDiagnostic,
+  NodeGraphDocument,
+  NodeGraphEdge,
+  NodeGraphEdgeEndpoint,
+  NodeGraphEdgeKind,
+  NodeGraphExposedGroupConfig,
+  NodeGraphFailurePolicy,
+  NodeGraphGroup,
+  NodeGraphNode,
+  NodeGraphNodeRunOutput,
+  NodeGraphNodeRunRecord,
+  NodeGraphNodeRunStatus,
+  NodeGraphPermissionManifest,
+  NodeGraphPhase,
+  NodeGraphPolicies,
+  NodeGraphPortDefinition,
+  NodeGraphPortType,
+  NodeGraphPreview,
+  NodeGraphPreviewPolicy,
+  NodeGraphRetryPolicy,
+  NodeGraphRunIntent,
+  NodeGraphRunRecord,
+  NodeGraphRunStatus,
+  NodeTypeRegistryEntry,
+  NodeGraphConditionExpr,
+  NodeGraphValueLiteral,
+  NodeGraphValueRef,
+  CompileNodeGraphOptions,
+  NodeGraphValidationOptions,
+  NodeGraphValidationResult,
+} from './node-graph/index.js';
+export {
+  NODE_GRAPH_BUILTIN_NODE_TYPES,
+  NODE_GRAPH_PHASES,
+  NODE_GRAPH_PORT_TYPES,
+  NODE_GRAPH_SCHEMA_VERSION,
+  NodeGraphCompileError,
+  NodeTypeRegistry,
+  compileNodeGraph,
+  createDefaultNodeTypeRegistry,
+  createNodeGraphDiagnostic,
+  evaluateNodeGraphCondition,
+  formatNodeGraphDiagnostics,
+  hasNodeGraphErrors,
+  validateNodeGraph,
+} from './node-graph/index.js';
+
 // ── LLM ───────────────────────────────────────────────
 export type {
   ProviderType,

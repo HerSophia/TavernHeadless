@@ -71,7 +71,7 @@ WebSocket 也遵循相同边界：
 
 两类已知例外，以各自页面的说明为准：
 
-- Workspace / Project 路由族（含 Projects、Agent Types、Agent Bindings、Project Settings、Derived Outputs、Inbox）不使用 `data` 包裹，而是返回 `items` / `item` 或直接返回对象。
+- Workspace / Project 路由族（含 Projects、Agent Types、Agent Bindings、Agent Jobs、NodeGraphs、Project Settings、Derived Outputs、Inbox）不使用 `data` 包裹，而是返回 `items` / `item` 或直接返回对象。
 - [Effective Config](./api/effective-config) 不使用 `data` 包裹，且响应字段使用 `camelCase`。
 
 列表接口额外包含 `meta` 字段：
@@ -185,6 +185,7 @@ WebSocket 也遵循相同边界：
 | Agent Types | Workspace 级 Agent 类型 | [Agent Types](./api/agent-types) |
 | Project Agent Bindings | Project 级 Agent启用与手动触发 | [Project Agent Bindings](./api/project-agent-bindings) |
 | Project Agent Jobs | Project 级后台 Agent 作业看板 | [Project Agent Jobs](./api/project-agent-jobs) |
+| NodeGraph Runtime | Project 级图定义、版本、预览、后台运行与运行 trace | [NodeGraph Runtime](./api/node-graphs) |
 | Project Settings | Project 级 LLM、MCP、Tool Policy 覆盖 | [Project Settings](./api/project-settings) |
 | Effective Config | Project / Session 生效配置视图 | [Effective Config](./api/effective-config) |
 | Project Derived Outputs | Project 派生结果 | [Project Derived Outputs](./api/projects-derived-outputs) |
@@ -221,6 +222,7 @@ WebSocket 也遵循相同边界：
 - [Agent Types](./api/agent-types)
 - [Project Agent Bindings](./api/project-agent-bindings)
 - [Project Agent Jobs](./api/project-agent-jobs)
+- [NodeGraph Runtime](./api/node-graphs)
 - [Project Settings](./api/project-settings)
 - [Effective Config](./api/effective-config)
 - [Project Derived Outputs](./api/projects-derived-outputs)

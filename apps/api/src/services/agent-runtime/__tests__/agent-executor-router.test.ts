@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { createDatabase } from "../../../db/client.js";
+import { accounts, agentTypes, projectAgentBindings, runtimeJobs } from "../../../db/schema.js";
+import { createTestProject } from "../../../__tests__/helpers/workspace-project.js";
 import { AgentExecutorRouter } from "../agent-executor-router.js";
+import {
+  AgentJobTriggerBackgroundJobEnqueuer,
+  AgentJobTriggerBackgroundJobEnqueuerError,
+} from "../background-job-enqueuer.js";
 import type {
   TemporaryConversationAgentExecutionResult,
   TemporaryConversationAgentExecutor,
@@ -46,6 +53,57 @@ const inlineResult: InlineAgentExecutionResult = {
   records: [],
   aborted: false,
 };
+
+function seedBackgroundJobEnqueuerFixture(database: ReturnType<typeof createDatabase>): void {
+  database.db
+    .insert(accounts)
+    .values({ id: "default-admin", name: "default-admin", createdAt: 1, updatedAt: 1 })
+    .onConflictDoNothing()
+    .run();
+  createTestProject(database.db, { accountId: "default-admin", workspaceId: "ws_1", id: "proj_1" });
+  database.db
+    .insert(agentTypes)
+    .values({
+      id: "agt_1",
+      workspaceId: "ws_1",
+      accountId: "default-admin",
+      key: "project.digest",
+      name: "Project Digest",
+      scopeKind: "project",
+      status: "active",
+      defaultLlmProfileId: null,
+      defaultToolPolicyId: null,
+      defaultMcpBindingJson: "{}",
+      defaultEventSubscriptionsJson: "[]",
+      defaultGrantsJson: JSON.stringify({ allowed_output_targets: ["derived_output"] }),
+      metadataJson: "{}",
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    .onConflictDoNothing()
+    .run();
+  database.db
+    .insert(projectAgentBindings)
+    .values({
+      id: "agb_1",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+      accountId: "default-admin",
+      agentTypeId: "agt_1",
+      status: "enabled",
+      scopeKind: "project",
+      llmProfileId: null,
+      toolPolicyId: null,
+      mcpBindingJson: "{}",
+      eventSubscriptionsJson: "[]",
+      grantsJson: JSON.stringify({ allowed_output_targets: ["derived_output"] }),
+      metadataJson: "{}",
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    .onConflictDoNothing()
+    .run();
+}
 
 describe("AgentExecutorRouter", () => {
   it("single_call 路由到 inline executor adapter", async () => {
@@ -153,6 +211,80 @@ describe("AgentExecutorRouter", () => {
     expect(route.kind).toBe("background_job");
     if (route.kind === "background_job") {
          expect(route.result.status).toBe("rejected");
+    }
+  });
+
+  it("background_job 使用 AgentJobTriggerService 适配器在真实应用服务层入队", async () => {
+    const database = createDatabase(":memory:");
+    try {
+      seedBackgroundJobEnqueuerFixture(database);
+      const router = new AgentExecutorRouter(makeTemporaryExecutorStub(temporaryResult), {
+        backgroundJobEnqueuer: new AgentJobTriggerBackgroundJobEnqueuer(database.db),
+      });
+
+      const route = await router.routeByMedium(
+        { kind: "background_job", deliveryTarget: "derived_output" },
+        {
+          backgroundJobRequest: {
+            accountId: "default-admin",
+            workspaceId: "ws_1",
+            projectId: "proj_1",
+            agentBindingId: "agb_1",
+            dryRun: false,
+            inputJson: { source: "router" },
+          },
+        },
+      );
+
+      expect(route.kind).toBe("background_job");
+      if (route.kind !== "background_job" || route.result.status !== "enqueued") {
+        throw new Error("expected enqueued background_job result");
+      }
+      expect(route.result.dryRun).toBe(false);
+      expect(route.result.mediumTrace.status).toBe("running");
+
+      const [job] = await database.db.select().from(runtimeJobs);
+      expect(job).toMatchObject({
+        jobType: "agent.run",
+        accountId: "default-admin",
+        workspaceId: "ws_1",
+        projectId: "proj_1",
+        agentBindingId: "agb_1",
+        status: "pending",
+      });
+      expect(JSON.parse(job?.payloadJson ?? "{}")).toMatchObject({
+        dryRun: false,
+        inputJson: { source: "router" },
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("background_job 适配器缺少项目参数时明确失败", async () => {
+    const database = createDatabase(":memory:");
+    try {
+      const enqueuer = new AgentJobTriggerBackgroundJobEnqueuer(database.db);
+      await expect(
+        enqueuer.enqueue({
+          accountId: "default-admin",
+          workspaceId: "ws_1",
+          projectId: "",
+          agentBindingId: "agb_1",
+        }),
+      ).rejects.toMatchObject({
+        code: "background_job_route_missing_project_id",
+      });
+      await expect(
+        enqueuer.enqueue({
+          accountId: "default-admin",
+          workspaceId: "ws_1",
+          projectId: "proj_1",
+          agentBindingId: "",
+        }),
+      ).rejects.toBeInstanceOf(AgentJobTriggerBackgroundJobEnqueuerError);
+    } finally {
+      database.close();
     }
   });
 

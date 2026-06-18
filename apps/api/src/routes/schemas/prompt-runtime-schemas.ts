@@ -1,3 +1,4 @@
+import { PROMPT_RUNTIME_INJECTION_LIMITS } from "../../services/prompt-runtime/injection-governance.js";
 import {
   DERIVED_NO_ASSISTANT_STRUCTURE_WARNING,
   PROMPT_RUNTIME_POLICY_SOURCES,
@@ -517,12 +518,21 @@ export const promptRuntimePreviewResponseExample = {
         contributor_id: "builtin:tool_list",
         placement_mode: "contributor_chain",
         tool_count: 2,
+        token_count: 96,
+        budget_group: "tool_list",
       },
       parsing: {
         block_count: 1,
         accepted_count: 1,
         rejected_count: 0,
         diagnostics: [],
+        diagnostics_by_reason: {},
+      },
+      tool_result: {
+        written_back: true,
+        block_count: 1,
+        token_count: 128,
+        budget_group: "tool_result",
       },
     },
   },
@@ -1705,13 +1715,14 @@ export const promptRuntimePreviewBodyJsonSchema = {
     source_selection: promptSourceSelectionJsonSchema,
     prompt_runtime_injections: {
       type: "array",
+      maxItems: PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount,
       items: {
         type: "object",
         required: ["source_kind", "title", "content", "placement"],
         properties: {
           source_kind: { type: "string", enum: ["client_injection"] },
-          title: { type: "string" },
-            content: { type: "string" },
+          title: { type: "string", maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength },
+            content: { type: "string", maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength },
           placement: { type: "string", minLength: 1 },
           placement_params: {
             type: "object",
@@ -1752,13 +1763,14 @@ export const promptRuntimeInspectBodyJsonSchema = {
     source_selection: promptSourceSelectionJsonSchema,
     prompt_runtime_injections: {
       type: "array",
+      maxItems: PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount,
       items: {
         type: "object",
         required: ["source_kind", "title", "content", "placement"],
         properties: {
           source_kind: { type: "string", enum: ["client_injection"] },
-          title: { type: "string" },
-          content: { type: "string" },
+          title: { type: "string", maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength },
+          content: { type: "string", maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength },
        placement: { type: "string", minLength: 1 },
           placement_params: {
             type: "object",
@@ -1775,6 +1787,7 @@ export const promptRuntimeInspectBodyJsonSchema = {
         additionalProperties: false,
       },
     },
+    include_restricted_injection_content: { type: "boolean" },
   },
   examples: [promptRuntimeInspectBodyExample],
   additionalProperties: false,
@@ -1890,8 +1903,8 @@ export const promptRuntimeInjectionCreateBodyJsonSchema = {
   required: ["source_kind", "title", "content", "placement"],
   properties: {
     source_kind:{type: "string", enum: ["client_injection"] },
-    title: { type: "string", minLength: 1 },
-    content: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1, maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength },
+    content: { type: "string", minLength: 1, maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength },
     placement: { type: "string", minLength: 1 },
     placement_params: {
       type: "object",
@@ -1925,8 +1938,8 @@ export const promptRuntimeInjectionPatchBodyJsonSchema = {
   type: "object",
   properties: {
     source_kind: { type: "string", enum: ["client_injection"] },
-    title: { type: "string", minLength: 1 },
-    content: { type: "string", minLength: 1 },
+    title: { type: "string", minLength: 1, maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength },
+    content: { type: "string", minLength: 1, maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength },
     placement: { type: "string", minLength: 1 },
     placement_params: {
       anyOf: [

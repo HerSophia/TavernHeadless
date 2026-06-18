@@ -12,6 +12,7 @@ layout: page
   <AgentAssistSection />
   <TechStack />
   <AgenticFutureSection />
+  <PhilosophySection />
   <FooterSection />
   <OriginStorySection />
 </div>

@@ -62,12 +62,23 @@ export interface TemporaryConversationResource {
   finalizedAt: number | null;
   discardedAt: number | null;
   cancelledAt: number | null;
+  cleanedAt: number | null;
 }
 
 export interface TemporaryConversationHandle
   extends TemporaryConversationResource {
   conversationId: string;
 }
+
+/** Terminal states that make a temporary conversation eligible for retention cleanup. */
+export const TEMPORARY_CONVERSATION_TERMINAL_STATUSES = [
+  "finalized",
+  "discarded",
+  "cancelled",
+  "expired",
+] as const;
+export type TemporaryConversationTerminalStatus =
+  (typeof TEMPORARY_CONVERSATION_TERMINAL_STATUSES)[number];
 
 /**
  * 临时对话的 Agent 来源血缘。
@@ -219,6 +230,93 @@ export interface TemporaryConversationTranscript {
   conversationId: string;
   branchId: string;
   floors: TemporaryConversationTranscriptFloor[];
+}
+
+/**
+ * Inspect transcript message.
+ *
+ * Like the public transcript message, but `content` may be redacted to `null`
+ * when the conversation is agent-private and the caller has not been granted
+ * agent-private access. Structural fields (role, seq, page, floor) are kept so
+ * authorized observers can still see shape without reading hidden bodies.
+ */
+export interface TemporaryConversationInspectTranscriptMessage {
+  id: string;
+  seq: number;
+  role: "user" | "assistant" | "system" | "narrator";
+  content: string | null;
+  contentLength: number;
+  contentFormat: "text" | "markdown" | "json";
+  isHidden: boolean;
+  source: string | null;
+  restricted: boolean;
+  createdAt: number;
+}
+
+export interface TemporaryConversationInspectTranscriptPage {
+  id: string;
+  pageNo: number;
+  pageKind: "input" | "output" | "mixed";
+  isActive: boolean;
+  version: number;
+  checksum: string | null;
+  createdAt: number;
+  updatedAt: number;
+  messages: TemporaryConversationInspectTranscriptMessage[];
+}
+
+export interface TemporaryConversationInspectTranscriptFloor {
+  id: string;
+  floorNo: number;
+  branchId: string;
+  parentFloorId: string | null;
+  state: "draft" | "generating" | "committed" | "failed";
+  tokenIn: number;
+  tokenOut: number;
+  createdAt: number;
+  updatedAt: number;
+  pages: TemporaryConversationInspectTranscriptPage[];
+}
+
+/** Source snapshot reference for a temporary conversation (no large bodies). */
+export interface TemporaryConversationSourceSnapshotRef {
+  digest: string | null;
+  sourceSessionId: string | null;
+}
+
+/** One export record (currently page_staged_write deliveries). */
+export interface TemporaryConversationExportRecord {
+  stagedWriteId: string;
+  deliveryTarget: string;
+  targetSessionId: string;
+  targetPageId: string;
+  sourcePageId: string | null;
+  status: "staged" | "accepted" | "applied" | "discarded";
+  reason: string | null;
+  createdAt: number;
+  updatedAt: number;
+  appliedAt: number | null;
+  discardedAt: number | null;
+}
+
+/** Aggregated debug / audit view for a single temporary conversation. */
+export interface TemporaryConversationInspect {
+  conversation: TemporaryConversationResource;
+  agentPrivate: boolean;
+  transcriptRestricted: boolean;
+  sourceSnapshot: TemporaryConversationSourceSnapshotRef;
+  agentOrigin: TemporaryConversationAgentOrigin | null;
+  cleanup: {
+    cleaned: boolean;
+    cleanedAt: number | null;
+    retentionPolicy: TemporaryConversationRetentionPolicy;
+  };
+  transcript: {
+    conversationId: string;
+    branchId: string;
+    floors: TemporaryConversationInspectTranscriptFloor[];
+  };
+  exports: TemporaryConversationExportRecord[];
 }
 
 export type TemporaryConversationStreamChunk =
