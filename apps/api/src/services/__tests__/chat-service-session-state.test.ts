@@ -84,8 +84,17 @@ describe("ChatService session-state replay gate", () => {
   beforeEach(() => {
     database = createDatabase(":memory:");
     promptAssemblerMocks.assemblePrompt.mockReset();
-    promptAssemblerMocks.assemblePrompt.mockImplementation(async (_db, _accountId, _sessionInfo, _history, userMessage) => (
-      createAssembleResult(userMessage)
+    promptAssemblerMocks.assemblePrompt.mockImplementation(async (
+      _db,
+      _accountId,
+      _sessionInfo,
+      _history,
+      userMessage,
+      _tokenCounter,
+      _memorySummary,
+      options,
+    ) => (
+      createAssembleResult(userMessage, options)
     ));
     branchLocalSnapshotMocks.materializeFromSourceFloor.mockReset();
     branchLocalSnapshotMocks.materializeFromSourceFloor.mockImplementation(() => undefined);
@@ -210,6 +219,11 @@ describe("ChatService session-state replay gate", () => {
     const observedTraces: AgentRuntimeTrace[] = [];
 
     await seedSession(database, sessionId, now);
+    await database.db
+      .update(sessions)
+      .set({ promptMode: "native" })
+      .where(eq(sessions.id, sessionId))
+      .run();
 
     const tracedChatService = new ChatService(
       database.db,
@@ -262,6 +276,18 @@ describe("ChatService session-state replay gate", () => {
       },
     });
     expect(result.runtimeTrace?.agentRuntime).toEqual(observedTraces[0]);
+    const agentInjectionItems = result.runtimeTrace?.injection?.items.filter(
+      (item) => item.sourceKind === "agent_injection",
+    ) ?? [];
+    expect(agentInjectionItems.length).toBeGreaterThan(0);
+    expect(agentInjectionItems.map((item) => item.title)).toEqual(
+      expect.arrayContaining(["Director hint", "Player agency guard"]),
+    );
+    expect(agentInjectionItems.find((item) => item.title === "Director hint")).toMatchObject({
+      placementRequested: "after_contributor_block",
+      sourceChain: { agentTypeId: "director_hint" },
+      anchorResolved: { kind: "contributor_block", edge: "after" },
+    });
   });
 
   it("keeps runtimeTrace.agentRuntime absent when inline_mvp is disabled", async () => {
@@ -1444,7 +1470,10 @@ function createMockTurnOrchestrator(): TurnOrchestrator {
   } as unknown as TurnOrchestrator;
 }
 
-function createAssembleResult(userMessage: string) {
+function createAssembleResult(
+  userMessage: string,
+  options?: { injectionItems?: unknown[] },
+) {
   return {
     messages: [
       { role: "system", content: "Scene guidance" },
@@ -1484,6 +1513,7 @@ function createAssembleResult(userMessage: string) {
     runtimeTraceSeed: {
       worldbookHits: 0,
       macroStagedMutations: [],
+      injectionItems: options?.injectionItems ?? [],
     },
   } as const;
 }

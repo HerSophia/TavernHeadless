@@ -65,6 +65,10 @@ export type PromptRuntimeInjectionNotAppliedReason =
   | "disabled"
   | "expired"
   | "mode_scope_mismatch"
+  | "scope_quota_exceeded"
+  | "content_length_exceeded"
+  | "content_token_limit_exceeded"
+  | "total_token_limit_exceeded"
   // I3 楼层 / 参数相关
   | "missing_placement_params"
   | "invalid_placement_params"
@@ -153,9 +157,21 @@ export interface PromptRuntimeInjectionPlacementResolverOutput {
   anchor?: PromptRuntimeInjectionAnchor;
 }
 
+export type PromptRuntimeInjectionVisibility =
+  | "client"
+  | "agent_private"
+  | "debug"
+  | "system";
+
+export type PromptRuntimeInjectionBudgetStatus =
+  | "within_budget"
+  | "rejected_by_item_limit"
+  | "rejected_by_total_limit";
+
 export interface PromptRuntimeInjectionTraceItem {
   requestIndex: number;
   sourceKind: string;
+  visibility: PromptRuntimeInjectionVisibility;
   injectionId?: string;
   enabled?: boolean;
   scope: PromptRuntimeInjectionScope;
@@ -164,7 +180,10 @@ export interface PromptRuntimeInjectionTraceItem {
   orderRequested: number;
   title: string;
   contentLength: number;
-  applied:boolean;
+  tokenCount?: number;
+  budgetGroup?: string;
+  budgetStatus?: PromptRuntimeInjectionBudgetStatus;
+  applied: boolean;
   notAppliedReason?: PromptRuntimeInjectionNotAppliedReason;
   placementResolved?: string;
   anchorResolved?: PromptRuntimeInjectionAnchor;
@@ -173,12 +192,19 @@ export interface PromptRuntimeInjectionTraceItem {
 
 export interface PromptRuntimeInjectionTrace {
   items: PromptRuntimeInjectionTraceItem[];
+  requestedCount?: number;
+  appliedCount?: number;
+  rejectedCount?: number;
+  tokenCount?: number;
+  budgetGroup?: string;
 }
 
 export interface PromptRuntimeAssemblyContributor {
-sourceKind: string;
+  sourceKind: string;
   title: string;
   content: string;
+  tokenCount?: number;
+  budgetGroup?: string;
   internalPlacementKey?: string;
   requestIndex?: number;
   requestedPlacement?: string;
@@ -191,4 +217,9 @@ sourceKind: string;
 export interface PromptRuntimeInjectionBuildResult {
   renderables: PromptRuntimeAssemblyContributor[];
   items: PromptRuntimeInjectionTraceItem[];
+  requestedCount?: number;
+  appliedCount?: number;
+  rejectedCount?: number;
+  tokenCount?: number;
+  budgetGroup?: string;
 }

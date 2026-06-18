@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { DEFAULT_ADMIN_ACCOUNT_ID } from "../../../accounts/constants.js";
 import { createDatabase, type DatabaseConnection } from "../../../db/client.js";
 import { floors, promptRuntimeInjections, sessions } from "../../../db/schema.js";
+import { PROMPT_RUNTIME_INJECTION_LIMITS } from "../../prompt-runtime/injection-governance.js";
 import {
   PromptRuntimeInjectionService,
   PromptRuntimeInjectionServiceError,
@@ -250,6 +251,80 @@ describe("PromptRuntimeInjectionService", () => {
         placementParams: { floorNo: -1 },
       }),
     ).toThrowError(PromptRuntimeInjectionServiceError);
+  });
+
+  it("rejects persisted writes that exceed title and content length limits", async () => {
+    const sessionId = await insertSession(database);
+
+    expect(() =>
+      service.createSessionInjection(sessionId, DEFAULT_ADMIN_ACCOUNT_ID, {
+        sourceKind: "client_injection",
+        title: "x".repeat(PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength + 1),
+        content: "body",
+        placement: "before_history",
+      }),
+    ).toThrowError(PromptRuntimeInjectionServiceError);
+
+    expect(() =>
+      service.createSessionInjection(sessionId, DEFAULT_ADMIN_ACCOUNT_ID, {
+        sourceKind: "client_injection",
+        title: "Title",
+        content: "x".repeat(PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength + 1),
+        placement: "before_history",
+      }),
+    ).toThrowError(PromptRuntimeInjectionServiceError);
+  });
+
+  it("rejects persisted writes beyond the session scope quota", async () => {
+    const sessionId = await insertSession(database);
+
+    for (let index = 0; index < PROMPT_RUNTIME_INJECTION_LIMITS.sessionMaxCount; index += 1) {
+      service.createSessionInjection(sessionId, DEFAULT_ADMIN_ACCOUNT_ID, {
+        sourceKind: "client_injection",
+        title: `Injection ${index}`,
+        content: "Body",
+        placement: "before_history",
+      });
+    }
+
+    expect(() =>
+      service.createSessionInjection(sessionId, DEFAULT_ADMIN_ACCOUNT_ID, {
+        sourceKind: "client_injection",
+        title: "Overflow",
+        content: "Body",
+        placement: "before_history",
+      }),
+    ).toThrowError(
+      new PromptRuntimeInjectionServiceError(
+        400,
+        "injection_scope_quota_exceeded",
+        `Prompt runtime injection session scope limit exceeded: max ${PROMPT_RUNTIME_INJECTION_LIMITS.sessionMaxCount}`,
+      ),
+    );
+  });
+
+  it("omits expired persisted injections from prepared inputs", async () => {
+    const sessionId = await insertSession(database, { branchId: "alt-branch" });
+    const createdAt = Date.now() - 10_000;
+
+    await database.db.insert(promptRuntimeInjections).values({
+      id: nanoid(),
+      sessionId,
+      branchId: null,
+      sourceKind: "client_injection",
+      title: "Expired session",
+      content: "Expired session body",
+      placement: "before_history",
+      order: 100,
+      enabled: true,
+      modeScope: null,
+      ttlMs: 100,
+      createdBy: null,
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    expect(service.listPersistentInputsForPrompt(sessionId, "alt-branch", DEFAULT_ADMIN_ACCOUNT_ID)).toEqual([]);
   });
 
 });

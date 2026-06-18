@@ -26,6 +26,7 @@ import {
   turnConfigJsonSchema,
 } from "../schemas/chat-schemas.js";
 
+import { PROMPT_RUNTIME_INJECTION_LIMITS } from "../../services/prompt-runtime/injection-governance.js";
 import type {
   PromptRuntimeClientInjectionInput,
 } from "../../services/prompt-runtime-injection-types.js";
@@ -236,12 +237,12 @@ export const promptRuntimeInjectionPlacementParamsBodySchema: z.ZodType<PromptRu
 
 export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionBody> = z.object({
   source_kind: z.literal("client_injection"),
-  title: z.string(),
-  content: z.string(),
+  title: z.string().max(PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength),
+  content: z.string().max(PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength),
   placement: z.string().min(1),
   placement_params: promptRuntimeInjectionPlacementParamsBodySchema.optional(),
   order: z.number().int().optional(),
-    scope: z.literal("request").optional(),
+  scope: z.literal("request").optional(),
 }).strict();
 
 export const respondBodySchema: z.ZodType<RespondBody> = z.object({
@@ -255,7 +256,7 @@ export const respondBodySchema: z.ZodType<RespondBody> = z.object({
   branch_id: z.string().min(1).optional(),
   source_floor_id: z.string().min(1).optional(),
   session_state_writes: z.array(turnSessionStateWriteBodySchema).optional(),
-  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).max(PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount).optional(),
 }).strict();
 
 export const dryRunBodySchema: z.ZodType<DryRunBody> = z.object({
@@ -269,7 +270,7 @@ export const dryRunBodySchema: z.ZodType<DryRunBody> = z.object({
   delivery: promptDeliveryBodySchema.optional(),
   budget: promptBudgetBodySchema.optional(),
   source_selection: promptSourceSelectionBodySchema.optional(),
-  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).max(PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount).optional(),
 }).strict();
 
 export const regenerateBodySchema: z.ZodType<RegenerateBody> = z.object({
@@ -281,7 +282,7 @@ export const regenerateBodySchema: z.ZodType<RegenerateBody> = z.object({
   confirmed_execution_ids: z.array(z.string().min(1)).optional(),
   confirmed_session_state_mutation_ids: z.array(z.string().min(1)).optional(),
   session_state_writes: z.array(turnSessionStateWriteBodySchema).optional(),
-  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).max(PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount).optional(),
 }).strict();
 
 export const editAndRegenerateBodySchema: z.ZodType<EditAndRegenerateBody> = (regenerateBodySchema as z.AnyZodObject).extend({

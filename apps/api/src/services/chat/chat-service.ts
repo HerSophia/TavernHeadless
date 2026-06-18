@@ -22,7 +22,11 @@ import {
 
 import type { AppDb } from "../../db/client.js";
 import { resolveAccountIdOrThrow } from "../../accounts/account-context.js";
-import { resolvePromptRuntimeExecutionContext, type PromptRuntimeExecutionResult } from "../prompt-runtime-execution.js";
+import {
+  mergeToolResultBudgetTrace,
+  resolvePromptRuntimeExecutionContext,
+  type PromptRuntimeExecutionResult,
+} from "../prompt-runtime-execution.js";
 import { executeWithRetry, isSqliteBusyError } from "../../lib/retry.js";
 import { normalizeNonNegativeInt, normalizePositiveInt } from "../../lib/utils.js";
 import { DrizzleFloorRepository } from "../../adapters/drizzle-floor-repository.js";
@@ -262,6 +266,9 @@ export class ChatService {
       this.regexInputService,
       this.firstPartyStateContextService,
       this.toolingService,
+      {
+        routeAgentContributorsAsInjections: true,
+      },
     );
     this.preparedTurnContextBuilder = new PreparedTurnContextBuilder(
       this.preparedPromptArtifactsBuilder,
@@ -1509,10 +1516,10 @@ export class ChatService {
     });
 
     if (prepared.promptDebug.runtimeTrace && execution.toolTransport) {
-      prepared.promptDebug.runtimeTrace = {
+      prepared.promptDebug.runtimeTrace = mergeToolResultBudgetTrace({
         ...prepared.promptDebug.runtimeTrace,
         toolTransport: execution.toolTransport,
-      };
+      }, execution.toolTransport);
     }
 
     if (prepared.promptDebug.runtimeTrace) {

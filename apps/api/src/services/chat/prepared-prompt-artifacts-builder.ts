@@ -299,10 +299,12 @@ export class PreparedPromptArtifactsBuilder {
       firstPartyStateContext: args.firstPartyStateContext,
       transport: toolTransportSelection.transport,
       toolsForSlot: narratorTools,
+      tokenCounter: this.tokenCounter,
       ...(renderAgentContributors ? { agentContributors: args.agentContributors } : {}),
     }).contributors;
     const injectionBuild = this.injectionContributorBuilder.build({
       promptMode,
+      tokenCounter: this.tokenCounter,
       injections: [
         ...persistentInjectionInputs,
         ...requestInjectionInputs,
@@ -323,8 +325,10 @@ export class PreparedPromptArtifactsBuilder {
       detail: {
         requestedCount: requestInjectionInputs.length,
         persistentCount: persistentInjectionInputs.length,
-        appliedCount: injectionBuild.items.filter((item) => item.applied).length,
-        notAppliedCount: injectionBuild.items.filter((item) => !item.applied).length,
+        appliedCount: injectionBuild.appliedCount ?? injectionBuild.items.filter((item) => item.applied).length,
+        notAppliedCount: injectionBuild.rejectedCount ?? injectionBuild.items.filter((item) => !item.applied).length,
+        tokenCount: injectionBuild.tokenCount ?? 0,
+        budgetGroup: injectionBuild.budgetGroup,
       },
     });
     preparePhaseTrace.push({
@@ -399,6 +403,7 @@ export class PreparedPromptArtifactsBuilder {
     });
 
     const toolListContributor = contributors.find((contributor) => contributor.kind === "tool_list");
+    const toolListTokenCount = readToolListContributorTokenCount(toolListContributor?.payload);
     const toolTransport: PromptRuntimeToolTransportTrace = {
       selection: toolTransportSelection,
       toolList: {
@@ -408,6 +413,8 @@ export class PreparedPromptArtifactsBuilder {
           ? { placementMode: promptMode === "compat_strict" ? "strict_fixed" as const : "contributor_chain" as const }
           : {}),
         toolCount: narratorTools.length,
+        ...(toolListTokenCount !== undefined ? { tokenCount: toolListTokenCount } : {}),
+        ...(toolListContributor ? { budgetGroup: "tool_list" } : {}),
       },
       ...(toolChoiceApplied !== undefined ? { toolChoiceApplied } : {}),
       ...(streamingToolCallUnsupported ? { streamingToolCallUnsupported: true } : {}),
@@ -708,6 +715,15 @@ function mapAgentContributorsToInjectionInputs(
     });
  }
   return inputs;
+}
+
+function readToolListContributorTokenCount(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+
+  const tokenCount = (payload as { tokenCount?: unknown }).tokenCount;
+  return typeof tokenCount === "number" ? tokenCount : undefined;
 }
 
 function buildHistoryFloorNos(

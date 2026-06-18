@@ -5633,6 +5633,7 @@ export interface paths {
                          *               "accepted_count": 1,
                          *               "block_count": 1,
                          *               "diagnostics": [],
+                         *               "diagnostics_by_reason": {},
                          *               "rejected_count": 0
                          *             },
                          *             "selection": {
@@ -5641,10 +5642,18 @@ export interface paths {
                          *               "transport": "text_protocol"
                          *             },
                          *             "tool_list": {
+                         *               "budget_group": "tool_list",
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
                          *               "placement_mode": "contributor_chain",
+                         *               "token_count": 96,
                          *               "tool_count": 2
+                         *             },
+                         *             "tool_result": {
+                         *               "block_count": 1,
+                         *               "budget_group": "tool_result",
+                         *               "token_count": 128,
+                         *               "written_back": true
                          *             }
                          *           },
                          *           "worldbook": {
@@ -5992,6 +6001,7 @@ export interface paths {
                              *             "accepted_count": 1,
                              *             "block_count": 1,
                              *             "diagnostics": [],
+                             *             "diagnostics_by_reason": {},
                              *             "rejected_count": 0
                              *           },
                              *           "selection": {
@@ -6000,10 +6010,18 @@ export interface paths {
                              *             "transport": "text_protocol"
                              *           },
                              *           "tool_list": {
+                             *             "budget_group": "tool_list",
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
                              *             "placement_mode": "contributor_chain",
+                             *             "token_count": 96,
                              *             "tool_count": 2
+                             *           },
+                             *           "tool_result": {
+                             *             "block_count": 1,
+                             *             "budget_group": "tool_result",
+                             *             "token_count": 128,
+                             *             "written_back": true
                              *           }
                              *         },
                              *         "worldbook": {
@@ -6408,6 +6426,7 @@ export interface paths {
                                  *           "accepted_count": 1,
                                  *           "block_count": 1,
                                  *           "diagnostics": [],
+                                 *           "diagnostics_by_reason": {},
                                  *           "rejected_count": 0
                                  *         },
                                  *         "selection": {
@@ -6416,10 +6435,18 @@ export interface paths {
                                  *           "transport": "text_protocol"
                                  *         },
                                  *         "tool_list": {
+                                 *           "budget_group": "tool_list",
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
                                  *           "placement_mode": "contributor_chain",
+                                 *           "token_count": 96,
                                  *           "tool_count": 2
+                                 *         },
+                                 *         "tool_result": {
+                                 *           "block_count": 1,
+                                 *           "budget_group": "tool_result",
+                                 *           "token_count": 128,
+                                 *           "written_back": true
                                  *         }
                                  *       },
                                  *       "worldbook": {
@@ -6519,6 +6546,8 @@ export interface paths {
                                         }[];
                                     };
                                     injection?: {
+                                        applied_count?: number;
+                                        budget_group?: string | null;
                                         items: {
                                             anchor_resolved: {
                                                 depth?: number;
@@ -6532,10 +6561,12 @@ export interface paths {
                                                 resolved_depth?: number;
                                             } | null;
                                             applied: boolean;
+                                            budget_group: string | null;
+                                            budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
                                             placement_params_requested: {
                                                 depth?: number;
@@ -6545,6 +6576,7 @@ export interface paths {
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
+                                            restricted: boolean;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
                                             source_chain: {
@@ -6554,8 +6586,14 @@ export interface paths {
                                                 temporary_conversation_id?: string;
                                             } | null;
                                             source_kind: string;
-                                            title: string;
+                                            title: string | null;
+                                            token_count: number | null;
+                                            /** @enum {string} */
+                                            visibility: "client" | "agent_private" | "debug" | "system";
                                         }[];
+                                        rejected_count?: number;
+                                        requested_count?: number;
+                                        token_count?: number;
                                     };
                                     /**
                                      * @example {
@@ -6761,9 +6799,12 @@ export interface paths {
                                                 call_id: string | null;
                                                 excerpt: string;
                                                 /** @enum {string} */
-                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
                                                 tool_name: string | null;
                                             }[];
+                                            diagnostics_by_reason?: {
+                                                [key: string]: number;
+                                            };
                                             rejected_count: number;
                                         };
                                         selection: {
@@ -6776,11 +6817,19 @@ export interface paths {
                                         streaming_tool_call_unsupported?: boolean;
                                         tool_choice_applied?: boolean;
                                         tool_list?: {
+                                            budget_group?: string;
                                             contributor_id?: string;
                                             injected: boolean;
                                             /** @enum {string} */
                                             placement_mode?: "strict_fixed" | "contributor_chain";
+                                            token_count?: number;
                                             tool_count: number;
+                                        };
+                                        tool_result?: {
+                                            block_count: number;
+                                            budget_group: string;
+                                            token_count: number;
+                                            written_back: boolean;
                                         };
                                     };
                                     worldbook?: {
@@ -10537,6 +10586,7 @@ export interface paths {
                          *               "accepted_count": 1,
                          *               "block_count": 1,
                          *               "diagnostics": [],
+                         *               "diagnostics_by_reason": {},
                          *               "rejected_count": 0
                          *             },
                          *             "selection": {
@@ -10545,10 +10595,18 @@ export interface paths {
                          *               "transport": "text_protocol"
                          *             },
                          *             "tool_list": {
+                         *               "budget_group": "tool_list",
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
                          *               "placement_mode": "contributor_chain",
+                         *               "token_count": 96,
                          *               "tool_count": 2
+                         *             },
+                         *             "tool_result": {
+                         *               "block_count": 1,
+                         *               "budget_group": "tool_result",
+                         *               "token_count": 128,
+                         *               "written_back": true
                          *             }
                          *           },
                          *           "worldbook": {
@@ -10898,6 +10956,7 @@ export interface paths {
                              *             "accepted_count": 1,
                              *             "block_count": 1,
                              *             "diagnostics": [],
+                             *             "diagnostics_by_reason": {},
                              *             "rejected_count": 0
                              *           },
                              *           "selection": {
@@ -10906,10 +10965,18 @@ export interface paths {
                              *             "transport": "text_protocol"
                              *           },
                              *           "tool_list": {
+                             *             "budget_group": "tool_list",
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
                              *             "placement_mode": "contributor_chain",
+                             *             "token_count": 96,
                              *             "tool_count": 2
+                             *           },
+                             *           "tool_result": {
+                             *             "block_count": 1,
+                             *             "budget_group": "tool_result",
+                             *             "token_count": 128,
+                             *             "written_back": true
                              *           }
                              *         },
                              *         "worldbook": {
@@ -11316,6 +11383,7 @@ export interface paths {
                                  *           "accepted_count": 1,
                                  *           "block_count": 1,
                                  *           "diagnostics": [],
+                                 *           "diagnostics_by_reason": {},
                                  *           "rejected_count": 0
                                  *         },
                                  *         "selection": {
@@ -11324,10 +11392,18 @@ export interface paths {
                                  *           "transport": "text_protocol"
                                  *         },
                                  *         "tool_list": {
+                                 *           "budget_group": "tool_list",
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
                                  *           "placement_mode": "contributor_chain",
+                                 *           "token_count": 96,
                                  *           "tool_count": 2
+                                 *         },
+                                 *         "tool_result": {
+                                 *           "block_count": 1,
+                                 *           "budget_group": "tool_result",
+                                 *           "token_count": 128,
+                                 *           "written_back": true
                                  *         }
                                  *       },
                                  *       "worldbook": {
@@ -11427,6 +11503,8 @@ export interface paths {
                                         }[];
                                     };
                                     injection?: {
+                                        applied_count?: number;
+                                        budget_group?: string | null;
                                         items: {
                                             anchor_resolved: {
                                                 depth?: number;
@@ -11440,10 +11518,12 @@ export interface paths {
                                                 resolved_depth?: number;
                                             } | null;
                                             applied: boolean;
+                                            budget_group: string | null;
+                                            budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
                                             placement_params_requested: {
                                                 depth?: number;
@@ -11453,6 +11533,7 @@ export interface paths {
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
+                                            restricted: boolean;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
                                             source_chain: {
@@ -11462,8 +11543,14 @@ export interface paths {
                                                 temporary_conversation_id?: string;
                                             } | null;
                                             source_kind: string;
-                                            title: string;
+                                            title: string | null;
+                                            token_count: number | null;
+                                            /** @enum {string} */
+                                            visibility: "client" | "agent_private" | "debug" | "system";
                                         }[];
+                                        rejected_count?: number;
+                                        requested_count?: number;
+                                        token_count?: number;
                                     };
                                     /**
                                      * @example {
@@ -11669,9 +11756,12 @@ export interface paths {
                                                 call_id: string | null;
                                                 excerpt: string;
                                                 /** @enum {string} */
-                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
                                                 tool_name: string | null;
                                             }[];
+                                            diagnostics_by_reason?: {
+                                                [key: string]: number;
+                                            };
                                             rejected_count: number;
                                         };
                                         selection: {
@@ -11684,11 +11774,19 @@ export interface paths {
                                         streaming_tool_call_unsupported?: boolean;
                                         tool_choice_applied?: boolean;
                                         tool_list?: {
+                                            budget_group?: string;
                                             contributor_id?: string;
                                             injected: boolean;
                                             /** @enum {string} */
                                             placement_mode?: "strict_fixed" | "contributor_chain";
+                                            token_count?: number;
                                             tool_count: number;
+                                        };
+                                        tool_result?: {
+                                            block_count: number;
+                                            budget_group: string;
+                                            token_count: number;
+                                            written_back: boolean;
                                         };
                                     };
                                     worldbook?: {
@@ -14820,6 +14918,404 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{id}/node-graph-runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    run_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/current-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{id}/sessions": {
         parameters: {
             query?: never;
@@ -17662,6 +18158,7 @@ export interface paths {
                          *               "accepted_count": 1,
                          *               "block_count": 1,
                          *               "diagnostics": [],
+                         *               "diagnostics_by_reason": {},
                          *               "rejected_count": 0
                          *             },
                          *             "selection": {
@@ -17670,10 +18167,18 @@ export interface paths {
                          *               "transport": "text_protocol"
                          *             },
                          *             "tool_list": {
+                         *               "budget_group": "tool_list",
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
                          *               "placement_mode": "contributor_chain",
+                         *               "token_count": 96,
                          *               "tool_count": 2
+                         *             },
+                         *             "tool_result": {
+                         *               "block_count": 1,
+                         *               "budget_group": "tool_result",
+                         *               "token_count": 128,
+                         *               "written_back": true
                          *             }
                          *           },
                          *           "worldbook": {
@@ -18021,6 +18526,7 @@ export interface paths {
                              *             "accepted_count": 1,
                              *             "block_count": 1,
                              *             "diagnostics": [],
+                             *             "diagnostics_by_reason": {},
                              *             "rejected_count": 0
                              *           },
                              *           "selection": {
@@ -18029,10 +18535,18 @@ export interface paths {
                              *             "transport": "text_protocol"
                              *           },
                              *           "tool_list": {
+                             *             "budget_group": "tool_list",
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
                              *             "placement_mode": "contributor_chain",
+                             *             "token_count": 96,
                              *             "tool_count": 2
+                             *           },
+                             *           "tool_result": {
+                             *             "block_count": 1,
+                             *             "budget_group": "tool_result",
+                             *             "token_count": 128,
+                             *             "written_back": true
                              *           }
                              *         },
                              *         "worldbook": {
@@ -18437,6 +18951,7 @@ export interface paths {
                                  *           "accepted_count": 1,
                                  *           "block_count": 1,
                                  *           "diagnostics": [],
+                                 *           "diagnostics_by_reason": {},
                                  *           "rejected_count": 0
                                  *         },
                                  *         "selection": {
@@ -18445,10 +18960,18 @@ export interface paths {
                                  *           "transport": "text_protocol"
                                  *         },
                                  *         "tool_list": {
+                                 *           "budget_group": "tool_list",
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
                                  *           "placement_mode": "contributor_chain",
+                                 *           "token_count": 96,
                                  *           "tool_count": 2
+                                 *         },
+                                 *         "tool_result": {
+                                 *           "block_count": 1,
+                                 *           "budget_group": "tool_result",
+                                 *           "token_count": 128,
+                                 *           "written_back": true
                                  *         }
                                  *       },
                                  *       "worldbook": {
@@ -18548,6 +19071,8 @@ export interface paths {
                                         }[];
                                     };
                                     injection?: {
+                                        applied_count?: number;
+                                        budget_group?: string | null;
                                         items: {
                                             anchor_resolved: {
                                                 depth?: number;
@@ -18561,10 +19086,12 @@ export interface paths {
                                                 resolved_depth?: number;
                                             } | null;
                                             applied: boolean;
+                                            budget_group: string | null;
+                                            budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
                                             placement_params_requested: {
                                                 depth?: number;
@@ -18574,6 +19101,7 @@ export interface paths {
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
+                                            restricted: boolean;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
                                             source_chain: {
@@ -18583,8 +19111,14 @@ export interface paths {
                                                 temporary_conversation_id?: string;
                                             } | null;
                                             source_kind: string;
-                                            title: string;
+                                            title: string | null;
+                                            token_count: number | null;
+                                            /** @enum {string} */
+                                            visibility: "client" | "agent_private" | "debug" | "system";
                                         }[];
+                                        rejected_count?: number;
+                                        requested_count?: number;
+                                        token_count?: number;
                                     };
                                     /**
                                      * @example {
@@ -18790,9 +19324,12 @@ export interface paths {
                                                 call_id: string | null;
                                                 excerpt: string;
                                                 /** @enum {string} */
-                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
                                                 tool_name: string | null;
                                             }[];
+                                            diagnostics_by_reason?: {
+                                                [key: string]: number;
+                                            };
                                             rejected_count: number;
                                         };
                                         selection: {
@@ -18805,11 +19342,19 @@ export interface paths {
                                         streaming_tool_call_unsupported?: boolean;
                                         tool_choice_applied?: boolean;
                                         tool_list?: {
+                                            budget_group?: string;
                                             contributor_id?: string;
                                             injected: boolean;
                                             /** @enum {string} */
                                             placement_mode?: "strict_fixed" | "contributor_chain";
+                                            token_count?: number;
                                             tool_count: number;
+                                        };
+                                        tool_result?: {
+                                            block_count: number;
+                                            budget_group: string;
+                                            token_count: number;
+                                            written_back: boolean;
                                         };
                                     };
                                     worldbook?: {
@@ -19564,6 +20109,7 @@ export interface paths {
                          *               "accepted_count": 1,
                          *               "block_count": 1,
                          *               "diagnostics": [],
+                         *               "diagnostics_by_reason": {},
                          *               "rejected_count": 0
                          *             },
                          *             "selection": {
@@ -19572,10 +20118,18 @@ export interface paths {
                          *               "transport": "text_protocol"
                          *             },
                          *             "tool_list": {
+                         *               "budget_group": "tool_list",
                          *               "contributor_id": "builtin:tool_list",
                          *               "injected": true,
                          *               "placement_mode": "contributor_chain",
+                         *               "token_count": 96,
                          *               "tool_count": 2
+                         *             },
+                         *             "tool_result": {
+                         *               "block_count": 1,
+                         *               "budget_group": "tool_result",
+                         *               "token_count": 128,
+                         *               "written_back": true
                          *             }
                          *           },
                          *           "worldbook": {
@@ -19923,6 +20477,7 @@ export interface paths {
                              *             "accepted_count": 1,
                              *             "block_count": 1,
                              *             "diagnostics": [],
+                             *             "diagnostics_by_reason": {},
                              *             "rejected_count": 0
                              *           },
                              *           "selection": {
@@ -19931,10 +20486,18 @@ export interface paths {
                              *             "transport": "text_protocol"
                              *           },
                              *           "tool_list": {
+                             *             "budget_group": "tool_list",
                              *             "contributor_id": "builtin:tool_list",
                              *             "injected": true,
                              *             "placement_mode": "contributor_chain",
+                             *             "token_count": 96,
                              *             "tool_count": 2
+                             *           },
+                             *           "tool_result": {
+                             *             "block_count": 1,
+                             *             "budget_group": "tool_result",
+                             *             "token_count": 128,
+                             *             "written_back": true
                              *           }
                              *         },
                              *         "worldbook": {
@@ -20339,6 +20902,7 @@ export interface paths {
                                  *           "accepted_count": 1,
                                  *           "block_count": 1,
                                  *           "diagnostics": [],
+                                 *           "diagnostics_by_reason": {},
                                  *           "rejected_count": 0
                                  *         },
                                  *         "selection": {
@@ -20347,10 +20911,18 @@ export interface paths {
                                  *           "transport": "text_protocol"
                                  *         },
                                  *         "tool_list": {
+                                 *           "budget_group": "tool_list",
                                  *           "contributor_id": "builtin:tool_list",
                                  *           "injected": true,
                                  *           "placement_mode": "contributor_chain",
+                                 *           "token_count": 96,
                                  *           "tool_count": 2
+                                 *         },
+                                 *         "tool_result": {
+                                 *           "block_count": 1,
+                                 *           "budget_group": "tool_result",
+                                 *           "token_count": 128,
+                                 *           "written_back": true
                                  *         }
                                  *       },
                                  *       "worldbook": {
@@ -20450,6 +21022,8 @@ export interface paths {
                                         }[];
                                     };
                                     injection?: {
+                                        applied_count?: number;
+                                        budget_group?: string | null;
                                         items: {
                                             anchor_resolved: {
                                                 depth?: number;
@@ -20463,10 +21037,12 @@ export interface paths {
                                                 resolved_depth?: number;
                                             } | null;
                                             applied: boolean;
+                                            budget_group: string | null;
+                                            budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
                                             placement_params_requested: {
                                                 depth?: number;
@@ -20476,6 +21052,7 @@ export interface paths {
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
+                                            restricted: boolean;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
                                             source_chain: {
@@ -20485,8 +21062,14 @@ export interface paths {
                                                 temporary_conversation_id?: string;
                                             } | null;
                                             source_kind: string;
-                                            title: string;
+                                            title: string | null;
+                                            token_count: number | null;
+                                            /** @enum {string} */
+                                            visibility: "client" | "agent_private" | "debug" | "system";
                                         }[];
+                                        rejected_count?: number;
+                                        requested_count?: number;
+                                        token_count?: number;
                                     };
                                     /**
                                      * @example {
@@ -20692,9 +21275,12 @@ export interface paths {
                                                 call_id: string | null;
                                                 excerpt: string;
                                                 /** @enum {string} */
-                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
                                                 tool_name: string | null;
                                             }[];
+                                            diagnostics_by_reason?: {
+                                                [key: string]: number;
+                                            };
                                             rejected_count: number;
                                         };
                                         selection: {
@@ -20707,11 +21293,19 @@ export interface paths {
                                         streaming_tool_call_unsupported?: boolean;
                                         tool_choice_applied?: boolean;
                                         tool_list?: {
+                                            budget_group?: string;
                                             contributor_id?: string;
                                             injected: boolean;
                                             /** @enum {string} */
                                             placement_mode?: "strict_fixed" | "contributor_chain";
+                                            token_count?: number;
                                             tool_count: number;
+                                        };
+                                        tool_result?: {
+                                            block_count: number;
+                                            budget_group: string;
+                                            token_count: number;
+                                            written_back: boolean;
                                         };
                                     };
                                     worldbook?: {
@@ -22280,6 +22874,8 @@ export interface paths {
                                         }[];
                                     };
                                     injection?: {
+                                        applied_count?: number;
+                                        budget_group?: string | null;
                                         items: {
                                             anchor_resolved: {
                                                 depth?: number;
@@ -22293,10 +22889,12 @@ export interface paths {
                                                 resolved_depth?: number;
                                             } | null;
                                             applied: boolean;
+                                            budget_group: string | null;
+                                            budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
                                             placement_params_requested: {
                                                 depth?: number;
@@ -22306,6 +22904,7 @@ export interface paths {
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
+                                            restricted: boolean;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
                                             source_chain: {
@@ -22315,8 +22914,14 @@ export interface paths {
                                                 temporary_conversation_id?: string;
                                             } | null;
                                             source_kind: string;
-                                            title: string;
+                                            title: string | null;
+                                            token_count: number | null;
+                                            /** @enum {string} */
+                                            visibility: "client" | "agent_private" | "debug" | "system";
                                         }[];
+                                        rejected_count?: number;
+                                        requested_count?: number;
+                                        token_count?: number;
                                     };
                                     /**
                                      * @example {
@@ -22522,9 +23127,12 @@ export interface paths {
                                                 call_id: string | null;
                                                 excerpt: string;
                                                 /** @enum {string} */
-                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
                                                 tool_name: string | null;
                                             }[];
+                                            diagnostics_by_reason?: {
+                                                [key: string]: number;
+                                            };
                                             rejected_count: number;
                                         };
                                         selection: {
@@ -22537,11 +23145,19 @@ export interface paths {
                                         streaming_tool_call_unsupported?: boolean;
                                         tool_choice_applied?: boolean;
                                         tool_list?: {
+                                            budget_group?: string;
                                             contributor_id?: string;
                                             injected: boolean;
                                             /** @enum {string} */
                                             placement_mode?: "strict_fixed" | "contributor_chain";
+                                            token_count?: number;
                                             tool_count: number;
+                                        };
+                                        tool_result?: {
+                                            block_count: number;
+                                            budget_group: string;
+                                            token_count: number;
+                                            written_back: boolean;
                                         };
                                     };
                                     visibility?: {
@@ -24280,6 +24896,129 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inspect a temporary conversation for debug and audit */
+        get: {
+            parameters: {
+                query?: {
+                    include_agent_private?: "true" | "false" | "1" | "0";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                agent_origin: {
+                                    [key: string]: unknown;
+                                } | null;
+                                agent_private: boolean;
+                                cleanup: {
+                                    cleaned: boolean;
+                                    cleaned_at: number | null;
+                                    /** @enum {string} */
+                                    retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                };
+                                conversation: {
+                                    branch_id: string;
+                                    cancelled_at: number | null;
+                                    created_at: number;
+                                    discarded_at: number | null;
+                                    expires_at: number | null;
+                                    finalized_at: number | null;
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "temporary";
+                                    last_activity_at: number;
+                                    project_id: string | null;
+                                    purpose: string | null;
+                                    /** @enum {string} */
+                                    retention_policy: "delete_on_finalize" | "ttl" | "keep_for_debug";
+                                    source_session_id: string | null;
+                                    /** @enum {string} */
+                                    status: "active" | "finalized" | "discarded" | "expired" | "cancelled";
+                                    title: string | null;
+                                    updated_at: number;
+                                    /** @enum {string} */
+                                    visibility: "internal" | "client_visible";
+                                    workspace_id: string | null;
+                                };
+                                exports: {
+                                    applied_at: number | null;
+                                    created_at: number;
+                                    /** @enum {string} */
+                                    delivery_target: "page_staged_write";
+                                    discarded_at: number | null;
+                                    reason: string | null;
+                                    source_page_id: string | null;
+                                    staged_write_id: string;
+                                    /** @enum {string} */
+                                    status: "staged" | "accepted" | "applied" | "discarded";
+                                    target_page_id: string;
+                                    target_session_id: string;
+                                    updated_at: number;
+                                }[];
+                                source_snapshot: {
+                                    digest: string | null;
+                                    source_session_id: string | null;
+                                };
+                                transcript: {
+                                    branch_id: string;
+                                    conversation_id: string;
+                                    floors: {
+                                        [key: string]: unknown;
+                                    }[];
+                                } & {
+                                    [key: string]: unknown;
+                                };
+                                transcript_restricted: boolean;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -42025,6 +42764,7 @@ export interface operations {
                         top_k?: null | number;
                         top_p?: null | number;
                     };
+                    include_restricted_injection_content?: boolean;
                     message: string;
                     /** @enum {string} */
                     prompt_intent?: "normal" | "continue" | "impersonate" | "swipe" | "regenerate" | "quiet";
@@ -42588,6 +43328,7 @@ export interface operations {
                      *                 "accepted_count": 1,
                      *                 "block_count": 1,
                      *                 "diagnostics": [],
+                     *                 "diagnostics_by_reason": {},
                      *                 "rejected_count": 0
                      *               },
                      *               "selection": {
@@ -42596,10 +43337,18 @@ export interface operations {
                      *                 "transport": "text_protocol"
                      *               },
                      *               "tool_list": {
+                     *                 "budget_group": "tool_list",
                      *                 "contributor_id": "builtin:tool_list",
                      *                 "injected": true,
                      *                 "placement_mode": "contributor_chain",
+                     *                 "token_count": 96,
                      *                 "tool_count": 2
+                     *               },
+                     *               "tool_result": {
+                     *                 "block_count": 1,
+                     *                 "budget_group": "tool_result",
+                     *                 "token_count": 128,
+                     *                 "written_back": true
                      *               }
                      *             },
                      *             "visibility": {
@@ -42802,10 +43551,12 @@ export interface operations {
                                     resolved_depth?: number;
                                 } | null;
                                 applied: boolean;
+                                budget_group: string | null;
+                                budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                 content_length: number;
                                 enabled: boolean | null;
                                 injection_id: string | null;
-                                not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                 order_requested: number;
                                 placement_params_requested: {
                                     depth?: number;
@@ -42815,6 +43566,7 @@ export interface operations {
                                 placement_requested: string;
                                 placement_resolved: string | null;
                                 request_index: number;
+                                restricted: boolean;
                                 /** @enum {string} */
                                 scope: "request" | "session" | "branch";
                                 source_chain: {
@@ -42824,7 +43576,10 @@ export interface operations {
                                     temporary_conversation_id?: string;
                                 } | null;
                                 source_kind: string;
-                                title: string;
+                                title: string | null;
+                                token_count: number | null;
+                                /** @enum {string} */
+                                visibility: "client" | "agent_private" | "debug" | "system";
                             }[];
                             limitations: string[];
                             mode: {
@@ -43207,6 +43962,8 @@ export interface operations {
                                         }[];
                                     };
                                     injection?: {
+                                        applied_count?: number;
+                                        budget_group?: string | null;
                                         items: {
                                             anchor_resolved: {
                                                 depth?: number;
@@ -43220,10 +43977,12 @@ export interface operations {
                                                 resolved_depth?: number;
                                             } | null;
                                             applied: boolean;
+                                            budget_group: string | null;
+                                            budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                             content_length: number;
                                             enabled: boolean | null;
                                             injection_id: string | null;
-                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                             order_requested: number;
                                             placement_params_requested: {
                                                 depth?: number;
@@ -43233,6 +43992,7 @@ export interface operations {
                                             placement_requested: string;
                                             placement_resolved: string | null;
                                             request_index: number;
+                                            restricted: boolean;
                                             /** @enum {string} */
                                             scope: "request" | "session" | "branch";
                                             source_chain: {
@@ -43242,8 +44002,14 @@ export interface operations {
                                                 temporary_conversation_id?: string;
                                             } | null;
                                             source_kind: string;
-                                            title: string;
+                                            title: string | null;
+                                            token_count: number | null;
+                                            /** @enum {string} */
+                                            visibility: "client" | "agent_private" | "debug" | "system";
                                         }[];
+                                        rejected_count?: number;
+                                        requested_count?: number;
+                                        token_count?: number;
                                     };
                                     /**
                                      * @example {
@@ -43449,9 +44215,12 @@ export interface operations {
                                                 call_id: string | null;
                                                 excerpt: string;
                                                 /** @enum {string} */
-                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
                                                 tool_name: string | null;
                                             }[];
+                                            diagnostics_by_reason?: {
+                                                [key: string]: number;
+                                            };
                                             rejected_count: number;
                                         };
                                         selection: {
@@ -43464,11 +44233,19 @@ export interface operations {
                                         streaming_tool_call_unsupported?: boolean;
                                         tool_choice_applied?: boolean;
                                         tool_list?: {
+                                            budget_group?: string;
                                             contributor_id?: string;
                                             injected: boolean;
                                             /** @enum {string} */
                                             placement_mode?: "strict_fixed" | "contributor_chain";
+                                            token_count?: number;
                                             tool_count: number;
+                                        };
+                                        tool_result?: {
+                                            block_count: number;
+                                            budget_group: string;
+                                            token_count: number;
+                                            written_back: boolean;
                                         };
                                     };
                                     visibility?: {
@@ -45108,6 +45885,7 @@ export interface operations {
                      *               "accepted_count": 1,
                      *               "block_count": 1,
                      *               "diagnostics": [],
+                     *               "diagnostics_by_reason": {},
                      *               "rejected_count": 0
                      *             },
                      *             "selection": {
@@ -45116,10 +45894,18 @@ export interface operations {
                      *               "transport": "text_protocol"
                      *             },
                      *             "tool_list": {
+                     *               "budget_group": "tool_list",
                      *               "contributor_id": "builtin:tool_list",
                      *               "injected": true,
                      *               "placement_mode": "contributor_chain",
+                     *               "token_count": 96,
                      *               "tool_count": 2
+                     *             },
+                     *             "tool_result": {
+                     *               "block_count": 1,
+                     *               "budget_group": "tool_result",
+                     *               "token_count": 128,
+                     *               "written_back": true
                      *             }
                      *           },
                      *           "visibility": {
@@ -45403,6 +46189,8 @@ export interface operations {
                                     }[];
                                 };
                                 injection?: {
+                                    applied_count?: number;
+                                    budget_group?: string | null;
                                     items: {
                                         anchor_resolved: {
                                             depth?: number;
@@ -45416,10 +46204,12 @@ export interface operations {
                                             resolved_depth?: number;
                                         } | null;
                                         applied: boolean;
+                                        budget_group: string | null;
+                                        budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
                                         content_length: number;
                                         enabled: boolean | null;
                                         injection_id: string | null;
-                                        not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                        not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
                                         order_requested: number;
                                         placement_params_requested: {
                                             depth?: number;
@@ -45429,6 +46219,7 @@ export interface operations {
                                         placement_requested: string;
                                         placement_resolved: string | null;
                                         request_index: number;
+                                        restricted: boolean;
                                         /** @enum {string} */
                                         scope: "request" | "session" | "branch";
                                         source_chain: {
@@ -45438,8 +46229,14 @@ export interface operations {
                                             temporary_conversation_id?: string;
                                         } | null;
                                         source_kind: string;
-                                        title: string;
+                                        title: string | null;
+                                        token_count: number | null;
+                                        /** @enum {string} */
+                                        visibility: "client" | "agent_private" | "debug" | "system";
                                     }[];
+                                    rejected_count?: number;
+                                    requested_count?: number;
+                                    token_count?: number;
                                 };
                                 /**
                                  * @example {
@@ -45544,9 +46341,12 @@ export interface operations {
                                             call_id: string | null;
                                             excerpt: string;
                                             /** @enum {string} */
-                                            reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "duplicate_call_id" | "malformed_block";
+                                            reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
                                             tool_name: string | null;
                                         }[];
+                                        diagnostics_by_reason?: {
+                                            [key: string]: number;
+                                        };
                                         rejected_count: number;
                                     };
                                     selection: {
@@ -45559,11 +46359,19 @@ export interface operations {
                                     streaming_tool_call_unsupported?: boolean;
                                     tool_choice_applied?: boolean;
                                     tool_list?: {
+                                        budget_group?: string;
                                         contributor_id?: string;
                                         injected: boolean;
                                         /** @enum {string} */
                                         placement_mode?: "strict_fixed" | "contributor_chain";
+                                        token_count?: number;
                                         tool_count: number;
+                                    };
+                                    tool_result?: {
+                                        block_count: number;
+                                        budget_group: string;
+                                        token_count: number;
+                                        written_back: boolean;
                                     };
                                 };
                                 visibility?: {

@@ -56,6 +56,7 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairClientIdentityPermissionAuditDrift(sqlite);
   repairWorkspacePhase5AgenticReadinessDrift(sqlite);
   repairTemporaryConversationDrift(sqlite);
+  repairNodeGraphRunCleanupDrift(sqlite);
 }
 
 function tableHasColumns(
@@ -1216,6 +1217,7 @@ function repairTemporaryConversationDrift(sqlite: Database.Database): void {
   addColumnIfMissing(sqlite, "session", "finalized_at", "`finalized_at` integer");
   addColumnIfMissing(sqlite, "session", "discarded_at", "`discarded_at` integer");
   addColumnIfMissing(sqlite, "session", "cancelled_at", "`cancelled_at` integer");
+  addColumnIfMissing(sqlite, "session", "cleaned_at", "`cleaned_at` integer");
   addColumnIfMissing(sqlite, "session", "last_activity_at", "`last_activity_at` integer NOT NULL DEFAULT 0");
   createIndexIfColumnsExist(
     sqlite,
@@ -1275,6 +1277,21 @@ function repairTemporaryConversationDrift(sqlite: Database.Database): void {
     "page_staged_write",
     ["account_id", "session_id", "branch_id", "created_at"],
     "CREATE INDEX IF NOT EXISTS `page_staged_write_account_session_branch_created_idx` ON `page_staged_write` (`account_id`, `session_id`, `branch_id`, `created_at`);",
+  );
+}
+
+/**
+ * R6-3（缺口 5）additive 修复：为历史 node_graph_run 表补 `cleaned_at` 列与清理扫描索引。
+ *
+ * 纯 additive，不改动已有 run / node-run 行，也不触发任何清理动作。
+ */
+function repairNodeGraphRunCleanupDrift(sqlite: Database.Database): void {
+  addColumnIfMissing(sqlite, "node_graph_run", "cleaned_at", "`cleaned_at` integer");
+  createIndexIfColumnsExist(
+    sqlite,
+    "node_graph_run",
+    ["status", "cleaned_at", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `node_graph_run_status_cleaned_created_idx` ON `node_graph_run` (`status`, `cleaned_at`, `created_at`);",
   );
 }
 

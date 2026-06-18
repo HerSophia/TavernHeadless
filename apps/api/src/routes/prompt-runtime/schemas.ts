@@ -29,6 +29,7 @@ import {
 } from "../chat/schemas.js";
 import { promptIntentValues } from "../schemas/chat-schemas.js";
 
+import { PROMPT_RUNTIME_INJECTION_LIMITS } from "../../services/prompt-runtime/injection-governance.js";
 import type {
   PromptRuntimeClientInjectionInput,
 } from "../../services/prompt-runtime-injection-types.js";
@@ -86,16 +87,22 @@ export type PromptRuntimeInspectBody = {
   budget?: PromptBudgetBody;
   source_selection?: PromptSourceSelectionBody;
   prompt_runtime_injections?: PromptRuntimeInjectionBody[];
+  /**
+   * I4：显式请求返回受限来源（agent_private / debug / system）injection 的完整正文与来源链。
+   * 默认 false：这些来源的 title 与 source_chain 被裁剪，仅保留结构性观察字段并标记 restricted。
+   */
+  include_restricted_injection_content?: boolean;
 };
 
-function validateTrimmedString(field: string) {
-  return z.string().refine((value) => value.trim().length > 0, `${field} must not be empty after trimming`);
+function validateTrimmedString(field: string, maxLength?: number) {
+  const schema = z.string().refine((value) => value.trim().length > 0, `${field} must not be empty after trimming`);
+  return maxLength !== undefined ? schema.refine((value) => value.trim().length <= maxLength, `${field} exceeds max length ${maxLength}`) : schema;
 }
 
 export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionBody> = z.object({
   source_kind: z.literal("client_injection"),
-  title: z.string(),
-  content: z.string(),
+  title: z.string().max(PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength),
+  content: z.string().max(PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength),
   placement: z.string().min(1),
   placement_params: promptRuntimeInjectionPlacementParamsBodySchema.optional(),
   order: z.number().int().optional(),
@@ -104,8 +111,8 @@ export const promptRuntimeInjectionBodySchema: z.ZodType<PromptRuntimeInjectionB
 
 export const promptRuntimePersistedInjectionCreateBodySchema: z.ZodType<PromptRuntimePersistedInjectionCreateBody> = z.object({
   source_kind: z.literal("client_injection"),
-  title: validateTrimmedString("title"),
-  content: validateTrimmedString("content"),
+  title: validateTrimmedString("title", PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength),
+  content: validateTrimmedString("content", PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength),
   placement: validateTrimmedString("placement"),
   placement_params: promptRuntimeInjectionPlacementParamsBodySchema.optional(),
   order: z.number().int().optional(),
@@ -116,8 +123,8 @@ export const promptRuntimePersistedInjectionCreateBodySchema: z.ZodType<PromptRu
 
 export const promptRuntimePersistedInjectionPatchBodySchema: z.ZodType<PromptRuntimePersistedInjectionPatchBody> = z.object({
   source_kind: z.literal("client_injection").optional(),
-  title: validateTrimmedString("title").optional(),
-  content:validateTrimmedString("content").optional(),
+  title: validateTrimmedString("title", PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength).optional(),
+  content: validateTrimmedString("content", PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength).optional(),
   placement: validateTrimmedString("placement").optional(),
   placement_params: promptRuntimeInjectionPlacementParamsBodySchema.nullable().optional(),
   order: z.number().int().optional(),
@@ -143,7 +150,8 @@ export const promptRuntimeInspectBodySchema: z.ZodType<PromptRuntimeInspectBody>
   delivery: promptDeliveryBodySchema.optional(),
   budget: promptBudgetBodySchema.optional(),
   source_selection: promptSourceSelectionBodySchema.optional(),
-  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).optional(),
+  prompt_runtime_injections: z.array(promptRuntimeInjectionBodySchema).max(PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount).optional(),
+  include_restricted_injection_content: z.boolean().optional(),
 }).strict();
 
 export type PromptRuntimeModePatchBody = {

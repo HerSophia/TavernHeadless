@@ -488,8 +488,12 @@ function compileContributorNode(
     return null;
   }
 
+  const budgetGroup = typeof node.metadata?.budgetGroup === 'string'
+    ? node.metadata.budgetGroup
+    : undefined;
   const governance = resolvePromptRuntimeGovernancePolicy({
     sourceKind: node.sourceKind,
+    ...(budgetGroup ? { budgetGroup } : {}),
     fallback: { budgetGroup: `section:${node.sourceKind}`, pinned: false, prunable: false },
   });
   return createSection(buildContributorSectionName(node), resolvePlacementOrder(group, node.placement), [{

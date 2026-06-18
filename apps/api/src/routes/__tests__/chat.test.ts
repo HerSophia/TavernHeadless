@@ -282,6 +282,7 @@ describe("chat routes", () => {
             items: [{
               requestIndex: 0,
               sourceKind: "client_injection",
+              visibility: "client",
               enabled: true,
               scope: "request",
               placementRequested: "before_history",

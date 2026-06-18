@@ -3,6 +3,7 @@ import type { CoreEventBus } from '../events/index.js';
 import type { FloorStateMachine } from '../floor/floor-state-machine.js';
 import type { GenerationParams, InstanceSlot, ModelConfig, TokenUsage } from '../llm/types.js';
 import type { GenerationPipeline } from '../generation/generation-pipeline.js';
+import type { TokenCounter } from '../prompt/types.js';
 import type { GenerationOutput } from '../generation/types.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { MemoryConsolidator } from '../memory/memory-consolidator.js';
@@ -29,6 +30,7 @@ import {
   TextProtocolToolCallParser,
   TextProtocolToolResultFormatter,
 } from '../tools/transport/index.js';
+import type { ToolCallParseDiagnostic } from '../tools/transport/index.js';
 import { TEXT_PROTOCOL_TOOL_CALL_CLOSE } from '../tools/transport/text-protocol/constants.js';
 import type { Director } from './director.js';
 import type { DirectorResult } from './director.js';
@@ -110,6 +112,7 @@ export interface TurnOrchestratorDeps {
   verifier: Verifier;
   eventBus: CoreEventBus;
   toolExecutionRepository?: ToolExecutionRepository;
+  tokenCounter?: TokenCounter;
 }
 
 // ── 工具函数 ──────────────────────────────────────────
@@ -133,6 +136,10 @@ function addUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 
 function zeroUsage(): TokenUsage {
   return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+}
+
+function countToolResultWritebackTokens(blocks: string[], tokenCounter?: TokenCounter): number {
+  return blocks.reduce((sum, block) => sum + (tokenCounter?.count(block) ?? block.length), 0);
 }
 
 function toReplayBlockedExecution(record: ExecutedToolCallRecord): ToolReplayBlockedExecution | null {
@@ -205,6 +212,7 @@ function resolveSlotGenerationParams(
 }
 
 const TEXT_PROTOCOL_TOOL_CALL_START = '<tool_call';
+const TEXT_PROTOCOL_TOOL_RESULT_BUDGET_GROUP = 'tool_result';
 
 function findTextProtocolToolCallStart(text: string, startIndex = 0): number {
   let cursor = startIndex;
@@ -336,6 +344,16 @@ class TextProtocolStreamOutputBuffer {
 function stripTextProtocolToolCallBlocksPreservingTrailingMalformed(text: string): string {
   const buffer = new TextProtocolStreamOutputBuffer();
   return `${buffer.process(text)}${buffer.finalize()}`.trim();
+}
+
+function groupToolCallDiagnosticsByReason(
+  diagnostics: ToolCallParseDiagnostic[],
+): Record<string, number> {
+  const byReason: Record<string, number> = {};
+  for (const diagnostic of diagnostics) {
+    byReason[diagnostic.reason] = (byReason[diagnostic.reason] ?? 0) + 1;
+  }
+  return byReason;
 }
 
 interface ToolTransportGenerationResult {
@@ -955,6 +973,13 @@ export class TurnOrchestrator {
         parsing: {
           ...parseOutput.stats,
           diagnostics: parseOutput.diagnostics,
+          diagnosticsByReason: groupToolCallDiagnosticsByReason(parseOutput.diagnostics),
+        },
+        toolResult: {
+          writtenBack: writebackBlocks.length > 0,
+          blockCount: writebackBlocks.length,
+          tokenCount: countToolResultWritebackTokens(writebackBlocks, this.deps.tokenCounter),
+          budgetGroup: TEXT_PROTOCOL_TOOL_RESULT_BUDGET_GROUP,
         },
       },
     };
