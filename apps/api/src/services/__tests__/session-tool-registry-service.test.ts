@@ -191,12 +191,14 @@ describe("SessionToolRegistryService", () => {
     expect(allToolNames).toContain("preset_lookup");
     expect(allToolNames).toContain("character_lookup");
     expect(allToolNames).toContain("mcp_lookup");
+    expect(allToolNames).toContain("nodegraph.graph.get");
 
     expect(runtime.catalog.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "custom_lookup", source: "custom", availability: "available", sideEffectLevelBasis: "tool_declared" }),
         expect.objectContaining({ name: "preset_lookup", source: "preset", availability: "available", parameterSchemaBasis: "tool_declared" }),
         expect.objectContaining({ name: "character_lookup", source: "character", availability: "available", allowedSlotsBasis: "tool_declared" }),
+        expect.objectContaining({ name: "nodegraph.graph.get", source: "builtin", availability: "available" }),
         expect.objectContaining({ name: "mcp_lookup", source: "mcp", availability: "available", catalogSource: "live", sideEffectLevelBasis: "server_default", allowedSlotsBasis: "platform_default", parameterSchemaBasis: "shallow_schema_projection", replaySafetyBasis: "inferred_from_execution_policy", exposure: { scope: "project_binding", serverState: "enabled", allowedToolsMode: "all", allowedTools: [] } }),
       ]),
     );

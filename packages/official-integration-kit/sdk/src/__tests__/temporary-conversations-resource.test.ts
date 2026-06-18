@@ -273,4 +273,113 @@ describe("sdk temporary conversation resources", () => {
       reason: "assistant draft",
     }));
   });
+
+  it("maps the inspect view and forwards include_agent_private", async () => {
+    const inspectPayload = {
+      conversation: { ...temporaryConversationPayload, status: "finalized", finalized_at: 50, cleaned_at: null },
+      agent_private: true,
+      transcript_restricted: false,
+      source_snapshot: { digest: "sha256:abc", source_session_id: "sess-1" },
+      agent_origin: { source_agent_run_id: "run-1", source_attempt_no: 2 },
+      cleanup: { cleaned: false, cleaned_at: null, retention_policy: "delete_on_finalize" },
+      transcript: {
+        conversation_id: "tmp-1",
+        branch_id: "main",
+        floors: [
+          {
+            id: "floor-1",
+            floor_no: 1,
+            branch_id: "main",
+            parent_floor_id: null,
+            state: "committed",
+            token_in: 0,
+            token_out: 0,
+            created_at: 10,
+            updated_at: 11,
+            pages: [
+              {
+                id: "page-1",
+                page_no: 0,
+                page_kind: "mixed",
+                is_active: true,
+                version: 1,
+                checksum: null,
+                created_at: 10,
+                updated_at: 11,
+                messages: [
+                  {
+                    id: "msg-1",
+                    seq: 0,
+                    role: "user",
+                    content: "agent body",
+                    content_length: 10,
+                    content_format: "text",
+                    is_hidden: false,
+                    source: null,
+                    restricted: false,
+                    created_at: 10,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      exports: [
+        {
+          staged_write_id: "stage-1",
+          delivery_target: "page_staged_write",
+          target_session_id: "sess-main",
+          target_page_id: "page-target-1",
+          source_page_id: "page-out-1",
+          status: "staged",
+          reason: "draft",
+          created_at: 40,
+          updated_at: 41,
+          applied_at: null,
+          discarded_at: null,
+        },
+      ],
+    };
+
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ data: inspectPayload }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    const inspect = await client.temporaryConversations.inspect({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      includeAgentPrivate: true,
+    });
+
+    expect(inspect.agentPrivate).toBe(true);
+    expect(inspect.transcriptRestricted).toBe(false);
+    expect(inspect.sourceSnapshot).toEqual({ digest: "sha256:abc", sourceSessionId: "sess-1" });
+    expect(inspect.agentOrigin).toEqual({ sourceAgentRunId: "run-1", sourceAttemptNo: 2 });
+    expect(inspect.cleanup).toEqual({ cleaned: false, cleanedAt: null, retentionPolicy: "delete_on_finalize" });
+    expect(inspect.conversation.cleanedAt).toBeNull();
+    expect(inspect.transcript.floors[0]?.pages[0]?.messages[0]).toMatchObject({
+      content: "agent body",
+      contentLength: 10,
+      restricted: false,
+    });
+    expect(inspect.exports).toEqual([
+      {
+        stagedWriteId: "stage-1",
+        deliveryTarget: "page_staged_write",
+        targetSessionId: "sess-main",
+        targetPageId: "page-target-1",
+        sourcePageId: "page-out-1",
+        status: "staged",
+        reason: "draft",
+        createdAt: 40,
+        updatedAt: 41,
+        appliedAt: null,
+        discardedAt: null,
+      },
+    ]);
+
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(
+      "http://localhost:3000/temporary-conversations/tmp-1/inspect?include_agent_private=true",
+    );
+  });
 });

@@ -144,6 +144,8 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
         persistentCount: 0,
         appliedCount: 1,
         notAppliedCount: 0,
+        tokenCount: expect.any(Number),
+        budgetGroup: "injection",
       },
     });
 
@@ -266,6 +268,8 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
         contributorId: "builtin:tool_list",
         placementMode: "strict_fixed",
         toolCount: 1,
+        tokenCount: expect.any(Number),
+        budgetGroup: "tool_list",
       },
     });
   });
@@ -756,6 +760,7 @@ function createInjectionTraceItem(title: string, placementResolved: string) {
   return {
     requestIndex: 0,
     sourceKind: "client_injection",
+    visibility: "client" as const,
     scope: "request" as const,
     placementRequested: "before_history",
     orderRequested: 100,

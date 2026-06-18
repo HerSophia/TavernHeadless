@@ -1,4 +1,4 @@
-import type { ToolCallTransportKind, ToolDefinition } from "@tavern/core";
+import type { TokenCounter, ToolCallTransportKind, ToolDefinition } from "@tavern/core";
 
 import type { PromptRuntimeTrace } from "../prompt-assembler.js";
 
@@ -23,6 +23,7 @@ export interface PromptRuntimeContributorResolveArgs {
   firstPartyStateContext?: FirstPartyStateContext;
   transport?: ToolCallTransportKind;
   toolsForSlot?: ToolDefinition[];
+  tokenCounter?: TokenCounter;
   /**
    * R1 Agent Runtime（inline_mvp）的 aggregator 产出的额外 contributor。
    * 默认为空，不影响现有行为；仅在 AgenticTurnStrategy 打开时由上层传入。
@@ -64,6 +65,7 @@ export class PromptRuntimeContributorRunner {
       promptMode: args.promptMode,
       transport: args.transport ?? "none",
       toolsForSlot: args.toolsForSlot ?? [],
+      ...(args.tokenCounter ? { tokenCounter: args.tokenCounter } : {}),
     });
     if (toolList.contributor) {
       contributors.push(toolList.contributor);

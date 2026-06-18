@@ -64,6 +64,7 @@ import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
 import { ResourceToolProvider } from "./tools/index.js";
 import { MemoryWorker } from "./services/memory-worker.js";
 import { AgentRuntimeWorker } from "./services/agent-runtime-worker.js";
+import { NodeGraphWorker } from "./services/node-graph-worker.js";
 import { MemoryJobScheduler } from "./services/memory-job-scheduler.js";
 import { createDefaultMutationRuntimeComponents } from "./services/default-mutation-runtime.js";
 import { createMutationRuntimeJobBridge } from "./services/mutation-runtime-job-bridge.js";
@@ -76,6 +77,7 @@ import {
 
 import { PromptRuntimeControlService, PromptRuntimeControlServiceError } from "./services/prompt-runtime-control-service.js";
 import { PromptRuntimeInjectionService } from "./services/prompt-runtime/injection-service.js";
+import { RuntimeMaintenanceService } from "./services/runtime-maintenance-service.js";
 import { TemporaryConversationService } from "./services/temporary-conversation-service.js";
 import { ToolWorker } from "./services/tooling/runtime/tool-worker.js";
 import { SessionEffectiveToolPolicyProvider } from "./services/tooling/shared/session-effective-tool-policy-provider.js";
@@ -89,6 +91,14 @@ import {
 import { SessionStateObservationService } from "./session-state/session-state-observation-service.js";
 import { ProjectEventLiveHub } from "./services/project-event-live-hub.js";
 import { ProjectAccessService } from "./services/project-access-service.js";
+import { DerivedOutputService } from "./services/derived-output-service.js";
+import { ProjectInboxService } from "./services/project-inbox-service.js";
+import {
+  AgentExecutorRouter,
+  AgentJobTriggerBackgroundJobEnqueuer,
+  AgentOutputDispatcher,
+  TemporaryConversationAgentExecutor,
+} from "./services/agent-runtime/index.js";
 
 const _pkgJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
 const API_VERSION: string = _pkgJson.version ?? "unknown";
@@ -197,6 +207,20 @@ export type BuildAppOptions = {
     policy?: MemoryMaintenancePolicy;
     dryRun?: boolean;
   };
+  runtimeMaintenance?: {
+    intervalMs: number;
+    promptRuntimeInjection?: {
+      enabled?: boolean;
+    };
+    temporaryConversation?: {
+      enabled?: boolean;
+      retentionGraceMs?: number;
+    };
+    nodeGraphRun?: {
+      enabled?: boolean;
+      retentionGraceMs?: number;
+    };
+  };
   enableSseChat?: boolean;
   enablePromptDryRun?: boolean;
   enableMemoryConsolidation?: boolean;
@@ -233,6 +257,17 @@ export type BuildAppOptions = {
     leaseTtlMs?: number;
     maxConcurrentJobs?: number;
    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
+  /** 是否启用 NodeGraph worker（默认关闭，保证可回退）。 */
+  enableNodeGraphWorker?: boolean;
+  /** 可选：NodeGraphWorker 运行参数。 */
+  nodeGraphWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
     maxRetryDelayMs?: number;
     candidateScanLimit?: number;
   };
@@ -349,15 +384,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   const accountMode = options.accountMode ?? "single";
 
   let memoryMaintenanceTimer: NodeJS.Timeout | undefined;
+  let runtimeMaintenanceTimer: NodeJS.Timeout | undefined;
   let memoryWorker: MemoryWorker | undefined;
   let mutationWorker: MutationWorker | undefined;
   let toolWorker: ToolWorker | undefined;
   let agentRuntimeWorker: AgentRuntimeWorker | undefined;
+  let nodeGraphWorker: NodeGraphWorker | undefined;
 
   app.addHook("onClose", async () => {
     if (memoryMaintenanceTimer) {
       clearInterval(memoryMaintenanceTimer);
       memoryMaintenanceTimer = undefined;
+    }
+    if (runtimeMaintenanceTimer) {
+      clearInterval(runtimeMaintenanceTimer);
+      runtimeMaintenanceTimer = undefined;
     }
     if (clientDataExpirationTimer) {
       clearInterval(clientDataExpirationTimer);
@@ -382,6 +423,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     if (agentRuntimeWorker) {
       await agentRuntimeWorker.stop();
       agentRuntimeWorker = undefined;
+    }
+    if (nodeGraphWorker) {
+      await nodeGraphWorker.stop();
+      nodeGraphWorker = undefined;
     }
     database.close();
   });
@@ -603,6 +648,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   const projectEventLiveHub = new ProjectEventLiveHub();
   const projectAccessService = new ProjectAccessService(database.db);
 
+  const createNodeGraphAgentRouter = () => {
+    const backgroundJobEnqueuer = new AgentJobTriggerBackgroundJobEnqueuer(database.db);
+    if (!temporaryConversationService) {
+      return new AgentExecutorRouter(undefined, { backgroundJobEnqueuer });
+    }
+    const outputDispatcher = new AgentOutputDispatcher({
+      derivedOutput: new DerivedOutputService(database.db),
+      projectInbox: new ProjectInboxService(database.db),
+    });
+    return new AgentExecutorRouter(
+      new TemporaryConversationAgentExecutor(temporaryConversationService, outputDispatcher),
+      { backgroundJobEnqueuer },
+    );
+  };
+
   if (options.orchestration) {
     const floorRepo = new DrizzleFloorRepository(database.db);
     const memoryRepo = new DrizzleMemoryRepository(database.db, {
@@ -783,6 +843,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     },
     projectEventLiveHub,
     sessionStateObservationService,
+    nodeGraphWorkerEnabled: options.enableNodeGraphWorker === true,
   });
 
   const promptRuntimeControlService = new PromptRuntimeControlService(database.db, {
@@ -964,7 +1025,64 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     });
   }
 
+  if (options.enableNodeGraphWorker === true) {
+    nodeGraphWorker = new NodeGraphWorker(database.db, {
+      ...(orchestrationContext?.eventBus ? { eventBus: orchestrationContext.eventBus } : {}),
+      ...(options.nodeGraphWorker?.pollIntervalMs !== undefined ? { pollIntervalMs: options.nodeGraphWorker.pollIntervalMs } : {}),
+      ...(options.nodeGraphWorker?.leaseTtlMs !== undefined ? { leaseTtlMs: options.nodeGraphWorker.leaseTtlMs } : {}),
+      ...(options.nodeGraphWorker?.maxConcurrentJobs !== undefined ? { maxConcurrentJobs: options.nodeGraphWorker.maxConcurrentJobs } : {}),
+      ...(options.nodeGraphWorker?.retryBaseDelayMs !== undefined ? { retryBaseDelayMs: options.nodeGraphWorker.retryBaseDelayMs } : {}),
+      ...(options.nodeGraphWorker?.maxRetryDelayMs !== undefined ? { maxRetryDelayMs: options.nodeGraphWorker.maxRetryDelayMs } : {}),
+      ...(options.nodeGraphWorker?.candidateScanLimit !== undefined ? { candidateScanLimit: options.nodeGraphWorker.candidateScanLimit } : {}),
+      agentRouter: createNodeGraphAgentRouter(),
+      logger: app.log,
+    });
+    nodeGraphWorker.start();
+  }
 
+
+
+  if (options.runtimeMaintenance) {
+    const runtimeMaintenanceService = new RuntimeMaintenanceService(database.db);
+    const intervalMs = Math.max(10_000, options.runtimeMaintenance.intervalMs);
+    let maintenanceRunning = false;
+
+    const runRuntimeMaintenance = () => {
+      if (maintenanceRunning) {
+        return;
+      }
+      maintenanceRunning = true;
+      try {
+        const summary = runtimeMaintenanceService.run({
+          promptRuntimeInjection: options.runtimeMaintenance?.promptRuntimeInjection,
+          temporaryConversation: options.runtimeMaintenance?.temporaryConversation,
+          nodeGraphRun: options.runtimeMaintenance?.nodeGraphRun,
+          operationLog: {
+            accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+            actorType: "system",
+            actorId: "runtime_maintenance",
+            sourceType: "maintenance",
+          },
+        });
+        app.log.info({
+          prompt_runtime_injection_expired_deleted: summary.promptRuntimeInjection.expiredDeleted,
+          temporary_conversation_expired: summary.temporaryConversation.expired,
+          temporary_conversation_cleaned: summary.temporaryConversation.cleaned,
+          temporary_conversation_deleted_messages: summary.temporaryConversation.deletedMessages,
+          node_graph_run_cleaned: summary.nodeGraphRun.cleaned,
+          node_graph_run_redacted_node_runs: summary.nodeGraphRun.redactedNodeRuns,
+          duration_ms: summary.durationMs,
+        }, "runtime maintenance completed");
+      } catch (error) {
+        app.log.error({ err: error }, "runtime maintenance failed");
+      } finally {
+        maintenanceRunning = false;
+      }
+    };
+
+    runRuntimeMaintenance();
+    runtimeMaintenanceTimer = setInterval(runRuntimeMaintenance, intervalMs);
+  }
 
   if (options.enableMemory === true && options.memoryMaintenance) {
     const maintenanceService = new MemoryMaintenanceService(database.db, {

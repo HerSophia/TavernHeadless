@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type { AppDb, DbExecutor } from "../../db/client.js";
@@ -16,6 +16,10 @@ import type {
   PromptRuntimeInjectionPromptMode,
   PromptRuntimeInjectionScope,
 } from "../prompt-runtime-injection-types.js";
+import {
+  PROMPT_RUNTIME_INJECTION_LIMITS,
+  getPromptRuntimeInjectionScopeLimit,
+} from "./injection-governance.js";
 import { VcDiffService } from "../vc-diff-service.js";
 
 export type PromptRuntimeInjectionServiceDb = AppDb | DbExecutor;
@@ -31,7 +35,8 @@ export type PromptRuntimeInjectionServiceErrorCode =
   | "session_not_found"
   | "branch_not_found"
   | "injection_not_found"
-  | "invalid_injection_payload";
+  | "invalid_injection_payload"
+  | "injection_scope_quota_exceeded";
 
 export interface PromptRuntimeInjectionRecord {
   id: string;
@@ -125,6 +130,7 @@ export class PromptRuntimeInjectionService {
     this.requireOwnedSession(accountId, sessionId);
     return this.db.transaction((tx) => {
       const service = new PromptRuntimeInjectionService(tx);
+      service.assertScopeQuotaAvailable(sessionId, null, "session");
       const created = service.insertRecord({
         sessionId,
         branchId: null,
@@ -160,6 +166,7 @@ export class PromptRuntimeInjectionService {
     this.requireMaterializedBranch(accountId, sessionId, branchId);
     return this.db.transaction((tx) => {
       const service = new PromptRuntimeInjectionService(tx);
+      service.assertScopeQuotaAvailable(sessionId, branchId, "branch");
       const created = service.insertRecord({
         sessionId,
         branchId,
@@ -325,9 +332,10 @@ export class PromptRuntimeInjectionService {
     this.requireOwnedSession(accountId, sessionId);
     this.requireMaterializedBranch(accountId, sessionId, branchId);
 
+    const now = Date.now();
     return [
-      ...this.listByScope(sessionId, null).map((record) => toBuilderInput(record)),
-      ...this.listByScope(sessionId, branchId).map((record) => toBuilderInput(record)),
+      ...this.listByScope(sessionId, null).filter((record) => !isExpiredRecord(record, now)).map((record) => toBuilderInput(record)),
+      ...this.listByScope(sessionId, branchId).filter((record) => !isExpiredRecord(record, now)).map((record) => toBuilderInput(record)),
     ];
   }
 
@@ -373,6 +381,41 @@ export class PromptRuntimeInjectionService {
       .returning({ id: promptRuntimeInjections.id })
       .all().length
       + deleteRemainingExpired(this.db, expiredIds.slice(1));
+  }
+
+  private assertScopeQuotaAvailable(
+    sessionId: string,
+    branchId: string | null,
+    scope: Exclude<PromptRuntimeInjectionScope, "request">,
+  ): void {
+    const now = Date.now();
+    const currentCount = this.countUnexpiredByScope(sessionId, branchId, now);
+    const limit = getPromptRuntimeInjectionScopeLimit(PROMPT_RUNTIME_INJECTION_LIMITS, scope);
+    if (currentCount >= limit) {
+      throw new PromptRuntimeInjectionServiceError(
+        400,
+        "injection_scope_quota_exceeded",
+        `Prompt runtime injection ${scope} scope limit exceeded: max ${limit}`,
+      );
+    }
+  }
+
+  private countUnexpiredByScope(sessionId: string, branchId: string | null, now: number): number {
+    const rows = this.db
+      .select({ id: promptRuntimeInjections.id })
+      .from(promptRuntimeInjections)
+      .where(
+        and(
+          eq(promptRuntimeInjections.sessionId, sessionId),
+          branchId === null ? isNull(promptRuntimeInjections.branchId) : eq(promptRuntimeInjections.branchId, branchId),
+          or(
+            isNull(promptRuntimeInjections.ttlMs),
+            sql`${promptRuntimeInjections.createdAt} + ${promptRuntimeInjections.ttlMs} > ${now}`,
+          ),
+        ),
+      )
+      .all();
+    return rows.length;
   }
 
   private listByScope(sessionId: string, branchId: string | null): PromptRuntimeInjectionRecord[] {
@@ -632,8 +675,8 @@ function buildScopeSummary(records: PromptRuntimeInjectionRecord[]): PromptRunti
 function normalizeWriteInput(input: PromptRuntimeInjectionWriteInput): Required<PromptRuntimeInjectionWriteInput> {
   return {
     sourceKind: input.sourceKind,
-    title: requireTrimmedText(input.title, "title"),
-    content: requireTrimmedText(input.content, "content"),
+    title: requireTrimmedText(input.title, "title", PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength),
+    content: requireTrimmedText(input.content, "content", PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength),
     placement: requireTrimmedText(input.placement, "placement"),
     placementParams: normalizePlacementParams(input.placementParams),
     order: normalizeOrder(input.order),
@@ -649,8 +692,8 @@ function normalizePatchInput(
 ): Required<PromptRuntimeInjectionWriteInput> {
   return {
     sourceKind: patch.sourceKind ?? asClientInjectionSourceKind(existing.sourceKind),
-    title: patch.title !== undefined ? requireTrimmedText(patch.title, "title") : existing.title,
-    content: patch.content !== undefined ? requireTrimmedText(patch.content, "content") : existing.content,
+    title: patch.title !== undefined ? requireTrimmedText(patch.title, "title", PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength) : existing.title,
+    content: patch.content !== undefined ? requireTrimmedText(patch.content, "content", PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength) : existing.content,
     placement: patch.placement !== undefined ? requireTrimmedText(patch.placement, "placement") : existing.placement,
     placementParams: patch.placementParams !== undefined ? normalizePlacementParams(patch.placementParams) : existing.placementParams,
     order: patch.order !== undefined ? normalizeOrder(patch.order) : existing.order,
@@ -727,13 +770,20 @@ function asClientInjectionSourceKind(value: string): "client_injection" {
   return value;
 }
 
-function requireTrimmedText(value: string, field: string): string {
+function requireTrimmedText(value: string, field: string, maxLength?: number): string {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
     throw new PromptRuntimeInjectionServiceError(
       400,
       "invalid_injection_payload",
       `Prompt runtime injection ${field} must not be empty`,
+    );
+  }
+  if (maxLength !== undefined && trimmed.length > maxLength) {
+    throw new PromptRuntimeInjectionServiceError(
+      400,
+      "invalid_injection_payload",
+      `Prompt runtime injection ${field} exceeds max length ${maxLength}`,
     );
   }
   return trimmed;
@@ -796,6 +846,10 @@ function toOperationRef(record: PromptRuntimeInjectionRecord): Record<string, un
 
 function hashText(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function isExpiredRecord(record: PromptRuntimeInjectionRecord, now: number): boolean {
+  return record.ttlMs !== null && record.createdAt + record.ttlMs <= now;
 }
 
 function deleteRemainingExpired(

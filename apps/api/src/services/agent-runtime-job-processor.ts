@@ -51,6 +51,7 @@ import {
   type AgentOutputDispatchResult,
 } from "./agent-runtime/agent-output-dispatcher.js";
 import { buildAgentRuntimeMediumTrace } from "./agent-runtime/agent-runtime-trace.js";
+import { checkAgentRunOutputDispatchBudget } from "./agent-runtime/agent-run-budget.js";
 import type { AgentLineageRef } from "./agent-runtime/agent-lineage-types.js";
 import type { AgentRuntimeMediumTrace } from "./agent-runtime/inline-agent-types.js";
 
@@ -232,6 +233,12 @@ export class AgentRuntimeJobProcessor
       assertOutputDescriptorsAllowed(result.outputs);
     } catch (error) {
       throw classifyExecutorError(error);
+    }
+
+    // R6-2（缺口 4）：Agent run 输出派发预算，阻止单次运行无限扩张持久副作用。
+    const budgetViolation = checkAgentRunOutputDispatchBudget(result.outputs.length);
+    if (budgetViolation) {
+      throw new RuntimeJobFatalError(budgetViolation.reasonCode);
     }
 
     return { result, dryRun: payload.dryRun };

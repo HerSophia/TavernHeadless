@@ -15,6 +15,20 @@ Operation Log 记录一次用户、LLM 或系统操作留下的审计信息。�
 - 你要按目标、动作、请求 ID 查询审计记录
 - 你要做回滚、排查或治理审计
 
+## 一个简单例子
+
+想知道某个会话被谁改过、改了什么，直接按会话维度查审计日志：
+
+```bash
+# 按会话查询操作日志（最近的在前）
+curl 'http://localhost:3000/sessions/sess_001/operation-logs?limit=20'
+
+# 只看"更新会话"这个动作
+curl 'http://localhost:3000/operation-logs?session_id=sess_001&action=update_session'
+```
+
+返回里的每条记录都带 `actor`（谁）、`action`（做了什么）、`target`（改了哪个对象）和 `diff`（摘要差异）。
+
 ## 先理解几个词
 
 | 词 | 这里的意思 |

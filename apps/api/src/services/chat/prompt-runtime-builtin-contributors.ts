@@ -1,4 +1,4 @@
-import type { ToolCallTransportKind, ToolDefinition } from "@tavern/core";
+import type { TokenCounter, ToolCallTransportKind, ToolDefinition } from "@tavern/core";
 import { TextProtocolToolListRenderer } from "@tavern/core";
 
 import type { PromptRuntimeTrace } from "../prompt-assembler.js";
@@ -111,6 +111,7 @@ export function buildToolListContributor(args: {
   promptMode: "compat_strict" | "compat_plus" | "native";
   transport: ToolCallTransportKind;
   toolsForSlot: ToolDefinition[];
+  tokenCounter?: TokenCounter;
 }): PromptRuntimeBuiltinContributorResult {
   if (args.transport !== "text_protocol" || args.toolsForSlot.length === 0) {
     return { kind: "tool_list" };
@@ -130,6 +131,8 @@ export function buildToolListContributor(args: {
     payload: {
       transport: "text_protocol",
       toolNames: rendered.renderedToolNames,
+      budgetGroup: "tool_list",
+      ...(args.tokenCounter ? { tokenCount: args.tokenCounter.count(rendered.content) } : {}),
     },
     promptRenderable: {
       title: "Tool list",

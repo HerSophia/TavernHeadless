@@ -1070,7 +1070,11 @@ export async function registerPromptRuntimeRoutes(
     try {
       const auth = getRequestAuthContext(request);
       const result = await options.inspectService.inspectPromptRuntime(parsedParams.data.id, mapPromptRuntimeInspectBodyToCamelCase(parsedBody.data), auth.accountId);
-      return reply.send({ data: mapPromptRuntimeInspectResultToSnakeCase(result) });
+      return reply.send({
+        data: mapPromptRuntimeInspectResultToSnakeCase(result, {
+          includeRestrictedInjectionContent: parsedBody.data.include_restricted_injection_content === true,
+        }),
+      });
     } catch (error) {
       return sendPromptRuntimeInspectServiceError(reply, error);
     }

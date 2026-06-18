@@ -117,6 +117,11 @@ POST /sessions/:id/respond
 - 不进入数据库持久化
 - 只支持 `source_kind="client_injection"`
 - 只支持 `scope="request"`
+- 单次请求最多 32 条
+- 单条 `title` 最多 256 个字符
+- 单条 `content` 最多 8000 个字符
+- 单条 `content` 最多 2000 token
+- 本次实际生效的 injection `content` 合计最多 4000 token
 
 每个条目字段如下：
 
@@ -214,17 +219,30 @@ POST /sessions/:id/respond
 
 - `request_index`
 - `source_kind`
+- `visibility`
 - `scope`
 - `placement_requested`
 - `placement_params_requested`
 - `order_requested`
 - `title`
 - `content_length`
+- `token_count`
+- `budget_group`
+- `budget_status`
 - `applied`
 - `placement_resolved`
 - `anchor_resolved`
 - `source_chain`
 - `not_applied_reason`
+- `restricted`
+
+`runtime_trace.injection` 还会给出本次注入的汇总字段：
+
+- `requested_count`
+- `applied_count`
+- `rejected_count`
+- `token_count`
+- `budget_group`
 
 其中：
 
@@ -232,7 +250,12 @@ POST /sessions/:id/respond
 - `placement_params_requested` 回显客户端声明的 `placement_params`，未声明时为 `null`
 - `anchor_resolved` 是解析后的锚点描述，不暴露内部数字顺序；无法解析时为 `null`
 - `source_chain` 是来源链，客户端来源的 injection 该字段为 `null`
-- `not_applied_reason` 用于说明未生效原因，当前可能为 `placement_not_available_in_mode`、`unknown_placement`、`empty_title_or_content`、`prompt_section_absent`、`disabled`、`mode_scope_mismatch`、`expired`、`missing_placement_params`、`invalid_placement_params`、`floor_no_out_of_history_window`、`floor_offset_out_of_history_window`
+- `token_count` 是本条 injection 正文 token 估算值
+- `budget_group` 当前固定为 `injection`，会进入 Prompt Runtime budget trace
+- `budget_status` 为 `within_budget`、`rejected_by_item_limit` 或 `rejected_by_total_limit`，尚未进入预算判定时为 `null`
+- `visibility` 由 `source_kind` 推导：`client` / `agent_private` / `debug` / `system`
+- `restricted` 为 `true` 时，该条受限来源（`agent_private` / `debug` / `system`）的 `title` 与 `source_chain` 已被裁剪为 `null`，结构性字段仍完整保留；客户端声明的 `client_injection` 永不裁剪。chat 运行响应始终裁剪受限来源，完整正文只在 `inspect` 通过 `include_restricted_injection_content` 开放
+- `not_applied_reason` 用于说明未生效原因，当前可能为 `placement_not_available_in_mode`、`unknown_placement`、`empty_title_or_content`、`prompt_section_absent`、`disabled`、`mode_scope_mismatch`、`expired`、`scope_quota_exceeded`、`content_length_exceeded`、`content_token_limit_exceeded`、`total_token_limit_exceeded`、`missing_placement_params`、`invalid_placement_params`、`floor_no_out_of_history_window`、`floor_offset_out_of_history_window`
 
 如果本轮 prompt 组装实际命中了宏系统，`runtime_trace.macro` 会附带宏 warning、used names、mutation preview、staged mutations 和 trace。
 
@@ -242,7 +265,15 @@ POST /sessions/:id/respond
 
 当 `structure.mode=flattened` 时，`runtime_trace.structure` 还会附带 `transcriptized`、`transcript_message_count` 与 `assistant_prefill_transcriptized`。如果 assistant prefill 被转写进 transcript，`runtime_trace.delivery.assistant_prefill_strategy` 会返回 `transcript_append`。
 
-`runtime_trace.tool_transport` 现在也可能返回工具调用 transport 选择、tool list 注入摘要，以及 text protocol 解析诊断。
+`runtime_trace.tool_transport` 现在也可能返回工具调用 transport 选择、tool list 注入摘要、text protocol 解析诊断，以及 tool result 回写摘要。
+
+ToolCall Transport 的 C3 治理规则如下：
+
+- text protocol 只识别小写 `<tool_call>` 边界，不识别大小写变体、连字符变体或近似标签。
+- 工具名必须先通过格式检查，再和本轮已注册且已通过权限过滤的工具名精确匹配。
+- 未注册工具、格式错误、JSON 解析失败、缺少 `call_id`、缺少工具名、缺少 `args`、重复 `call_id` 都只进入 trace 和 operation log，不进入执行器。
+- operation log 不保存完整 tool call 块、完整工具结果或完整模型输出，只保存摘要、hash、长度、原因码和引用。
+- `tool_list` 进入 `tool_list` budget group；tool result 回写进入 `tool_result` budget group。
 
 这两个字段默认都关闭。未打开时，同步成功响应保持兼容。
 
@@ -530,8 +561,9 @@ dry-run 不会写入 `prompt_runtime_explain_snapshot`。这份 explain snapshot
 | `runtime_trace.source_selection.excluded_sources` | `runtime_trace` | array | 结构化 source exclusion 原因。当前首轮覆盖 history / memory / worldbook / examples 级说明 |
 | `runtime_trace.tool_transport.selection.transport` | `runtime_trace` | string | 本轮工具调用 transport 选择 |
 | `runtime_trace.tool_transport.selection.reason_code` | `runtime_trace` | string | transport 选择原因 |
-| `runtime_trace.tool_transport.tool_list` | `runtime_trace` | object | text protocol 工具目录注入摘要，按情况返回 |
-| `runtime_trace.tool_transport.parsing` | `runtime_trace` | object | text protocol tool block 解析统计与诊断，按情况返回 |
+| `runtime_trace.tool_transport.tool_list` | `runtime_trace` | object | text protocol 工具目录注入摘要，按情况返回。包含 `tool_count`、`token_count`、`budget_group` |
+| `runtime_trace.tool_transport.parsing` | `runtime_trace` | object | text protocol tool block 解析统计与诊断，按情况返回。包含 `diagnostics_by_reason` |
+| `runtime_trace.tool_transport.tool_result` | `runtime_trace` | object | text protocol 工具结果回写摘要，按情况返回。包含 `written_back`、`block_count`、`token_count`、`budget_group` |
 
 当前 `runtime_trace.macro.traces` 中已经包含最小调试元数据，典型字段包括：
 

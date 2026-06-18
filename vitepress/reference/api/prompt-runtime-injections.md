@@ -89,14 +89,39 @@ POST /sessions/:id/prompt-runtime/branches/:branchId/injections
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 | ---- | ---- | ---- | ---- | ---- |
 | `source_kind` | `string` | 是 | - | 当前只允许 `"client_injection"` |
-| `title` | `string` | 是 | - | 注入标题，去除首尾空白后不能为空 |
-| `content` | `string` | 是 | - | 注入正文，去除首尾空白后不能为空 |
+| `title` | `string` | 是 | - | 注入标题，去除首尾空白后不能为空，最多 256 字符 |
+| `content` | `string` | 是 | - | 注入正文，去除首尾空白后不能为空，最多 8000 字符 |
 | `placement` | `string` | 是 | - | 目标位置，取值见下文 [placement 取值](#placement-取值) |
 | `placement_params` | `object` | 否 | `null` | 高级位置参数。字段固定为 `floor_no`、`offset`、`depth`，均为可选非负整数 |
 | `order` | `integer` | 否 | `100` | 同一 placement 内部排序，越小越靠前 |
 | `enabled` | `boolean` | 否 | `true` | 是否启用 |
 | `mode_scope` | `string \| null` | 否 | `null` | 限定生效的 prompt mode：`compat_strict` / `compat_plus` / `native`。`null` 表示不限制 |
 | `ttl_ms` | `integer \| null` | 否 | `null` | 存活时长（毫秒）。`null` 表示不过期 |
+
+I4 阶段的持久作用域上限为：session 级最多 128 条，branch 级最多 128 条。超过上限时创建会返回 `injection_scope_quota_exceeded`。
+
+## 可见性与 trace 字段
+
+阶段 6 起，注入 trace 会明确返回来源可见性和预算状态。
+
+| `source_kind` | `visibility` | 是否受限 | 默认裁剪行为 |
+| ---- | ---- | ---- | ---- |
+| `client_injection` | `client` | 否 | 始终完整可见 |
+| `agent_injection` | `agent_private` | 是 | 默认裁剪 `title` 与 `source_chain` |
+| `debug_injection` | `debug` | 是 | 默认裁剪 `title` 与 `source_chain` |
+| `system_override` | `system` | 是 | 默认裁剪 `title` 与 `source_chain`，且不允许客户端声明 |
+
+`runtime_trace.injection.items[]` 会返回 `visibility`、`placement_requested`、`anchor_resolved`、`not_applied_reason`、`source_chain`、`budget_group`、`budget_status`、`restricted` 等字段。`budget_status` 为 `within_budget`、`rejected_by_item_limit` 或 `rejected_by_total_limit`。
+
+可见性裁剪规则（阶段 6）：
+
+- 受限来源（`agent_private` / `debug` / `system`）默认裁剪敏感正文，`title` 返回 `null`、`source_chain` 返回 `null`，并把 `restricted` 置为 `true`。
+- 结构性可观察字段始终保留：`visibility`、`scope`、`placement_requested`、`placement_resolved`、`anchor_resolved`、`applied`、`not_applied_reason`、`budget_status`、`token_count`、`content_length`、`order_requested`。任何注入都不会被静默吞掉。
+- `client` 来源永不裁剪，`restricted` 恒为 `false`。
+- 在 `inspect` 中可显式传 `include_restricted_injection_content: true` 取回受限来源完整正文（owner 调试用途）。`chat` 运行响应与 `preview` 始终裁剪受限来源，不开放完整正文。
+
+持久注入写入接口仍只允许 `client_injection`。内部来源不会通过本页的写入接口开放。
+
 
 ### 成功响应 `201`
 
@@ -245,13 +270,20 @@ DELETE /sessions/:id/prompt-runtime/branches/:branchId/injections/:injectionId
 
 注入是否生效、落在了什么语义锚点上，统一在 [Inspection](./prompt-runtime-inspection) 里回看。本页只声明可写的字段与规则。
 
+## TTL 与清理
+
+设置了 `ttl_ms` 的持久注入在 `created_at + ttl_ms` 到达后视为过期。过期注入不会参与 prepared builder，也不会进入本轮 Prompt 组装。
+
+通用运行时维护任务启用后，会调用过期清理路径删除这些记录，并写入 `prompt_injection.cleanup_expired` operation log。日志只记录清理数量、时间和耗时，不记录注入正文。
+
 ## 错误
 
 错误响应结构为 `{ "error": { "code": "...", "message": "..." } }`。
 
 | 状态码 | `error.code` | 说明 |
 | ---- | ---- | ---- |
-| 400 | `invalid_injection_payload` | 请求体字段非法，例如 `placement_params` 不是非负整数、`source_kind` 不是 `client_injection`、`title` 或 `content` 去空白后为空 |
+| 400 | `invalid_injection_payload` | 请求体字段非法，例如 `placement_params` 不是非负整数、`source_kind` 不是 `client_injection`、`title` 或 `content` 去空白后为空，或标题 / 正文超过长度上限 |
+| 400 | `injection_scope_quota_exceeded` | session 或 branch 持久作用域超过 128 条上限 |
 | 403 | - | 当前账号对该会话所在项目没有写权限 |
 | 404 | `session_not_found` | 会话不存在或不属于当前账号 |
 | 404 | `branch_not_found` | 分支不存在（仅 branch 级路由） |

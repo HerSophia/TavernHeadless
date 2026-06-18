@@ -253,6 +253,120 @@ describe("temporary conversation routes", () => {
     expect(hiddenResponse.statusCode, hiddenResponse.body).toBe(404);
     expect(hiddenResponse.json<{ error: { code: string } }>().error.code).toBe("conversation_not_found");
   });
+
+  it("inspects a client-visible temporary conversation with transcript, exports, and cleanup state", async () => {
+    const sourceSessionId = await seedSession(database, { title: "Inspect Source" });
+    const targetSessionId = await seedSession(database, { title: "Inspect Target" });
+    const targetPageId = await seedPageForSession(database, targetSessionId);
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: `/sessions/${sourceSessionId}/temporary-conversations`,
+      payload: { purpose: "inspect" },
+    });
+    expect(createResponse.statusCode, createResponse.body).toBe(201);
+    const conversationId = String(createResponse.json<{ data: Record<string, unknown> }>().data.id);
+
+    await app.inject({
+      method: "POST",
+      url: `/temporary-conversations/${conversationId}/respond`,
+      payload: { input_message: { role: "user", content: "inspect me" } },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/temporary-conversations/${conversationId}/export`,
+      payload: { target: "page_staged_write", target_page_id: targetPageId, reason: "inspect export" },
+    });
+
+    const inspectResponse = await app.inject({
+      method: "GET",
+      url: `/temporary-conversations/${conversationId}/inspect`,
+    });
+    expect(inspectResponse.statusCode, inspectResponse.body).toBe(200);
+    const inspect = inspectResponse.json<{
+      data: {
+        agent_private: boolean;
+        transcript_restricted: boolean;
+        source_snapshot: { source_session_id: string | null };
+        cleanup: { cleaned: boolean; cleaned_at: number | null };
+        transcript: { floors: Array<{ pages: Array<{ messages: Array<{ content: string | null; restricted: boolean }> }> }> };
+        exports: Array<Record<string, unknown>>;
+      };
+    }>().data;
+
+    expect(inspect.agent_private).toBe(false);
+    expect(inspect.transcript_restricted).toBe(false);
+    expect(inspect.source_snapshot.source_session_id).toBe(sourceSessionId);
+    expect(inspect.cleanup.cleaned).toBe(false);
+    expect(inspect.cleanup.cleaned_at).toBeNull();
+    expect(inspect.transcript.floors[0]?.pages[0]?.messages[0]).toMatchObject({
+      content: "inspect me",
+      restricted: false,
+    });
+    expect(inspect.exports).toHaveLength(1);
+    expect(inspect.exports[0]).toMatchObject({
+      delivery_target: "page_staged_write",
+      target_page_id: targetPageId,
+      status: "staged",
+    });
+  });
+
+  it("redacts agent-private transcript by default and reveals it with include_agent_private", async () => {
+    const sourceSessionId = await seedSession(database, { title: "Agent Private Source" });
+    const conversation = await temporaryConversationService.create({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sourceSessionId,
+      purpose: "agent-private",
+    });
+    await temporaryConversationService.appendMessage({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId: conversation.conversationId,
+      role: "user",
+      content: "agent private body",
+    });
+
+    const hiddenDetail = await app.inject({
+      method: "GET",
+      url: `/temporary-conversations/${conversation.conversationId}`,
+    });
+    expect(hiddenDetail.statusCode).toBe(404);
+
+    const redacted = await app.inject({
+      method: "GET",
+      url: `/temporary-conversations/${conversation.conversationId}/inspect`,
+    });
+    expect(redacted.statusCode, redacted.body).toBe(200);
+    const redactedData = redacted.json<{
+      data: {
+        agent_private: boolean;
+        transcript_restricted: boolean;
+        transcript: { floors: Array<{ pages: Array<{ messages: Array<{ content: string | null; restricted: boolean; content_length: number }> }> }> };
+      };
+    }>().data;
+    expect(redactedData.agent_private).toBe(true);
+    expect(redactedData.transcript_restricted).toBe(true);
+    const redactedMessage = redactedData.transcript.floors[0]?.pages[0]?.messages[0];
+    expect(redactedMessage?.content).toBeNull();
+    expect(redactedMessage?.restricted).toBe(true);
+    expect(redactedMessage?.content_length).toBeGreaterThan(0);
+
+    const revealed = await app.inject({
+      method: "GET",
+      url: `/temporary-conversations/${conversation.conversationId}/inspect?include_agent_private=true`,
+    });
+    expect(revealed.statusCode, revealed.body).toBe(200);
+    const revealedData = revealed.json<{
+      data: {
+        transcript_restricted: boolean;
+        transcript: { floors: Array<{ pages: Array<{ messages: Array<{ content: string | null; restricted: boolean }> }> }> };
+      };
+    }>().data;
+    expect(revealedData.transcript_restricted).toBe(false);
+    expect(revealedData.transcript.floors[0]?.pages[0]?.messages[0]).toMatchObject({
+      content: "agent private body",
+      restricted: false,
+    });
+  });
 });
 
 function createMockChatService(database: DatabaseConnection["db"]): ChatService {

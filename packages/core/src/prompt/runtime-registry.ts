@@ -113,6 +113,20 @@ const PROMPT_RUNTIME_SOURCE_REGISTRY: readonly PromptRuntimeSourceDescriptor[] =
     defaultGovernanceLevel: 'soft_required',
   },
   {
+    kind: 'tool_list',
+    defaultBudgetGroup: 'tool_list',
+    traceLabel: 'tool_list',
+    exclusionSource: 'tool_list',
+    defaultGovernanceLevel: 'budget_prunable',
+  },
+  {
+    kind: 'tool_result',
+    defaultBudgetGroup: 'tool_result',
+    traceLabel: 'tool_result',
+    exclusionSource: 'tool_result',
+    defaultGovernanceLevel: 'budget_prunable',
+  },
+  {
     kind: 'director_hint',
     defaultBudgetGroup: 'section:directorHint',
     traceLabel: 'director_hint',
@@ -177,6 +191,8 @@ const PROMPT_RUNTIME_SOURCE_REGISTRY: readonly PromptRuntimeSourceDescriptor[] =
 
 const PROMPT_RUNTIME_BUDGET_GROUP_REGISTRY: readonly PromptRuntimeBudgetGroupDescriptor[] = [
   { group: 'examples', defaultWeight: 1, defaultPruneOrder: 100 },
+  { group: 'tool_result', defaultWeight: 1, defaultPruneOrder: 150 },
+  { group: 'tool_list', defaultWeight: 1, defaultPruneOrder: 175 },
   { group: 'worldbook', defaultWeight: 2, defaultPruneOrder: 200 },
   { group: 'memory', defaultWeight: 2, defaultPruneOrder: 250 },
   { group: PROMPT_ASSET_CHARACTER_BUDGET_GROUP, defaultWeight: 5, defaultPruneOrder: 500 },
