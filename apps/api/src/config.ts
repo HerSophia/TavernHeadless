@@ -35,6 +35,13 @@
  * - MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS: 可选，open_loop 超过 N 天自动 deprecated（默认 7，设为 0 禁用）
  * - MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS: 可选，deprecated 且自上次更新后超过 N 天自动删除（以 updatedAt 作为最后变更时间，默认 90，设为 0 禁用）
  * - MEMORY_MAINTENANCE_DRY_RUN: 可选，仅统计不执行写入/删除（默认 false）
+ * - ENABLE_RUNTIME_MAINTENANCE: 可选，启用通用运行时维护任务（默认 false）
+ * - RUNTIME_MAINTENANCE_INTERVAL_MS: 可选，通用运行时维护间隔（毫秒，默认 3600000）
+ * - ENABLE_PROMPT_RUNTIME_INJECTION_CLEANUP: 可选，通用维护中是否清理过期 Prompt Runtime Injection（默认 true）
+ * - ENABLE_TEMPORARY_CONVERSATION_CLEANUP: 可选，通用维护中是否清理终态临时对话正文与过期 TTL 临时对话（默认 true）
+ * - TEMPORARY_CONVERSATION_CLEANUP_GRACE_MS: 可选，临时对话进入终态后到正文清理之间的审计保留宽限期（毫秒，默认 0）
+ * - ENABLE_NODE_GRAPH_RUN_CLEANUP: 可选，通用维护中是否裁剪终态 NodeGraph 运行的 node-run 正文（默认 true）
+ * - NODE_GRAPH_RUN_CLEANUP_GRACE_MS: 可选，NodeGraph 运行进入终态后到 node-run 正文裁剪之间的审计保留宽限期（毫秒，默认 0）
  * - MEMORY_WORKER_POLL_INTERVAL_MS: 可选，MemoryWorker 轮询间隔（默认 2000）
  * - MEMORY_WORKER_LEASE_TTL_MS: 可选，MemoryWorker lease TTL（默认 120000）
  * - MEMORY_WORKER_MAX_CONCURRENT_JOBS: 可选，MemoryWorker 最大并发作业数（默认 4）
@@ -52,6 +59,13 @@
  * - CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT: 单账号最大域数（默认 64）
  * - CLIENT_DATA_MAX_TOTAL_ENTRIES_PER_ACCOUNT: 单账号客户端数据总条目数（默认 100000）
  * - CLIENT_DATA_MAX_TOTAL_BYTES_PER_ACCOUNT: 单账号客户端数据总字节数（默认 104857600）
+ * - ENABLE_NODE_GRAPH_WORKER: 是否启用 NodeGraph worker（默认 false）
+ * - NODE_GRAPH_WORKER_POLL_INTERVAL_MS: 可选，NodeGraphWorker 轮询间隔
+ * - NODE_GRAPH_WORKER_LEASE_TTL_MS: 可选，NodeGraphWorker lease TTL
+ * - NODE_GRAPH_WORKER_MAX_CONCURRENT_JOBS: 可选，NodeGraphWorker 最大并发
+ * - NODE_GRAPH_WORKER_RETRY_BASE_DELAY_MS: 可选，NodeGraphWorker 重试基础退避
+ * - NODE_GRAPH_WORKER_MAX_RETRY_DELAY_MS: 可选，NodeGraphWorker 最大重试退避
+ * - NODE_GRAPH_WORKER_CANDIDATE_SCAN_LIMIT: 可选，NodeGraphWorker 扫描候选数量
  * - ENABLE_BACKUP_WORKER: 是否启用 backup worker（默认 false）
  * - BACKUP_WORKER_POLL_INTERVAL_MS: 可选，BackupWorker 轮询间隔（默认沿用 RuntimeWorker 默认值）
  * - BACKUP_WORKER_LEASE_TTL_MS: 可选，BackupWorker lease TTL
@@ -107,6 +121,21 @@ export interface AppConfig {
     policy?: MemoryMaintenancePolicy;
     dryRun?: boolean;
   };
+  /** 可选：通用运行时维护任务配置（不设置则不启用） */
+  runtimeMaintenance?: {
+    intervalMs: number;
+    promptRuntimeInjection?: {
+      enabled?: boolean;
+    };
+    temporaryConversation?: {
+      enabled?: boolean;
+      retentionGraceMs?: number;
+    };
+    nodeGraphRun?: {
+      enabled?: boolean;
+      retentionGraceMs?: number;
+    };
+  };
   /** 是否启用 SSE 流式聊天端点 */
   enableSseChat: boolean;
   /** 是否启用 Prompt Dry-run 端点 */
@@ -138,6 +167,17 @@ export interface AppConfig {
   agentRuntimeWorker?: {
     pollIntervalMs?: number;
     leaseTtlMs?:number;
+    maxConcurrentJobs?: number;
+    retryBaseDelayMs?: number;
+    maxRetryDelayMs?: number;
+    candidateScanLimit?: number;
+  };
+  /** 是否启用 NodeGraph worker（默认关闭，保证可回退） */
+  enableNodeGraphWorker: boolean;
+  /** 可选：NodeGraphWorker 运行参数 */
+  nodeGraphWorker?: {
+    pollIntervalMs?: number;
+    leaseTtlMs?: number;
     maxConcurrentJobs?: number;
     retryBaseDelayMs?: number;
     maxRetryDelayMs?: number;
@@ -278,6 +318,15 @@ export function loadConfig(): AppConfig {
     process.env.AGENT_RUNTIME_WORKER_MAX_RETRY_DELAY_MS,
     process.env.AGENT_RUNTIME_WORKER_CANDIDATE_SCAN_LIMIT,
   );
+  const enableNodeGraphWorker = process.env.ENABLE_NODE_GRAPH_WORKER === "true";
+  const nodeGraphWorker = parseNodeGraphWorkerConfig(
+    process.env.NODE_GRAPH_WORKER_POLL_INTERVAL_MS,
+    process.env.NODE_GRAPH_WORKER_LEASE_TTL_MS,
+    process.env.NODE_GRAPH_WORKER_MAX_CONCURRENT_JOBS,
+    process.env.NODE_GRAPH_WORKER_RETRY_BASE_DELAY_MS,
+    process.env.NODE_GRAPH_WORKER_MAX_RETRY_DELAY_MS,
+    process.env.NODE_GRAPH_WORKER_CANDIDATE_SCAN_LIMIT,
+  );
   const enableChatTransferWorker = process.env.ENABLE_CHAT_TRANSFER_WORKER === "true";
   const chatTransferWorker = parseChatTransferWorkerConfig(
     process.env.CHAT_TRANSFER_WORKER_POLL_INTERVAL_MS,
@@ -312,6 +361,15 @@ export function loadConfig(): AppConfig {
     process.env.MEMORY_MAINTENANCE_DEPRECATE_OPEN_LOOP_DAYS,
     process.env.MEMORY_MAINTENANCE_PURGE_DEPRECATED_DAYS,
     process.env.MEMORY_MAINTENANCE_DRY_RUN
+  );
+  const runtimeMaintenance = parseRuntimeMaintenanceConfig(
+    process.env.ENABLE_RUNTIME_MAINTENANCE,
+    process.env.RUNTIME_MAINTENANCE_INTERVAL_MS,
+    process.env.ENABLE_PROMPT_RUNTIME_INJECTION_CLEANUP,
+    process.env.ENABLE_TEMPORARY_CONVERSATION_CLEANUP,
+    process.env.TEMPORARY_CONVERSATION_CLEANUP_GRACE_MS,
+    process.env.ENABLE_NODE_GRAPH_RUN_CLEANUP,
+    process.env.NODE_GRAPH_RUN_CLEANUP_GRACE_MS,
   );
 
   const auth = parseAuthConfig(
@@ -348,6 +406,7 @@ export function loadConfig(): AppConfig {
       enableMemory,
       memoryInjectionDecay,
       memoryMaintenance,
+      runtimeMaintenance,
       enableSseChat,
       enablePromptDryRun,
       enableMemoryConsolidation,
@@ -359,6 +418,8 @@ export function loadConfig(): AppConfig {
       memoryWorker,
       enableAgentRuntimeWorker,
       agentRuntimeWorker,
+      enableNodeGraphWorker,
+      nodeGraphWorker,
       enableChatTransferWorker,
       chatTransferWorker,
       chatTransferArtifactDir,
@@ -430,6 +491,7 @@ export function loadConfig(): AppConfig {
     enableMemory,
     memoryInjectionDecay,
     memoryMaintenance,
+    runtimeMaintenance,
     enableSseChat,
     enablePromptDryRun,
     enableMemoryConsolidation,
@@ -441,6 +503,8 @@ export function loadConfig(): AppConfig {
     memoryWorker,
     enableAgentRuntimeWorker,
     agentRuntimeWorker,
+    enableNodeGraphWorker,
+    nodeGraphWorker,
     enableChatTransferWorker,
     chatTransferWorker,
     chatTransferArtifactDir,
@@ -600,6 +664,35 @@ function parseMemoryMaintenanceConfig(
   };
 }
 
+function parseRuntimeMaintenanceConfig(
+  enabledRaw: string | undefined,
+  intervalMsRaw: string | undefined,
+  promptRuntimeInjectionCleanupRaw: string | undefined,
+  temporaryConversationCleanupRaw: string | undefined,
+  temporaryConversationCleanupGraceMsRaw: string | undefined,
+  nodeGraphRunCleanupRaw: string | undefined,
+  nodeGraphRunCleanupGraceMsRaw: string | undefined,
+): AppConfig["runtimeMaintenance"] | undefined {
+  if (enabledRaw !== "true") {
+    return undefined;
+  }
+
+  return {
+    intervalMs: parsePositiveInt(intervalMsRaw) ?? 60 * 60 * 1000,
+    promptRuntimeInjection: {
+      enabled: promptRuntimeInjectionCleanupRaw !== "false",
+    },
+    temporaryConversation: {
+      enabled: temporaryConversationCleanupRaw !== "false",
+      retentionGraceMs: parseNonNegativeInt(temporaryConversationCleanupGraceMsRaw) ?? 0,
+    },
+    nodeGraphRun: {
+      enabled: nodeGraphRunCleanupRaw !== "false",
+      retentionGraceMs: parseNonNegativeInt(nodeGraphRunCleanupGraceMsRaw) ?? 0,
+    },
+  };
+}
+
 function parseMemoryWorkerConfig(
   pollIntervalMsRaw: string | undefined,
   leaseTtlMsRaw: string | undefined,
@@ -654,6 +747,42 @@ function parseAgentRuntimeWorkerConfig(
   if (
     pollIntervalMs === undefined
     &&leaseTtlMs === undefined
+    && maxConcurrentJobs === undefined
+    && retryBaseDelayMs === undefined
+    && maxRetryDelayMs === undefined
+    && candidateScanLimit === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(pollIntervalMs !== undefined ? { pollIntervalMs } : {}),
+    ...(leaseTtlMs !== undefined ? { leaseTtlMs } : {}),
+    ...(maxConcurrentJobs !== undefined ? { maxConcurrentJobs } : {}),
+    ...(retryBaseDelayMs !== undefined ? { retryBaseDelayMs } : {}),
+    ...(maxRetryDelayMs !== undefined ? { maxRetryDelayMs } : {}),
+    ...(candidateScanLimit !== undefined ? { candidateScanLimit } : {}),
+  };
+}
+
+function parseNodeGraphWorkerConfig(
+  pollIntervalMsRaw: string | undefined,
+  leaseTtlMsRaw: string | undefined,
+  maxConcurrentJobsRaw: string | undefined,
+  retryBaseDelayMsRaw: string | undefined,
+  maxRetryDelayMsRaw: string | undefined,
+  candidateScanLimitRaw: string | undefined,
+): AppConfig["nodeGraphWorker"] | undefined {
+  const pollIntervalMs = parsePositiveInt(pollIntervalMsRaw);
+  const leaseTtlMs = parsePositiveInt(leaseTtlMsRaw);
+  const maxConcurrentJobs = parsePositiveInt(maxConcurrentJobsRaw);
+  const retryBaseDelayMs = parsePositiveInt(retryBaseDelayMsRaw);
+  const maxRetryDelayMs = parsePositiveInt(maxRetryDelayMsRaw);
+  const candidateScanLimit = parsePositiveInt(candidateScanLimitRaw);
+
+  if (
+    pollIntervalMs === undefined
+    && leaseTtlMs === undefined
     && maxConcurrentJobs === undefined
     && retryBaseDelayMs === undefined
     && maxRetryDelayMs === undefined

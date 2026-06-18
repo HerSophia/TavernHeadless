@@ -144,6 +144,10 @@ function makeDeps(overrides: Partial<TurnOrchestratorDeps> = {}): TurnOrchestrat
     eventBus: {
       emit: vi.fn().mockResolvedValue(undefined),
     } as any,
+    tokenCounter: {
+      name: 'test',
+      count: vi.fn((text: string) => Math.ceil(text.length / 10)),
+    },
     ...overrides,
   };
 }
@@ -872,6 +876,13 @@ describe('TurnOrchestrator — Tool Integration', () => {
       acceptedCount: 1,
       rejectedCount: 0,
       diagnostics: [],
+      diagnosticsByReason: {},
+    });
+    expect(result.toolTransport?.toolResult).toEqual({
+      writtenBack: true,
+      blockCount: 1,
+      tokenCount: Math.ceil((result.toolResultWritebackText?.length ?? 0) / 10),
+      budgetGroup: 'tool_result',
     });
     expect(result.toolExecutionRecords).toHaveLength(1);
     expect((provider.executeTool as any).mock.calls[0][0]).toBe('roll_dice');
@@ -911,7 +922,68 @@ describe('TurnOrchestrator — Tool Integration', () => {
         reason: 'tool_not_registered',
       }),
     ]);
+    expect(result.toolTransport?.parsing?.diagnosticsByReason).toEqual({
+      tool_not_registered: 1,
+    });
+    expect(result.toolTransport?.toolResult).toEqual({
+      writtenBack: false,
+      blockCount: 0,
+      tokenCount: 0,
+      budgetGroup: 'tool_result',
+    });
     expect(result.toolExecutionRecords).toBeUndefined();
+    expect((provider.executeTool as any).mock.calls).toHaveLength(0);
+  });
+
+  it('rejects text_protocol calls with missing ids, missing names, and malformed JSON while preserving assistant text', async () => {
+    const provider = makeTestToolProvider();
+    const text = [
+      'Visible before.',
+      '<tool_call name="roll_dice">{"args":{"sides":20}}</tool_call>',
+      '<tool_call id="missing-name">{"args":{"sides":20}}</tool_call>',
+      '<tool_call id="bad-json" name="roll_dice">not-json</tool_call>',
+      'Visible after.',
+    ].join('\n');
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async () => makeGenOutput({ text, rawText: text })),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(provider);
+
+    const result = await orchestrator.executeTurn(makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+      },
+    }));
+
+    expect(result.generatedText).toBe('Visible before.\n\n\n\nVisible after.');
+    expect(result.toolTransport?.parsing).toEqual({
+      blockCount: 3,
+      acceptedCount: 0,
+      rejectedCount: 3,
+      diagnostics: [
+        expect.objectContaining({ callId: null, toolName: 'roll_dice', reason: 'missing_call_id' }),
+        expect.objectContaining({ callId: 'missing-name', toolName: null, reason: 'missing_tool_name' }),
+        expect.objectContaining({ callId: 'bad-json', toolName: 'roll_dice', reason: 'json_parse_failed' }),
+      ],
+      diagnosticsByReason: {
+        missing_call_id: 1,
+        missing_tool_name: 1,
+        json_parse_failed: 1,
+      },
+    });
+    expect(result.toolExecutionRecords).toBeUndefined();
+    expect(result.toolResultWritebackText).toBeUndefined();
     expect((provider.executeTool as any).mock.calls).toHaveLength(0);
   });
 

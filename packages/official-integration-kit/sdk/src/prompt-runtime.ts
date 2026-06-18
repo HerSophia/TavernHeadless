@@ -10,6 +10,11 @@ import {
   readString,
 } from "./resources/utils.js";
 
+
+function readOptionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 export type PromptLiveDebugOptions = {
   includePromptSnapshot?: boolean;
   includeRuntimeTrace?: boolean;
@@ -270,7 +275,22 @@ export type PromptRuntimeInjectionPlacement =
   | "before_contributor_block"
   | "after_contributor_block";
 export type PromptRuntimeInjectionScope = "request" | "session" | "branch";
-export type PromptRuntimeInjectionSourceKind = "client_injection";
+export type PromptRuntimeInjectionSourceKind =
+  | "client_injection"
+  | "agent_injection"
+  | "debug_injection"
+  | "system_override";
+
+export type PromptRuntimeInjectionVisibility =
+  | "client"
+  | "agent_private"
+  | "debug"
+  | "system";
+
+export type PromptRuntimeInjectionBudgetStatus =
+  | "within_budget"
+  | "rejected_by_item_limit"
+  | "rejected_by_total_limit";
 export type PromptRuntimeInjectionNotAppliedReason =
   | "placement_not_available_in_mode"
   | "unknown_placement"
@@ -279,6 +299,10 @@ export type PromptRuntimeInjectionNotAppliedReason =
   | "disabled"
   | "mode_scope_mismatch"
   | "expired"
+  | "scope_quota_exceeded"
+  | "content_length_exceeded"
+  | "content_token_limit_exceeded"
+  | "total_token_limit_exceeded"
   // I3 楼层 / 参数相关
   | "missing_placement_params"
   | "invalid_placement_params"
@@ -332,19 +356,39 @@ export type PromptRuntimeInjectionInput = {
 export type PromptRuntimeInjectionResult = {
 requestIndex: number;
   sourceKind: string;
+  visibility: PromptRuntimeInjectionVisibility;
   scope: PromptRuntimeInjectionScope;
   placementRequested: string;
   placementParamsRequested?: PromptRuntimeInjectionPlacementParams;
   orderRequested: number;
-  title: string;
+  /**
+   * I4：受限来源（agent_private / debug / system）默认裁剪时为 null。
+   * 仅当读取方显式获授 include_restricted_injection_content 时返回完整正文。
+   */
+  title: string | null;
   contentLength: number;
+  tokenCount?: number;
+  budgetGroup?: string;
+  budgetStatus?: PromptRuntimeInjectionBudgetStatus;
   applied: boolean;
   notAppliedReason?: PromptRuntimeInjectionNotAppliedReason;
   placementResolved?: string;
   anchorResolved?: PromptRuntimeInjectionAnchor;
   sourceChain?: PromptRuntimeInjectionSourceChain;
+  /**
+   * I4：true 表示该条 injection 的正文 title 与内部 source_chain 因可见性裁剪被隐藏。
+   * 结构性观察字段（位置、是否生效、不生效原因、预算状态、token、可见性）仍完整返回。
+   */
+  restricted?: boolean;
 };
-export type PromptRuntimeInjectionTrace = { items: PromptRuntimeInjectionResult[] };
+export type PromptRuntimeInjectionTrace = {
+  items: PromptRuntimeInjectionResult[];
+  requestedCount?: number;
+  appliedCount?: number;
+  rejectedCount?: number;
+  tokenCount?: number;
+  budgetGroup?: string;
+};
 
 export type PromptRuntimeStructureTrace = {
   assistantRewriteCount: number;
@@ -610,8 +654,12 @@ export type PromptRuntimeToolTransportDiagnosticReason =
   | "tool_not_registered"
   | "json_parse_failed"
   | "missing_args_field"
+  | "missing_call_id"
+  | "missing_tool_name"
   | "duplicate_call_id"
-  | "malformed_block";
+  | "malformed_block"
+  | "malformed_attributes"
+  | "invalid_tool_name";
 
 export type PromptRuntimeToolTransportDiagnostic = {
   callId: string | null;
@@ -625,13 +673,25 @@ export type PromptRuntimeToolTransportTrace = {
   toolList?: {
     injected: boolean;
     contributorId?: string;
+    placementMode?: "strict_fixed" | "contributor_chain";
     toolCount: number;
+    tokenCount?: number;
+    budgetGroup?: string;
   };
+  toolChoiceApplied?: boolean;
+  streamingToolCallUnsupported?: boolean;
   parsing?: {
     blockCount: number;
     acceptedCount: number;
     rejectedCount: number;
     diagnostics: PromptRuntimeToolTransportDiagnostic[];
+    diagnosticsByReason?: Record<string, number>;
+  };
+  toolResult?: {
+    writtenBack: boolean;
+    blockCount: number;
+    tokenCount: number;
+    budgetGroup: string;
   };
 };
 
@@ -846,6 +906,25 @@ function readPromptRuntimeToolTransportReasonCode(value: unknown): PromptRuntime
     : undefined;
 }
 
+function readPromptRuntimeToolListPlacementMode(
+  value: unknown,
+): "strict_fixed" | "contributor_chain" | undefined {
+  const mode = readOptionalString(value);
+  return mode === "strict_fixed" || mode === "contributor_chain" ? mode : undefined;
+}
+
+function readNumberRecord(value: unknown): Record<string, number> {
+  const record = readRecord(value);
+  if (!record) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter((entry): entry is [string, number] => typeof entry[1] === "number"),
+  );
+}
+
 function readPromptRuntimeToolTransportDiagnosticReason(
   value: unknown,
 ): PromptRuntimeToolTransportDiagnosticReason | undefined {
@@ -853,8 +932,12 @@ function readPromptRuntimeToolTransportDiagnosticReason(
   return reason === "tool_not_registered"
     || reason === "json_parse_failed"
     || reason === "missing_args_field"
+    || reason === "missing_call_id"
+    || reason === "missing_tool_name"
     || reason === "duplicate_call_id"
     || reason === "malformed_block"
+    || reason === "malformed_attributes"
+    || reason === "invalid_tool_name"
     ? reason
     : undefined;
 }
@@ -874,6 +957,7 @@ function mapPromptRuntimeToolTransportPayload(value: unknown): PromptRuntimeTool
 
   const toolList = readRecord(record.tool_list);
   const parsing = readRecord(record.parsing);
+  const toolResult = readRecord(record.tool_result);
 
   return {
     selection: {
@@ -890,9 +974,26 @@ function mapPromptRuntimeToolTransportPayload(value: unknown): PromptRuntimeTool
             ...(readOptionalString(toolList.contributor_id)
               ? { contributorId: readOptionalString(toolList.contributor_id) }
               : {}),
+            ...(readPromptRuntimeToolListPlacementMode(toolList.placement_mode)
+              ? {
+                  placementMode: readPromptRuntimeToolListPlacementMode(toolList.placement_mode),
+                }
+              : {}),
             toolCount: readNumber(toolList.tool_count),
+            ...(typeof toolList.token_count === "number"
+              ? { tokenCount: readNumber(toolList.token_count) }
+              : {}),
+            ...(readOptionalString(toolList.budget_group)
+              ? { budgetGroup: readOptionalString(toolList.budget_group) }
+              : {}),
           },
         }
+      : {}),
+    ...(typeof record.tool_choice_applied === "boolean"
+      ? { toolChoiceApplied: readBoolean(record.tool_choice_applied) }
+      : {}),
+    ...(typeof record.streaming_tool_call_unsupported === "boolean"
+      ? { streamingToolCallUnsupported: readBoolean(record.streaming_tool_call_unsupported) }
       : {}),
     ...(parsing
       ? {
@@ -920,6 +1021,19 @@ function mapPromptRuntimeToolTransportPayload(value: unknown): PromptRuntimeTool
                 };
               })
               .filter((item): item is PromptRuntimeToolTransportDiagnostic => item !== null),
+            ...(readRecord(parsing.diagnostics_by_reason)
+              ? { diagnosticsByReason: readNumberRecord(parsing.diagnostics_by_reason) }
+              : {}),
+          },
+        }
+      : {}),
+    ...(toolResult
+      ? {
+          toolResult: {
+            writtenBack: readBoolean(toolResult.written_back),
+            blockCount: readNumber(toolResult.block_count),
+            tokenCount: readNumber(toolResult.token_count),
+            budgetGroup: readString(toolResult.budget_group),
           },
         }
       : {}),
@@ -1126,8 +1240,19 @@ export function mapPromptRuntimeTracePayload(value: unknown): PromptRuntimeTrace
 }
 
 function mapPromptRuntimeInjectionTracePayload(value: unknown): PromptRuntimeInjectionTrace | undefined {
+  const record = readRecord(value);
   const items = mapPromptRuntimeInjectionResultsPayload(value);
-  return items ? { items } : undefined;
+  if (!items) {
+    return undefined;
+  }
+  return {
+    items,
+    requestedCount: readOptionalNumber(record?.requested_count),
+    appliedCount: readOptionalNumber(record?.applied_count),
+    rejectedCount: readOptionalNumber(record?.rejected_count),
+    tokenCount: readOptionalNumber(record?.token_count),
+    budgetGroup: readOptionalString(record?.budget_group),
+  };
 }
 
 function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeInjectionResult | null {
@@ -1141,10 +1266,12 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
   const placementParamsRequested = mapPromptRuntimeInjectionPlacementParamsResult(record.placement_params_requested);
   const anchorResolved = mapPromptRuntimeInjectionAnchorResult(record.anchor_resolved);
   const sourceChain = mapPromptRuntimeInjectionSourceChainResult(record.source_chain);
+  const restricted = record.restricted === true;
 
   return {
     requestIndex: readNumber(record.request_index),
     sourceKind: readString(record.source_kind),
+    visibility: readString(record.visibility) as PromptRuntimeInjectionVisibility,
     scope: scope === "session"
    ? "session"
       : scope === "branch"
@@ -1153,8 +1280,11 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
  placementRequested: readString(record.placement_requested),
     ...(placementParamsRequested ? { placementParamsRequested } : {}),
     orderRequested: readNumber(record.order_requested),
-    title: readString(record.title),
+    title: record.title === null || record.title === undefined ? null : readString(record.title),
     contentLength: readNumber(record.content_length),
+    tokenCount: readOptionalNumber(record.token_count),
+    budgetGroup: readOptionalString(record.budget_group),
+    budgetStatus: readOptionalString(record.budget_status) as PromptRuntimeInjectionBudgetStatus | undefined,
     applied: readBoolean(record.applied),
     ...(notAppliedReason
       && (
@@ -1165,6 +1295,10 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
         || notAppliedReason === "disabled"
         || notAppliedReason === "mode_scope_mismatch"
         || notAppliedReason === "expired"
+        || notAppliedReason === "scope_quota_exceeded"
+        || notAppliedReason === "content_length_exceeded"
+        || notAppliedReason === "content_token_limit_exceeded"
+        || notAppliedReason === "total_token_limit_exceeded"
         || notAppliedReason === "missing_placement_params"
         || notAppliedReason === "invalid_placement_params"
         || notAppliedReason === "floor_no_out_of_history_window"
@@ -1177,6 +1311,7 @@ function mapPromptRuntimeInjectionResultPayload(value: unknown): PromptRuntimeIn
       : {}),
     ...(anchorResolved ? { anchorResolved } : {}),
     ...(sourceChain ? { sourceChain } : {}),
+    ...(restricted ? { restricted: true } : {}),
   };
 }
 

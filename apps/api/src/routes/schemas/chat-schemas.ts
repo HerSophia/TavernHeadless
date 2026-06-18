@@ -4,6 +4,7 @@
  * Extracted from chat.ts to reduce file size (F012).
  */
 
+import { PROMPT_RUNTIME_INJECTION_LIMITS } from "../../services/prompt-runtime/injection-governance.js";
 import {
   SESSION_STATE_NAMESPACE_PATTERN,
 } from "../../session-state/session-state-types.js";
@@ -293,12 +294,21 @@ export const liveRuntimeTraceExample = {
       contributor_id: "builtin:tool_list",
       placement_mode: "contributor_chain",
       tool_count: 2,
+      token_count: 96,
+      budget_group: "tool_list",
     },
     parsing: {
       block_count: 1,
       accepted_count: 1,
       rejected_count: 0,
       diagnostics: [],
+      diagnostics_by_reason: {},
+    },
+    tool_result: {
+      written_back: true,
+      block_count: 1,
+      token_count: 128,
+      budget_group: "tool_result",
     },
   },
   generation_params_resolution: [
@@ -1569,6 +1579,8 @@ const runtimeTraceToolTransportToolListJsonSchema = {
     contributor_id: { type: "string" },
     placement_mode: { type: "string", enum: ["strict_fixed", "contributor_chain"] },
     tool_count: { type: "integer", minimum: 0 },
+    token_count: { type: "integer", minimum: 0 },
+    budget_group: { type: "string" },
   },
   additionalProperties: false,
 } as const;
@@ -1585,8 +1597,12 @@ const runtimeTraceToolTransportDiagnosticJsonSchema = {
         "tool_not_registered",
         "json_parse_failed",
         "missing_args_field",
+        "missing_call_id",
+        "missing_tool_name",
         "duplicate_call_id",
         "malformed_block",
+        "malformed_attributes",
+        "invalid_tool_name",
       ],
     },
     excerpt: { type: "string" },
@@ -1605,6 +1621,22 @@ const runtimeTraceToolTransportParsingJsonSchema = {
       type: "array",
       items: runtimeTraceToolTransportDiagnosticJsonSchema,
     },
+    diagnostics_by_reason: {
+      type: "object",
+      additionalProperties: { type: "integer", minimum: 0 },
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const runtimeTraceToolTransportToolResultJsonSchema = {
+  type: "object",
+  required: ["written_back", "block_count", "token_count", "budget_group"],
+  properties: {
+    written_back: { type: "boolean" },
+    block_count: { type: "integer", minimum: 0 },
+    token_count: { type: "integer", minimum: 0 },
+    budget_group: { type: "string" },
   },
   additionalProperties: false,
 } as const;
@@ -1618,6 +1650,7 @@ const runtimeTraceToolTransportJsonSchema = {
     tool_choice_applied: { type: "boolean" },
     streaming_tool_call_unsupported: { type: "boolean" },
     parsing: runtimeTraceToolTransportParsingJsonSchema,
+    tool_result: runtimeTraceToolTransportToolResultJsonSchema,
   },
   additionalProperties: false,
 } as const;
@@ -1709,6 +1742,7 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
   required: [
     "request_index",
     "source_kind",
+    "visibility",
     "injection_id",
     "enabled",
     "scope",
@@ -1717,15 +1751,20 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
     "order_requested",
     "title",
     "content_length",
+    "token_count",
+    "budget_group",
+    "budget_status",
     "applied",
     "placement_resolved",
     "anchor_resolved",
     "source_chain",
     "not_applied_reason",
+    "restricted",
   ],
   properties: {
     request_index: { type: "integer", minimum: 0 },
     source_kind: { type: "string" },
+    visibility: { type: "string", enum: ["client", "agent_private", "debug", "system"] },
     injection_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     enabled: { anyOf: [{ type: "boolean" }, { type: "null" }] },
     scope: { type: "string", enum: ["request", "session", "branch"] },
@@ -1734,8 +1773,19 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
       anyOf: [promptRuntimeInjectionPlacementParamsTraceJsonSchema, { type: "null" }],
     },
     order_requested: { type: "integer" },
-    title: { type: "string" },
+    title: { anyOf: [{ type: "string" }, { type: "null" }] },
     content_length: { type: "integer", minimum: 0 },
+    token_count: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    budget_group: { anyOf: [{ type: "string" }, { type: "null" }] },
+    budget_status: {
+      anyOf: [
+        {
+          type: "string",
+          enum: ["within_budget", "rejected_by_item_limit", "rejected_by_total_limit"],
+        },
+        { type: "null" },
+      ],
+    },
     applied: { type: "boolean" },
     placement_resolved: { anyOf: [{ type: "string" }, { type: "null" }] },
     anchor_resolved: {
@@ -1744,6 +1794,7 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
     source_chain: {
       anyOf: [promptRuntimeInjectionSourceChainTraceJsonSchema, { type: "null" }],
  },
+    restricted: { type: "boolean" },
     not_applied_reason: {
       anyOf: [
         {
@@ -1756,6 +1807,10 @@ const promptRuntimeInjectionTraceItemJsonSchema = {
             "disabled",
             "expired",
             "mode_scope_mismatch",
+            "scope_quota_exceeded",
+            "content_length_exceeded",
+            "content_token_limit_exceeded",
+            "total_token_limit_exceeded",
             "missing_placement_params",
             "invalid_placement_params",
             "floor_no_out_of_history_window",
@@ -1774,8 +1829,8 @@ const promptRuntimeInjectionJsonSchema = {
   required: ["source_kind", "title", "content", "placement"],
   properties: {
     source_kind: { type: "string", enum: ["client_injection"] },
-    title: { type: "string" },
-    content: { type: "string" },
+    title: { type: "string", maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.titleMaxLength },
+    content: { type: "string", maxLength: PROMPT_RUNTIME_INJECTION_LIMITS.contentMaxLength },
     placement: { type: "string", minLength: 1 },
     order: { type: "integer" },
     scope: { type: "string", enum: ["request"] },
@@ -1800,6 +1855,11 @@ const runtimeTraceBaseProperties = {
     required: ["items"],
     properties: {
       items: { type: "array", items: promptRuntimeInjectionTraceItemJsonSchema },
+      requested_count: { type: "integer", minimum: 0 },
+      applied_count: { type: "integer", minimum: 0 },
+      rejected_count: { type: "integer", minimum: 0 },
+      token_count: { type: "integer", minimum: 0 },
+      budget_group: { anyOf: [{ type: "string" }, { type: "null" }] },
     },
     additionalProperties: false,
   },
@@ -1890,7 +1950,7 @@ export const editAndRegenerateBodyJsonSchema = {
       items: { type: "string", minLength: 1 },
     },
     session_state_writes: turnSessionStateWritesJsonSchema,
-    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
+    prompt_runtime_injections: { type: "array", maxItems: PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount, items: promptRuntimeInjectionJsonSchema },
   },
   examples: [editAndRegenerateBodyExample],
   additionalProperties: false,
@@ -1910,7 +1970,7 @@ export const respondBodyJsonSchema = {
     debug_options: liveDebugOptionsJsonSchema,
     source_floor_id: { type: "string", minLength: 1 },
     session_state_writes: turnSessionStateWritesJsonSchema,
-    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
+    prompt_runtime_injections: { type: "array", maxItems: PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount, items: promptRuntimeInjectionJsonSchema },
   },
   examples: [respondBodyExample],
   additionalProperties: false,
@@ -1928,7 +1988,7 @@ export const dryRunBodyJsonSchema = {
     delivery: promptDeliveryJsonSchema,
     budget: promptBudgetJsonSchema,
     source_selection: promptSourceSelectionJsonSchema,
-    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
+    prompt_runtime_injections: { type: "array", maxItems: PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount, items: promptRuntimeInjectionJsonSchema },
   },
   examples: [dryRunBodyExample],
   additionalProperties: false,
@@ -1951,7 +2011,7 @@ export const regenerateBodyJsonSchema = {
       items: { type: "string", minLength: 1 },
     },
     session_state_writes: turnSessionStateWritesJsonSchema,
-    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
+    prompt_runtime_injections: { type: "array", maxItems: PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount, items: promptRuntimeInjectionJsonSchema },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,
@@ -1968,7 +2028,7 @@ export const retryFloorBodyJsonSchema = {
     confirmed_execution_ids: regenerateBodyJsonSchema.properties.confirmed_execution_ids,
     confirmed_session_state_mutation_ids: regenerateBodyJsonSchema.properties.confirmed_session_state_mutation_ids,
     session_state_writes: turnSessionStateWritesJsonSchema,
-    prompt_runtime_injections: { type: "array", items: promptRuntimeInjectionJsonSchema },
+    prompt_runtime_injections: { type: "array", maxItems: PROMPT_RUNTIME_INJECTION_LIMITS.requestMaxCount, items: promptRuntimeInjectionJsonSchema },
   },
   examples: [regenerateBodyExample],
   additionalProperties: false,

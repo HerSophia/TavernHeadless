@@ -657,6 +657,11 @@ export type PromptRuntimeInspectOptions = PromptRuntimeGetSessionOptions & {
   budget?:PromptRuntimeBudgetPolicy;
   sourceSelection?: PromptRuntimeSourceSelectionPolicy;
   promptRuntimeInjections?: PromptRuntimeInjectionInput[];
+  /**
+   * I4：显式请求返回受限来源（agent_private / debug / system）injection 的完整正文与来源链。
+   * 默认裁剪：这些来源的 title 与 source_chain 被隐藏，仅保留结构性观察字段并标记 restricted。
+   */
+  includeRestrictedInjectionContent?: boolean;
 };
 
 export type PromptRuntimeInspectResult = {
@@ -1721,6 +1726,7 @@ function mapPromptRuntimeInspectRequestBody(options: PromptRuntimeInspectOptions
     budget: mapPromptRuntimeBudgetPolicyRequest(options.budget),
     source_selection: mapPromptRuntimeSourceSelectionPolicyRequest(options.sourceSelection),
     prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
+    include_restricted_injection_content: options.includeRestrictedInjectionContent,
   });
 }
 

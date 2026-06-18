@@ -5,10 +5,65 @@ import {
   buildPromptRuntimeExecutionResult,
   buildPromptRuntimeExecutionTrace,
   buildPromptRuntimePreviewTrace,
+  mergeToolResultBudgetTrace,
   resolvePromptRuntimeExecutionContext,
 } from "../prompt-runtime-execution.js";
 import type { AssembleResult, MaterializePromptRuntimeMessagesResult } from "../prompt-assembler.js";
 import type { PromptRuntimeInspectionResult } from "../prompt-runtime-control-service.js";
+
+
+function createInspectionResult(
+  overrides: Partial<PromptRuntimeInspectionResult> = {},
+): PromptRuntimeInspectionResult {
+  return {
+    scope: {
+      sessionId: "session-1",
+      targetBranchId: "main",
+      branchExists: true,
+      sourceFloorId: null,
+      historySourceBranchId: "main",
+      historySourceMode: "existing_branch",
+    },
+    assets: {
+      preset: null,
+      characterCard: null,
+      worldbook: null,
+      regexProfile: null,
+    },
+    resolvedPolicy: {
+      structure: {
+        mode: "default",
+        mergeAdjacentSameRole: true,
+        preserveSystemMessages: true,
+      },
+      delivery: {
+        allowAssistantPrefill: true,
+        requireLastUser: false,
+        noAssistant: false,
+      },
+      debug: {
+        includePromptSnapshot: false,
+        includeRuntimeTrace: false,
+        includeWorldbookMatches: false,
+      },
+      budget: {},
+      visibility: { mode: "allow_all_except_hidden" },
+      sourceSelection: {
+        history: { mode: "full" },
+        memory: { enabled: true },
+        worldbook: { enabled: true },
+        examples: { enabled: true },
+      },
+    },
+    sourceMap: {},
+    diagnostics: [],
+    trimReasons: [],
+    excludedSources: [],
+    sectionStats: [],
+    limitations: [],
+    ...overrides,
+  };
+}
 
 describe("prompt-runtime-execution", () => {
   it("resolves session, branch, and request policy layers into effective context", () => {
@@ -195,6 +250,7 @@ describe("prompt-runtime-execution", () => {
     const inspectionInjections = [{
       requestIndex: 0,
       sourceKind: "client_injection",
+      visibility: "client" as const,
       scope: "request" as const,
       placementRequested: "before_history",
       orderRequested: 30,
@@ -206,6 +262,7 @@ describe("prompt-runtime-execution", () => {
     const assembledInjections = [{
       requestIndex: 1,
       sourceKind: "client_injection",
+      visibility: "client" as const,
       scope: "request" as const,
       placementRequested: "before_history",
       orderRequested: 30,
@@ -329,7 +386,59 @@ describe("prompt-runtime-execution", () => {
       } as never,
     });
 
-    expect(trace?.injection).toEqual({ items: inspectionInjections });
+    expect(trace?.injection).toEqual({
+      items: inspectionInjections,
+      requestedCount: 1,
+      appliedCount: 1,
+      rejectedCount: 0,
+    });
+  });
+
+  it("summarizes injection token usage into runtime trace", () => {
+    const trace = buildPromptRuntimeExecutionTrace({
+      inspection: createInspectionResult({
+        injections: [
+          {
+            requestIndex: 0,
+            sourceKind: "client_injection",
+            visibility: "client" as const,
+            scope: "request" as const,
+            placementRequested: "before_history",
+            orderRequested: 30,
+            title: "Tokenized",
+            contentLength: 16,
+            tokenCount: 7,
+            budgetGroup: "injection",
+            applied: true,
+            placementResolved: "history.before",
+          },
+          {
+            requestIndex: 1,
+            sourceKind: "client_injection",
+            visibility: "client" as const,
+            scope: "request" as const,
+            placementRequested: "before_history",
+            orderRequested: 30,
+            title: "Rejected",
+            contentLength: 16,
+            tokenCount: 9,
+            budgetGroup: "injection",
+            applied: false,
+            notAppliedReason: "scope_quota_exceeded",
+            placementResolved: "history.before",
+          },
+        ],
+      }),
+    });
+
+    expect(trace?.injection).toEqual({
+      items: expect.any(Array),
+      requestedCount: 2,
+      appliedCount: 1,
+      rejectedCount: 1,
+      tokenCount: 7,
+      budgetGroup: "injection",
+    });
   });
 
   it("includes toolTransport in the execution trace when present on inspection", () => {
@@ -389,6 +498,14 @@ describe("prompt-runtime-execution", () => {
             contributorId: "builtin:tool_list",
             placementMode: "contributor_chain",
             toolCount: 2,
+            tokenCount: 96,
+            budgetGroup: "tool_list",
+          },
+          toolResult: {
+            writtenBack: true,
+            blockCount: 1,
+            tokenCount: 128,
+            budgetGroup: "tool_result",
           },
         },
         limitations: [],
@@ -405,8 +522,79 @@ describe("prompt-runtime-execution", () => {
         contributorId: "builtin:tool_list",
         placementMode: "contributor_chain",
         toolCount: 2,
+        tokenCount: 96,
+        budgetGroup: "tool_list",
+      },
+      toolResult: {
+        writtenBack: true,
+        blockCount: 1,
+        tokenCount: 128,
+        budgetGroup: "tool_result",
       },
     });
+  });
+
+  it("merges written-back tool result tokens into the runtime budget trace", () => {
+    const trace = mergeToolResultBudgetTrace({
+      budgets: {
+        byGroup: [
+          { group: "history", tokenCount: 20 },
+          { group: "tool_result", tokenCount: 10 },
+        ],
+      },
+    }, {
+      selection: {
+        transport: "text_protocol",
+        reasonCode: "explicit_override",
+      },
+      toolResult: {
+        writtenBack: true,
+        blockCount: 1,
+        tokenCount: 5,
+        budgetGroup: "tool_result",
+      },
+    });
+
+    expect(trace.budgets?.byGroup).toEqual([
+      { group: "history", tokenCount: 20 },
+      { group: "tool_result", tokenCount: 15 },
+    ]);
+  });
+
+  it("adds a tool result budget group when no prior budget entry exists", () => {
+    const trace = mergeToolResultBudgetTrace({}, {
+      selection: {
+        transport: "text_protocol",
+        reasonCode: "explicit_override",
+      },
+      toolResult: {
+        writtenBack: true,
+        blockCount: 1,
+        tokenCount: 8,
+        budgetGroup: "tool_result",
+      },
+    });
+
+    expect(trace.budgets?.byGroup).toEqual([
+      { group: "tool_result", tokenCount: 8 },
+    ]);
+  });
+
+  it("does not add tool result budget entries when no result was written back", () => {
+    const trace = mergeToolResultBudgetTrace({}, {
+      selection: {
+        transport: "text_protocol",
+        reasonCode: "explicit_override",
+      },
+      toolResult: {
+        writtenBack: false,
+        blockCount: 0,
+        tokenCount: 0,
+        budgetGroup: "tool_result",
+      },
+    });
+
+    expect(trace.budgets).toBeUndefined();
   });
 
   it("projects toolTransport into preview traces", () => {

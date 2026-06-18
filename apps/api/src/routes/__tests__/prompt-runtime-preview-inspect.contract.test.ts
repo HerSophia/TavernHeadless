@@ -406,7 +406,89 @@ describe("prompt-runtime preview and inspect routes", () => {
       },
     });
   });
+
+  it("redacts restricted injection content on inspect by default and exposes it on explicit request", async () => {
+    const built = await buildPromptRuntimeRouteApp({ inspectResult: createRestrictedInspectResult() });
+
+    const redactedResponse = await built.app.inject({
+      method: "POST",
+      url: "/sessions/session-1/prompt-runtime/inspect",
+      headers: { "x-account-id": DEFAULT_ADMIN_ACCOUNT_ID },
+      payload: { message: "Inspect please" },
+    });
+
+    expect(redactedResponse.statusCode, redactedResponse.body).toBe(200);
+    const redacted = redactedResponse.json().data;
+    expect(redacted.injections[0]).toMatchObject({
+      source_kind: "agent_injection",
+      visibility: "agent_private",
+      title: null,
+      source_chain: null,
+      restricted: true,
+      applied: true,
+      placement_resolved: "history.after",
+    });
+    expect(redacted.prepared_turn.runtime_trace.injection.items[0]).toMatchObject({
+      visibility: "agent_private",
+      title: null,
+      restricted: true,
+    });
+
+    const fullResponse = await built.app.inject({
+      method: "POST",
+      url: "/sessions/session-1/prompt-runtime/inspect",
+      headers: { "x-account-id": DEFAULT_ADMIN_ACCOUNT_ID },
+      payload: { message: "Inspect please", include_restricted_injection_content: true },
+    });
+
+    expect(fullResponse.statusCode, fullResponse.body).toBe(200);
+    const full = fullResponse.json().data;
+    expect(full.injections[0]).toMatchObject({
+      source_kind: "agent_injection",
+      visibility: "agent_private",
+      title: "Internal agent plan",
+      source_chain: { agent_type_id: "draft_assistant" },
+      restricted: false,
+    });
+    expect(full.prepared_turn.runtime_trace.injection.items[0]).toMatchObject({
+      title: "Internal agent plan",
+      restricted: false,
+    });
+  });
 });
+
+function createRestrictedInspectResult(): PromptRuntimeInspectResult {
+  const base = createInspectResult();
+  const restrictedItem = {
+    requestIndex: 0,
+    sourceKind: "agent_injection",
+    visibility: "agent_private" as const,
+    enabled: true,
+    scope: "request" as const,
+    placementRequested: "after_history",
+    orderRequested: 100,
+    title: "Internal agent plan",
+    contentLength: 18,
+    tokenCount: 6,
+    budgetGroup: "injection",
+    budgetStatus: "within_budget" as const,
+    applied: true,
+    placementResolved: "history.after",
+    anchorResolved: { kind: "section" as const, internalKey: "history.after" },
+    sourceChain: { agentTypeId: "draft_assistant" },
+  };
+  return {
+    ...base,
+    injections: [restrictedItem],
+    preparedTurn: {
+      ...base.preparedTurn,
+      runtimeTrace: {
+        ...base.preparedTurn.runtimeTrace,
+        injection: { items: [restrictedItem] },
+      },
+    },
+  } as PromptRuntimeInspectResult;
+}
 
 async function buildPromptRuntimeRouteApp(input: {
   previewResult?: PromptRuntimePreviewResult;
@@ -667,6 +749,7 @@ function createInjectionTraceItems() {
   return [{
     requestIndex: 0,
     sourceKind: "client_injection",
+    visibility: "client" as const,
     enabled: true,
     scope: "request" as const,
     placementRequested: "before_history",

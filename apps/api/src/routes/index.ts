@@ -38,6 +38,7 @@ import { registerProjectRoutes } from "./projects.js";
 import { registerWorkspaceRoutes } from "./workspaces.js";
 import { registerProjectAgentBindingRoutes } from "./project-agent-bindings.js";
 import { registerProjectAgentJobRoutes } from "./project-agent-jobs.js";
+import { registerNodeGraphRoutes } from "./node-graphs.js";
 import { registerVcTagRoutes } from "./vc-tags.js";
 import type { AccountMode } from "../accounts/constants.js";
 
@@ -57,6 +58,8 @@ export interface CrudRoutesOptions {
   floorRun?: FloorRunServiceOptions;
   projectEventLiveHub?: ProjectEventLiveHub;
   sessionStateObservationService?: SessionStateObservationService;
+  /** R6-3（缺口 7）：NodeGraph worker 是否启用，仅用于 /run 响应的运维提示。 */
+  nodeGraphWorkerEnabled?: boolean;
 }
 
 export async function registerCrudRoutes(
@@ -82,6 +85,9 @@ export async function registerCrudRoutes(
   await registerWorkspaceRoutes(app, connection);
   await registerProjectAgentBindingRoutes(app, connection);
   await registerProjectAgentJobRoutes(app, connection);
+  await registerNodeGraphRoutes(app, connection, {
+    workerEnabled: options.nodeGraphWorkerEnabled === true,
+  });
   await registerCharacterRoutes(app, connection);
   await registerFloorRoutes(app, connection, {
     floorRun: options.floorRun,

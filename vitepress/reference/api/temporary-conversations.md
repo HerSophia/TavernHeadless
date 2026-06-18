@@ -89,9 +89,24 @@ curl -X POST http://localhost:3000/temporary-conversations/temp_001/export \
 
 | 策略 | 说明 |
 | ---- | ---- |
-| `delete_on_finalize` | 默认策略。进入终态后标记为可清理 |
-| `ttl` | 创建时必须提供 `ttl_seconds`；到期后转为 `expired` |
-| `keep_for_debug` | 终态后继续保留 detail / transcript，供授权调用方按 id 读取 |
+| `delete_on_finalize` | 默认策略。进入终态后即可被保留清理（在审计宽限期后清理正文） |
+| `ttl` | 创建时必须提供 `ttl_seconds`；到期后转为 `expired`，随后可被保留清理 |
+| `keep_for_debug` | 终态后继续保留 detail / transcript 与正文，不被普通保留清理删除，供授权调用方按 id 读取 |
+
+### 保留清理（治理）
+
+临时对话的保留清理由通用运行时维护任务（`ENABLE_RUNTIME_MAINTENANCE=true`）周期执行，分两步：
+
+- **TTL 过期扫描**：把 `expires_at` 已过、仍处于 `active` 的 TTL 临时对话转为 `expired`。这一步是惰性过期之外的兜底，确保即使无人访问也会过期。
+- **终态正文清理**：对终态（`finalized` / `discarded` / `cancelled` / `expired`）且策略为 `delete_on_finalize` 或 `ttl` 的临时对话，在审计宽限期（`TEMPORARY_CONVERSATION_CLEANUP_GRACE_MS`）之后删除其消息正文，并写入 `cleaned_at`。会话行、floor / page 结构与生命周期时间戳保留，供审计；`keep_for_debug` 永不被这一步清理。
+
+清理动作只写入 `temporary_conversation.cleanup` 操作日志摘要（数量与去重统计），不写入任何正文。
+
+| 开关 | 默认 | 说明 |
+| ---- | ---- | ---- |
+| `ENABLE_RUNTIME_MAINTENANCE` | `false` | 启用通用运行时维护任务 |
+| `ENABLE_TEMPORARY_CONVERSATION_CLEANUP` | `true` | 维护任务中是否执行临时对话 TTL 过期与终态正文清理 |
+| `TEMPORARY_CONVERSATION_CLEANUP_GRACE_MS` | `0` | 进入终态到正文清理之间保留的审计宽限期（毫秒） |
 
 ## 响应格式说明
 
@@ -129,6 +144,7 @@ curl -X POST http://localhost:3000/temporary-conversations/temp_001/export \
 | `finalized_at` | `integer \| null` | finalize 时间 |
 | `discarded_at` | `integer \| null` | discard 时间 |
 | `cancelled_at` | `integer \| null` | cancel 时间 |
+| `cleaned_at` | `integer \| null` | 终态保留清理时间。非空表示正文已被维护任务清理，仅保留结构与审计摘要 |
 
 ### TemporaryConversationTranscript
 
@@ -206,7 +222,8 @@ POST /sessions/:id/temporary-conversations
     "expires_at": 1735691400000,
     "finalized_at": null,
     "discarded_at": null,
-    "cancelled_at": null
+    "cancelled_at": null,
+    "cleaned_at": null
   }
 }
 ```
@@ -522,6 +539,112 @@ GET /temporary-conversations/:id/transcript
 curl http://localhost:3000/temporary-conversations/temp_001/transcript
 ```
 
+## 调试 inspect（治理 / 审计）
+
+```http
+GET /temporary-conversations/:id/inspect
+```
+
+面向调试、审计与运维的聚合视图。它在一次请求里返回临时对话的元数据、来源快照引用、Agent 来源血缘、导出记录、保留清理状态和带可见性分层的 transcript。
+
+与公共详情 / transcript 不同，这个入口允许授权调用方查看 `visibility = internal` 的 agent-private 临时对话；普通详情 / transcript 入口仍对它们返回 `404`。
+
+### 可见性分层
+
+- 默认裁剪：当临时对话是 agent-private（`visibility = internal`，或带 Agent 来源血缘）时，transcript 的 `content` 会被裁剪为 `null`，并把消息标记 `restricted: true`；`agent_origin` 也返回 `null`。结构性字段（role、seq、page、floor、`content_length`）始终保留。
+- 显式取回：`include_agent_private=true` 仅在调用方对该临时对话拥有 `project.write`（owner）权限时生效，此时返回完整正文与 `agent_origin`，并写入 `temporary_conversation.transcript_inspect` 审计日志。权限不足时该参数被忽略，正文保持裁剪。
+- 非 agent-private（`client_visible` 且无 Agent 来源）的临时对话不裁剪。
+
+### 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `include_agent_private` | `"true" \| "false" \| "1" \| "0"` | 否 | 请求取回 agent-private 正文与来源血缘；仅在拥有 `project.write` 时生效 |
+
+### 成功响应 `200`
+
+```json
+{
+  "data": {
+    "conversation": { "id": "temp_001", "kind": "temporary", "status": "finalized", "cleaned_at": null },
+    "agent_private": true,
+    "transcript_restricted": true,
+    "source_snapshot": {
+      "digest": "sha256:...",
+      "source_session_id": "sess_main"
+    },
+    "agent_origin": null,
+    "cleanup": {
+      "cleaned": false,
+      "cleaned_at": null,
+      "retention_policy": "delete_on_finalize"
+    },
+    "transcript": {
+      "conversation_id": "temp_001",
+      "branch_id": "main",
+      "floors": [
+        {
+          "id": "floor_001",
+          "floor_no": 1,
+          "state": "committed",
+          "pages": [
+            {
+              "id": "page_001",
+              "page_kind": "mixed",
+              "messages": [
+                {
+                  "id": "msg_001",
+                  "seq": 0,
+                  "role": "user",
+                  "content": null,
+                  "content_length": 12,
+                  "content_format": "text",
+                  "is_hidden": false,
+                  "source": null,
+                  "restricted": true,
+                  "created_at": 1735689600000
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "exports": [
+      {
+        "staged_write_id": "stw_001",
+        "delivery_target": "page_staged_write",
+        "target_session_id": "sess_main",
+        "target_page_id": "page_target_1",
+        "source_page_id": "page_tmp_output_1",
+        "status": "staged",
+        "reason": "候选草稿",
+        "created_at": 1735689600000,
+        "updated_at": 1735689600000,
+        "applied_at": null,
+        "discarded_at": null
+      }
+    ]
+  }
+}
+```
+
+`conversation` 字段沿用 `TemporaryConversationResource`（含 `cleaned_at`），示例里只展示了关键字段。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `403` | `project_access_denied` | 没有读取权限 |
+| `404` | `conversation_not_found` | 资源不存在，或按成员规则对当前账号隐藏 |
+| `409` | `project_archived` | 关联 Project 已归档 |
+
+### 示例
+
+```bash
+curl 'http://localhost:3000/temporary-conversations/temp_001/inspect?include_agent_private=true'
+```
+
 ## finalize
 
 ```http
@@ -673,6 +796,8 @@ curl -X POST http://localhost:3000/temporary-conversations/temp_001/export \
 - `temporary_conversation.cancelled`
 - `temporary_conversation.exported`
 - `temporary_conversation.expired`
+- `temporary_conversation.transcript_inspect`（仅在 inspect 取回 agent-private 正文时写入）
+- `temporary_conversation.cleanup`（保留清理维护任务写入的摘要）
 
 第一方 SDK 对应入口如下：
 
@@ -683,6 +808,7 @@ curl -X POST http://localhost:3000/temporary-conversations/temp_001/export \
 - `client.temporaryConversations.respond(...)`
 - `client.temporaryConversations.respondStream(...)`
 - `client.temporaryConversations.getTranscript(...)`
+- `client.temporaryConversations.inspect(...)`
 - `client.temporaryConversations.finalize(...)`
 - `client.temporaryConversations.discard(...)`
 - `client.temporaryConversations.cancel(...)`

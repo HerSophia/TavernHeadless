@@ -6,7 +6,13 @@ outline: [2, 3]
 
 这组接口用于查看和管理某个 Project 下的后台 Agent 作业（`agent.run`）。它是面向高级开发者的运维视图，不是普通聊天界面接口。
 
+各类后台作业共享的状态、轮询、重试与取消语义见 [Background Jobs（后台作业）](./background-jobs)。
+
 后台 Agent 作业由两种方式产生：事件自动触发（见 [Agent Bindings](./project-agent-bindings)）或手动 run。作业进入 Background Job Runtime 串行执行，这组接口让你按 Project 维度查询作业状态、错误，以及取消尚未运行的作业。
+
+::: warning Worker 启用条件
+作业入队不等于已经开始执行。后台 Agent 的真实消费依赖 API 进程启用 `ENABLE_AGENT_RUNTIME_WORKER=true`。未启用时，事件触发或手动 run 仍会创建 `pending` 作业，TaskBoard 也能看到这些作业，但不会有 worker 拉取并执行。
+:::
 
 ## 什么时候需要看这页
 
@@ -89,6 +95,8 @@ GET /projects/:id/agent-jobs
 ```
 
 需要 `project.agent.read` 权限。只返回属于该 Project 的后台 Agent作业。
+
+当前公开列表接口是 flat list：同一个 Agent Binding 或同一个 source event 触发的多条作业会逐条返回，不在 HTTP 响应中合并。服务层保留了按 `source_event_id` / `agent_binding_id` 聚合的最小 helper，供后续 UI 或治理阶段接入。
 
 ### 查询参数
 

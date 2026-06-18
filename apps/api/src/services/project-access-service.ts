@@ -41,7 +41,11 @@ export type ProjectAction =
   | "project.agent.manage"
   | "project.agent.run"
   | "project.config.read"
-  | "project.config.write";
+  | "project.config.write"
+  | "project.nodegraph.read"
+  | "project.nodegraph.write"
+  | "project.nodegraph.manage"
+  | "project.nodegraph.run";
 
 export type ProjectAccessProject = {
   id: string;
@@ -468,6 +472,7 @@ const OBSERVER_ALLOWED_ACTIONS: ReadonlySet<ProjectAction> =new Set([
   "session.read_committed_messages",
   "project.agent.read",
   "project.config.read",
+  "project.nodegraph.read",
 ]);
 
 const DERIVER_ALLOWED_ACTIONS: ReadonlySet<ProjectAction> = new Set([
@@ -481,6 +486,8 @@ const DERIVER_ALLOWED_ACTIONS: ReadonlySet<ProjectAction> = new Set([
   "session.read_committed_messages",
   "project.agent.read",
   "project.config.read",
+  "project.nodegraph.read",
+  "project.nodegraph.run",
 ]);
 
 function legacyAccountActor(actorAccountId: string): ProjectActorInput {

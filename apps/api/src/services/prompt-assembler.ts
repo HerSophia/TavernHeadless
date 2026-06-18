@@ -85,6 +85,7 @@ import {
   type PromptRuntimeRegexPhaseRuntimeResult,
 } from "./prompt-runtime/regex/index.js";
 import { buildPromptRuntimeMemoryTrace } from "./memory/shared/index.js";
+import { PROMPT_RUNTIME_INJECTION_BUDGET_GROUP } from "./prompt-runtime/injection-governance.js";
 
 import {
   resolvePromptSourceGates,
@@ -891,6 +892,10 @@ export async function assemblePrompt(
       sourceKind: contributor.sourceKind,
       title: contributor.title.trim(),
       content: contributor.content.trim(),
+      ...(contributor.budgetGroup ? { budgetGroup: contributor.budgetGroup } : {}),
+      ...(contributor.sourceKind === "tool_list"
+        ? { budgetGroup: "tool_list" }
+        : {}),
     }))
     .filter((contributor) => contributor.title.length > 0 && contributor.content.length > 0);
   const structuredPromptRuntimeInjectionContributors = assemblyContributors
@@ -1161,6 +1166,28 @@ export async function assemblePrompt(
         depth: 0,
         substitutionContext: regexSubstitutionContext,
       }).text;
+    };
+  }
+
+  const toolListCompatStrictTokenCount = promptSnapshot.promptMode === "compat_strict"
+    ? legacyContributorRenderables
+      .filter((contributor) => contributor.sourceKind === "tool_list")
+      .reduce((sum, contributor) => sum + tokenCounter.count(formatCompatStrictContributorContent(contributor)), 0)
+    : 0;
+  if (toolListCompatStrictTokenCount > 0) {
+    tokenUsageByGroup = {
+      ...tokenUsageByGroup,
+      tool_list: (tokenUsageByGroup?.tool_list ?? 0) + toolListCompatStrictTokenCount,
+    };
+  }
+
+  const fallbackInjectionTokenCount = finalInjectionTraceItems
+    .filter((item) => item.applied && item.budgetGroup === PROMPT_RUNTIME_INJECTION_BUDGET_GROUP)
+    .reduce((sum, item) => sum + (item.tokenCount ?? 0), 0);
+  if (fallbackInjectionTokenCount > 0 && (tokenUsageByGroup?.[PROMPT_RUNTIME_INJECTION_BUDGET_GROUP] ?? 0) === 0) {
+    tokenUsageByGroup = {
+      ...tokenUsageByGroup,
+      [PROMPT_RUNTIME_INJECTION_BUDGET_GROUP]: fallbackInjectionTokenCount,
     };
   }
 
@@ -1599,7 +1626,7 @@ function createPromptRuntimeInjectionSection(args: {
   return {
     name: `clientInjection:${args.contributor.requestedPlacement}:${args.contributor.requestIndex + 1}`,
     order: args.order,
-    budgetGroup: "section:client_injection",
+    budgetGroup: PROMPT_RUNTIME_INJECTION_BUDGET_GROUP,
     pinned: false,
     ...(args.insertion ? { insertion: args.insertion } : {}),
     messages: [{

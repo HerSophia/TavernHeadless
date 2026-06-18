@@ -64,8 +64,12 @@ export type ToolCallParseDiagnosticReason =
   | 'tool_not_registered'
   | 'json_parse_failed'
   | 'missing_args_field'
+  | 'missing_call_id'
+  | 'missing_tool_name'
   | 'duplicate_call_id'
-  | 'malformed_block';
+  | 'malformed_block'
+  | 'malformed_attributes'
+  | 'invalid_tool_name';
 
 /**
  * 一条文本协议解析诊断。

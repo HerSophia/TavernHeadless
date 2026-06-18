@@ -12,6 +12,7 @@ export interface CompatPlusRenderableInjection {
   sourceKind: string;
   title: string;
   content: string;
+  budgetGroup?: string;
 }
 
 // ── 类型 ──────────────────────────────────────────────
@@ -98,6 +99,7 @@ function createRenderableSections(
 
       const governance = resolvePromptRuntimeGovernancePolicy({
         sourceKind: injection.sourceKind,
+        budgetGroup: injection.budgetGroup,
         fallback: { budgetGroup: `section:${injection.title}`, pinned: false, prunable: false },
       });
       nextSections.push({

@@ -108,11 +108,13 @@ const promptRuntimeInjectionRequest: PromptRuntimeInjectionInput = {
 const promptRuntimeInjectionPayload = {
   request_index: 0,
   source_kind: "client_injection",
+  visibility: "client",
   scope: "request",
   placement_requested: "before_history",
   order_requested: 30,
   title: "Client guide",
   content_length: 29,
+  budget_status: "within_budget",
   applied: true,
   placement_resolved: "history.before",
 } as const;
@@ -120,11 +122,13 @@ const promptRuntimeInjectionPayload = {
 const promptRuntimeInjectionResult: PromptRuntimeInjectionResult = {
   requestIndex: 0,
   sourceKind: "client_injection",
+  visibility: "client",
   scope: "request",
   placementRequested: "before_history",
   orderRequested: 30,
   title: "Client guide",
   contentLength: 29,
+  budgetStatus: "within_budget",
   applied: true,
   placementResolved: "history.before",
 };
@@ -230,13 +234,41 @@ const toolTransportPayload = {
   tool_list: {
     injected: true,
     contributor_id: "builtin:tool_list",
+    placement_mode: "contributor_chain",
     tool_count: 2,
+    token_count: 96,
+    budget_group: "tool_list",
   },
+  tool_choice_applied: false,
+  streaming_tool_call_unsupported: true,
   parsing: {
-    block_count: 1,
+    block_count: 3,
     accepted_count: 1,
-    rejected_count: 0,
-    diagnostics: [],
+    rejected_count: 2,
+    diagnostics: [
+      {
+        call_id: null,
+        tool_name: "roll_dice",
+        reason: "missing_call_id",
+        excerpt: "<tool_call name=\"roll_dice\">...</tool_call>",
+      },
+      {
+        call_id: "missing-name",
+        tool_name: null,
+        reason: "missing_tool_name",
+        excerpt: "<tool_call id=\"missing-name\">...</tool_call>",
+      },
+    ],
+    diagnostics_by_reason: {
+      missing_call_id: 1,
+      missing_tool_name: 1,
+    },
+  },
+  tool_result: {
+    written_back: true,
+    block_count: 1,
+    token_count: 128,
+    budget_group: "tool_result",
   },
 } as const;
 
@@ -249,13 +281,41 @@ const toolTransport = {
   toolList: {
     injected: true,
     contributorId: "builtin:tool_list",
+    placementMode: "contributor_chain",
     toolCount: 2,
+    tokenCount: 96,
+    budgetGroup: "tool_list",
   },
+  toolChoiceApplied: false,
+  streamingToolCallUnsupported: true,
   parsing: {
-    blockCount: 1,
+    blockCount: 3,
     acceptedCount: 1,
-    rejectedCount: 0,
-    diagnostics: [],
+    rejectedCount: 2,
+    diagnostics: [
+      {
+        callId: null,
+        toolName: "roll_dice",
+        reason: "missing_call_id",
+        excerpt: "<tool_call name=\"roll_dice\">...</tool_call>",
+      },
+      {
+        callId: "missing-name",
+        toolName: null,
+        reason: "missing_tool_name",
+        excerpt: "<tool_call id=\"missing-name\">...</tool_call>",
+      },
+    ],
+    diagnosticsByReason: {
+      missing_call_id: 1,
+      missing_tool_name: 1,
+    },
+  },
+  toolResult: {
+    writtenBack: true,
+    blockCount: 1,
+    tokenCount: 128,
+    budgetGroup: "tool_result",
   },
 } as const;
 
