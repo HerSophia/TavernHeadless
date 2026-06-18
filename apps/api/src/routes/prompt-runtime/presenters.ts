@@ -10,7 +10,9 @@ import {
   mapPromptRuntimeHistoryNormalizationToSnakeCase,
   mapPromptRuntimeMemoryTraceToSnakeCase,
   mapRuntimeTraceToSnakeCase,
+  type RuntimeTracePresentationOptions,
 } from "../chat/presenters.js";
+import { shouldRedactInjectionContent } from "../../services/prompt-runtime/injection-governance.js";
 import { mapModeViewToSnakeCase } from "./mappers.js";
 
 function toSnakeCaseName(value: string): string {
@@ -110,23 +112,32 @@ function mapPreparePhaseTraceEntryToSnakeCase(
 
 function mapInjectionItemToSnakeCase(
   item: PromptRuntimeInjectionTraceItem,
+  options?: RuntimeTracePresentationOptions,
 ): Record<string, unknown> {
+  const redacted = shouldRedactInjectionContent(item.visibility, {
+    includeRestrictedContent: options?.includeRestrictedInjectionContent === true,
+  });
   return {
     request_index: item.requestIndex,
     source_kind: item.sourceKind,
+    visibility: item.visibility,
     injection_id: item.injectionId ?? null,
     enabled: item.enabled ?? null,
     scope: item.scope,
     placement_requested: item.placementRequested,
     placement_params_requested: mapInjectionPlacementParamsToSnakeCase(item.placementParamsRequested),
     order_requested: item.orderRequested,
-    title: item.title,
+    title: redacted ? null : item.title,
     content_length: item.contentLength,
+    token_count: item.tokenCount ?? null,
+    budget_group: item.budgetGroup ?? null,
+    budget_status: item.budgetStatus ?? null,
     applied: item.applied,
     placement_resolved: item.placementResolved ?? null,
     anchor_resolved: mapInjectionAnchorToSnakeCase(item.anchorResolved),
-    source_chain: mapInjectionSourceChainToSnakeCase(item.sourceChain),
+    source_chain: redacted ? null : mapInjectionSourceChainToSnakeCase(item.sourceChain),
     not_applied_reason: item.notAppliedReason ?? null,
+    restricted: redacted,
   };
 }
 
@@ -199,14 +210,17 @@ function mapInjectionSourceChainToSnakeCase(
   };
 }
 
-function mapPreparedTurnToSnakeCase(result: PromptRuntimeInspectResult["preparedTurn"]): Record<string, unknown> {
+function mapPreparedTurnToSnakeCase(
+  result: PromptRuntimeInspectResult["preparedTurn"],
+  options?: RuntimeTracePresentationOptions,
+): Record<string, unknown> {
   return {
     messages: result.messages,
     token_estimate: result.tokenEstimate,
     available_for_reply: result.availableForReply,
     preprocessed_user_message: result.preprocessedUserMessage ?? null,
     prompt_snapshot: result.promptSnapshot ? mapPromptSnapshotToSnakeCase(result.promptSnapshot) : null,
-    runtime_trace: result.runtimeTrace ? mapRuntimeTraceToSnakeCase(result.runtimeTrace) : null,
+    runtime_trace: result.runtimeTrace ? mapRuntimeTraceToSnakeCase(result.runtimeTrace, options) : null,
     ...(result.memoryInjection ? { memory_injection: mapMemoryInjectionResultToSnakeCase(result.memoryInjection) } : {}),
     memory_summary: result.memorySummary ?? null,
     ...(result.memory ? { memory: mapPromptRuntimeMemoryTraceToSnakeCase(result.memory) } : {}),
@@ -299,6 +313,7 @@ export function mapPromptRuntimeInjectionSummaryToSnakeCase(
 
 export function mapPromptRuntimeInspectResultToSnakeCase(
   result: PromptRuntimeInspectResult,
+  options?: RuntimeTracePresentationOptions,
 ): Record<string, unknown> {
   return {
     scope: mapScopeToSnakeCase(result.scope),
@@ -311,8 +326,22 @@ export function mapPromptRuntimeInspectResultToSnakeCase(
     excluded_sources: result.excludedSources.map((source) => mapExcludedSourceToSnakeCase(source)),
     section_stats: result.sectionStats.map((stat) => mapSectionStatToSnakeCase(stat)),
     limitations: result.limitations,
-    injections: (result.injections ?? []).map((item) => mapInjectionItemToSnakeCase(item)),
-    prepared_turn: mapPreparedTurnToSnakeCase(result.preparedTurn),
+    injections: (result.injections ?? []).map((item) => mapInjectionItemToSnakeCase(item, options)),
+    injection_summary: buildInjectionSummary(result.injections ?? []),
+    prepared_turn: mapPreparedTurnToSnakeCase(result.preparedTurn, options),
     governance: mapGovernanceViewToSnakeCase(result.governance),
+  };
+}
+
+function buildInjectionSummary(
+  items: NonNullable<PromptRuntimeInspectResult["injections"]>,
+): Record<string, unknown> {
+  const applied = items.filter((item) => item.applied);
+  return {
+    requested_count: items.length,
+    applied_count: applied.length,
+    rejected_count: items.length - applied.length,
+    token_count: applied.reduce((sum, item) => sum + (item.tokenCount ?? 0), 0),
+    budget_group: applied.find((item) => item.budgetGroup)?.budgetGroup ?? null,
   };
 }

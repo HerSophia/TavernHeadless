@@ -156,17 +156,30 @@ outline: [2, 3]
 
 - `request_index`
 - `source_kind`
+- `visibility`
 - `scope`
 - `placement_requested`
 - `placement_params_requested`
 - `order_requested`
 - `title`
 - `content_length`
+- `token_count`
+- `budget_group`
+- `budget_status`
 - `applied`
 - `placement_resolved`
 - `anchor_resolved`
 - `source_chain`
 - `not_applied_reason`
+- `restricted`
+
+`runtime_trace.injection` 还会返回汇总字段：
+
+- `requested_count`
+- `applied_count`
+- `rejected_count`
+- `token_count`
+- `budget_group`
 
 当前公开边界固定为：
 
@@ -181,6 +194,13 @@ outline: [2, 3]
 - `anchor_resolved` 是解析后的锚点描述，例如 `{ "kind": "section", "internal_key": "history.before" }` 或 `{"kind": "floor_by_no", "floor_no": 12, "edge": "before" }`，不暴露内部数字顺序；无法解析时为 `null`
 - `source_chain` 是来源链。客户端来源的 injection该字段为 `null`
 
+`visibility`、`budget_status`、`restricted` 是阶段 6 的可见性治理字段：
+
+- `visibility` 由 `source_kind` 推导，取值 `client` / `agent_private` / `debug` / `system`
+- `budget_status` 为 `within_budget`、`rejected_by_item_limit` 或 `rejected_by_total_limit`；尚未进入预算判定时为 `null`
+- `restricted` 为 `true` 时表示该条受限来源的 `title` 与 `source_chain` 已被裁剪为 `null`，其余结构字段仍完整保留
+- 默认对 `agent_private` / `debug` / `system` 来源裁剪正文。请求体传 `include_restricted_injection_content: true` 可取回完整正文（owner 调试用途），此时这些条目的 `restricted` 为 `false`
+
 `not_applied_reason` 当前可能为：
 
 - `placement_not_available_in_mode`
@@ -190,6 +210,10 @@ outline: [2, 3]
 - `disabled`
 - `mode_scope_mismatch`
 - `expired`
+- `scope_quota_exceeded`
+- `content_length_exceeded`
+- `content_token_limit_exceeded`
+- `total_token_limit_exceeded`
 - `missing_placement_params`
 - `invalid_placement_params`
 - `floor_no_out_of_history_window`
@@ -223,6 +247,8 @@ outline: [2, 3]
   - `before_contributor_block` / `after_contributor_block`
 
 `placement_params` 的字段集合固定为 `floor_no`、`offset`、`depth`，均为可选非负整数。需要参数的 placement在缺参数或参数非法时不会生效，并在 `not_applied_reason` 给出明确原因；楼层越出历史窗口时同样不生效并标注原因，不会抛错，也不会被静默丢弃。
+
+I4 阶段开始，injection 进入预算与限额治理：单次请求最多 32 条，session / branch 持久作用域各最多 128 条，单条 `title` 最多 256 字符，单条 `content` 最多 8000 字符，单条 `content` 最多 2000 token，本次实际生效的 injection `content` 合计最多 4000 token。超出限制时不会进入组装，trace 会用 `scope_quota_exceeded`、`content_length_exceeded`、`content_token_limit_exceeded` 或 `total_token_limit_exceeded` 标明原因。
 
 这组字段用于回答两个问题：
 

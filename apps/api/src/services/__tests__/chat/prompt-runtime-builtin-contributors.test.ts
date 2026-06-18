@@ -171,6 +171,7 @@ describe("prompt-runtime-builtin-contributors", () => {
       payload: {
         transport: "text_protocol",
         toolNames: ["roll_dice"],
+        budgetGroup: "tool_list",
       },
       promptRenderable: {
         title: "Tool list",

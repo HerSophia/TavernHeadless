@@ -282,6 +282,7 @@ export const sessions = sqliteTable(
     finalizedAt: integer("finalized_at"),
     discardedAt: integer("discarded_at"),
     cancelledAt: integer("cancelled_at"),
+    cleanedAt: integer("cleaned_at"),
     lastActivityAt: integer("last_activity_at").notNull().default(0),
     presetId: text("preset_id"),
     regexProfileId: text("regex_profile_id"),
@@ -1470,6 +1471,102 @@ export const runtimeJobs = sqliteTable(
     agentBindingStatusIdx: index("runtime_job_agent_binding_status_idx").on(table.agentBindingId, table.status, table.availableAt),
     projectStatusIdx: index("runtime_job_project_status_idx").on(table.projectId, table.status, table.availableAt),
     sourceEventIdx: index("runtime_job_source_event_idx").on(table.sourceEventId),
+  })
+);
+
+export const nodeGraphDefinitions = sqliteTable(
+  "node_graph_definition",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "restrict" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    currentVersionId: text("current_version_id"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectStatusUpdatedIdx: index("node_graph_definition_project_status_updated_idx").on(
+      table.projectId,
+      table.status,
+      table.updatedAt,
+    ),
+    workspaceUpdatedIdx: index("node_graph_definition_workspace_updated_idx").on(table.workspaceId, table.updatedAt),
+  })
+);
+
+export const nodeGraphVersions = sqliteTable(
+  "node_graph_version",
+  {
+    id: text("id").primaryKey(),
+    graphId: text("graph_id").notNull().references(() => nodeGraphDefinitions.id, { onDelete: "cascade" }),
+    versionNo: integer("version_no").notNull(),
+    documentJson: text("document_json").notNull(),
+    documentHash: text("document_hash").notNull(),
+    parentVersionId: text("parent_version_id").references((): AnySQLiteColumn => nodeGraphVersions.id, { onDelete: "set null" }),
+    operationLogId: text("operation_log_id").references(() => operationLogs.id, { onDelete: "set null" }),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => ({
+    graphNoUnique: uniqueIndex("node_graph_version_graph_no_uq").on(table.graphId, table.versionNo),
+    graphCreatedIdx: index("node_graph_version_graph_created_idx").on(table.graphId, table.createdAt),
+  })
+);
+
+export const nodeGraphRuns = sqliteTable(
+  "node_graph_run",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    floorId: text("floor_id").references(() => floors.id, { onDelete: "set null" }),
+    pageId: text("page_id").references(() => messagePages.id, { onDelete: "set null" }),
+    graphId: text("graph_id").notNull().references(() => nodeGraphDefinitions.id, { onDelete: "restrict" }),
+    graphVersionId: text("graph_version_id").notNull().references(() => nodeGraphVersions.id, { onDelete: "restrict" }),
+    intent: text("intent", { enum: ["normal", "dry_run", "regenerate", "preview"] }).notNull(),
+    status: text("status", { enum: ["running", "succeeded", "failed", "cancelled"] }).notNull(),
+    traceJson: text("trace_json"),
+    /** R6-3（缺口 5）：终态 run 正文清理时间戳；null 表示尚未清理，非 null 表示 node run 正文已裁剪。 */
+    cleanedAt: integer("cleaned_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectStatusCreatedIdx: index("node_graph_run_project_status_created_idx").on(
+      table.projectId,
+      table.status,
+      table.createdAt,
+    ),
+    graphCreatedIdx: index("node_graph_run_graph_created_idx").on(table.graphId, table.createdAt),
+    statusCleanedCreatedIdx: index("node_graph_run_status_cleaned_created_idx").on(
+      table.status,
+      table.cleanedAt,
+      table.createdAt,
+    ),
+  })
+);
+
+export const nodeGraphNodeRuns = sqliteTable(
+  "node_graph_node_run",
+  {
+    id: text("id").primaryKey(),
+    graphRunId: text("graph_run_id").notNull().references(() => nodeGraphRuns.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    phase: text("phase").notNull(),
+    status: text("status", { enum: ["skipped", "running", "succeeded", "failed", "reused"] }).notNull(),
+    inputHash: text("input_hash"),
+    outputHash: text("output_hash"),
+    previewJson: text("preview_json"),
+    diagnosticsJson: text("diagnostics_json"),
+    startedAt: integer("started_at"),
+    finishedAt: integer("finished_at"),
+  },
+  (table) => ({
+    graphNodeIdx: index("node_graph_node_run_graph_node_idx").on(table.graphRunId, table.nodeId),
   })
 );
 

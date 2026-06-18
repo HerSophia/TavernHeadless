@@ -280,6 +280,7 @@ export interface BuildNativeContributorNodeInput {
   title: string;
   content: string;
   order: number;
+  budgetGroup?: string;
 }
 
 export function buildNativeContributorNodes(
@@ -293,7 +294,7 @@ export function buildNativeContributorNodes(
         return null;
       }
 
-      return createContributorNode({
+      const node = createContributorNode({
         id: `native:contributor:${input.sourceKind}:${index + 1}`,
         name: input.sourceKind === 'state_projection' ? 'State Projection' : `Contributor ${input.sourceKind}`,
         sourceKind: input.sourceKind,
@@ -301,6 +302,10 @@ export function buildNativeContributorNodes(
         content,
         order: input.order,
       });
+
+      return input.budgetGroup
+        ? { ...node, metadata: { ...node.metadata, budgetGroup: input.budgetGroup } }
+        : node;
     })
     .filter((node): node is PromptNode => node !== null);
 }

@@ -967,6 +967,34 @@ describe("TurnCommitService", () => {
         completionTokens: 34,
         totalTokens: 55,
       },
+      toolTransport: {
+        selection: { transport: "text_protocol", reasonCode: "explicit_override" },
+        toolList: {
+          injected: true,
+          contributorId: "builtin:tool_list",
+          toolCount: 1,
+          tokenCount: 96,
+          budgetGroup: "tool_list",
+        },
+        parsing: {
+          blockCount: 2,
+          acceptedCount: 1,
+          rejectedCount: 1,
+          diagnostics: [{
+            callId: "bad",
+            toolName: "missing_tool",
+            reason: "tool_not_registered",
+            excerpt: "SECRET_TOOL_CALL_EXCERPT",
+          }],
+          diagnosticsByReason: { tool_not_registered: 1 },
+        },
+        toolResult: {
+          writtenBack: true,
+          blockCount: 1,
+          tokenCount: 128,
+          budgetGroup: "tool_result",
+        },
+      },
     };
 
     const promptSnapshot: PromptSnapshotRecord = {
@@ -1072,11 +1100,47 @@ describe("TurnCommitService", () => {
     }));
     expect((log.diff as { total_changes?: number } | null)?.total_changes).toBeGreaterThan(0);
 
-    const serializedLogs = JSON.stringify(logs);
+    const toolTransportLogs = new OperationLogService(database.db).list({
+      accountId: DEFAULT_ACCOUNT_ID,
+      sessionId,
+      floorId,
+      action: "tool_transport.tool_result_writeback",
+      sortOrder: "asc",
+    }).rows;
+    expect(toolTransportLogs).toHaveLength(1);
+    expect(toolTransportLogs[0]).toMatchObject({
+      sourceType: "tool_transport",
+      status: "succeeded",
+      targetType: "tool_result_prompt",
+      runId,
+    });
+
+    const parseFailureLogs = new OperationLogService(database.db).list({
+      accountId: DEFAULT_ACCOUNT_ID,
+      sessionId,
+      floorId,
+      action: "tool_transport.parse_failed",
+      sortOrder: "asc",
+    }).rows;
+    expect(parseFailureLogs).toHaveLength(1);
+    expect(parseFailureLogs[0]).toMatchObject({
+      sourceType: "tool_transport",
+      status: "failed",
+      reason: "tool_not_registered",
+      targetType: "tool_transport_parse",
+      runId,
+    });
+
+    const serializedLogs = JSON.stringify([
+      ...logs,
+      ...toolTransportLogs,
+      ...parseFailureLogs,
+    ]);
     expect(serializedLogs).not.toContain("SECRET_LLM_OUTPUT");
     expect(serializedLogs).not.toContain("SECRET_LLM_SUMMARY");
     expect(serializedLogs).not.toContain("SECRET_TOOL_ARGS");
     expect(serializedLogs).not.toContain("SECRET_TOOL_RESULT");
+    expect(serializedLogs).not.toContain("SECRET_TOOL_CALL_EXCERPT");
   });
 
 

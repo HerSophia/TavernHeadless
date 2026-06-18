@@ -27,6 +27,7 @@ Workspace 和 Project 是账号下的两层组织边界。Workspace 用于归拢
 | Inbox | `/projects/:id/inbox` | 保存待 owner 决策的收件箱条目 | [Project Inbox](./projects-inbox) |
 | Agent Types | `/workspaces/:id/agent-types` | Workspace 级 Agent 模板定义 | [Agent Types](./agent-types) |
 | Agent Bindings | `/projects/:id/agent-bindings` | Project 级 Agent 启用与手动触发 | [Project Agent Bindings](./project-agent-bindings) |
+| NodeGraph Runtime | `/projects/:id/node-graphs` | Project 级图定义、版本、预览、后台运行与 trace | [NodeGraph Runtime](./node-graphs) |
 | Settings | `/projects/:id/settings/*` | Project 级 LLM / MCP / Tool Policy 覆盖 | [Project Settings](./project-settings) |
 | Effective Config | `/projects/:id/effective-config`、`/sessions/:id/effective-config` | 只读生效配置视图 | [Effective Config](./effective-config) |
 | Session 归属 | `POST /sessions` 的可选 `project_id`、`GET /sessions/:id/scope` | 创建会话时指定 Project，读取会话归属 | 本页[兼容规则](#兼容规则) |
@@ -40,6 +41,7 @@ Workspace 和 Project 是账号下的两层组织边界。Workspace 用于归拢
 | 给 owner 留待决策的建议 | [Project Inbox](./projects-inbox) |
 | 定义一个可复用的 Agent 模板 | [Agent Types](./agent-types) |
 | 在某个 Project 中启用 Agent | [Project Agent Bindings](./project-agent-bindings) |
+| 定义、预览或后台运行 NodeGraph | [NodeGraph Runtime](./node-graphs) |
 | 给某个 Project 单独换模型或工具策略 | [Project Settings](./project-settings) |
 | 看某个 Project / Session 最终生效的配置 | [Effective Config](./effective-config) |
 
