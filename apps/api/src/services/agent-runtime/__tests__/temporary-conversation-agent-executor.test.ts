@@ -50,6 +50,7 @@ function makeHandle(): TemporaryConversationHandle {
     finalizedAt: null,
     discardedAt: null,
     cancelledAt: null,
+    cleanedAt: null,
   };
 }
 

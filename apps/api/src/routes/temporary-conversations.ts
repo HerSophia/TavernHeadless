@@ -21,10 +21,14 @@ import { TemporaryConversationError } from "../services/temporary-conversation-e
 import { TemporaryConversationService } from "../services/temporary-conversation-service.js";
 import {
   TEMPORARY_CONVERSATION_BRANCH_ID,
+  type TemporaryConversationAgentOrigin,
   type TemporaryConversationExportResult,
+  type TemporaryConversationInspect,
+  type TemporaryConversationInspectTranscriptFloor,
   type TemporaryConversationResource,
   type TemporaryConversationTranscript,
 } from "../services/temporary-conversation-types.js";
+import { GOVERNANCE_OPERATION_ACTIONS } from "../services/governance/operation-log-names.js";
 import { mapRunToSnakeCase, mapUsageToSnakeCase } from "./chat/presenters.js";
 import { writeSse } from "./chat/sse-writer.js";
 
@@ -256,6 +260,113 @@ const temporaryConversationTranscriptResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+const inspectQueryStringSchema = z.object({
+  include_agent_private: z.enum(["true", "false", "1", "0"]).optional(),
+}).strict();
+
+const inspectQueryStringJsonSchema = {
+  type: "object",
+  properties: {
+    include_agent_private: { type: "string", enum: ["true", "false", "1", "0"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const temporaryConversationInspectResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: [
+        "conversation",
+        "agent_private",
+        "transcript_restricted",
+        "source_snapshot",
+        "agent_origin",
+        "cleanup",
+        "transcript",
+        "exports",
+      ],
+      properties: {
+        conversation: temporaryConversationResourceJsonSchema,
+        agent_private: { type: "boolean" },
+        transcript_restricted: { type: "boolean" },
+        source_snapshot: {
+          type: "object",
+          required: ["digest", "source_session_id"],
+          properties: {
+            digest: { anyOf: [{ type: "string" }, { type: "null" }] },
+            source_session_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+          additionalProperties: false,
+        },
+        agent_origin: {
+          anyOf: [
+            { type: "object", additionalProperties: true },
+            { type: "null" },
+          ],
+        },
+        cleanup: {
+          type: "object",
+          required: ["cleaned", "cleaned_at", "retention_policy"],
+          properties: {
+            cleaned: { type: "boolean" },
+            cleaned_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+            retention_policy: { type: "string", enum: ["delete_on_finalize", "ttl", "keep_for_debug"] },
+          },
+          additionalProperties: false,
+        },
+        transcript: {
+          type: "object",
+          required: ["conversation_id", "branch_id", "floors"],
+          properties: {
+            conversation_id: { type: "string" },
+            branch_id: { type: "string" },
+            floors: { type: "array", items: { type: "object", additionalProperties: true } },
+          },
+          additionalProperties: true,
+        },
+        exports: {
+          type: "array",
+          items: {
+            type: "object",
+            required: [
+              "staged_write_id",
+              "delivery_target",
+              "target_session_id",
+              "target_page_id",
+              "source_page_id",
+              "status",
+              "reason",
+              "created_at",
+              "updated_at",
+              "applied_at",
+              "discarded_at",
+            ],
+            properties: {
+              staged_write_id: { type: "string" },
+              delivery_target: { type: "string", enum: ["page_staged_write"] },
+              target_session_id: { type: "string" },
+              target_page_id: { type: "string" },
+              source_page_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+              status: { type: "string", enum: ["staged", "accepted", "applied", "discarded"] },
+              reason: { anyOf: [{ type: "string" }, { type: "null" }] },
+              created_at: { type: "integer", minimum: 0 },
+              updated_at: { type: "integer", minimum: 0 },
+              applied_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+              discarded_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+            },
+            additionalProperties: false,
+          },
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
 const temporaryConversationExportResponseJsonSchema = {
   type: "object",
   required: ["data"],
@@ -338,6 +449,29 @@ export async function registerTemporaryConversationRoutes(
     sourceSessionId: string,
   ): boolean {
     return authorizeConversationAction(reply, request, sourceSessionId, "project.write");
+  }
+
+  function canViewAgentPrivateContent(
+    request: FastifyRequest,
+    conversationId: string,
+  ): boolean {
+    try {
+      projectAccessService.requireProjectActionBySessionIdForActor(
+        toActorInput(request),
+        conversationId,
+        "project.write",
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof ProjectAccessServiceError) {
+        // Single-account deployments have no Project scope; the caller is the trusted owner.
+        if (error.code === "session_project_scope_missing") {
+          return true;
+        }
+        return false;
+      }
+      throw error;
+    }
   }
 
   function authorizeProjectCreate(
@@ -893,6 +1027,62 @@ export async function registerTemporaryConversationRoutes(
     }
   });
 
+  app.get("/temporary-conversations/:id/inspect", {
+    schema: {
+      tags: ["temporary-conversations"],
+      summary: "Inspect a temporary conversation for debug and audit",
+      params: idParamsJsonSchema,
+      querystring: inspectQueryStringJsonSchema,
+      response: {
+        200: temporaryConversationInspectResponseJsonSchema,
+        404: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+    if (!authorizeConversationAction(reply, request, parsedParams.data.id, "project.read")) {
+      return;
+    }
+    const parsedQuery = parseWithSchema(inspectQueryStringSchema, request.query ?? {}, reply);
+    if (!parsedQuery.ok) return;
+
+    const requestedAgentPrivate = parseBooleanFlag(parsedQuery.data.include_agent_private);
+    const includeAgentPrivateContent = requestedAgentPrivate
+      && canViewAgentPrivateContent(request, parsedParams.data.id);
+
+    try {
+      const inspect = await temporaryConversationService.inspect({
+        accountId: getRequestAuthContext(request).accountId,
+        conversationId: parsedParams.data.id,
+        includeAgentPrivateContent,
+      });
+
+      if (inspect.agentPrivate && includeAgentPrivateContent) {
+        appendOperationLog(
+          request,
+          inspect.conversation,
+          GOVERNANCE_OPERATION_ACTIONS.temporaryConversation.inspectTranscript,
+          "temporary_conversation",
+          inspect.conversation.id,
+          {
+            route: "GET /temporary-conversations/:id/inspect",
+            include_agent_private: true,
+            export_count: inspect.exports.length,
+            cleaned: inspect.cleanup.cleaned,
+          },
+        );
+      }
+
+      return reply.code(200).send({ data: toTemporaryConversationInspectResponse(inspect) });
+    } catch (error) {
+      if (handleTemporaryConversationRouteError(reply, error)) {
+        return;
+      }
+      throw error;
+    }
+  });
+
   app.post("/temporary-conversations/:id/finalize", {
     schema: {
       tags: ["temporary-conversations"],
@@ -1233,6 +1423,95 @@ function toTemporaryConversationTranscriptResponse(transcript: TemporaryConversa
           source: message.source,
           created_at: message.createdAt,
         })),
+      })),
+    })),
+  };
+}
+
+function parseBooleanFlag(value: "true" | "false" | "1" | "0" | undefined): boolean {
+  return value === "true" || value === "1";
+}
+
+function toTemporaryConversationInspectResponse(inspect: TemporaryConversationInspect) {
+  return {
+    conversation: toTemporaryConversationResourceResponse(inspect.conversation),
+    agent_private: inspect.agentPrivate,
+    transcript_restricted: inspect.transcriptRestricted,
+    source_snapshot: {
+      digest: inspect.sourceSnapshot.digest,
+      source_session_id: inspect.sourceSnapshot.sourceSessionId,
+    },
+    agent_origin: inspect.agentOrigin ? toAgentOriginResponse(inspect.agentOrigin) : null,
+    cleanup: {
+      cleaned: inspect.cleanup.cleaned,
+      cleaned_at: inspect.cleanup.cleanedAt,
+      retention_policy: inspect.cleanup.retentionPolicy,
+    },
+    transcript: {
+      conversation_id: inspect.transcript.conversationId,
+      branch_id: inspect.transcript.branchId,
+      floors: inspect.transcript.floors.map(toInspectTranscriptFloorResponse),
+    },
+    exports: inspect.exports.map((record) => ({
+      staged_write_id: record.stagedWriteId,
+      delivery_target: record.deliveryTarget,
+      target_session_id: record.targetSessionId,
+      target_page_id: record.targetPageId,
+      source_page_id: record.sourcePageId,
+      status: record.status,
+      reason: record.reason,
+      created_at: record.createdAt,
+      updated_at: record.updatedAt,
+      applied_at: record.appliedAt,
+      discarded_at: record.discardedAt,
+    })),
+  };
+}
+
+function toAgentOriginResponse(origin: TemporaryConversationAgentOrigin): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  if (origin.sourceAgentRunId !== undefined) result.source_agent_run_id = origin.sourceAgentRunId;
+  if (origin.parentRunId !== undefined) result.parent_run_id = origin.parentRunId;
+  if (origin.rootRunId !== undefined) result.root_run_id = origin.rootRunId;
+  if (origin.sourceNodeRunId !== undefined) result.source_node_run_id = origin.sourceNodeRunId;
+  if (origin.sourcePageId !== undefined) result.source_page_id = origin.sourcePageId;
+  if (origin.sourceFloorId !== undefined) result.source_floor_id = origin.sourceFloorId;
+  if (origin.sourceSessionId !== undefined) result.source_session_id = origin.sourceSessionId;
+  if (origin.sourceAttemptNo !== undefined) result.source_attempt_no = origin.sourceAttemptNo;
+  return result;
+}
+
+function toInspectTranscriptFloorResponse(floor: TemporaryConversationInspectTranscriptFloor) {
+  return {
+    id: floor.id,
+    floor_no: floor.floorNo,
+    branch_id: floor.branchId,
+    parent_floor_id: floor.parentFloorId,
+    state: floor.state,
+    token_in: floor.tokenIn,
+    token_out: floor.tokenOut,
+    created_at: floor.createdAt,
+    updated_at: floor.updatedAt,
+    pages: floor.pages.map((page) => ({
+      id: page.id,
+      page_no: page.pageNo,
+      page_kind: page.pageKind,
+      is_active: page.isActive,
+      version: page.version,
+      checksum: page.checksum,
+      created_at: page.createdAt,
+      updated_at: page.updatedAt,
+      messages: page.messages.map((message) => ({
+        id: message.id,
+        seq: message.seq,
+        role: message.role,
+        content: message.content,
+        content_length: message.contentLength,
+        content_format: message.contentFormat,
+        is_hidden: message.isHidden,
+        source: message.source,
+        restricted: message.restricted,
+        created_at: message.createdAt,
       })),
     })),
   };

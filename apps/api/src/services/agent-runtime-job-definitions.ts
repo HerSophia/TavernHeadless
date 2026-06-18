@@ -44,6 +44,21 @@ const agentStepStateSchema = z.object({
   toolExecutionIds: z.array(z.string()).default([]),
 });
 
+/**
+ * B8-GOV R6-1 nested lineage（缺口 3）。
+ *
+ * 当后台 Agent 是被另一条运行（例如 NodeGraph run 的 `agent.call` 节点）入队时，
+ * 在 payload 上记录父级 run 引用，让运行 trace 查询能从 job 反查到父级 run。
+ * graph trace 侧已有 `nestedJobRefs(jobId)`（父 -> 子），本字段补齐子 -> 父方向。
+ */
+const agentRunLineageSchema = z.object({
+  rootRunId: z.string().min(1).nullable().optional(),
+  parentRunId: z.string().min(1).nullable().optional(),
+  parentRuntimeKind: z.string().min(1).nullable().optional(),
+});
+
+export type AgentRunLineage = z.infer<typeof agentRunLineageSchema>;
+
 export const agentRunJobPayloadSchema = z.object({
   accountId: z.string().min(1),
   workspaceId: z.string().min(1),
@@ -59,6 +74,7 @@ export const agentRunJobPayloadSchema = z.object({
   dryRun: z.boolean().default(true),
   inputJson: recordSchema.default({}),
   stepState: agentStepStateSchema.optional(),
+  lineage: agentRunLineageSchema.optional(),
   provenance: z.object({ triggerScope: z.enum(TOOL_EXECUTION_TRIGGER_SCOPE_VALUES) }).optional(),
 });
 

@@ -6,7 +6,7 @@ outline: [2, 3]
 
 `/backup-jobs/*` 这组接口负责观察和控制核心资产备份作业。
 
-这些接口直接投影 `runtime_job`，只显示 `scope_type = "backup"` 的作业。
+这些接口直接投影 `runtime_job`，只显示 `scope_type = "backup"` 的作业。如需统一了解各类后台作业的共享模型，先看 [Background Jobs（后台作业）](./background-jobs)。
 
 ## 什么时候需要看这页
 

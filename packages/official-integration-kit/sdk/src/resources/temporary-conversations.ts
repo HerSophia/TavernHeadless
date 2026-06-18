@@ -45,6 +45,7 @@ export type TemporaryConversationRecord = {
   finalizedAt: number | null;
   discardedAt: number | null;
   cancelledAt: number | null;
+  cleanedAt: number | null;
 };
 
 export type TemporaryConversationMessageInput = {
@@ -162,6 +163,97 @@ export type TemporaryConversationExportResult = {
   status: "staged";
 };
 
+export type TemporaryConversationInspectTranscriptMessage = {
+  id: string;
+  seq: number;
+  role: string;
+  content: string | null;
+  contentLength: number;
+  contentFormat: string;
+  isHidden: boolean;
+  source: string | null;
+  restricted: boolean;
+  createdAt: number;
+};
+
+export type TemporaryConversationInspectTranscriptPage = {
+  id: string;
+  pageNo: number;
+  pageKind: string;
+  isActive: boolean;
+  version: number;
+  checksum: string | null;
+  createdAt: number;
+  updatedAt: number;
+  messages: TemporaryConversationInspectTranscriptMessage[];
+};
+
+export type TemporaryConversationInspectTranscriptFloor = {
+  id: string;
+  floorNo: number;
+  branchId: string;
+  parentFloorId: string | null;
+  state: string;
+  tokenIn: number;
+  tokenOut: number;
+  createdAt: number;
+  updatedAt: number;
+  pages: TemporaryConversationInspectTranscriptPage[];
+};
+
+export type TemporaryConversationExportRecord = {
+  stagedWriteId: string;
+  deliveryTarget: string;
+  targetSessionId: string;
+  targetPageId: string;
+  sourcePageId: string | null;
+  status: string;
+  reason: string | null;
+  createdAt: number;
+  updatedAt: number;
+  appliedAt: number | null;
+  discardedAt: number | null;
+};
+
+export type TemporaryConversationAgentOrigin = {
+  sourceAgentRunId?: string;
+  parentRunId?: string;
+  rootRunId?: string;
+  sourceNodeRunId?: string;
+  sourcePageId?: string;
+  sourceFloorId?: string;
+  sourceSessionId?: string;
+  sourceAttemptNo?: number;
+};
+
+export type TemporaryConversationInspect = {
+  conversation: TemporaryConversationRecord;
+  agentPrivate: boolean;
+  transcriptRestricted: boolean;
+  sourceSnapshot: {
+    digest: string | null;
+    sourceSessionId: string | null;
+  };
+  agentOrigin: TemporaryConversationAgentOrigin | null;
+  cleanup: {
+    cleaned: boolean;
+    cleanedAt: number | null;
+    retentionPolicy: TemporaryConversationRetentionPolicy;
+  };
+  transcript: {
+    conversationId: string;
+    branchId: string;
+    floors: TemporaryConversationInspectTranscriptFloor[];
+  };
+  exports: TemporaryConversationExportRecord[];
+};
+
+export type TemporaryConversationInspectOptions = {
+  accountId?: AccountIdHint;
+  conversationId: string;
+  includeAgentPrivate?: boolean;
+};
+
 export type TemporaryConversationsRequestOptions = {
   accountId?: AccountIdHint;
   conversationId: string;
@@ -173,6 +265,7 @@ export type TemporaryConversationsResource = {
   respond(options: TemporaryConversationRespondOptions): Promise<TemporaryConversationResult>;
   respondStream(options: TemporaryConversationRespondStreamOptions): Promise<TemporaryConversationResult>;
   getTranscript(options: TemporaryConversationsRequestOptions): Promise<TemporaryConversationTranscript>;
+  inspect(options: TemporaryConversationInspectOptions): Promise<TemporaryConversationInspect>;
   finalize(options: TemporaryConversationsRequestOptions): Promise<TemporaryConversationRecord>;
   discard(options: TemporaryConversationsRequestOptions): Promise<TemporaryConversationRecord>;
   cancel(options: TemporaryConversationsRequestOptions): Promise<TemporaryConversationRecord>;
@@ -265,6 +358,21 @@ export function createTemporaryConversationsResource(client: TransportClient): T
         throw new Error("Temporary conversation transcript payload is missing");
       }
       return transcript;
+    },
+    async inspect(options): Promise<TemporaryConversationInspect> {
+      const query = options.includeAgentPrivate ? "?include_agent_private=true" : "";
+      const response = await client.fetchJson<Record<string, unknown>>(
+        `/temporary-conversations/${encodeURIComponent(options.conversationId)}/inspect${query}`,
+        {
+          headers: buildAccountHeaders(options.accountId),
+          method: "GET",
+        },
+      );
+      const inspect = mapTemporaryConversationInspect(readRecord(response.body)?.data);
+      if (!inspect) {
+        throw new Error("Temporary conversation inspect payload is missing");
+      }
+      return inspect;
     },
     async finalize(options): Promise<TemporaryConversationRecord> {
       return mutateTemporaryConversation(client, options, "finalize");
@@ -405,6 +513,7 @@ function mapTemporaryConversationRecord(value: unknown): TemporaryConversationRe
     finalizedAt: readNullableNumber(record?.finalized_at),
     discardedAt: readNullableNumber(record?.discarded_at),
     cancelledAt: readNullableNumber(record?.cancelled_at),
+    cleanedAt: readNullableNumber(record?.cleaned_at),
   };
 }
 
@@ -572,6 +681,181 @@ function mapTemporaryConversationTranscriptMessage(value: unknown): TemporaryCon
     isHidden: Boolean(record?.is_hidden),
     source: readNullableString(record?.source),
     createdAt,
+  };
+}
+
+function mapTemporaryConversationInspect(value: unknown): TemporaryConversationInspect | null {
+  const record = readRecord(value);
+  const conversation = mapTemporaryConversationRecord(record?.conversation);
+  if (!conversation) {
+    return null;
+  }
+
+  const sourceSnapshot = readRecord(record?.source_snapshot);
+  const cleanup = readRecord(record?.cleanup);
+  const transcript = readRecord(record?.transcript);
+
+  return {
+    conversation,
+    agentPrivate: Boolean(record?.agent_private),
+    transcriptRestricted: Boolean(record?.transcript_restricted),
+    sourceSnapshot: {
+      digest: readNullableString(sourceSnapshot?.digest),
+      sourceSessionId: readNullableString(sourceSnapshot?.source_session_id),
+    },
+    agentOrigin: mapTemporaryConversationAgentOrigin(record?.agent_origin),
+    cleanup: {
+      cleaned: Boolean(cleanup?.cleaned),
+      cleanedAt: readNullableNumber(cleanup?.cleaned_at),
+      retentionPolicy:
+        (readOptionalString(cleanup?.retention_policy) as TemporaryConversationRetentionPolicy | undefined)
+        ?? conversation.retentionPolicy,
+    },
+    transcript: {
+      conversationId: readString(transcript?.conversation_id, conversation.id),
+      branchId: readString(transcript?.branch_id, conversation.branchId),
+      floors: readArray(transcript?.floors)
+        .map(mapTemporaryConversationInspectFloor)
+        .filter((floor): floor is TemporaryConversationInspectTranscriptFloor => floor !== null),
+    },
+    exports: readArray(record?.exports)
+      .map(mapTemporaryConversationExportRecord)
+      .filter((entry): entry is TemporaryConversationExportRecord => entry !== null),
+  };
+}
+
+function mapTemporaryConversationAgentOrigin(value: unknown): TemporaryConversationAgentOrigin | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const origin: TemporaryConversationAgentOrigin = {};
+  const sourceAgentRunId = readOptionalString(record.source_agent_run_id);
+  if (sourceAgentRunId) origin.sourceAgentRunId = sourceAgentRunId;
+  const parentRunId = readOptionalString(record.parent_run_id);
+  if (parentRunId) origin.parentRunId = parentRunId;
+  const rootRunId = readOptionalString(record.root_run_id);
+  if (rootRunId) origin.rootRunId = rootRunId;
+  const sourceNodeRunId = readOptionalString(record.source_node_run_id);
+  if (sourceNodeRunId) origin.sourceNodeRunId = sourceNodeRunId;
+  const sourcePageId = readOptionalString(record.source_page_id);
+  if (sourcePageId) origin.sourcePageId = sourcePageId;
+  const sourceFloorId = readOptionalString(record.source_floor_id);
+  if (sourceFloorId) origin.sourceFloorId = sourceFloorId;
+  const sourceSessionId = readOptionalString(record.source_session_id);
+  if (sourceSessionId) origin.sourceSessionId = sourceSessionId;
+  const sourceAttemptNo = readNullableNumber(record.source_attempt_no);
+  if (sourceAttemptNo !== null) origin.sourceAttemptNo = sourceAttemptNo;
+
+  return Object.keys(origin).length > 0 ? origin : null;
+}
+
+function mapTemporaryConversationInspectFloor(value: unknown): TemporaryConversationInspectTranscriptFloor | null {
+  const record = readRecord(value);
+  const id = readOptionalString(record?.id);
+  const branchId = readOptionalString(record?.branch_id);
+  const floorNo = readNullableNumber(record?.floor_no);
+  const createdAt = readNullableNumber(record?.created_at);
+  const updatedAt = readNullableNumber(record?.updated_at);
+  const tokenIn = readNullableNumber(record?.token_in);
+  const tokenOut = readNullableNumber(record?.token_out);
+  const state = readOptionalString(record?.state);
+  if (!id || !branchId || floorNo === null || createdAt === null || updatedAt === null || tokenIn === null || tokenOut === null || !state) {
+    return null;
+  }
+
+  return {
+    id,
+    floorNo,
+    branchId,
+    parentFloorId: readNullableString(record?.parent_floor_id),
+    state,
+    tokenIn,
+    tokenOut,
+    createdAt,
+    updatedAt,
+    pages: readArray(record?.pages)
+      .map(mapTemporaryConversationInspectPage)
+      .filter((page): page is TemporaryConversationInspectTranscriptPage => page !== null),
+  };
+}
+
+function mapTemporaryConversationInspectPage(value: unknown): TemporaryConversationInspectTranscriptPage | null {
+  const record = readRecord(value);
+  const id = readOptionalString(record?.id);
+  const pageNo = readNullableNumber(record?.page_no);
+  const pageKind = readOptionalString(record?.page_kind);
+  const version = readNullableNumber(record?.version);
+  const createdAt = readNullableNumber(record?.created_at);
+  const updatedAt = readNullableNumber(record?.updated_at);
+  if (!id || pageNo === null || !pageKind || version === null || createdAt === null || updatedAt === null) {
+    return null;
+  }
+
+  return {
+    id,
+    pageNo,
+    pageKind,
+    isActive: Boolean(record?.is_active),
+    version,
+    checksum: readNullableString(record?.checksum),
+    createdAt,
+    updatedAt,
+    messages: readArray(record?.messages)
+      .map(mapTemporaryConversationInspectMessage)
+      .filter((message): message is TemporaryConversationInspectTranscriptMessage => message !== null),
+  };
+}
+
+function mapTemporaryConversationInspectMessage(value: unknown): TemporaryConversationInspectTranscriptMessage | null {
+  const record = readRecord(value);
+  const id = readOptionalString(record?.id);
+  const seq = readNullableNumber(record?.seq);
+  const role = readOptionalString(record?.role);
+  const contentFormat = readOptionalString(record?.content_format);
+  const createdAt = readNullableNumber(record?.created_at);
+  if (!id || seq === null || !role || !contentFormat || createdAt === null) {
+    return null;
+  }
+
+  return {
+    id,
+    seq,
+    role,
+    content: readNullableString(record?.content),
+    contentLength: readNullableNumber(record?.content_length) ?? 0,
+    contentFormat,
+    isHidden: Boolean(record?.is_hidden),
+    source: readNullableString(record?.source),
+    restricted: Boolean(record?.restricted),
+    createdAt,
+  };
+}
+
+function mapTemporaryConversationExportRecord(value: unknown): TemporaryConversationExportRecord | null {
+  const record = readRecord(value);
+  const stagedWriteId = readOptionalString(record?.staged_write_id);
+  const targetSessionId = readOptionalString(record?.target_session_id);
+  const targetPageId = readOptionalString(record?.target_page_id);
+  const createdAt = readNullableNumber(record?.created_at);
+  const updatedAt = readNullableNumber(record?.updated_at);
+  if (!stagedWriteId || !targetSessionId || !targetPageId || createdAt === null || updatedAt === null) {
+    return null;
+  }
+
+  return {
+    stagedWriteId,
+    deliveryTarget: readString(record?.delivery_target, "page_staged_write"),
+    targetSessionId,
+    targetPageId,
+    sourcePageId: readNullableString(record?.source_page_id),
+    status: readString(record?.status, "staged"),
+    reason: readNullableString(record?.reason),
+    createdAt,
+    updatedAt,
+    appliedAt: readNullableNumber(record?.applied_at),
+    discardedAt: readNullableNumber(record?.discarded_at),
   };
 }
 

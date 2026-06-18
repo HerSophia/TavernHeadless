@@ -10,6 +10,7 @@ import TechStack from './components/TechStack.vue'
 import FooterSection from './components/FooterSection.vue'
 import OriginStorySection from './components/OriginStorySection.vue'
 import AgenticFutureSection from './components/AgenticFutureSection.vue'
+import PhilosophySection from './components/PhilosophySection.vue'
 import LandingNavigator from './components/LandingNavigator.vue'
 import ThemeAppearanceLayout from './components/ThemeAppearanceLayout.vue'
 import './style.css'
@@ -28,6 +29,7 @@ export default {
     app.component('FooterSection', FooterSection)
     app.component('OriginStorySection', OriginStorySection)
     app.component('AgenticFutureSection', AgenticFutureSection)
+    app.component('PhilosophySection', PhilosophySection)
     app.component('LandingNavigator', LandingNavigator)
   }
 } satisfies Theme

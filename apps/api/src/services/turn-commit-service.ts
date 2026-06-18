@@ -83,6 +83,7 @@ import {
 } from "./chat/shared/metadata.js";
 import { OperationLogService } from "./operation-log-service.js";
 import type { OperationLogRecord } from "./operation-log-service.js";
+import { appendToolTransportOperationLogs } from "./tool-transport-operation-log.js";
 import { VcDiffService } from "./vc-diff-service.js";
 import {
   ProjectEventService,
@@ -1333,6 +1334,21 @@ export class TurnCommitService {
               committedAt,
               operationLog: input.operationLog,
             });
+
+        if (!isTemporarySession) {
+          appendToolTransportOperationLogs(tx, {
+            accountId: input.accountId,
+            sessionId: input.sessionId,
+            workspaceId: projectScope?.workspaceId ?? null,
+            projectId: projectScope?.projectId ?? null,
+            branchId: effectiveBranchId,
+            floorId: input.floorId,
+            runId: effectiveRunId,
+            trace: input.execution.toolTransport,
+            operationLog: input.operationLog,
+            createdAt: committedAt,
+          });
+        }
 
         const projectEvents: ProjectEventRecord[] = [];
         if (projectScope && floorOperation) {

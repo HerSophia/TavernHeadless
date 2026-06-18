@@ -25,6 +25,15 @@ export interface BackgroundJobRouteRequest {
   actorClientId?: string | null;
   dryRun?: boolean;
   inputJson?: Record<string, unknown>;
+  /**
+   * B8-GOV R6-1 nested lineage（缺口 3）。
+   *
+   * 当后台 Agent 被另一条运行入队时（例如 NodeGraph run 的 `agent.call` 节点），
+   * 携带父级 run 引用，让入队的 `agent.run` job 能反查到父级运行。
+   */
+  rootRunId?: string | null;
+  parentRunId?: string | null;
+  parentRuntimeKind?: string | null;
 }
 
 export interface BackgroundJobEnqueueResult {
@@ -92,7 +101,7 @@ export class AgentExecutorRouter {
   private readonly backgroundJobEnqueuer?: BackgroundJobEnqueuer;
 
   constructor(
-    private readonly temporaryConversationExecutor: TemporaryConversationAgentExecutor,
+    private readonly temporaryConversationExecutor?: TemporaryConversationAgentExecutor,
     options: AgentExecutorRouterOptions = {},
   ) {
     this.backgroundJobEnqueuer = options.backgroundJobEnqueuer;
@@ -110,6 +119,9 @@ export class AgentExecutorRouter {
   async routeTemporaryConversation(
     request: TemporaryConversationAgentRequest,
   ): Promise<AgentExecutorRouteResult> {
+    if (!this.temporaryConversationExecutor) {
+      throw new Error("temporaryConversationExecutor is required for temporary_conversation medium.");
+    }
     return {
       kind: "temporary_conversation",
       result: await this.temporaryConversationExecutor.execute(request),

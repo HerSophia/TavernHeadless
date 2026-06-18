@@ -20390,6 +20390,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -20412,6 +20413,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -20423,6 +20425,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "session_state_writes": {
@@ -20868,6 +20871,7 @@
                           "accepted_count": 1,
                           "block_count": 1,
                           "diagnostics": [],
+                          "diagnostics_by_reason": {},
                           "rejected_count": 0
                         },
                         "selection": {
@@ -20876,10 +20880,18 @@
                           "transport": "text_protocol"
                         },
                         "tool_list": {
+                          "budget_group": "tool_list",
                           "contributor_id": "builtin:tool_list",
                           "injected": true,
                           "placement_mode": "contributor_chain",
+                          "token_count": 96,
                           "tool_count": 2
+                        },
+                        "tool_result": {
+                          "block_count": 1,
+                          "budget_group": "tool_result",
+                          "token_count": 128,
+                          "written_back": true
                         }
                       },
                       "worldbook": {
@@ -21229,6 +21241,7 @@
                               "accepted_count": 1,
                               "block_count": 1,
                               "diagnostics": [],
+                              "diagnostics_by_reason": {},
                               "rejected_count": 0
                             },
                             "selection": {
@@ -21237,10 +21250,18 @@
                               "transport": "text_protocol"
                             },
                             "tool_list": {
+                              "budget_group": "tool_list",
                               "contributor_id": "builtin:tool_list",
                               "injected": true,
                               "placement_mode": "contributor_chain",
+                              "token_count": 96,
                               "tool_count": 2
+                            },
+                            "tool_result": {
+                              "block_count": 1,
+                              "budget_group": "tool_result",
+                              "token_count": 128,
+                              "written_back": true
                             }
                           },
                           "worldbook": {
@@ -21995,6 +22016,7 @@
                                 "accepted_count": 1,
                                 "block_count": 1,
                                 "diagnostics": [],
+                                "diagnostics_by_reason": {},
                                 "rejected_count": 0
                               },
                               "selection": {
@@ -22003,10 +22025,18 @@
                                 "transport": "text_protocol"
                               },
                               "tool_list": {
+                                "budget_group": "tool_list",
                                 "contributor_id": "builtin:tool_list",
                                 "injected": true,
                                 "placement_mode": "contributor_chain",
+                                "token_count": 96,
                                 "tool_count": 2
+                              },
+                              "tool_result": {
+                                "block_count": 1,
+                                "budget_group": "tool_result",
+                                "token_count": 128,
+                                "written_back": true
                               }
                             },
                             "worldbook": {
@@ -22381,6 +22411,20 @@
                             "injection": {
                               "additionalProperties": false,
                               "properties": {
+                                "applied_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "budget_group": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "items": {
                                   "items": {
                                     "additionalProperties": false,
@@ -22442,6 +22486,31 @@
                                       "applied": {
                                         "type": "boolean"
                                       },
+                                      "budget_group": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "budget_status": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "within_budget",
+                                              "rejected_by_item_limit",
+                                              "rejected_by_total_limit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "content_length": {
                                         "minimum": 0,
                                         "type": "integer"
@@ -22477,6 +22546,10 @@
                                               "disabled",
                                               "expired",
                                               "mode_scope_mismatch",
+                                              "scope_quota_exceeded",
+                                              "content_length_exceeded",
+                                              "content_token_limit_exceeded",
+                                              "total_token_limit_exceeded",
                                               "missing_placement_params",
                                               "invalid_placement_params",
                                               "floor_no_out_of_history_window",
@@ -22534,6 +22607,9 @@
                                         "minimum": 0,
                                         "type": "integer"
                                       },
+                                      "restricted": {
+                                        "type": "boolean"
+                                      },
                                       "scope": {
                                         "enum": [
                                           "request",
@@ -22571,12 +22647,40 @@
                                         "type": "string"
                                       },
                                       "title": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "token_count": {
+                                        "anyOf": [
+                                          {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "visibility": {
+                                        "enum": [
+                                          "client",
+                                          "agent_private",
+                                          "debug",
+                                          "system"
+                                        ],
                                         "type": "string"
                                       }
                                     },
                                     "required": [
                                       "request_index",
                                       "source_kind",
+                                      "visibility",
                                       "injection_id",
                                       "enabled",
                                       "scope",
@@ -22585,15 +22689,31 @@
                                       "order_requested",
                                       "title",
                                       "content_length",
+                                      "token_count",
+                                      "budget_group",
+                                      "budget_status",
                                       "applied",
                                       "placement_resolved",
                                       "anchor_resolved",
                                       "source_chain",
-                                      "not_applied_reason"
+                                      "not_applied_reason",
+                                      "restricted"
                                     ],
                                     "type": "object"
                                   },
                                   "type": "array"
+                                },
+                                "rejected_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requested_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "token_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
@@ -23494,8 +23614,12 @@
                                               "tool_not_registered",
                                               "json_parse_failed",
                                               "missing_args_field",
+                                              "missing_call_id",
+                                              "missing_tool_name",
                                               "duplicate_call_id",
-                                              "malformed_block"
+                                              "malformed_block",
+                                              "malformed_attributes",
+                                              "invalid_tool_name"
                                             ],
                                             "type": "string"
                                           },
@@ -23519,6 +23643,13 @@
                                         "type": "object"
                                       },
                                       "type": "array"
+                                    },
+                                    "diagnostics_by_reason": {
+                                      "additionalProperties": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "type": "object"
                                     },
                                     "rejected_count": {
                                       "minimum": 0,
@@ -23574,6 +23705,9 @@
                                 "tool_list": {
                                   "additionalProperties": false,
                                   "properties": {
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
                                     "contributor_id": {
                                       "type": "string"
                                     },
@@ -23587,6 +23721,10 @@
                                       ],
                                       "type": "string"
                                     },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
                                     "tool_count": {
                                       "minimum": 0,
                                       "type": "integer"
@@ -23595,6 +23733,32 @@
                                   "required": [
                                     "injected",
                                     "tool_count"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_result": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "written_back": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "written_back",
+                                    "block_count",
+                                    "token_count",
+                                    "budget_group"
                                   ],
                                   "type": "object"
                                 }
@@ -41988,6 +42152,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -42010,6 +42175,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -42021,6 +42187,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "session_state_writes": {
@@ -42469,6 +42636,7 @@
                           "accepted_count": 1,
                           "block_count": 1,
                           "diagnostics": [],
+                          "diagnostics_by_reason": {},
                           "rejected_count": 0
                         },
                         "selection": {
@@ -42477,10 +42645,18 @@
                           "transport": "text_protocol"
                         },
                         "tool_list": {
+                          "budget_group": "tool_list",
                           "contributor_id": "builtin:tool_list",
                           "injected": true,
                           "placement_mode": "contributor_chain",
+                          "token_count": 96,
                           "tool_count": 2
+                        },
+                        "tool_result": {
+                          "block_count": 1,
+                          "budget_group": "tool_result",
+                          "token_count": 128,
+                          "written_back": true
                         }
                       },
                       "worldbook": {
@@ -42832,6 +43008,7 @@
                               "accepted_count": 1,
                               "block_count": 1,
                               "diagnostics": [],
+                              "diagnostics_by_reason": {},
                               "rejected_count": 0
                             },
                             "selection": {
@@ -42840,10 +43017,18 @@
                               "transport": "text_protocol"
                             },
                             "tool_list": {
+                              "budget_group": "tool_list",
                               "contributor_id": "builtin:tool_list",
                               "injected": true,
                               "placement_mode": "contributor_chain",
+                              "token_count": 96,
                               "tool_count": 2
+                            },
+                            "tool_result": {
+                              "block_count": 1,
+                              "budget_group": "tool_result",
+                              "token_count": 128,
+                              "written_back": true
                             }
                           },
                           "worldbook": {
@@ -43600,6 +43785,7 @@
                                 "accepted_count": 1,
                                 "block_count": 1,
                                 "diagnostics": [],
+                                "diagnostics_by_reason": {},
                                 "rejected_count": 0
                               },
                               "selection": {
@@ -43608,10 +43794,18 @@
                                 "transport": "text_protocol"
                               },
                               "tool_list": {
+                                "budget_group": "tool_list",
                                 "contributor_id": "builtin:tool_list",
                                 "injected": true,
                                 "placement_mode": "contributor_chain",
+                                "token_count": 96,
                                 "tool_count": 2
+                              },
+                              "tool_result": {
+                                "block_count": 1,
+                                "budget_group": "tool_result",
+                                "token_count": 128,
+                                "written_back": true
                               }
                             },
                             "worldbook": {
@@ -43986,6 +44180,20 @@
                             "injection": {
                               "additionalProperties": false,
                               "properties": {
+                                "applied_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "budget_group": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "items": {
                                   "items": {
                                     "additionalProperties": false,
@@ -44047,6 +44255,31 @@
                                       "applied": {
                                         "type": "boolean"
                                       },
+                                      "budget_group": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "budget_status": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "within_budget",
+                                              "rejected_by_item_limit",
+                                              "rejected_by_total_limit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "content_length": {
                                         "minimum": 0,
                                         "type": "integer"
@@ -44082,6 +44315,10 @@
                                               "disabled",
                                               "expired",
                                               "mode_scope_mismatch",
+                                              "scope_quota_exceeded",
+                                              "content_length_exceeded",
+                                              "content_token_limit_exceeded",
+                                              "total_token_limit_exceeded",
                                               "missing_placement_params",
                                               "invalid_placement_params",
                                               "floor_no_out_of_history_window",
@@ -44139,6 +44376,9 @@
                                         "minimum": 0,
                                         "type": "integer"
                                       },
+                                      "restricted": {
+                                        "type": "boolean"
+                                      },
                                       "scope": {
                                         "enum": [
                                           "request",
@@ -44176,12 +44416,40 @@
                                         "type": "string"
                                       },
                                       "title": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "token_count": {
+                                        "anyOf": [
+                                          {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "visibility": {
+                                        "enum": [
+                                          "client",
+                                          "agent_private",
+                                          "debug",
+                                          "system"
+                                        ],
                                         "type": "string"
                                       }
                                     },
                                     "required": [
                                       "request_index",
                                       "source_kind",
+                                      "visibility",
                                       "injection_id",
                                       "enabled",
                                       "scope",
@@ -44190,15 +44458,31 @@
                                       "order_requested",
                                       "title",
                                       "content_length",
+                                      "token_count",
+                                      "budget_group",
+                                      "budget_status",
                                       "applied",
                                       "placement_resolved",
                                       "anchor_resolved",
                                       "source_chain",
-                                      "not_applied_reason"
+                                      "not_applied_reason",
+                                      "restricted"
                                     ],
                                     "type": "object"
                                   },
                                   "type": "array"
+                                },
+                                "rejected_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requested_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "token_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
@@ -45099,8 +45383,12 @@
                                               "tool_not_registered",
                                               "json_parse_failed",
                                               "missing_args_field",
+                                              "missing_call_id",
+                                              "missing_tool_name",
                                               "duplicate_call_id",
-                                              "malformed_block"
+                                              "malformed_block",
+                                              "malformed_attributes",
+                                              "invalid_tool_name"
                                             ],
                                             "type": "string"
                                           },
@@ -45124,6 +45412,13 @@
                                         "type": "object"
                                       },
                                       "type": "array"
+                                    },
+                                    "diagnostics_by_reason": {
+                                      "additionalProperties": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "type": "object"
                                     },
                                     "rejected_count": {
                                       "minimum": 0,
@@ -45179,6 +45474,9 @@
                                 "tool_list": {
                                   "additionalProperties": false,
                                   "properties": {
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
                                     "contributor_id": {
                                       "type": "string"
                                     },
@@ -45192,6 +45490,10 @@
                                       ],
                                       "type": "string"
                                     },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
                                     "tool_count": {
                                       "minimum": 0,
                                       "type": "integer"
@@ -45200,6 +45502,32 @@
                                   "required": [
                                     "injected",
                                     "tool_count"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_result": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "written_back": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "written_back",
+                                    "block_count",
+                                    "token_count",
+                                    "budget_group"
                                   ],
                                   "type": "object"
                                 }
@@ -59913,6 +60241,310 @@
         ]
       }
     },
+    "/projects/{id}/node-graph-runs/{run_id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}/archive": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}/current-version": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}/preview": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}/run": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}/unarchive": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}/validate": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/projects/{id}/node-graphs/{graph_id}/versions": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/projects/{id}/sessions": {
       "get": {
         "parameters": [
@@ -70891,6 +71523,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "content": {
+                    "maxLength": 8000,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -70944,6 +71577,7 @@
                     "type": "string"
                   },
                   "title": {
+                    "maxLength": 256,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -71604,6 +72238,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "content": {
+                    "maxLength": 8000,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -71664,6 +72299,7 @@
                     "type": "string"
                   },
                   "title": {
+                    "maxLength": 256,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -74830,6 +75466,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "content": {
+                    "maxLength": 8000,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -74883,6 +75520,7 @@
                     "type": "string"
                   },
                   "title": {
+                    "maxLength": 256,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -75525,6 +76163,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "content": {
+                    "maxLength": 8000,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -75585,6 +76224,7 @@
                     "type": "string"
                   },
                   "title": {
+                    "maxLength": 256,
                     "minLength": 1,
                     "type": "string"
                   },
@@ -76251,6 +76891,9 @@
                     },
                     "type": "object"
                   },
+                  "include_restricted_injection_content": {
+                    "type": "boolean"
+                  },
                   "message": {
                     "minLength": 1,
                     "type": "string"
@@ -76271,6 +76914,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -76311,6 +76955,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -76322,6 +76967,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "session_state_writes": {
@@ -77020,6 +77666,7 @@
                             "accepted_count": 1,
                             "block_count": 1,
                             "diagnostics": [],
+                            "diagnostics_by_reason": {},
                             "rejected_count": 0
                           },
                           "selection": {
@@ -77028,10 +77675,18 @@
                             "transport": "text_protocol"
                           },
                           "tool_list": {
+                            "budget_group": "tool_list",
                             "contributor_id": "builtin:tool_list",
                             "injected": true,
                             "placement_mode": "contributor_chain",
+                            "token_count": 96,
                             "tool_count": 2
+                          },
+                          "tool_result": {
+                            "block_count": 1,
+                            "budget_group": "tool_result",
+                            "token_count": 128,
+                            "written_back": true
                           }
                         },
                         "visibility": {
@@ -77546,6 +78201,31 @@
                               "applied": {
                                 "type": "boolean"
                               },
+                              "budget_group": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "budget_status": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "within_budget",
+                                      "rejected_by_item_limit",
+                                      "rejected_by_total_limit"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "content_length": {
                                 "minimum": 0,
                                 "type": "integer"
@@ -77581,6 +78261,10 @@
                                       "disabled",
                                       "expired",
                                       "mode_scope_mismatch",
+                                      "scope_quota_exceeded",
+                                      "content_length_exceeded",
+                                      "content_token_limit_exceeded",
+                                      "total_token_limit_exceeded",
                                       "missing_placement_params",
                                       "invalid_placement_params",
                                       "floor_no_out_of_history_window",
@@ -77638,6 +78322,9 @@
                                 "minimum": 0,
                                 "type": "integer"
                               },
+                              "restricted": {
+                                "type": "boolean"
+                              },
                               "scope": {
                                 "enum": [
                                   "request",
@@ -77675,12 +78362,40 @@
                                 "type": "string"
                               },
                               "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "token_count": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "visibility": {
+                                "enum": [
+                                  "client",
+                                  "agent_private",
+                                  "debug",
+                                  "system"
+                                ],
                                 "type": "string"
                               }
                             },
                             "required": [
                               "request_index",
                               "source_kind",
+                              "visibility",
                               "injection_id",
                               "enabled",
                               "scope",
@@ -77689,11 +78404,15 @@
                               "order_requested",
                               "title",
                               "content_length",
+                              "token_count",
+                              "budget_group",
+                              "budget_status",
                               "applied",
                               "placement_resolved",
                               "anchor_resolved",
                               "source_chain",
-                              "not_applied_reason"
+                              "not_applied_reason",
+                              "restricted"
                             ],
                             "type": "object"
                           },
@@ -79695,6 +80414,20 @@
                                     "injection": {
                                       "additionalProperties": false,
                                       "properties": {
+                                        "applied_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "budget_group": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
                                         "items": {
                                           "items": {
                                             "additionalProperties": false,
@@ -79756,6 +80489,31 @@
                                               "applied": {
                                                 "type": "boolean"
                                               },
+                                              "budget_group": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "budget_status": {
+                                                "anyOf": [
+                                                  {
+                                                    "enum": [
+                                                      "within_budget",
+                                                      "rejected_by_item_limit",
+                                                      "rejected_by_total_limit"
+                                                    ],
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
                                               "content_length": {
                                                 "minimum": 0,
                                                 "type": "integer"
@@ -79791,6 +80549,10 @@
                                                       "disabled",
                                                       "expired",
                                                       "mode_scope_mismatch",
+                                                      "scope_quota_exceeded",
+                                                      "content_length_exceeded",
+                                                      "content_token_limit_exceeded",
+                                                      "total_token_limit_exceeded",
                                                       "missing_placement_params",
                                                       "invalid_placement_params",
                                                       "floor_no_out_of_history_window",
@@ -79848,6 +80610,9 @@
                                                 "minimum": 0,
                                                 "type": "integer"
                                               },
+                                              "restricted": {
+                                                "type": "boolean"
+                                              },
                                               "scope": {
                                                 "enum": [
                                                   "request",
@@ -79885,12 +80650,40 @@
                                                 "type": "string"
                                               },
                                               "title": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "token_count": {
+                                                "anyOf": [
+                                                  {
+                                                    "minimum": 0,
+                                                    "type": "integer"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "visibility": {
+                                                "enum": [
+                                                  "client",
+                                                  "agent_private",
+                                                  "debug",
+                                                  "system"
+                                                ],
                                                 "type": "string"
                                               }
                                             },
                                             "required": [
                                               "request_index",
                                               "source_kind",
+                                              "visibility",
                                               "injection_id",
                                               "enabled",
                                               "scope",
@@ -79899,15 +80692,31 @@
                                               "order_requested",
                                               "title",
                                               "content_length",
+                                              "token_count",
+                                              "budget_group",
+                                              "budget_status",
                                               "applied",
                                               "placement_resolved",
                                               "anchor_resolved",
                                               "source_chain",
-                                              "not_applied_reason"
+                                              "not_applied_reason",
+                                              "restricted"
                                             ],
                                             "type": "object"
                                           },
                                           "type": "array"
+                                        },
+                                        "rejected_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "requested_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
+                                        },
+                                        "token_count": {
+                                          "minimum": 0,
+                                          "type": "integer"
                                         }
                                       },
                                       "required": [
@@ -80810,8 +81619,12 @@
                                                       "tool_not_registered",
                                                       "json_parse_failed",
                                                       "missing_args_field",
+                                                      "missing_call_id",
+                                                      "missing_tool_name",
                                                       "duplicate_call_id",
-                                                      "malformed_block"
+                                                      "malformed_block",
+                                                      "malformed_attributes",
+                                                      "invalid_tool_name"
                                                     ],
                                                     "type": "string"
                                                   },
@@ -80835,6 +81648,13 @@
                                                 "type": "object"
                                               },
                                               "type": "array"
+                                            },
+                                            "diagnostics_by_reason": {
+                                              "additionalProperties": {
+                                                "minimum": 0,
+                                                "type": "integer"
+                                              },
+                                              "type": "object"
                                             },
                                             "rejected_count": {
                                               "minimum": 0,
@@ -80890,6 +81710,9 @@
                                         "tool_list": {
                                           "additionalProperties": false,
                                           "properties": {
+                                            "budget_group": {
+                                              "type": "string"
+                                            },
                                             "contributor_id": {
                                               "type": "string"
                                             },
@@ -80903,6 +81726,10 @@
                                               ],
                                               "type": "string"
                                             },
+                                            "token_count": {
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
                                             "tool_count": {
                                               "minimum": 0,
                                               "type": "integer"
@@ -80911,6 +81738,32 @@
                                           "required": [
                                             "injected",
                                             "tool_count"
+                                          ],
+                                          "type": "object"
+                                        },
+                                        "tool_result": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "block_count": {
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "budget_group": {
+                                              "type": "string"
+                                            },
+                                            "token_count": {
+                                              "minimum": 0,
+                                              "type": "integer"
+                                            },
+                                            "written_back": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "written_back",
+                                            "block_count",
+                                            "token_count",
+                                            "budget_group"
                                           ],
                                           "type": "object"
                                         }
@@ -84486,6 +85339,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -84526,6 +85380,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -84537,6 +85392,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "source_floor_id": {
@@ -84956,6 +85812,7 @@
                           "accepted_count": 1,
                           "block_count": 1,
                           "diagnostics": [],
+                          "diagnostics_by_reason": {},
                           "rejected_count": 0
                         },
                         "selection": {
@@ -84964,10 +85821,18 @@
                           "transport": "text_protocol"
                         },
                         "tool_list": {
+                          "budget_group": "tool_list",
                           "contributor_id": "builtin:tool_list",
                           "injected": true,
                           "placement_mode": "contributor_chain",
+                          "token_count": 96,
                           "tool_count": 2
+                        },
+                        "tool_result": {
+                          "block_count": 1,
+                          "budget_group": "tool_result",
+                          "token_count": 128,
+                          "written_back": true
                         }
                       },
                       "visibility": {
@@ -86052,6 +86917,20 @@
                             "injection": {
                               "additionalProperties": false,
                               "properties": {
+                                "applied_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "budget_group": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "items": {
                                   "items": {
                                     "additionalProperties": false,
@@ -86113,6 +86992,31 @@
                                       "applied": {
                                         "type": "boolean"
                                       },
+                                      "budget_group": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "budget_status": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "within_budget",
+                                              "rejected_by_item_limit",
+                                              "rejected_by_total_limit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "content_length": {
                                         "minimum": 0,
                                         "type": "integer"
@@ -86148,6 +87052,10 @@
                                               "disabled",
                                               "expired",
                                               "mode_scope_mismatch",
+                                              "scope_quota_exceeded",
+                                              "content_length_exceeded",
+                                              "content_token_limit_exceeded",
+                                              "total_token_limit_exceeded",
                                               "missing_placement_params",
                                               "invalid_placement_params",
                                               "floor_no_out_of_history_window",
@@ -86205,6 +87113,9 @@
                                         "minimum": 0,
                                         "type": "integer"
                                       },
+                                      "restricted": {
+                                        "type": "boolean"
+                                      },
                                       "scope": {
                                         "enum": [
                                           "request",
@@ -86242,12 +87153,40 @@
                                         "type": "string"
                                       },
                                       "title": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "token_count": {
+                                        "anyOf": [
+                                          {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "visibility": {
+                                        "enum": [
+                                          "client",
+                                          "agent_private",
+                                          "debug",
+                                          "system"
+                                        ],
                                         "type": "string"
                                       }
                                     },
                                     "required": [
                                       "request_index",
                                       "source_kind",
+                                      "visibility",
                                       "injection_id",
                                       "enabled",
                                       "scope",
@@ -86256,15 +87195,31 @@
                                       "order_requested",
                                       "title",
                                       "content_length",
+                                      "token_count",
+                                      "budget_group",
+                                      "budget_status",
                                       "applied",
                                       "placement_resolved",
                                       "anchor_resolved",
                                       "source_chain",
-                                      "not_applied_reason"
+                                      "not_applied_reason",
+                                      "restricted"
                                     ],
                                     "type": "object"
                                   },
                                   "type": "array"
+                                },
+                                "rejected_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requested_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "token_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
@@ -86559,8 +87514,12 @@
                                               "tool_not_registered",
                                               "json_parse_failed",
                                               "missing_args_field",
+                                              "missing_call_id",
+                                              "missing_tool_name",
                                               "duplicate_call_id",
-                                              "malformed_block"
+                                              "malformed_block",
+                                              "malformed_attributes",
+                                              "invalid_tool_name"
                                             ],
                                             "type": "string"
                                           },
@@ -86584,6 +87543,13 @@
                                         "type": "object"
                                       },
                                       "type": "array"
+                                    },
+                                    "diagnostics_by_reason": {
+                                      "additionalProperties": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "type": "object"
                                     },
                                     "rejected_count": {
                                       "minimum": 0,
@@ -86639,6 +87605,9 @@
                                 "tool_list": {
                                   "additionalProperties": false,
                                   "properties": {
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
                                     "contributor_id": {
                                       "type": "string"
                                     },
@@ -86652,6 +87621,10 @@
                                       ],
                                       "type": "string"
                                     },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
                                     "tool_count": {
                                       "minimum": 0,
                                       "type": "integer"
@@ -86660,6 +87633,32 @@
                                   "required": [
                                     "injected",
                                     "tool_count"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_result": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "written_back": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "written_back",
+                                    "block_count",
+                                    "token_count",
+                                    "budget_group"
                                   ],
                                   "type": "object"
                                 }
@@ -87528,6 +88527,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -87550,6 +88550,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -87561,6 +88562,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "session_state_writes": {
@@ -88006,6 +89008,7 @@
                           "accepted_count": 1,
                           "block_count": 1,
                           "diagnostics": [],
+                          "diagnostics_by_reason": {},
                           "rejected_count": 0
                         },
                         "selection": {
@@ -88014,10 +89017,18 @@
                           "transport": "text_protocol"
                         },
                         "tool_list": {
+                          "budget_group": "tool_list",
                           "contributor_id": "builtin:tool_list",
                           "injected": true,
                           "placement_mode": "contributor_chain",
+                          "token_count": 96,
                           "tool_count": 2
+                        },
+                        "tool_result": {
+                          "block_count": 1,
+                          "budget_group": "tool_result",
+                          "token_count": 128,
+                          "written_back": true
                         }
                       },
                       "worldbook": {
@@ -88367,6 +89378,7 @@
                               "accepted_count": 1,
                               "block_count": 1,
                               "diagnostics": [],
+                              "diagnostics_by_reason": {},
                               "rejected_count": 0
                             },
                             "selection": {
@@ -88375,10 +89387,18 @@
                               "transport": "text_protocol"
                             },
                             "tool_list": {
+                              "budget_group": "tool_list",
                               "contributor_id": "builtin:tool_list",
                               "injected": true,
                               "placement_mode": "contributor_chain",
+                              "token_count": 96,
                               "tool_count": 2
+                            },
+                            "tool_result": {
+                              "block_count": 1,
+                              "budget_group": "tool_result",
+                              "token_count": 128,
+                              "written_back": true
                             }
                           },
                           "worldbook": {
@@ -89133,6 +90153,7 @@
                                 "accepted_count": 1,
                                 "block_count": 1,
                                 "diagnostics": [],
+                                "diagnostics_by_reason": {},
                                 "rejected_count": 0
                               },
                               "selection": {
@@ -89141,10 +90162,18 @@
                                 "transport": "text_protocol"
                               },
                               "tool_list": {
+                                "budget_group": "tool_list",
                                 "contributor_id": "builtin:tool_list",
                                 "injected": true,
                                 "placement_mode": "contributor_chain",
+                                "token_count": 96,
                                 "tool_count": 2
+                              },
+                              "tool_result": {
+                                "block_count": 1,
+                                "budget_group": "tool_result",
+                                "token_count": 128,
+                                "written_back": true
                               }
                             },
                             "worldbook": {
@@ -89519,6 +90548,20 @@
                             "injection": {
                               "additionalProperties": false,
                               "properties": {
+                                "applied_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "budget_group": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "items": {
                                   "items": {
                                     "additionalProperties": false,
@@ -89580,6 +90623,31 @@
                                       "applied": {
                                         "type": "boolean"
                                       },
+                                      "budget_group": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "budget_status": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "within_budget",
+                                              "rejected_by_item_limit",
+                                              "rejected_by_total_limit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "content_length": {
                                         "minimum": 0,
                                         "type": "integer"
@@ -89615,6 +90683,10 @@
                                               "disabled",
                                               "expired",
                                               "mode_scope_mismatch",
+                                              "scope_quota_exceeded",
+                                              "content_length_exceeded",
+                                              "content_token_limit_exceeded",
+                                              "total_token_limit_exceeded",
                                               "missing_placement_params",
                                               "invalid_placement_params",
                                               "floor_no_out_of_history_window",
@@ -89672,6 +90744,9 @@
                                         "minimum": 0,
                                         "type": "integer"
                                       },
+                                      "restricted": {
+                                        "type": "boolean"
+                                      },
                                       "scope": {
                                         "enum": [
                                           "request",
@@ -89709,12 +90784,40 @@
                                         "type": "string"
                                       },
                                       "title": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "token_count": {
+                                        "anyOf": [
+                                          {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "visibility": {
+                                        "enum": [
+                                          "client",
+                                          "agent_private",
+                                          "debug",
+                                          "system"
+                                        ],
                                         "type": "string"
                                       }
                                     },
                                     "required": [
                                       "request_index",
                                       "source_kind",
+                                      "visibility",
                                       "injection_id",
                                       "enabled",
                                       "scope",
@@ -89723,15 +90826,31 @@
                                       "order_requested",
                                       "title",
                                       "content_length",
+                                      "token_count",
+                                      "budget_group",
+                                      "budget_status",
                                       "applied",
                                       "placement_resolved",
                                       "anchor_resolved",
                                       "source_chain",
-                                      "not_applied_reason"
+                                      "not_applied_reason",
+                                      "restricted"
                                     ],
                                     "type": "object"
                                   },
                                   "type": "array"
+                                },
+                                "rejected_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requested_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "token_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
@@ -90632,8 +91751,12 @@
                                               "tool_not_registered",
                                               "json_parse_failed",
                                               "missing_args_field",
+                                              "missing_call_id",
+                                              "missing_tool_name",
                                               "duplicate_call_id",
-                                              "malformed_block"
+                                              "malformed_block",
+                                              "malformed_attributes",
+                                              "invalid_tool_name"
                                             ],
                                             "type": "string"
                                           },
@@ -90657,6 +91780,13 @@
                                         "type": "object"
                                       },
                                       "type": "array"
+                                    },
+                                    "diagnostics_by_reason": {
+                                      "additionalProperties": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "type": "object"
                                     },
                                     "rejected_count": {
                                       "minimum": 0,
@@ -90712,6 +91842,9 @@
                                 "tool_list": {
                                   "additionalProperties": false,
                                   "properties": {
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
                                     "contributor_id": {
                                       "type": "string"
                                     },
@@ -90725,6 +91858,10 @@
                                       ],
                                       "type": "string"
                                     },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
                                     "tool_count": {
                                       "minimum": 0,
                                       "type": "integer"
@@ -90733,6 +91870,32 @@
                                   "required": [
                                     "injected",
                                     "tool_count"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_result": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "written_back": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "written_back",
+                                    "block_count",
+                                    "token_count",
+                                    "budget_group"
                                   ],
                                   "type": "object"
                                 }
@@ -91605,6 +92768,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -91627,6 +92791,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -91638,6 +92803,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "session_state_writes": {
@@ -92090,6 +93256,7 @@
                           "accepted_count": 1,
                           "block_count": 1,
                           "diagnostics": [],
+                          "diagnostics_by_reason": {},
                           "rejected_count": 0
                         },
                         "selection": {
@@ -92098,10 +93265,18 @@
                           "transport": "text_protocol"
                         },
                         "tool_list": {
+                          "budget_group": "tool_list",
                           "contributor_id": "builtin:tool_list",
                           "injected": true,
                           "placement_mode": "contributor_chain",
+                          "token_count": 96,
                           "tool_count": 2
+                        },
+                        "tool_result": {
+                          "block_count": 1,
+                          "budget_group": "tool_result",
+                          "token_count": 128,
+                          "written_back": true
                         }
                       },
                       "worldbook": {
@@ -92451,6 +93626,7 @@
                               "accepted_count": 1,
                               "block_count": 1,
                               "diagnostics": [],
+                              "diagnostics_by_reason": {},
                               "rejected_count": 0
                             },
                             "selection": {
@@ -92459,10 +93635,18 @@
                               "transport": "text_protocol"
                             },
                             "tool_list": {
+                              "budget_group": "tool_list",
                               "contributor_id": "builtin:tool_list",
                               "injected": true,
                               "placement_mode": "contributor_chain",
+                              "token_count": 96,
                               "tool_count": 2
+                            },
+                            "tool_result": {
+                              "block_count": 1,
+                              "budget_group": "tool_result",
+                              "token_count": 128,
+                              "written_back": true
                             }
                           },
                           "worldbook": {
@@ -93217,6 +94401,7 @@
                                 "accepted_count": 1,
                                 "block_count": 1,
                                 "diagnostics": [],
+                                "diagnostics_by_reason": {},
                                 "rejected_count": 0
                               },
                               "selection": {
@@ -93225,10 +94410,18 @@
                                 "transport": "text_protocol"
                               },
                               "tool_list": {
+                                "budget_group": "tool_list",
                                 "contributor_id": "builtin:tool_list",
                                 "injected": true,
                                 "placement_mode": "contributor_chain",
+                                "token_count": 96,
                                 "tool_count": 2
+                              },
+                              "tool_result": {
+                                "block_count": 1,
+                                "budget_group": "tool_result",
+                                "token_count": 128,
+                                "written_back": true
                               }
                             },
                             "worldbook": {
@@ -93603,6 +94796,20 @@
                             "injection": {
                               "additionalProperties": false,
                               "properties": {
+                                "applied_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "budget_group": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "items": {
                                   "items": {
                                     "additionalProperties": false,
@@ -93664,6 +94871,31 @@
                                       "applied": {
                                         "type": "boolean"
                                       },
+                                      "budget_group": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "budget_status": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "within_budget",
+                                              "rejected_by_item_limit",
+                                              "rejected_by_total_limit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "content_length": {
                                         "minimum": 0,
                                         "type": "integer"
@@ -93699,6 +94931,10 @@
                                               "disabled",
                                               "expired",
                                               "mode_scope_mismatch",
+                                              "scope_quota_exceeded",
+                                              "content_length_exceeded",
+                                              "content_token_limit_exceeded",
+                                              "total_token_limit_exceeded",
                                               "missing_placement_params",
                                               "invalid_placement_params",
                                               "floor_no_out_of_history_window",
@@ -93756,6 +94992,9 @@
                                         "minimum": 0,
                                         "type": "integer"
                                       },
+                                      "restricted": {
+                                        "type": "boolean"
+                                      },
                                       "scope": {
                                         "enum": [
                                           "request",
@@ -93793,12 +95032,40 @@
                                         "type": "string"
                                       },
                                       "title": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "token_count": {
+                                        "anyOf": [
+                                          {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "visibility": {
+                                        "enum": [
+                                          "client",
+                                          "agent_private",
+                                          "debug",
+                                          "system"
+                                        ],
                                         "type": "string"
                                       }
                                     },
                                     "required": [
                                       "request_index",
                                       "source_kind",
+                                      "visibility",
                                       "injection_id",
                                       "enabled",
                                       "scope",
@@ -93807,15 +95074,31 @@
                                       "order_requested",
                                       "title",
                                       "content_length",
+                                      "token_count",
+                                      "budget_group",
+                                      "budget_status",
                                       "applied",
                                       "placement_resolved",
                                       "anchor_resolved",
                                       "source_chain",
-                                      "not_applied_reason"
+                                      "not_applied_reason",
+                                      "restricted"
                                     ],
                                     "type": "object"
                                   },
                                   "type": "array"
+                                },
+                                "rejected_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requested_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "token_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
@@ -94716,8 +95999,12 @@
                                               "tool_not_registered",
                                               "json_parse_failed",
                                               "missing_args_field",
+                                              "missing_call_id",
+                                              "missing_tool_name",
                                               "duplicate_call_id",
-                                              "malformed_block"
+                                              "malformed_block",
+                                              "malformed_attributes",
+                                              "invalid_tool_name"
                                             ],
                                             "type": "string"
                                           },
@@ -94741,6 +96028,13 @@
                                         "type": "object"
                                       },
                                       "type": "array"
+                                    },
+                                    "diagnostics_by_reason": {
+                                      "additionalProperties": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "type": "object"
                                     },
                                     "rejected_count": {
                                       "minimum": 0,
@@ -94796,6 +96090,9 @@
                                 "tool_list": {
                                   "additionalProperties": false,
                                   "properties": {
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
                                     "contributor_id": {
                                       "type": "string"
                                     },
@@ -94809,6 +96106,10 @@
                                       ],
                                       "type": "string"
                                     },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
                                     "tool_count": {
                                       "minimum": 0,
                                       "type": "integer"
@@ -94817,6 +96118,32 @@
                                   "required": [
                                     "injected",
                                     "tool_count"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_result": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "written_back": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "written_back",
+                                    "block_count",
+                                    "token_count",
+                                    "budget_group"
                                   ],
                                   "type": "object"
                                 }
@@ -95463,6 +96790,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -95485,6 +96813,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -95496,6 +96825,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "source_selection": {
@@ -98043,6 +99373,20 @@
                             "injection": {
                               "additionalProperties": false,
                               "properties": {
+                                "applied_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "budget_group": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "items": {
                                   "items": {
                                     "additionalProperties": false,
@@ -98104,6 +99448,31 @@
                                       "applied": {
                                         "type": "boolean"
                                       },
+                                      "budget_group": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "budget_status": {
+                                        "anyOf": [
+                                          {
+                                            "enum": [
+                                              "within_budget",
+                                              "rejected_by_item_limit",
+                                              "rejected_by_total_limit"
+                                            ],
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
                                       "content_length": {
                                         "minimum": 0,
                                         "type": "integer"
@@ -98139,6 +99508,10 @@
                                               "disabled",
                                               "expired",
                                               "mode_scope_mismatch",
+                                              "scope_quota_exceeded",
+                                              "content_length_exceeded",
+                                              "content_token_limit_exceeded",
+                                              "total_token_limit_exceeded",
                                               "missing_placement_params",
                                               "invalid_placement_params",
                                               "floor_no_out_of_history_window",
@@ -98196,6 +99569,9 @@
                                         "minimum": 0,
                                         "type": "integer"
                                       },
+                                      "restricted": {
+                                        "type": "boolean"
+                                      },
                                       "scope": {
                                         "enum": [
                                           "request",
@@ -98233,12 +99609,40 @@
                                         "type": "string"
                                       },
                                       "title": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "token_count": {
+                                        "anyOf": [
+                                          {
+                                            "minimum": 0,
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "visibility": {
+                                        "enum": [
+                                          "client",
+                                          "agent_private",
+                                          "debug",
+                                          "system"
+                                        ],
                                         "type": "string"
                                       }
                                     },
                                     "required": [
                                       "request_index",
                                       "source_kind",
+                                      "visibility",
                                       "injection_id",
                                       "enabled",
                                       "scope",
@@ -98247,15 +99651,31 @@
                                       "order_requested",
                                       "title",
                                       "content_length",
+                                      "token_count",
+                                      "budget_group",
+                                      "budget_status",
                                       "applied",
                                       "placement_resolved",
                                       "anchor_resolved",
                                       "source_chain",
-                                      "not_applied_reason"
+                                      "not_applied_reason",
+                                      "restricted"
                                     ],
                                     "type": "object"
                                   },
                                   "type": "array"
+                                },
+                                "rejected_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "requested_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                "token_count": {
+                                  "minimum": 0,
+                                  "type": "integer"
                                 }
                               },
                               "required": [
@@ -99156,8 +100576,12 @@
                                               "tool_not_registered",
                                               "json_parse_failed",
                                               "missing_args_field",
+                                              "missing_call_id",
+                                              "missing_tool_name",
                                               "duplicate_call_id",
-                                              "malformed_block"
+                                              "malformed_block",
+                                              "malformed_attributes",
+                                              "invalid_tool_name"
                                             ],
                                             "type": "string"
                                           },
@@ -99181,6 +100605,13 @@
                                         "type": "object"
                                       },
                                       "type": "array"
+                                    },
+                                    "diagnostics_by_reason": {
+                                      "additionalProperties": {
+                                        "minimum": 0,
+                                        "type": "integer"
+                                      },
+                                      "type": "object"
                                     },
                                     "rejected_count": {
                                       "minimum": 0,
@@ -99236,6 +100667,9 @@
                                 "tool_list": {
                                   "additionalProperties": false,
                                   "properties": {
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
                                     "contributor_id": {
                                       "type": "string"
                                     },
@@ -99249,6 +100683,10 @@
                                       ],
                                       "type": "string"
                                     },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
                                     "tool_count": {
                                       "minimum": 0,
                                       "type": "integer"
@@ -99257,6 +100695,32 @@
                                   "required": [
                                     "injected",
                                     "tool_count"
+                                  ],
+                                  "type": "object"
+                                },
+                                "tool_result": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "block_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "budget_group": {
+                                      "type": "string"
+                                    },
+                                    "token_count": {
+                                      "minimum": 0,
+                                      "type": "integer"
+                                    },
+                                    "written_back": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "written_back",
+                                    "block_count",
+                                    "token_count",
+                                    "budget_group"
                                   ],
                                   "type": "object"
                                 }
@@ -100034,6 +101498,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "content": {
+                          "maxLength": 8000,
                           "type": "string"
                         },
                         "order": {
@@ -100056,6 +101521,7 @@
                           "type": "string"
                         },
                         "title": {
+                          "maxLength": 256,
                           "type": "string"
                         }
                       },
@@ -100067,6 +101533,7 @@
                       ],
                       "type": "object"
                     },
+                    "maxItems": 32,
                     "type": "array"
                   },
                   "session_state_writes": {
@@ -107293,6 +108760,475 @@
           }
         },
         "summary": "Finalize a temporary conversation",
+        "tags": [
+          "temporary-conversations"
+        ]
+      }
+    },
+    "/temporary-conversations/{id}/inspect": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_agent_private",
+            "required": false,
+            "schema": {
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "data": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "agent_origin": {
+                          "anyOf": [
+                            {
+                              "additionalProperties": true,
+                              "type": "object"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "agent_private": {
+                          "type": "boolean"
+                        },
+                        "cleanup": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "cleaned": {
+                              "type": "boolean"
+                            },
+                            "cleaned_at": {
+                              "anyOf": [
+                                {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "retention_policy": {
+                              "enum": [
+                                "delete_on_finalize",
+                                "ttl",
+                                "keep_for_debug"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "cleaned",
+                            "cleaned_at",
+                            "retention_policy"
+                          ],
+                          "type": "object"
+                        },
+                        "conversation": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "branch_id": {
+                              "type": "string"
+                            },
+                            "cancelled_at": {
+                              "anyOf": [
+                                {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "created_at": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "discarded_at": {
+                              "anyOf": [
+                                {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "expires_at": {
+                              "anyOf": [
+                                {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "finalized_at": {
+                              "anyOf": [
+                                {
+                                  "minimum": 0,
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "enum": [
+                                "temporary"
+                              ],
+                              "type": "string"
+                            },
+                            "last_activity_at": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "project_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "purpose": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "retention_policy": {
+                              "enum": [
+                                "delete_on_finalize",
+                                "ttl",
+                                "keep_for_debug"
+                              ],
+                              "type": "string"
+                            },
+                            "source_session_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "enum": [
+                                "active",
+                                "finalized",
+                                "discarded",
+                                "expired",
+                                "cancelled"
+                              ],
+                              "type": "string"
+                            },
+                            "title": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "updated_at": {
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "visibility": {
+                              "enum": [
+                                "internal",
+                                "client_visible"
+                              ],
+                              "type": "string"
+                            },
+                            "workspace_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "workspace_id",
+                            "project_id",
+                            "source_session_id",
+                            "branch_id",
+                            "kind",
+                            "title",
+                            "purpose",
+                            "status",
+                            "retention_policy",
+                            "visibility",
+                            "created_at",
+                            "updated_at",
+                            "last_activity_at",
+                            "expires_at",
+                            "finalized_at",
+                            "discarded_at",
+                            "cancelled_at"
+                          ],
+                          "type": "object"
+                        },
+                        "exports": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "applied_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "created_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "delivery_target": {
+                                "enum": [
+                                  "page_staged_write"
+                                ],
+                                "type": "string"
+                              },
+                              "discarded_at": {
+                                "anyOf": [
+                                  {
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "source_page_id": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "staged_write_id": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "enum": [
+                                  "staged",
+                                  "accepted",
+                                  "applied",
+                                  "discarded"
+                                ],
+                                "type": "string"
+                              },
+                              "target_page_id": {
+                                "type": "string"
+                              },
+                              "target_session_id": {
+                                "type": "string"
+                              },
+                              "updated_at": {
+                                "minimum": 0,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "staged_write_id",
+                              "delivery_target",
+                              "target_session_id",
+                              "target_page_id",
+                              "source_page_id",
+                              "status",
+                              "reason",
+                              "created_at",
+                              "updated_at",
+                              "applied_at",
+                              "discarded_at"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "source_snapshot": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "digest": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "source_session_id": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "digest",
+                            "source_session_id"
+                          ],
+                          "type": "object"
+                        },
+                        "transcript": {
+                          "additionalProperties": true,
+                          "properties": {
+                            "branch_id": {
+                              "type": "string"
+                            },
+                            "conversation_id": {
+                              "type": "string"
+                            },
+                            "floors": {
+                              "items": {
+                                "additionalProperties": true,
+                                "type": "object"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "required": [
+                            "conversation_id",
+                            "branch_id",
+                            "floors"
+                          ],
+                          "type": "object"
+                        },
+                        "transcript_restricted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "conversation",
+                        "agent_private",
+                        "transcript_restricted",
+                        "source_snapshot",
+                        "agent_origin",
+                        "cleanup",
+                        "transcript",
+                        "exports"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Inspect a temporary conversation for debug and audit",
         "tags": [
           "temporary-conversations"
         ]

@@ -10,6 +10,11 @@ export * from "./agent-lineage-types.js";
 export { AgentMediumResolver } from "./agent-medium-resolver.js";
 export { AgentExecutorRouter } from "./agent-executor-router.js";
 export {
+  AgentJobTriggerBackgroundJobEnqueuer,
+  AgentJobTriggerBackgroundJobEnqueuerError,
+  type AgentJobTriggerBackgroundJobEnqueuerErrorCode,
+} from "./background-job-enqueuer.js";
+export {
   TemporaryConversationAgentExecutor,
   type TemporaryConversationAgentService,
   type TemporaryConversationAgentRequest,

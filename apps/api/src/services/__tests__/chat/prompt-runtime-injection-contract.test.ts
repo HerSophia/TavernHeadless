@@ -129,6 +129,7 @@ describe("prompt runtime injection contract", () => {
     const injectionItems = [{
       requestIndex: 0,
       sourceKind: "client_injection",
+      visibility: "client" as const,
       scope: "request" as const,
       placementRequested: "before_history",
       orderRequested: 30,
@@ -144,10 +145,18 @@ describe("prompt runtime injection contract", () => {
       }),
     });
 
-    expect(executionTrace?.injection).toEqual({ items: injectionItems });
+    expect(executionTrace?.injection).toEqual({
+      items: injectionItems,
+      requestedCount: 1,
+      appliedCount: 1,
+      rejectedCount: 0,
+    });
     expect(buildPromptRuntimePreviewTrace(executionTrace)).toEqual({
       injection: {
         items: injectionItems,
+        requestedCount: 1,
+        appliedCount: 1,
+        rejectedCount: 0,
       },
     });
   });

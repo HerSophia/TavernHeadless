@@ -14,6 +14,24 @@ VC Tag 用来给重要的历史点命名。第一版支持给 Floor 和资产版
 - 你要给某个资产版本命名，方便回滚或比较。
 - 你要把 Floor、资产版本和操作日志串起来做审计。
 
+## 一个简单例子
+
+给一个重要楼层打标签，之后随时按名字或目标找回：
+
+```bash
+# 1) 给某个楼层打标签
+curl -X POST http://localhost:3000/vc-tags \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "before-big-change",
+    "target_type": "floor",
+    "target_id": "floor_001"
+  }'
+
+# 2) 之后列出标签找回它
+curl 'http://localhost:3000/vc-tags?target_type=floor'
+```
+
 ## 先理解几个词
 
 | 词 | 说明 |

@@ -190,9 +190,7 @@ export function buildPromptRuntimeExecutionTrace(
     ...(visibilityTrace ? { visibility: visibilityTrace } : {}),
     ...(artifacts.inspection.injections && artifacts.inspection.injections.length > 0
       ? {
-          injection: {
-            items: artifacts.inspection.injections,
-          },
+          injection: buildPromptRuntimeInjectionTraceSummary(artifacts.inspection.injections),
         }
       : {}),
     ...((artifacts.toolTransport ?? artifacts.inspection.toolTransport)
@@ -201,6 +199,63 @@ export function buildPromptRuntimeExecutionTrace(
   };
 
   return Object.keys(trace).length > 0 ? trace : undefined;
+}
+
+function buildPromptRuntimeInjectionTraceSummary(
+  items: NonNullable<PromptRuntimeTrace["injection"]>["items"],
+): NonNullable<PromptRuntimeTrace["injection"]> {
+  const appliedItems = items.filter((item) => item.applied);
+  const tokenCount = appliedItems.reduce((sum, item) => sum + (item.tokenCount ?? 0), 0);
+  const budgetGroup = appliedItems.find((item) => item.budgetGroup)?.budgetGroup;
+  return {
+    items,
+    requestedCount: items.length,
+    appliedCount: appliedItems.length,
+    rejectedCount: items.length - appliedItems.length,
+    ...(tokenCount > 0 ? { tokenCount } : {}),
+    ...(budgetGroup ? { budgetGroup } : {}),
+  };
+}
+
+export function mergeToolResultBudgetTrace(
+  runtimeTrace: PromptRuntimeTrace,
+  toolTransport: PromptRuntimeTrace["toolTransport"] | undefined,
+): PromptRuntimeTrace {
+  const toolResult = toolTransport?.toolResult;
+  if (!toolResult || !toolResult.writtenBack || toolResult.tokenCount <= 0) {
+    return runtimeTrace;
+  }
+
+  const existingBudget = runtimeTrace.budgets;
+  const budgetGroup = toolResult.budgetGroup;
+  let merged = false;
+  const byGroup = (existingBudget?.byGroup ?? []).map((group) => {
+    if (group.group !== budgetGroup) {
+      return group;
+    }
+    merged = true;
+    return {
+      ...group,
+      tokenCount: group.tokenCount + toolResult.tokenCount,
+    };
+  });
+
+  if (!merged) {
+    byGroup.push({
+      group: budgetGroup,
+      tokenCount: toolResult.tokenCount,
+    });
+  }
+
+  byGroup.sort((left, right) => left.group.localeCompare(right.group));
+
+  return {
+    ...runtimeTrace,
+    budgets: {
+      ...(existingBudget ?? {}),
+      byGroup,
+    },
+  };
 }
 
 export function buildPromptRuntimePreviewTrace(runtimeTrace?: PromptRuntimeTrace): PromptRuntimePreviewTrace {

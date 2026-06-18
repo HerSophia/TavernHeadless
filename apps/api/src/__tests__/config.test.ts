@@ -509,3 +509,67 @@ describe("memory maintenance", () => {
     expect(m.policy!.deprecatedPurgeAgeMs).toBe(180 * dayMs);
   });
 });
+
+
+// ── Runtime maintenance ────────────────────────────────
+
+describe("runtime maintenance", () => {
+  it("returns undefined when not enabled", () => {
+    const config = loadConfig();
+    expect(config.runtimeMaintenance).toBeUndefined();
+  });
+
+  it("parses runtime maintenance config with defaults", () => {
+    vi.stubEnv("ENABLE_RUNTIME_MAINTENANCE", "true");
+
+    const config = loadConfig();
+    expect(config.runtimeMaintenance).toEqual({
+      intervalMs: 60 * 60 * 1000,
+      promptRuntimeInjection: { enabled: true },
+      temporaryConversation: { enabled: true, retentionGraceMs: 0 },
+      nodeGraphRun: { enabled: true, retentionGraceMs: 0 },
+    });
+  });
+
+  it("parses runtime maintenance custom interval and injection cleanup toggle", () => {
+    vi.stubEnv("ENABLE_RUNTIME_MAINTENANCE", "true");
+    vi.stubEnv("RUNTIME_MAINTENANCE_INTERVAL_MS", "30000");
+    vi.stubEnv("ENABLE_PROMPT_RUNTIME_INJECTION_CLEANUP", "false");
+
+    const config = loadConfig();
+    expect(config.runtimeMaintenance).toEqual({
+      intervalMs: 30_000,
+      promptRuntimeInjection: { enabled: false },
+      temporaryConversation: { enabled: true, retentionGraceMs: 0 },
+      nodeGraphRun: { enabled: true, retentionGraceMs: 0 },
+    });
+  });
+
+  it("parses temporary conversation cleanup toggle and grace window", () => {
+    vi.stubEnv("ENABLE_RUNTIME_MAINTENANCE", "true");
+    vi.stubEnv("ENABLE_TEMPORARY_CONVERSATION_CLEANUP", "false");
+    vi.stubEnv("TEMPORARY_CONVERSATION_CLEANUP_GRACE_MS", "120000");
+
+    const config = loadConfig();
+    expect(config.runtimeMaintenance).toEqual({
+      intervalMs: 60 * 60 * 1000,
+      promptRuntimeInjection: { enabled: true },
+      temporaryConversation: { enabled: false, retentionGraceMs: 120_000 },
+      nodeGraphRun: { enabled: true, retentionGraceMs: 0 },
+    });
+  });
+
+  it("parses node graph run cleanup toggle and grace window", () => {
+    vi.stubEnv("ENABLE_RUNTIME_MAINTENANCE", "true");
+    vi.stubEnv("ENABLE_NODE_GRAPH_RUN_CLEANUP", "false");
+    vi.stubEnv("NODE_GRAPH_RUN_CLEANUP_GRACE_MS", "300000");
+
+    const config = loadConfig();
+    expect(config.runtimeMaintenance).toEqual({
+      intervalMs: 60 * 60 * 1000,
+      promptRuntimeInjection: { enabled: true },
+      temporaryConversation: { enabled: true, retentionGraceMs: 0 },
+      nodeGraphRun: { enabled: false, retentionGraceMs: 300_000 },
+    });
+  });
+});

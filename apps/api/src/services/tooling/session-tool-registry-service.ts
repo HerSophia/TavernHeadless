@@ -34,6 +34,10 @@ import {
   type RuntimeMetadataBasisDetail,
 } from "./shared/metadata-basis.js";
 import { WorkspaceScopeService } from "../workspace-scope-service.js";
+import { NodeGraphDefinitionService } from "../node-graph-definition-service.js";
+import { ProjectInboxService } from "../project-inbox-service.js";
+import { OperationLogService } from "../operation-log-service.js";
+import { NodeGraphToolProvider } from "../../tools/node-graph-tool-provider.js";
 
 const INSTANCE_SLOTS = new Set<InstanceSlot>([
   "narrator",
@@ -431,6 +435,9 @@ export class SessionToolRegistryService {
     const callableOwners = new Map<string, RuntimeToolCandidate>();
 
     await this.appendBaseProviders(registry, snapshot, callableOwners);
+    if (session.projectId) {
+      await this.appendNodeGraphProvider(registry, snapshot, callableOwners, accountId, session.projectId);
+    }
 
     const definitionDescriptors = await this.loadDefinitionDescriptors(session, accountId, workspaceId);
     const definitionCandidates = definitionDescriptors.flatMap((descriptor) =>
@@ -625,6 +632,45 @@ export class SessionToolRegistryService {
         snapshot.tools.push(buildCatalogEntry(candidate, "available"));
         callableOwners.set(tool.name, candidate);
       }
+    }
+  }
+
+  private async appendNodeGraphProvider(
+    registry: ToolRegistry,
+    snapshot: SessionRuntimeToolCatalogSnapshot,
+    callableOwners: Map<string, RuntimeToolCandidate>,
+    accountId: string,
+    projectId: string,
+  ): Promise<void> {
+    const provider = new NodeGraphToolProvider({
+      service: new NodeGraphDefinitionService(this.db),
+      projectInbox: new ProjectInboxService(this.db),
+      operationLog: new OperationLogService(this.db),
+      actor: { actorType: "account", actorAccountId: accountId, actorClientId: null },
+      projectId,
+    });
+    registry.register(provider);
+
+    const tools = await provider.listTools();
+    for (const tool of tools) {
+      const candidate: RuntimeToolCandidate = {
+        name: tool.name,
+        providerId: provider.id,
+        providerType: provider.type,
+        source: "builtin",
+        sideEffectLevel: tool.sideEffectLevel,
+        allowedSlots: [...tool.allowedSlots],
+        asyncCapability: tool.asyncCapability ?? "inline_only",
+        defaultDeliveryMode: tool.defaultDeliveryMode ?? "inline",
+        resultVisibility: tool.resultVisibility ?? "immediate",
+        sideEffectLevelBasis: "tool_declared",
+        allowedSlotsBasis: "tool_declared",
+        parameterSchemaBasis: "tool_declared",
+        replaySafetyBasis: "inferred_from_execution_policy",
+        metadataBasisDetail: createDeclaredRuntimeMetadataBasisDetail(),
+      };
+      snapshot.tools.push(buildCatalogEntry(candidate, "available"));
+      callableOwners.set(tool.name, candidate);
     }
   }
 

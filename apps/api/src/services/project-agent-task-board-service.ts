@@ -58,6 +58,16 @@ export interface ProjectAgentJobMutationInput extends ProjectAgentTaskBoardScope
   jobId: string;
 }
 
+export interface ProjectAgentJobGroupView {
+  groupKey: string;
+  agentBindingId: string | null;
+  sourceEventId: string | null;
+  total: number;
+  statusCounts: Partial<Record<RuntimeJobStatus, number>>;
+  latestJob: ProjectAgentJobView;
+  jobs: ProjectAgentJobView[];
+}
+
 export class ProjectAgentTaskBoardServiceError extends Error {
   constructor(
     public readonly statusCode: 403 | 404 | 409,
@@ -150,6 +160,42 @@ const result = await this.queryService.list({
       total: result.total,
     };
 }
+
+  async listGroupedBySource(
+    input: ListProjectAgentJobsInput,
+  ): Promise<{ groups: ProjectAgentJobGroupView[]; total: number }> {
+    const result = await this.list(input);
+    const groups = new Map<string, ProjectAgentJobGroupView>();
+
+    for (const job of result.jobs) {
+      const groupKey = job.sourceEventId ?? job.agentBindingId ?? job.id;
+      const existing = groups.get(groupKey);
+      if (!existing) {
+        groups.set(groupKey, {
+          groupKey,
+          agentBindingId: job.agentBindingId,
+          sourceEventId: job.sourceEventId,
+          total: 1,
+          statusCounts: { [job.status]: 1 },
+          latestJob: job,
+          jobs: [job],
+        });
+        continue;
+      }
+
+      existing.total += 1;
+      existing.statusCounts[job.status] = (existing.statusCounts[job.status] ?? 0) + 1;
+      existing.jobs.push(job);
+      if (job.updatedAt >= existing.latestJob.updatedAt) {
+        existing.latestJob = job;
+      }
+    }
+
+    return {
+      groups: [...groups.values()],
+      total: result.total,
+    };
+  }
 
   async get(input: ProjectAgentJobMutationInput): Promise<ProjectAgentJobView> {
     const job = await this.requireProjectJob(input);

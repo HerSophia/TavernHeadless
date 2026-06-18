@@ -178,6 +178,52 @@ expect(pending.jobs).toHaveLength(1);
     expect(dead.jobs).toHaveLength(0);
   });
 
+  it("groups jobs by source event for the minimal merged notification view", async () => {
+    enqueueJob(database, {
+      jobId: "job_evt_1a",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+      agentTypeId: "agt_1",
+      payload: basePayload({ sourceEventId: "evt_merge" }),
+    });
+    enqueueJob(database, {
+      jobId: "job_evt_1b",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+      agentTypeId: "agt_1",
+      payload: basePayload({ sourceEventId: "evt_merge" }),
+    });
+    enqueueJob(database, {
+      jobId: "job_manual",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+      agentTypeId: "agt_1",
+      payload: basePayload({ sourceEventId: null, agentBindingId: "agb_1" }),
+    });
+
+    const service = new ProjectAgentTaskBoardService(database.db);
+    const grouped = await service.listGroupedBySource({
+      accountId: "default-admin",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+    });
+
+    expect(grouped.total).toBe(3);
+    expect(grouped.groups).toHaveLength(2);
+    const eventGroup = grouped.groups.find((group) => group.groupKey === "evt_merge");
+    expect(eventGroup).toMatchObject({
+      sourceEventId: "evt_merge",
+      total: 2,
+      statusCounts: { pending: 2 },
+    });
+    expect(["job_evt_1a", "job_evt_1b"]).toContain(eventGroup?.latestJob.id);
+    expect(grouped.groups.find((group) => group.groupKey === "agb_1")).toMatchObject({
+      agentBindingId: "agb_1",
+      sourceEventId: null,
+      total: 1,
+    });
+  });
+
   it("cancels a pending job", async () => {
     enqueueJob(database, {
       jobId: "job_proj1",
