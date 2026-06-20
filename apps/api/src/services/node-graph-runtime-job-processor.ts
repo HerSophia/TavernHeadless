@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import type { NodeGraphDocument } from "@tavern/core";
 
 import { nodeGraphDefinitions, nodeGraphVersions } from "../db/schema.js";
+import { NodeGraphCheckpointService } from "./node-graph-checkpoint-service.js";
 import {
   NodeGraphRunService,
   type NodeGraphRunRecord,
@@ -111,10 +112,20 @@ export class NodeGraphRuntimeJobProcessor
     // R6-1（缺口 3）：run id 在 prepare 阶段预生成，让 `agent.call` 入队的后台 job
     // 能携带 parent_run_id / root_run_id，与 commit 写入的 graph run 行保持同一 id。
     const graphRunId = `ngrun_${nanoid(12)}`;
+    const dryRun = payload.dryRun || payload.intent === "dry_run" || payload.intent === "preview";
+    // NG2-CORE：真实 PageRun 才复用 floor checkpoint；dry-run / preview 不复用持久 checkpoint。
+    const floorCheckpoints = !dryRun && payload.floorId
+      ? new NodeGraphCheckpointService(db).loadFloorCheckpoints({
+          accountId: payload.accountId,
+          floorId: payload.floorId,
+          graphVersionId: version.id,
+        })
+      : undefined;
     const executor = createDefaultNodeGraphExecutor();
     const execution = await executor.execute({
       document,
       graphVersionId: version.id,
+      ...(floorCheckpoints ? { floorCheckpoints } : {}),
       context: {
         accountId: payload.accountId,
         workspaceId: payload.workspaceId,
@@ -124,13 +135,14 @@ export class NodeGraphRuntimeJobProcessor
         pageId: payload.pageId ?? null,
         actorClientId: payload.actorClientId ?? null,
         intent: payload.intent,
-        dryRun: payload.dryRun || payload.intent === "dry_run" || payload.intent === "preview",
+        dryRun,
         input: payload.inputJson,
         userInput: typeof payload.inputJson.user_input === "string" ? payload.inputJson.user_input : undefined,
         chatHistory: Array.isArray(payload.inputJson.chat_history)
           ? payload.inputJson.chat_history as Array<{ role: string; content: string }>
           : undefined,
         graphRunId,
+        graphVersionId: version.id,
         rootRunId: graphRunId,
         ...(this.deps.agentRouter ? { agentRouter: this.deps.agentRouter } : {}),
       },
@@ -243,6 +255,40 @@ export class NodeGraphRuntimeJobProcessor
         startedAt: nodeRun.startedAt ?? completedAt,
         finishedAt: nodeRun.finishedAt ?? completedAt,
       });
+    }
+
+    // NG2-CORE：持久化 floor checkpoint（仅真实运行 + 有 floorId）。对 floor-eligible 且本次
+    // succeeded / reused 的节点 upsert，即使整体 run 失败，也保留 pre-response 已算节点供下次重试复用。
+    const isDryRun = payload.dryRun || payload.intent === "dry_run" || payload.intent === "preview";
+    if (!isDryRun && payload.floorId) {
+      const checkpointService = new NodeGraphCheckpointService(tx);
+      for (const nodeRun of execution.nodeRuns) {
+        if (!nodeRun.checkpointEligible) {
+          continue;
+        }
+        if (nodeRun.status !== "succeeded" && nodeRun.status !== "reused") {
+          continue;
+        }
+        if (!nodeRun.inputHash || !nodeRun.configHash) {
+          continue;
+        }
+        checkpointService.saveCheckpoint({
+          accountId: payload.accountId,
+          workspaceId: payload.workspaceId,
+          projectId: payload.projectId,
+          sessionId: payload.sessionId ?? null,
+          floorId: payload.floorId,
+          graphId: payload.graphId,
+          graphVersionId: payload.graphVersionId,
+          nodeId: nodeRun.nodeId,
+          phase: prepared.nodePhases[nodeRun.nodeId] ?? nodeRun.phase,
+          scope: nodeRun.scope ?? null,
+          inputHash: nodeRun.inputHash,
+          configHash: nodeRun.configHash,
+          output: nodeRun.output,
+          now: completedAt,
+        });
+      }
     }
 
     // R6-1（缺口 1）：graph run 运行级 operation log。只记录摘要 / reason code / 副作用计数，

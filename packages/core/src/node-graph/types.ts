@@ -1,5 +1,18 @@
 export const NODE_GRAPH_SCHEMA_VERSION = 1 as const;
 
+/** NG2-CORE：NodeGraph v2 schema 版本。 */
+export const NODE_GRAPH_SCHEMA_VERSION_V2 = 2 as const;
+
+/** v2 runtime 可读取的全部 schema 版本（向后兼容 v1）。 */
+export const NODE_GRAPH_SUPPORTED_SCHEMA_VERSIONS = [
+  NODE_GRAPH_SCHEMA_VERSION,
+  NODE_GRAPH_SCHEMA_VERSION_V2,
+] as const;
+
+export type NodeGraphSchemaVersion =
+  | typeof NODE_GRAPH_SCHEMA_VERSION
+  | typeof NODE_GRAPH_SCHEMA_VERSION_V2;
+
 export const NODE_GRAPH_PORT_TYPES = [
   'text',
   'json',
@@ -37,6 +50,45 @@ export type NodeGraphRetryPolicy =
   | 'rerun_if_upstream_changed'
   | 'never_reuse';
 
+/**
+ * NG2-CORE：节点执行作用域（纲领第 6.4 节）。
+ *
+ * 决定该节点输出是否能进入 floor 级持久 checkpoint：
+ * - `floor_stable` / `pre_response_deterministic`：可进入 floor checkpoint，PageRun 重试可复用。
+ * - `pre_response_stochastic`：含随机性（如 LLM），不进入 floor checkpoint。
+ * - `page_volatile`：每次生成尝试都重算，归属 PageRun。
+ */
+export type NodeGraphNodeScope =
+  | 'floor_stable'
+  | 'pre_response_deterministic'
+  | 'pre_response_stochastic'
+  | 'page_volatile';
+
+export const NODE_GRAPH_NODE_SCOPES = [
+  'floor_stable',
+  'pre_response_deterministic',
+  'pre_response_stochastic',
+  'page_volatile',
+] as const;
+
+/**
+ * NG2-CORE：节点 checkpoint 复用策略（纲领第 6.3 节）。
+ *
+ * - `reuse_on_regen`（默认）：重试时若 input/config/version 一致则复用 checkpoint。
+ * - `rerun_on_regen`：每次重试都重跑该节点，不复用 checkpoint。
+ * - `manual_refresh`：仅在用户显式刷新时重算，其余复用。
+ */
+export type NodeGraphCheckpointPolicy =
+  | 'reuse_on_regen'
+  | 'rerun_on_regen'
+  | 'manual_refresh';
+
+export const NODE_GRAPH_CHECKPOINT_POLICIES = [
+  'reuse_on_regen',
+  'rerun_on_regen',
+  'manual_refresh',
+] as const;
+
 export type NodeGraphFailurePolicy = 'fail_open' | 'fail_closed' | 'use_default' | 'skip';
 
 export type NodeGraphPreviewPolicy = 'auto' | 'cached_only' | 'manual' | 'disabled';
@@ -48,7 +100,10 @@ export type NodeGraphRunStatus = 'running' | 'succeeded' | 'failed' | 'cancelled
 export type NodeGraphNodeRunStatus = 'skipped' | 'running' | 'succeeded' | 'failed' | 'reused';
 
 export interface NodeGraphDocument {
-  schemaVersion: typeof NODE_GRAPH_SCHEMA_VERSION;
+  /**
+   * Schema 版本。v1 = 1，NG2-CORE v2 = 2。缺省（旧文档无此字段）按 v1 读取。
+   */
+  schemaVersion: NodeGraphSchemaVersion;
   graphId: string;
   name: string;
   description?: string;
@@ -58,6 +113,10 @@ export interface NodeGraphDocument {
   groups?: NodeGraphGroup[];
   policies: NodeGraphPolicies;
   permissions?: NodeGraphPermissionManifest;
+  /**
+   * 任意元数据。NG2-CORE 约定保留键：
+   * - `systemGraph?: boolean`：标记该图承载主链 prompt 编排，受更严格校验（见 validator）。
+   */
   metadata?: Record<string, unknown>;
 }
 
@@ -72,6 +131,10 @@ export interface NodeGraphNode {
   retryPolicy?: NodeGraphRetryPolicy;
   failurePolicy?: NodeGraphFailurePolicy;
   previewPolicy?: NodeGraphPreviewPolicy;
+  /** NG2-CORE：执行作用域，决定是否进入 floor checkpoint。 */
+  scope?: NodeGraphNodeScope;
+  /** NG2-CORE：checkpoint 复用策略。 */
+  checkpointPolicy?: NodeGraphCheckpointPolicy;
   ui?: {
     position?: { x: number; y: number };
     groupId?: string;
@@ -87,7 +150,11 @@ export interface NodeGraphEdge {
   id: string;
   from: NodeGraphEdgeEndpoint;
   to: NodeGraphEdgeEndpoint;
-  kind: NodeGraphEdgeKind;
+  /**
+   * 边类型。NG2-CORE 起可选：缺省视为 `data`，与 v1（总是显式 data）兼容。
+   * `control` 边只在 schemaVersion >= 2 放行（见 validator）。
+   */
+  kind?: NodeGraphEdgeKind;
 }
 
 export interface NodeGraphGroup {
@@ -99,6 +166,8 @@ export interface NodeGraphGroup {
   exposedConfig?: NodeGraphExposedGroupConfig[];
   nodeIds: string[];
   version?: string;
+  /** NG2-CORE：节点组级 checkpoint 复用策略。 */
+  checkpointPolicy?: NodeGraphRetryPolicy;
 }
 
 export interface NodeGraphExposedGroupConfig {

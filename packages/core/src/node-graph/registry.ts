@@ -286,6 +286,40 @@ export const NODE_GRAPH_BUILTIN_NODE_TYPES: NodeTypeRegistryEntry[] = [
     previewPolicy: 'auto',
     sideEffects: 'none',
   }),
+  // NG2-CORE：控制流节点最小集合（schemaVersion >= 2 才放行 control edge）。
+  define({
+    type: 'control.condition',
+    typeVersion: '1',
+    title: 'Condition',
+    description: 'Evaluates a structured condition and outputs a boolean result.',
+    inputPorts: [port('value', 'json', { multiple: true })],
+    outputPorts: [port('result', 'boolean')],
+    supportedPhases: ALL_PHASES,
+    previewPolicy: 'auto',
+    sideEffects: 'none',
+  }),
+  define({
+    type: 'control.branch',
+    typeVersion: '1',
+    title: 'Branch',
+    description: 'Routes control flow on its true / false control ports based on a boolean.',
+    inputPorts: [port('condition', 'boolean')],
+    outputPorts: [port('true', 'boolean'), port('false', 'boolean')],
+    supportedPhases: ALL_PHASES,
+    previewPolicy: 'auto',
+    sideEffects: 'none',
+  }),
+  define({
+    type: 'control.gate',
+    typeVersion: '1',
+    title: 'Gate',
+    description: 'Gates downstream nodes through its open control port, with an onSkip behavior.',
+    inputPorts: [port('condition', 'boolean'), port('value', 'json', { multiple: true })],
+    outputPorts: [port('open', 'boolean'), port('value', 'json')],
+    supportedPhases: ALL_PHASES,
+    previewPolicy: 'auto',
+    sideEffects: 'none',
+  }),
 ];
 
 export function createDefaultNodeTypeRegistry(): NodeTypeRegistry {

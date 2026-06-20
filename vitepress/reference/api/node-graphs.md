@@ -122,7 +122,7 @@ R5.1 会在执行前拒绝以下图：
 
 - required input 既没有 data edge，也没有由 node config 提供同名输入。
 - 非 `multiple` input port 有多条 data edge。
-- `control` edge 暂未激活。
+- `control` edge 在 `schemaVersion: 1` 仍报 `node_graph_control_edge_unsupported`；`schemaVersion: 2` 起放行（见下文 NG2-CORE）。
 - `agent.call` 使用 `background_job` medium，但 graph policy 未设置 `allowBackgroundJobs: true`。
 - subgraph group 声明 input/output ports，但缺少 `group.input` / `group.output` 边界节点。
 
@@ -149,9 +149,12 @@ GET    /projects/:id/node-graph-runs/:run_id
 POST   /projects/:id/node-graphs/:graph_id/archive
 POST   /projects/:id/node-graphs/:graph_id/unarchive
 POST   /projects/:id/node-graphs/:graph_id/current-version
+POST   /projects/:id/node-graphs/:graph_id/export
+POST   /projects/:id/node-graph-imports/preflight
+POST   /projects/:id/node-graph-imports
 ```
 
-读、校验、预览需要 `project.nodegraph.read`；创建和版本写入需要 `project.nodegraph.write`；后台运行需要 `project.nodegraph.run`；归档 / 取消归档 / 切换当前版本与节点输出正文 debug 查看需要 `project.nodegraph.manage`。
+读、校验、预览、导出需要 `project.nodegraph.read`；创建、版本写入、导入预检与导入需要 `project.nodegraph.write`；后台运行需要 `project.nodegraph.run`；归档 / 取消归档 / 切换当前版本与节点输出正文 debug 查看需要 `project.nodegraph.manage`。
 
 ## 创建图
 
@@ -484,6 +487,195 @@ R6-4 建立最小评估闭环与默认启用检查清单，不做完整评估平
 - **可见性**：节点输出正文默认裁剪，debug 查看走 `project.nodegraph.manage` + `include_node_output=true` 并留审计。
 
 guard / verifier / LLM 路由的默认 profile 仍由 Project 的 Agent 绑定与 LLM Profile 决定（见 [Project Agent Bindings](./project-agent-bindings) 与 [LLM Profiles](./llm-profiles)）；R6-4 的硬化范围只覆盖上面这组运行时治理默认值。
+
+## NG2-CORE：NodeGraph v2 运行契约（批次 9）
+
+NG2-CORE 在 v1 内核之上做**向后兼容**的扩展：激活 control edge 最小执行语义、持久 floor checkpoint / input-hash reuse、`schemaVersion: 2` 与 v1 → v2 迁移。`schemaVersion: 1`（或缺省）文档仍按 v1 语义运行，行为不回归。创建 / 版本接口现同时接受 `schemaVersion` 为 `1` 或 `2`。
+
+### schemaVersion 2 文档边界
+
+v2 在 v1 顶层结构上扩展（全部可选，缺省即 v1 行为）：
+
+- `edges[].kind` 改为可选，缺省视为 `data`；`control` 边只在 v2 放行。
+- 节点新增 `scope`：`floor_stable` / `pre_response_deterministic` / `pre_response_stochastic` / `page_volatile`，决定是否进入 floor checkpoint。
+- 节点新增 `checkpointPolicy`：`reuse_on_regen`（默认）/ `rerun_on_regen` / `manual_refresh`。
+- 节点组新增 `checkpointPolicy`（沿用 `reuse_if_inputs_same` 等 retry policy 取值）。
+- `metadata.systemGraph: true` 标识 system graph，受更严格校验（必含唯一 `narration.narrator`、唯一 `output.commit_gate` 与至少一个 `compose.final_messages`）。
+
+### control edge 与控制流节点
+
+control edge 只表达「是否执行下游节点」，不传数据（数据仍走 data edge）。新增三类控制流节点：
+
+| 类型 | 角色 | 关键端口 |
+| ---- | ---- | ---- |
+| `control.condition` | 求值结构化条件，输出 boolean | 输出 `result`（boolean，走 data edge） |
+| `control.branch` | true/false 路由 | 控制输出 `true` / `false` |
+| `control.gate` | 带 onSkip 的门控 | 控制输出 `open` |
+
+- 条件是结构化 `ConditionExpr`（`eq/neq/gt/gte/lt/lte/exists/empty/contains/and/or/not`），`ValueRef` 带受控来源 `variable` / `session_state` / `node_output` / `runtime`，禁止任意代码或自然语言。
+- 目标节点的执行规则：无 incoming control edge → 正常运行；有 → 任一 control edge active 才运行；全部 inactive → 按 onSkip 处理。
+- gate 的 `onSkip`：`empty_output`（默认，状态 `skipped`）/ `use_cached`（有缓存则 `reused`）/ `use_default`（用节点默认输出，状态 `succeeded`）/ `error`（状态 `failed`，按 failurePolicy 处理）。
+- dry-run 会在控制流节点输出的 `controlTrace` 中暴露条件求值轨迹。
+- 校验新增：control edge 必须从控制节点的控制端口出发（否则 `node_graph_control_edge_invalid_source`）；条件复杂度上限（最大深度 5、单个 and/or 子项 16）；`node_output` 引用必须是上游祖先（否则 `node_graph_condition_node_output_not_upstream`）。
+
+### 持久 checkpoint 与 input-hash reuse
+
+```text
+节点输出 = f(inputHash, node config, graph version, floor)
+全部一致时，PageRun（同一 floor 的重试）复用 FloorRun 已算的节点，不重跑。
+```
+
+- checkpoint **归属 FloorRun**：只有 `floor_prepare` / `pre_response` 且 opt-in 的节点（`scope = floor_stable` / `pre_response_deterministic`，或 `retryPolicy ∈ {reuse_if_inputs_same, rerun_if_upstream_changed}`）进入持久 checkpoint；`response` barrier 之后的节点永不进入。
+- 复用键按 `(floorId, graphVersionId, nodeId)` 唯一：新版本天然失效旧 checkpoint。命中要求 `input_hash` 与 `config_hash` 同时一致。
+- 复用命中 / miss 可解释：命中时该节点 run 状态为 `reused`，并在 `run.trace.checkpointReuse` 暴露 `reused` 列表与 miss 原因（`no_checkpoint` / `input_hash_changed` / `config_hash_changed` / `manual_refresh`）。
+- 只有真实运行（非 dry-run / preview）且带 `floor_id` 才读写 checkpoint。失败 run 也会为已成功的 floor-eligible 节点保留 checkpoint，供下次重试复用。
+- 清理复用 R6-3 模式：`RuntimeMaintenanceService` 在宽限期后裁剪 checkpoint 的 `output_json` 正文、写 `cleaned_at`、写 `node_graph_run.checkpoint_cleanup` 摘要日志，保留结构与 hash。默认开启，可经 `nodeGraphCheckpoint.enabled` 关闭。
+
+### v1 → v2 迁移
+
+- 读路径兼容：v2 runtime 直接加载 v1 文档，按 data-only、无 control、无 checkpoint 运行。
+- 写路径升级：`migrateNodeGraphDocumentToV2` 把 `schemaVersion` 升为 2、给所有 edge 补 `kind: "data"` 缺省，幂等且不改变既有执行结果。
+- 迁移诊断：`detectNodeGraphSchemaMigration` 对低于 v2 的文档产出 `MIGRATION_AVAILABLE`（info）。完整 node-type / capability 兼容性诊断（`MIGRATION_REQUIRED` 等）见下文 NG2-PKG。
+
+## NG2-PKG：package 导入 / 导出（批次 9）
+
+NG2-PKG 让图能安全地跨环境分发与落地：导出不再是裸 graph JSON，而是带 manifest / 兼容性 / 依赖 / 权限 / 安全摘要 / 完整性的 **NodeGraphPackage**；导入前在**执行前**对照 Workspace（已安装节点类型 / capability）与 Project（权限）边界产出缺失依赖诊断，区分可降级与不可降级，并需要用户确认后才安装。
+
+### 导出 package
+
+```http
+POST /projects/:id/node-graphs/:graph_id/export
+```
+
+请求体（均可选）：
+
+```json
+{ "version_id": "ngver_...", "package_version": "1.0.0" }
+```
+
+不带 `version_id` 时导出当前版本；导出时 document 统一升为 schemaVersion 2。响应：
+
+```json
+{
+  "package": {
+    "kind": "tavernheadless.nodegraph",
+    "schemaVersion": "1",
+    "metadata": { "id": "...", "name": "...", "version": "v3" },
+    "compatibility": { "minTavernHeadlessVersion": "0.1.0", "graphApiVersion": "2" },
+    "graph": { "schemaVersion": 2, "...": "..." },
+    "dependencies": {
+      "nodeTypes": [{ "type": "narration.narrator", "typeVersion": "1" }],
+      "capabilities": ["agent_runtime"],
+      "mcpServers": [],
+      "sessionStateNamespaces": []
+    },
+    "permissions": [{ "permission": "project.agent.run" }],
+    "integrity": { "contentHash": "sha256:..." }
+  },
+  "security_summary": { "...": "..." },
+  "graph_id": "...",
+  "version_id": "...",
+  "version_no": 3
+}
+```
+
+依赖与权限由图自动推断：节点类型来自图中节点；capability 按节点类型映射（如 `agent.*` → `agent_runtime`、`select.memory_retrieve` → `memory`）；MCP server / session state namespace / asset 来自节点配置；权限是图 manifest 与各节点 registry `permissionsRequired` 的并集。导出写 `node_graph.export` 审计（只记摘要与 hash，不记图正文）。
+
+### 导入预检
+
+```http
+POST /projects/:id/node-graph-imports/preflight
+```
+
+请求体：`{ "package": { ... } }`。响应在**执行前**给出统一缺失依赖诊断与安全摘要，不安装任何东西：
+
+```json
+{
+  "package_id": "...",
+  "content_hash": "sha256:...",
+  "installable": true,
+  "migration_available": false,
+  "migration_required": false,
+  "counts": { "error": 0, "warning": 0, "info": 0 },
+  "diagnostics": [],
+  "required_node_types": ["narration.narrator@1"],
+  "missing_node_types": [],
+  "degradable_node_types": [],
+  "security_summary": {
+    "long_term_data_reads": ["chat_history"],
+    "session_state_namespace_reads": [],
+    "proposes_committed_writes": false,
+    "persistent_output_targets": [],
+    "mcp_servers": [],
+    "requests_network_access": false,
+    "requests_file_write": false,
+    "required_permissions": []
+  }
+}
+```
+
+`GraphImportDiagnostic.code` 取值：`NODE_TYPE_MISSING`、`NODE_VERSION_INCOMPATIBLE`、`GROUP_MISSING`、`CAPABILITY_MISSING`、`PERMISSION_REQUIRED`、`SESSION_STATE_NAMESPACE_MISSING`、`MCP_SERVER_MISSING`、`ASSET_REFERENCE_MISSING`、`MIGRATION_AVAILABLE`、`MIGRATION_REQUIRED`。每条带 `severity`、`message`、可选 `nodeId` / `dependencyId`、`degradable` 与 `resolution`（建议动作）。
+
+降级判定（纲领第 10.5 节）：
+
+- 可降级（`severity: "warning"`，跳过并警告）：StyleVerifier / DirectorAgent 等可选节点缺失、capability 缺失、MCP server 缺失、非写入用途的 namespace 缺失、资产缺失、待授予权限。
+- 不可降级（`severity: "error"`，阻断安装）：`compose.final_messages` / `narration.narrator` / `output.commit_gate` / 控制流节点等关键节点缺失、external group 引用缺失、写入用途的 session state namespace 缺失、面向更高 graph API 的包。
+
+`installable` 为无 error 级诊断（降级 warning 不阻断安装）。
+
+### 导入
+
+```http
+POST /projects/:id/node-graph-imports
+```
+
+请求体：`{ "package": { ... }, "confirm": true, "name": "可选名称" }`。
+
+- 预检存在不可降级 error → 返回 `422 node_graph_package_not_installable`，缺失依赖诊断在 `error.details`。
+- `confirm` 非 `true` → 返回 `200` 与 `{ "confirmed": false, "requires_confirmation": true, "preflight": { ... } }`，不安装（用户确认环节）。
+- 预检通过且 `confirm: true` → 返回 `201`，按 v2 安装为**新图**（生成新 `graph_id`，避免与现有图冲突），响应含 `definition` / `version` / `validation` / `preflight`，并写 `node_graph.import` 审计。
+
+预检接 Workspace / Project 边界：Workspace 决定是否安装了所需节点类型 / capability，Project 决定权限是否已授予。安全摘要复用批次 8 脱敏与 operation log 摘要约定。
+
+## NG2-BRIDGE：native prompt system graph 灰度承载（批次 9）
+
+NG2-BRIDGE 让 native prompt 主链在受控灰度路径下由内置 **system graph** 承载，而非一次性切换。它不重写编排逻辑：核心 PromptIR 仍由既有 compose 闭包产出，与命令式 composite 路径 **golden 一致**；system graph 只是 native 主链的「图化承载表达」，并把承载路径写进治理 trace。
+
+### 承载路径与 system graph
+
+native prompt 编排有两条承载路径：
+
+- `composite`（默认）：既有命令式 native 编排（`CompositeTurnProcessor`）。
+- `system_graph`：由内置 `system.native_prompt`（`metadata.systemGraph = true`）承载（`NodeGraphTurnProcessor`），节点覆盖 source → agent decision → compose → narrator → postprocess → verify → commit_gate，复用 NG2-CORE 的 system graph 严格校验（唯一 Narrator / 唯一 CommitGate + compose）。
+
+`compat_strict` / `compat_plus` 永不进入 system graph 灰度（它们是 `prompt_mode` 处理器，零图化）。
+
+### 灰度切流（effective config 分层）
+
+承载决策按批次 8 effective config 分层解析：**Workspace 默认 → Project → Session**，后层覆盖前层。Workspace 默认由环境变量提供：
+
+```bash
+# 承载路径：composite（默认）| system_graph
+NATIVE_PROMPT_SYSTEM_GRAPH_CARRIER=system_graph
+# 影子运行：并行跑另一条承载路径并逐字段比对，只观测不切流
+NATIVE_PROMPT_SYSTEM_GRAPH_SHADOW=true
+```
+
+`EffectiveConfigService.resolveNativePromptBridge()` 解析最终决策并标注 `source`（workspace / project / session）。缺省（未设置）为 `composite` + shadow off，与 NG2-BRIDGE 前行为完全一致。
+
+### 三段式推进与影子比对
+
+1. **影子（shadow）**：`NATIVE_PROMPT_SYSTEM_GRAPH_SHADOW=true` 时，承载路径之外并行运行另一条路径，对 prepared prompt 逐字段比对（`assemblyInputHash` / 装配标志 / PromptIR），差异写入内部 turn 装配元数据的 `bridgeComparison`，**只观测、不切流**。由于两条路径复用同一 compose 闭包，正常应完全一致；diff 非空即说明承载表达引入回归，必须切流前修复。
+2. **灰度切流**：把 `NATIVE_PROMPT_SYSTEM_GRAPH_CARRIER` 设为 `system_graph`（可按 Project / Session override）。
+3. **默认承载**：稳定后 system graph 成为 native 默认承载，命令式路径降级为回退。
+
+### 边界保护与一键回退
+
+- Narrator 唯一正文：system graph 中 Narrator 节点唯一，`node_graph` 处理器每次 execute 只 compose 一次。
+- response barrier 后节点归 PageRun；CommitGate 仍是唯一正史写入边界；committed floor 与 R2.5 人工修订路径不被绕过。
+- 一键回退：把承载决策设回 `composite`（清除环境变量或设 override）即回退，是**配置级动作，不回滚代码**。
+
+承载路径与影子比对结果写进批次 8 统一治理 trace（`runtime_kind = "chat_turn"`，diagnostics 含 `carrier` / `system_graph_id` / `system_graph_version`），属内部元数据，不进入公共 OpenAPI / SDK。
 
 ## Agent 自修改边界
 

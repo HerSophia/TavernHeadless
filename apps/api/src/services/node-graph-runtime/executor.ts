@@ -1,8 +1,16 @@
 import { createHash } from "node:crypto";
 
 import {
+  classifyNodeGraphCheckpointReuse,
   compileNodeGraph,
+  isNodeFloorCheckpointEligible,
+  isNodeGraphControlNodeType,
+  nodeGraphEdgeKind,
+  resolveNodeGraphControlActivation,
+  NODE_GRAPH_ON_SKIP_BEHAVIORS,
   type CompiledNodeGraph,
+  type NodeGraphControlActivation,
+  type NodeGraphControlSignal,
   type NodeGraphDiagnostic,
   type NodeGraphDocument,
   type NodeGraphEdge,
@@ -10,10 +18,12 @@ import {
   type NodeGraphNode,
   type NodeGraphNodeRunStatus,
   type NodeGraphNodeRunOutput,
+  type NodeGraphOnSkipBehavior,
   type NodeGraphRunIntent,
 } from "@tavern/core";
 
 import type { AgentOutputDispatchRequest } from "../agent-runtime/agent-output-dispatcher.js";
+import type { NodeGraphFloorCheckpoint } from "../node-graph-checkpoint-service.js";
 import type { NodeGraphRunRecord } from "../node-graph-run-service.js";
 import {
   NodeGraphNodeHandlerRegistry,
@@ -49,6 +59,14 @@ export type NodeGraphExecutedNodeRun = {
   diagnostics?: NodeGraphDiagnostic[] | null;
   startedAt?: number | null;
   finishedAt?: number | null;
+  /** NG2-CORE：节点是否进入 floor checkpoint（供 commit 决定是否持久化）。 */
+  checkpointEligible?: boolean;
+  /** NG2-CORE：本次复用判定的 input/config 哈希（持久 checkpoint 用）。 */
+  configHash?: string | null;
+  /** NG2-CORE：本次 checkpoint 复用判定结果。 */
+  checkpointReuse?: { decision: "reuse" | "miss"; reason: string } | null;
+  /** NG2-CORE：节点声明的 scope（持久 checkpoint 元数据）。 */
+  scope?: string | null;
 };
 
 export type NodeGraphPendingOutputDispatchRequest = {
@@ -90,6 +108,10 @@ export type NodeGraphExecutionResult = {
     failedNodes: Array<{ nodeId: string; diagnostics: NodeGraphDiagnostic[] }>;
     outputDispatchRefs: NodeGraphOutputDispatchTraceRef[];
     nestedJobRefs: NodeGraphNestedJobTraceRef[];
+    /** NG2-CORE：被 control edge 门控跳过的节点与原因。 */
+    controlSkippedNodes: Array<{ nodeId: string; onSkip: NodeGraphOnSkipBehavior }>;
+    /** NG2-CORE：floor checkpoint 复用命中 / miss 摘要（可解释）。 */
+    checkpointReuse: { reused: string[]; missed: Array<{ nodeId: string; reason: string }> };
     failedNodeId?: string;
     error?: string;
   };
@@ -102,6 +124,8 @@ export class NodeGraphExecutor {
     document: NodeGraphDocument;
     graphVersionId?: string;
     context: NodeGraphRuntimeContext;
+    /** NG2-CORE：同一 floor + graph version 的已计算 checkpoint（PageRun 重试复用）。 */
+    floorCheckpoints?: ReadonlyMap<string, NodeGraphFloorCheckpoint>;
   }): Promise<NodeGraphExecutionResult> {
     const compiled = compileNodeGraph(input.document);
     const baseTrace = {
@@ -124,6 +148,8 @@ export class NodeGraphExecutor {
           failedNodes: [],
           outputDispatchRefs: [],
           nestedJobRefs: [],
+          controlSkippedNodes: [],
+          checkpointReuse: { reused: [], missed: [] },
           error: "node_graph_not_executable",
         },
       };
@@ -147,17 +173,63 @@ export class NodeGraphExecutor {
     let fatalError: string | undefined;
     const startedAtMs = Date.now();
 
+    // NG2-CORE：control edge 门控状态。
+    const onSkipByNodeId = buildOnSkipMap(input.document);
+    const controlSignalsByNodeId = new Map<string, NodeGraphControlSignal>();
+    const skippedNodeIds = new Set<string>();
+    const controlSkippedNodes: Array<{ nodeId: string; onSkip: NodeGraphOnSkipBehavior }> = [];
+    const checkpointReuse: { reused: string[]; missed: Array<{ nodeId: string; reason: string }> } = {
+      reused: [],
+      missed: [],
+    };
+
     for (const level of compiled.topologicalLevels) {
       for (const node of level) {
+        const incomingEdges = compiled.incomingEdgesByNodeId.get(node.id) ?? [];
+        const incomingControlEdges = incomingEdges.filter((edge) => nodeGraphEdgeKind(edge) === "control");
+        const activation = resolveNodeGraphControlActivation({
+          incomingControlEdges,
+          signalsByNodeId: controlSignalsByNodeId,
+          skippedNodeIds,
+          onSkipByNodeId,
+        });
+
         const run = await this.executeNode({
           node,
           compiled,
           context: input.context,
           document: input.document,
           nodeOutputs,
+          incomingEdges,
+          activation,
+          floorCheckpoints: input.floorCheckpoints,
         });
         nodeRuns.push(run);
         nodeOutputs.set(node.id, run.output);
+
+        if (activation.gated && !activation.active) {
+          controlSkippedNodes.push({ nodeId: node.id, onSkip: activation.onSkip });
+        }
+        if (run.checkpointReuse?.decision === "reuse") {
+          checkpointReuse.reused.push(node.id);
+        } else if (run.checkpointEligible && run.checkpointReuse?.decision === "miss" && run.checkpointReuse.reason !== "not_eligible") {
+          checkpointReuse.missed.push({ nodeId: node.id, reason: run.checkpointReuse.reason });
+        }
+
+        // NG2-CORE：捕获控制流节点信号，供下游 control edge 门控；非 active / 失败的控制节点视为信号缺失。
+        if (isNodeGraphControlNodeType(node.type)) {
+          const signal = run.status === "succeeded" || run.status === "reused"
+            ? readControlSignal(run.output)
+            : null;
+          if (signal) {
+            controlSignalsByNodeId.set(node.id, signal);
+          } else {
+            skippedNodeIds.add(node.id);
+          }
+        }
+        if (run.status === "skipped" || run.status === "failed") {
+          skippedNodeIds.add(node.id);
+        }
 
         if (run.status === "failed" && this.failurePolicyFor(input.document, node) === "fail_closed") {
           failedNodeId = node.id;
@@ -195,6 +267,8 @@ export class NodeGraphExecutor {
         status: input.context.dryRun ? "planned" as const : "pending" as const,
       })),
       nestedJobRefs,
+      controlSkippedNodes,
+      checkpointReuse,
       ...(failedNodeId ? { failedNodeId } : {}),
       ...(fatalError ? { error: fatalError } : {}),
     };
@@ -240,6 +314,8 @@ export class NodeGraphExecutor {
         failedNodes: [],
         outputDispatchRefs: [],
         nestedJobRefs: [],
+        controlSkippedNodes: [],
+        checkpointReuse: { reused: [], missed: [] },
         error: violation.reasonCode,
       },
     };
@@ -251,12 +327,15 @@ export class NodeGraphExecutor {
     context: NodeGraphRuntimeContext;
     node: NodeGraphNode;
     nodeOutputs: Map<string, NodeGraphNodeRunOutput>;
+    incomingEdges: readonly NodeGraphEdge[];
+    activation: NodeGraphControlActivation;
+    floorCheckpoints?: ReadonlyMap<string, NodeGraphFloorCheckpoint>;
   }): Promise<NodeGraphExecutedNodeRun> {
-    const { document, compiled, context, node, nodeOutputs } = input;
+    const { document, context, node, nodeOutputs, incomingEdges, activation, floorCheckpoints } = input;
     const startedAt = Date.now();
-    const incomingEdges = compiled.incomingEdgesByNodeId.get(node.id) ?? [];
     const inputs = this.resolveInputs(node, incomingEdges, nodeOutputs);
     const inputHash = hashUnknown(inputs);
+    const configHash = hashUnknown(node.config ?? null);
 
     if (node.enabled === false) {
       const output: NodeGraphNodeRunOutput = {
@@ -270,26 +349,144 @@ export class NodeGraphExecutor {
       return this.nodeRun(node, "skipped", output, inputHash, startedAt);
     }
 
+    // NG2-CORE：control edge 门控关闭 → 按 onSkip 处理。
+    if (activation.gated && !activation.active) {
+      return this.controlSkippedRun(node, activation.onSkip, inputHash, startedAt, context, floorCheckpoints);
+    }
+
+    // NG2-CORE：floor checkpoint 复用（PageRun 重试复用 FloorRun 已算节点）。
+    const eligible = isNodeFloorCheckpointEligible({
+      phase: node.phase,
+      scope: node.scope,
+      retryPolicy: node.retryPolicy,
+      checkpointPolicy: node.checkpointPolicy,
+    });
+    const checkpoint = floorCheckpoints?.get(node.id) ?? null;
+    const reuse = classifyNodeGraphCheckpointReuse({
+      eligible,
+      checkpointPolicy: node.checkpointPolicy,
+      manualRefresh: this.isManualRefreshRequested(node, context),
+      checkpoint: checkpoint ? { inputHash: checkpoint.inputHash, configHash: checkpoint.configHash } : null,
+      currentInputHash: inputHash,
+      currentConfigHash: configHash,
+    });
+    if (reuse.decision === "reuse" && checkpoint?.output) {
+      const output: NodeGraphNodeRunOutput = {
+        ...checkpoint.output,
+        preview: checkpoint.output.preview
+          ? { ...checkpoint.output.preview, stale: true, source: "cached" as const }
+          : undefined,
+      };
+      return this.nodeRun(node, "reused", output, inputHash, startedAt, {
+        checkpointEligible: true,
+        configHash,
+        checkpointReuse: reuse,
+      });
+    }
+
     const cached = context.cachedNodeOutputs?.[node.id];
     if (cached && this.shouldReuseCachedOutput(node, context)) {
       const output = {
         ...cached,
         preview: cached.preview ? { ...cached.preview, stale: true, source: "cached" as const } : undefined,
       };
-      return this.nodeRun(node, "reused", output, inputHash, startedAt);
+      return this.nodeRun(node, "reused", output, inputHash, startedAt, {
+        checkpointEligible: eligible,
+        configHash,
+        checkpointReuse: eligible ? reuse : null,
+      });
     }
 
     try {
       const handler = this.handlers.get(node.type);
+      const execContext = isNodeGraphControlNodeType(node.type)
+        ? { ...context, conditionContext: this.buildConditionContext(node, context, nodeOutputs) }
+        : context;
       const output = await handler.execute({
         node,
         inputs,
-        context,
+        context: execContext,
       });
-      return this.nodeRun(node, "succeeded", output, inputHash, startedAt);
+      return this.nodeRun(node, "succeeded", output, inputHash, startedAt, {
+        checkpointEligible: eligible,
+        configHash,
+        checkpointReuse: eligible ? reuse : null,
+      });
     } catch (error) {
       return this.handleNodeFailure(document, node, error, inputHash, startedAt);
     }
+  }
+
+  /** NG2-CORE：control edge 门控关闭时按 onSkip 产出节点运行结果。 */
+  private controlSkippedRun(
+    node: NodeGraphNode,
+    onSkip: NodeGraphOnSkipBehavior,
+    inputHash: string,
+    startedAt: number,
+    context: NodeGraphRuntimeContext,
+    floorCheckpoints?: ReadonlyMap<string, NodeGraphFloorCheckpoint>,
+  ): NodeGraphExecutedNodeRun {
+    const blockedDiagnostic: NodeGraphDiagnostic = {
+      severity: onSkip === "error" ? "error" : "info",
+      code: onSkip === "error" ? "node_graph_control_gate_blocked" : "node_graph_control_skipped",
+      message: `Node '${node.id}' was gated off by an upstream control edge (onSkip=${onSkip}).`,
+      nodeId: node.id,
+    };
+    switch (onSkip) {
+      case "use_default":
+        return this.nodeRun(node, "succeeded", defaultOutputFor(node, [blockedDiagnostic]), inputHash, startedAt);
+      case "use_cached": {
+        const cached = context.cachedNodeOutputs?.[node.id] ?? floorCheckpoints?.get(node.id)?.output ?? null;
+        if (cached) {
+          return this.nodeRun(node, "reused", {
+            ...cached,
+            preview: cached.preview ? { ...cached.preview, stale: true, source: "cached" as const } : undefined,
+          }, inputHash, startedAt);
+        }
+        return this.nodeRun(node, "skipped", { diagnostics: [blockedDiagnostic] }, inputHash, startedAt);
+      }
+      case "error":
+        return this.nodeRun(node, "failed", {
+          diagnostics: [blockedDiagnostic],
+          outputs: { diagnostics: [blockedDiagnostic] },
+          preview: { kind: "diagnostics", title: "Gate blocked", value: [blockedDiagnostic], source: "synthetic" },
+        }, inputHash, startedAt);
+      case "empty_output":
+      default:
+        return this.nodeRun(node, "skipped", { diagnostics: [blockedDiagnostic] }, inputHash, startedAt);
+    }
+  }
+
+  /** NG2-CORE：是否对该节点请求人工刷新（manual_refresh checkpoint 策略下强制重算）。 */
+  private isManualRefreshRequested(node: NodeGraphNode, context: NodeGraphRuntimeContext): boolean {
+    const refresh = context.input?.refresh_checkpoint_node_ids ?? context.input?.refreshCheckpointNodeIds;
+    return Array.isArray(refresh) && refresh.includes(node.id);
+  }
+
+  /** NG2-CORE：为控制流节点构造受控条件求值上下文（variable/session_state/node_output/runtime）。 */
+  private buildConditionContext(
+    node: NodeGraphNode,
+    context: NodeGraphRuntimeContext,
+    nodeOutputs: Map<string, NodeGraphNodeRunOutput>,
+  ): Record<string, unknown> {
+    const nodeOutputContext: Record<string, unknown> = {};
+    for (const [id, output] of nodeOutputs) {
+      nodeOutputContext[id] = isRecord(output.outputs) ? output.outputs : { value: output.value };
+    }
+    return {
+      variable: context.variables ?? {},
+      session_state: context.sessionState ?? {},
+      node_output: nodeOutputContext,
+      runtime: {
+        intent: context.intent,
+        dry_run: context.dryRun,
+        phase: node.phase,
+        session_id: context.sessionId ?? null,
+        project_id: context.projectId ?? null,
+        floor_id: context.floorId ?? null,
+        page_id: context.pageId ?? null,
+      },
+    };
   }
 
   private handleNodeFailure(
@@ -363,6 +560,11 @@ export class NodeGraphExecutor {
     output: NodeGraphNodeRunOutput,
     inputHash: string | null,
     startedAt: number,
+    extra?: {
+      checkpointEligible?: boolean;
+      configHash?: string | null;
+      checkpointReuse?: { decision: "reuse" | "miss"; reason: string } | null;
+    },
   ): NodeGraphExecutedNodeRun {
     return {
       nodeId: node.id,
@@ -374,6 +576,10 @@ export class NodeGraphExecutor {
       diagnostics: output.diagnostics ?? null,
       startedAt,
       finishedAt: Date.now(),
+      scope: node.scope ?? null,
+      checkpointEligible: extra?.checkpointEligible ?? false,
+      configHash: extra?.configHash ?? null,
+      checkpointReuse: extra?.checkpointReuse ?? null,
     };
   }
 
@@ -383,7 +589,13 @@ export class NodeGraphExecutor {
     nodeOutputs: Map<string, NodeGraphNodeRunOutput>,
   ): NodeGraphNodeInputs {
     const inputs: NodeGraphNodeInputs = {};
+    let dataEdgeCount = 0;
     for (const edge of incomingEdges) {
+      // NG2-CORE：control edge 只表达执行与否，不喂数据。
+      if (nodeGraphEdgeKind(edge) !== "data") {
+        continue;
+      }
+      dataEdgeCount += 1;
       const sourceOutput = nodeOutputs.get(edge.from.nodeId);
       const value = sourceOutput?.outputs && Object.prototype.hasOwnProperty.call(sourceOutput.outputs, edge.from.port)
         ? sourceOutput.outputs[edge.from.port]
@@ -397,7 +609,7 @@ export class NodeGraphExecutor {
         inputs[edge.to.port] = [current, value];
       }
     }
-    if (incomingEdges.length === 0) {
+    if (dataEdgeCount === 0) {
       inputs.__node_id = node.id;
     }
     return inputs;
@@ -528,4 +740,31 @@ function stableStringify(value: unknown): string {
 
 function hashUnknown(value: unknown): string {
   return `sha256:${createHash("sha256").update(stableStringify(value)).digest("hex")}`;
+}
+
+const ON_SKIP_SET = new Set<string>(NODE_GRAPH_ON_SKIP_BEHAVIORS);
+
+/** NG2-CORE：从文档静态收集 gate 节点的 onSkip 行为（按 nodeId）。 */
+function buildOnSkipMap(document: NodeGraphDocument): Map<string, NodeGraphOnSkipBehavior> {
+  const map = new Map<string, NodeGraphOnSkipBehavior>();
+  for (const node of document.nodes) {
+    if (node.type !== "control.gate") {
+      continue;
+    }
+    const config = isRecord(node.config) ? node.config : {};
+    const onSkip = typeof config.onSkip === "string" && ON_SKIP_SET.has(config.onSkip)
+      ? config.onSkip as NodeGraphOnSkipBehavior
+      : "empty_output";
+    map.set(node.id, onSkip);
+  }
+  return map;
+}
+
+/** NG2-CORE：从控制流节点输出读取控制信号（outputs.control.activePorts）。 */
+function readControlSignal(output: NodeGraphNodeRunOutput): NodeGraphControlSignal | null {
+  const control = output.outputs?.control;
+  if (isRecord(control) && Array.isArray(control.activePorts)) {
+    return { activePorts: control.activePorts.filter((port): port is string => typeof port === "string") };
+  }
+  return null;
 }

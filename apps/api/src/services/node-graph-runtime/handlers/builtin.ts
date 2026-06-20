@@ -1,4 +1,11 @@
-import type { NodeGraphNode, NodeGraphNodeRunOutput } from "@tavern/core";
+import {
+  computeNodeGraphControlSignal,
+  evaluateNodeGraphConditionWithTrace,
+  type NodeGraphConditionExpr,
+  type NodeGraphConditionTraceEntry,
+  type NodeGraphNode,
+  type NodeGraphNodeRunOutput,
+} from "@tavern/core";
 
 import type { AgentOutputDispatchRequest } from "../../agent-runtime/agent-output-dispatcher.js";
 import type { AgentMediumSelection } from "../../agent-runtime/agent-medium-types.js";
@@ -168,6 +175,36 @@ function readMedium(config: Record<string, unknown>): AgentMediumSelection {
     kind,
     deliveryTarget: typeof medium.deliveryTarget === "string" ? medium.deliveryTarget as AgentMediumSelection["deliveryTarget"] : "return_inline",
   } as AgentMediumSelection;
+}
+
+function readBooleanInput(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+/**
+ * NG2-CORE：求值控制流节点的布尔判定。
+ *
+ * branch / gate 优先消费 `condition` 布尔输入；否则求值 config.condition；
+ * condition 节点无 `condition` 输入端口，只用 config.condition。
+ */
+function evaluateControlNodeCondition(
+  node: NodeGraphNode,
+  inputs: NodeGraphNodeInputs,
+  context: NodeGraphRuntimeContext,
+): { result: boolean; trace: NodeGraphConditionTraceEntry[]; source: "input" | "config" | "none" } {
+  const inputBoolean = readBooleanInput(firstInput(inputs, ["condition"]));
+  if (inputBoolean !== undefined) {
+    return { result: inputBoolean, trace: [], source: "input" };
+  }
+  const condition = asRecord(node.config).condition;
+  if (condition && typeof condition === "object") {
+    const conditionContext = context.conditionContext && typeof context.conditionContext === "object"
+      ? context.conditionContext as Record<string, unknown>
+      : {};
+    const { result, trace } = evaluateNodeGraphConditionWithTrace(condition as NodeGraphConditionExpr, conditionContext);
+    return { result, trace, source: "config" };
+  }
+  return { result: false, trace: [], source: "none" };
 }
 
 export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerRegistry): void {
@@ -427,4 +464,53 @@ export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerR
 
   registry.register(makeHandler("group.output", ({ inputs }) =>
     jsonOutput("Group Output", firstInput(inputs, ["value"]))));
+
+  // NG2-CORE：控制流节点。condition 算 boolean；branch/gate 产出控制信号门控下游。
+  registry.register(makeHandler("control.condition", ({ node, inputs, context }) => {
+    const { result, trace, source } = evaluateControlNodeCondition(node, inputs, context);
+    return {
+      value: result,
+      outputs: { result, controlTrace: trace, conditionSource: source },
+      preview: {
+        kind: "json",
+        title: "Condition",
+        summary: `result=${result}`,
+        value: { result, trace },
+        source: context.dryRun ? "dry_run" : "live",
+      },
+    };
+  }));
+
+  registry.register(makeHandler("control.branch", ({ node, inputs, context }) => {
+    const { result, trace, source } = evaluateControlNodeCondition(node, inputs, context);
+    const control = computeNodeGraphControlSignal("control.branch", result);
+    return {
+      value: result,
+      outputs: { result, true: result, false: !result, control, controlTrace: trace, conditionSource: source },
+      preview: {
+        kind: "json",
+        title: "Branch",
+        summary: `→ ${result ? "true" : "false"}`,
+        value: { result, activePorts: control.activePorts, trace },
+        source: context.dryRun ? "dry_run" : "live",
+      },
+    };
+  }));
+
+  registry.register(makeHandler("control.gate", ({ node, inputs, context }) => {
+    const { result, trace, source } = evaluateControlNodeCondition(node, inputs, context);
+    const control = computeNodeGraphControlSignal("control.gate", result);
+    const passthrough = firstInput(inputs, ["value"]);
+    return {
+      value: passthrough ?? result,
+      outputs: { open: result, value: passthrough ?? null, control, controlTrace: trace, conditionSource: source },
+      preview: {
+        kind: "json",
+        title: "Gate",
+        summary: result ? "open" : "closed",
+        value: { open: result, activePorts: control.activePorts, trace },
+        source: context.dryRun ? "dry_run" : "live",
+      },
+    };
+  }));
 }
