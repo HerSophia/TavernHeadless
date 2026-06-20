@@ -1,6 +1,10 @@
+import { fileURLToPath } from "node:url";
+
 import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vitest/config";
+
+const fromHere = (path: string): string => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
@@ -13,6 +17,15 @@ export default defineConfig({
     host: "0.0.0.0"
   },
   test: {
+    // 测试态把 workspace 包解析到源码（与根 vitest.config 一致、顺序敏感：子路径在前）。
+    // 使 studio 测试无需预先构建依赖 dist 即可运行——CI 的 studio-test job 不跑 build。
+    alias: [
+      { find: "@tavern/core/node-graph", replacement: fromHere("../../packages/core/src/node-graph/browser.ts") },
+      { find: "@tavern/core", replacement: fromHere("../../packages/core/src/index.ts") },
+      { find: "@tavern/sdk", replacement: fromHere("../../packages/official-integration-kit/sdk/src/index.ts") },
+      { find: "@tavern/client-helpers", replacement: fromHere("../../packages/official-integration-kit/client-helpers/src/index.ts") },
+      { find: "@tavern/shared", replacement: fromHere("../../packages/shared/src/index.ts") }
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "text"],
