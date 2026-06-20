@@ -1,6 +1,7 @@
 import type { AppDb } from "../db/client.js";
 
 import { GOVERNANCE_OPERATION_ACTIONS } from "./governance/operation-log-names.js";
+import { NodeGraphCheckpointRetentionService } from "./node-graph-checkpoint-retention-service.js";
 import { NodeGraphRunRetentionService } from "./node-graph-run-retention-service.js";
 import { OperationLogService } from "./operation-log-service.js";
 import { PromptRuntimeInjectionService } from "./prompt-runtime/injection-service.js";
@@ -18,6 +19,11 @@ export interface RuntimeMaintenanceRunOptions {
     cleanupLimit?: number;
   };
   nodeGraphRun?: {
+    enabled?: boolean;
+    retentionGraceMs?: number;
+    cleanupLimit?: number;
+  };
+  nodeGraphCheckpoint?: {
     enabled?: boolean;
     retentionGraceMs?: number;
     cleanupLimit?: number;
@@ -45,6 +51,9 @@ export interface RuntimeMaintenanceRunResult {
   nodeGraphRun: {
     cleaned: number;
     redactedNodeRuns: number;
+  };
+  nodeGraphCheckpoint: {
+    cleaned: number;
   };
   durationMs: number;
 }
@@ -112,6 +121,22 @@ export class RuntimeMaintenanceService {
       nodeGraphRunRedactedNodeRuns = retention.redactedNodeRuns;
     }
 
+    // NG2-CORE（批次 9，缺口对齐 R6-3）：floor checkpoint 正文裁剪。默认启用，可关闭。
+    const nodeGraphCheckpointEnabled = options.nodeGraphCheckpoint?.enabled !== false;
+    let nodeGraphCheckpointCleaned = 0;
+    if (nodeGraphCheckpointEnabled) {
+      const retention = new NodeGraphCheckpointRetentionService(this.db).run({
+        now,
+        ...(options.nodeGraphCheckpoint?.retentionGraceMs !== undefined
+          ? { retentionGraceMs: options.nodeGraphCheckpoint.retentionGraceMs }
+          : {}),
+        ...(options.nodeGraphCheckpoint?.cleanupLimit !== undefined
+          ? { cleanupLimit: options.nodeGraphCheckpoint.cleanupLimit }
+          : {}),
+      });
+      nodeGraphCheckpointCleaned = retention.cleaned;
+    }
+
     const result: RuntimeMaintenanceRunResult = {
       now,
       promptRuntimeInjection: {
@@ -126,6 +151,9 @@ export class RuntimeMaintenanceService {
         cleaned: nodeGraphRunCleaned,
         redactedNodeRuns: nodeGraphRunRedactedNodeRuns,
       },
+      nodeGraphCheckpoint: {
+        cleaned: nodeGraphCheckpointCleaned,
+      },
       durationMs: Date.now() - startedAt,
     };
 
@@ -138,6 +166,9 @@ export class RuntimeMaintenanceService {
       }
       if (nodeGraphRunCleaned > 0) {
         this.appendNodeGraphRunCleanupLog(options.operationLog, result);
+      }
+      if (nodeGraphCheckpointCleaned > 0) {
+        this.appendNodeGraphCheckpointCleanupLog(options.operationLog, result);
       }
     }
 
@@ -213,6 +244,30 @@ export class RuntimeMaintenanceService {
         cleanup_kind: "retention",
         cleaned: result.nodeGraphRun.cleaned,
         redacted_node_runs: result.nodeGraphRun.redactedNodeRuns,
+        now: result.now,
+        duration_ms: result.durationMs,
+      },
+    });
+  }
+
+  private appendNodeGraphCheckpointCleanupLog(
+    operationLog: NonNullable<RuntimeMaintenanceRunOptions["operationLog"]>,
+    result: RuntimeMaintenanceRunResult,
+  ): void {
+    new OperationLogService(this.db).append({
+      accountId: operationLog.accountId,
+      actorType: operationLog.actorType ?? "system",
+      actorId: operationLog.actorId ?? "runtime_maintenance",
+      operationGroupId: operationLog.operationGroupId ?? null,
+      requestId: operationLog.requestId ?? null,
+      sourceType: operationLog.sourceType ?? "maintenance",
+      action: GOVERNANCE_OPERATION_ACTIONS.nodeGraphRun.checkpointCleanup,
+      status: "succeeded",
+      targetType: "node_graph_checkpoint",
+      targetId: null,
+      metadata: {
+        cleanup_kind: "retention",
+        cleaned: result.nodeGraphCheckpoint.cleaned,
         now: result.now,
         duration_ms: result.durationMs,
       },
