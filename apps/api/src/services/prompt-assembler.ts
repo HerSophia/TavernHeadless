@@ -98,6 +98,21 @@ import {
   buildSessionWorldbookAssetScopeId,
   buildWorldbookActivationKey,
 } from "./prompt-assets/worldbook/index.js";
+import { selectTurnAssemblyProcessor } from "./agent-runtime/turn-assembly-processor-factory.js";
+import type {
+  PromptModeComposeResult,
+  TurnAssemblyContext,
+  TurnAssemblyProcessorKind,
+} from "./agent-runtime/turn-assembly-processor-types.js";
+import {
+  DEFAULT_NATIVE_PROMPT_BRIDGE_DECISION,
+  compareTurnAssemblyResults,
+  type NativePromptBridgeComparison,
+  type NativePromptBridgeDecision,
+  type NativePromptCarrier,
+} from "./agent-runtime/native-prompt-bridge.js";
+import type { PromptProcessorRecipeKind } from "./agent-runtime/prompt-processor-recipe.js";
+import type { RuntimeGovernanceTraceSummary } from "./governance/runtime-governance-types.js";
 
 export interface SessionPromptInfo {
   presetId: string | null;
@@ -537,6 +552,24 @@ export interface PromptAssemblyCompatSeed {
 
 export interface AssembleDebugInfo extends PromptRuntimeTraceSeed, PromptAssemblyCompatSeed {}
 
+/**
+ * P9：turn 级装配处理器的内部元数据。
+ *
+ * 仅内部消费（不进入公共 OpenAPI / SDK）：记录承载本次 prompt 编排的 processor / recipe、
+ * 确定性 `assemblyInputHash` 与批次 8 统一治理 summary（`runtime_kind = "chat_turn"`）。
+ */
+export interface TurnAssemblyMetadata {
+  processorKind: TurnAssemblyProcessorKind;
+  recipeKind: PromptProcessorRecipeKind;
+  recipeVersion: string;
+  assemblyInputHash: string;
+  governanceSummary: RuntimeGovernanceTraceSummary;
+  /** NG2-BRIDGE：本次 native 编排的承载路径（composite / system_graph）。 */
+  carrier?: NativePromptCarrier;
+  /** NG2-BRIDGE：影子运行开启时的逐字段比对结果（只观测，不切流）。 */
+  bridgeComparison?: NativePromptBridgeComparison;
+}
+
 export interface AssembleResult {
   messages: ChatMessage[];
   sendDirectives: PromptSendDirectives;
@@ -559,6 +592,8 @@ export interface AssembleResult {
   governance?: PromptRuntimeGovernanceSeed;
   debug?: AssembleDebugInfo;
   promptSnapshot: PromptAssemblySnapshot;
+  /** P9：承载本次编排的 turn 级 processor / recipe 元数据（内部，不公开）。 */
+  turnAssembly?: TurnAssemblyMetadata;
 }
 
 /**
@@ -655,6 +690,11 @@ export interface AssemblePromptOptions {
    * 未传入时视为空数组，楼层锁定类 injection 会被标记越界。
    */
   historyFloorNos?: Array<number | null>;
+  /**
+   * NG2-BRIDGE：native prompt 主链承载灰度决策（composite / system_graph + shadow）。
+   * 仅 native mode 消费；缺省为 composite + shadow off（与既有行为一致）。
+   */
+  nativePromptBridge?: NativePromptBridgeDecision;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -883,6 +923,7 @@ export async function assemblePrompt(
   let allocatorTokenUsage: AssembleResult["tokenUsage"]["allocator"] | undefined;
   let governance: PromptRuntimeGovernanceSeed | undefined;
   let memorySummaryHandledInPromptIR = false;
+  let turnAssemblyMetadata: TurnAssemblyMetadata | undefined;
   let finalInjectionTraceItems = (options.injectionItems ?? []).map((item) => ({ ...item }));
 
   const assemblyContributors = options.contributors ?? [];
@@ -975,57 +1016,153 @@ export async function assemblePrompt(
         });
       },
     };
-    const useNativePipeline = promptSnapshot.promptMode === "native";
-    const useCompatPlusPipeline = promptSnapshot.promptMode === "compat_plus";
-    const compatPlusMemoryInjection = useCompatPlusPipeline
-      ? createCompatPlusMemoryInjection(effectiveMemorySummary, tokenCounter)
-      : undefined;
-    characterOverridesHandledInPromptIR = useNativePipeline;
-    memorySummaryHandledInPromptIR = useNativePipeline || compatPlusMemoryInjection !== undefined;
+    // P9：三种 prompt mode 的分流（构造 PromptIR）收口为 TurnAssemblyProcessor 的执行体。
+    // compose 闭包保留原分流逻辑逐字不变；processor 负责 recipe / 模型快照 / 确定性 hash /
+    // 批次 8 治理 trace。最终 PromptIR 与下游装配（注入 / MessageBuilder）行为不回归。
+    const composePromptModeIr = (): PromptModeComposeResult => {
+      const useNativePipeline = promptSnapshot.promptMode === "native";
+      const useCompatPlusPipeline = promptSnapshot.promptMode === "compat_plus";
+      const compatPlusMemoryInjection = useCompatPlusPipeline
+        ? createCompatPlusMemoryInjection(effectiveMemorySummary, tokenCounter)
+        : undefined;
 
-    let promptIR = useNativePipeline
-      ? compilePromptGraph(
-          appendNativeContributorNodes(
-            buildImportedPresetPromptGraph(presetData, {
-              artifactId: promptSnapshot.presetId ?? undefined,
-              depthLevels: collectWorldbookDepthLevels(worldBookResults),
-              outletNames: collectWorldbookOutletNames(worldBookResults),
-            }),
-            buildNativeContributorNodes(
-              legacyContributorRenderables.map((contributor, index) => ({ ...contributor, order: 27.5 + index * 0.01 }))
-            )
-          ),
-          {
-            intent: promptIntent,
-            variables: promptVariables,
-            character: {
-              name: promptSnapshot.character?.name,
-              description: promptSnapshot.character?.description,
-              personality: promptSnapshot.character?.personality,
-              scenario: promptSnapshot.character?.scenario,
-              systemPrompt: promptSnapshot.character?.systemPrompt,
-              postHistoryInstructions: promptSnapshot.character?.postHistoryInstructions,
+      const promptIr = useNativePipeline
+        ? compilePromptGraph(
+            appendNativeContributorNodes(
+              buildImportedPresetPromptGraph(presetData, {
+                artifactId: promptSnapshot.presetId ?? undefined,
+                depthLevels: collectWorldbookDepthLevels(worldBookResults),
+                outletNames: collectWorldbookOutletNames(worldBookResults),
+              }),
+              buildNativeContributorNodes(
+                legacyContributorRenderables.map((contributor, index) => ({ ...contributor, order: 27.5 + index * 0.01 }))
+              )
+            ),
+            {
+              intent: promptIntent,
+              variables: promptVariables,
+              character: {
+                name: promptSnapshot.character?.name,
+                description: promptSnapshot.character?.description,
+                personality: promptSnapshot.character?.personality,
+                scenario: promptSnapshot.character?.scenario,
+                systemPrompt: promptSnapshot.character?.systemPrompt,
+                postHistoryInstructions: promptSnapshot.character?.postHistoryInstructions,
+              },
+              persona: persona ? { name: persona.name, description: persona.description } : undefined,
+              chatHistory: fullHistory,
+              worldbookEntries: toPromptGraphWorldbookEntries(worldBookResults),
+              exampleDialogue: sourceResolution.gates.examples.enabled
+                ? promptSnapshot.character?.exampleDialogue
+                : undefined,
+              memorySummary: effectiveMemorySummary,
+              maxTokens: effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens,
+              reservedForReply: effectiveBudget.reservedCompletionTokens,
+              tokenCounter,
             },
-            persona: persona ? { name: persona.name, description: persona.description } : undefined,
-            chatHistory: fullHistory,
-            worldbookEntries: toPromptGraphWorldbookEntries(worldBookResults),
-            exampleDialogue: sourceResolution.gates.examples.enabled
-              ? promptSnapshot.character?.exampleDialogue
-              : undefined,
-            memorySummary: effectiveMemorySummary,
-            maxTokens: effectiveBudget.maxInputTokens + effectiveBudget.reservedCompletionTokens,
-            reservedForReply: effectiveBudget.reservedCompletionTokens,
-            tokenCounter,
-          },
-        )
-      : useCompatPlusPipeline
-        ? assembleCompatPlus({
-            ...compatInput,
-            chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }>,
-            memoryInjection: compatPlusMemoryInjection,
-            renderableInjections: legacyContributorRenderables as CompatPlusRenderableInjection[],
-          })
-        : assembleCompat({ ...compatInput, chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }> });
+          )
+        : useCompatPlusPipeline
+          ? assembleCompatPlus({
+              ...compatInput,
+              chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }>,
+              memoryInjection: compatPlusMemoryInjection,
+              renderableInjections: legacyContributorRenderables as CompatPlusRenderableInjection[],
+            })
+          : assembleCompat({ ...compatInput, chatHistory: compatHistory as Array<{ role: "user" | "assistant"; content: string }> });
+
+      return {
+        promptIr,
+        characterOverridesHandledInPromptIR: useNativePipeline,
+        memorySummaryHandledInPromptIR: useNativePipeline || compatPlusMemoryInjection !== undefined,
+      };
+    };
+
+    // NG2-BRIDGE：仅 native mode 消费承载灰度决策；其余 mode 恒走默认（composite），
+    // compat_strict / compat_plus 永不进入 system graph 灰度。缺省 = composite + shadow off。
+    const nativePromptBridgeDecision = promptSnapshot.promptMode === "native"
+      ? (options.nativePromptBridge ?? DEFAULT_NATIVE_PROMPT_BRIDGE_DECISION)
+      : DEFAULT_NATIVE_PROMPT_BRIDGE_DECISION;
+    const turnAssemblyProcessor = selectTurnAssemblyProcessor(
+      promptSnapshot.promptMode,
+      nativePromptBridgeDecision.carrier,
+    );
+    const turnRunKind = resolvePromptRunKind(options);
+    const turnAssemblyContext: TurnAssemblyContext = {
+      promptMode: promptSnapshot.promptMode,
+      recipe: turnAssemblyProcessor.recipe,
+      accountId,
+      sessionId: options.variableContext?.sessionId ?? null,
+      branchId: options.variableContext?.branchId ?? null,
+      floorId: options.variableContext?.floorId ?? null,
+      pageId: options.variableContext?.pageId ?? null,
+      intent: promptIntent,
+      dryRun: turnRunKind === "dry_run",
+      preview: false,
+      assemblyInputDigest: {
+        promptMode: promptSnapshot.promptMode,
+        intent: promptIntent,
+        presetId: promptSnapshot.presetId ?? null,
+        presetVersionId: session.presetVersionId ?? null,
+        worldbookProfileId: session.worldbookProfileId ?? null,
+        worldbookVersionId: session.worldbookVersionId ?? null,
+        regexProfileId: session.regexProfileId ?? null,
+        regexProfileVersionId: session.regexProfileVersionId ?? null,
+        characterId: promptSnapshot.characterId ?? null,
+        characterVersionId: promptSnapshot.characterVersionId ?? null,
+        worldbookActivatedEntryUids: promptSnapshot.worldbookActivatedEntryUids ?? [],
+        memorySummary: effectiveMemorySummary ?? null,
+        budget: {
+          maxInputTokens: effectiveBudget.maxInputTokens,
+          reservedCompletionTokens: effectiveBudget.reservedCompletionTokens,
+        },
+        sourceGates: {
+          examples: sourceResolution.gates.examples.enabled,
+          worldbook: sourceResolution.gates.worldbook.enabled,
+          memory: sourceResolution.gates.memory.enabled,
+        },
+        legacyContributors: legacyContributorRenderables.map((contributor) => ({
+          sourceKind: contributor.sourceKind,
+          title: contributor.title,
+          content: contributor.content,
+          budgetGroup: contributor.budgetGroup ?? null,
+        })),
+        structuredInjections: structuredPromptRuntimeInjectionContributors.map((contributor) => ({
+          key: contributor.internalPlacementKey,
+          placement: contributor.requestedPlacement,
+          order: contributor.requestedOrder,
+        })),
+        history: fullHistory.map((message) => ({ role: message.role, content: message.content })),
+        userMessage,
+      },
+      composePromptModeIr,
+    };
+    const preparedTurnAssembly = await turnAssemblyProcessor.prepare(turnAssemblyContext);
+    const turnAssemblyResult = await turnAssemblyProcessor.execute(preparedTurnAssembly);
+    characterOverridesHandledInPromptIR = turnAssemblyResult.characterOverridesHandledInPromptIR;
+    memorySummaryHandledInPromptIR = turnAssemblyResult.memorySummaryHandledInPromptIR;
+
+    // NG2-BRIDGE：影子运行——并行跑另一条承载路径并逐字段比对，只观测、不切流。
+    let nativePromptBridgeComparison: NativePromptBridgeComparison | undefined;
+    if (promptSnapshot.promptMode === "native" && nativePromptBridgeDecision.shadow) {
+      const shadowCarrier: NativePromptCarrier =
+        nativePromptBridgeDecision.carrier === "system_graph" ? "composite" : "system_graph";
+      const shadowProcessor = selectTurnAssemblyProcessor(promptSnapshot.promptMode, shadowCarrier);
+      const shadowPrepared = await shadowProcessor.prepare(turnAssemblyContext);
+      const shadowResult = await shadowProcessor.execute(shadowPrepared);
+      nativePromptBridgeComparison = compareTurnAssemblyResults(turnAssemblyResult, shadowResult);
+    }
+
+    turnAssemblyMetadata = {
+      processorKind: turnAssemblyResult.processorKind,
+      recipeKind: turnAssemblyResult.recipeKind,
+      recipeVersion: turnAssemblyResult.recipeVersion,
+      assemblyInputHash: turnAssemblyResult.assemblyInputHash,
+      governanceSummary: turnAssemblyResult.governanceSummary,
+      carrier: nativePromptBridgeDecision.carrier,
+      ...(nativePromptBridgeComparison ? { bridgeComparison: nativePromptBridgeComparison } : {}),
+    };
+
+    let promptIR = turnAssemblyResult.promptIr;
 
      const appliedPromptRuntimeInjections = applyPromptRuntimeInjectionSections({
       promptIr: promptIR,
@@ -1263,6 +1400,7 @@ export async function assemblePrompt(
     ...(governance ? { governance } : {}),
     debug,
     promptSnapshot,
+    ...(turnAssemblyMetadata ? { turnAssembly: turnAssemblyMetadata } : {}),
   };
 }
 

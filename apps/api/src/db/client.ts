@@ -57,6 +57,7 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairWorkspacePhase5AgenticReadinessDrift(sqlite);
   repairTemporaryConversationDrift(sqlite);
   repairNodeGraphRunCleanupDrift(sqlite);
+  repairNodeGraphCheckpointDrift(sqlite);
 }
 
 function tableHasColumns(
@@ -1292,6 +1293,64 @@ function repairNodeGraphRunCleanupDrift(sqlite: Database.Database): void {
     "node_graph_run",
     ["status", "cleaned_at", "created_at"],
     "CREATE INDEX IF NOT EXISTS `node_graph_run_status_cleaned_created_idx` ON `node_graph_run` (`status`, `cleaned_at`, `created_at`);",
+  );
+}
+
+// NG2-CORE（批次 9）：floor 级持久 checkpoint 表的 additive 漂移修复。
+function repairNodeGraphCheckpointDrift(sqlite: Database.Database): void {
+  if (
+    !tableExists(sqlite, "account")
+    || !tableExists(sqlite, "floor")
+    || !tableExists(sqlite, "node_graph_definition")
+    || !tableExists(sqlite, "node_graph_version")
+  ) {
+    return;
+  }
+  if (!tableExists(sqlite, "node_graph_checkpoint")) {
+    sqlite.exec(`CREATE TABLE \`node_graph_checkpoint\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`workspace_id\` text,
+  \`project_id\` text,
+  \`session_id\` text,
+  \`floor_id\` text NOT NULL,
+  \`graph_id\` text NOT NULL,
+  \`graph_version_id\` text NOT NULL,
+  \`node_id\` text NOT NULL,
+  \`phase\` text NOT NULL,
+  \`scope\` text,
+  \`input_hash\` text NOT NULL,
+  \`config_hash\` text NOT NULL,
+  \`output_json\` text,
+  \`cleaned_at\` integer,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON UPDATE no action ON DELETE restrict,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON UPDATE no action ON DELETE set null,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON UPDATE no action ON DELETE set null,
+  FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON UPDATE no action ON DELETE set null,
+  FOREIGN KEY (\`floor_id\`) REFERENCES \`floor\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`graph_id\`) REFERENCES \`node_graph_definition\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`graph_version_id\`) REFERENCES \`node_graph_version\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);`);
+  }
+  createIndexIfColumnsExist(
+    sqlite,
+    "node_graph_checkpoint",
+    ["floor_id", "graph_version_id", "node_id"],
+    "CREATE UNIQUE INDEX IF NOT EXISTS `node_graph_checkpoint_floor_version_node_uq` ON `node_graph_checkpoint` (`floor_id`, `graph_version_id`, `node_id`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "node_graph_checkpoint",
+    ["floor_id", "graph_version_id"],
+    "CREATE INDEX IF NOT EXISTS `node_graph_checkpoint_floor_version_idx` ON `node_graph_checkpoint` (`floor_id`, `graph_version_id`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "node_graph_checkpoint",
+    ["cleaned_at", "created_at"],
+    "CREATE INDEX IF NOT EXISTS `node_graph_checkpoint_cleaned_created_idx` ON `node_graph_checkpoint` (`cleaned_at`, `created_at`);",
   );
 }
 

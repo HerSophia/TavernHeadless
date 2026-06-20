@@ -74,3 +74,59 @@ export {
   BuiltinInlineAgentRegistry,
   createBuiltinInlineAgentRegistry,
 } from "./builtin/index.js";
+export {
+  PROMPT_PROCESSOR_RECIPE_KINDS,
+  PROMPT_PROCESSOR_RECIPE_VERSION,
+  COMPAT_STRICT_RECIPE,
+  COMPAT_PLUS_RECIPE,
+  NATIVE_PROMPT_RECIPE,
+  resolvePromptProcessorRecipe,
+  resolvePromptProcessorRecipeKind,
+  resolveTurnAssemblyProcessorKind,
+  type PromptProcessorRecipe,
+  type PromptProcessorRecipeKind,
+} from "./prompt-processor-recipe.js";
+export {
+  TURN_ASSEMBLY_PROCESSOR_KINDS,
+  unresolvedRunModelSnapshot,
+  type TurnAssemblyProcessor,
+  type TurnAssemblyProcessorKind,
+  type TurnAssemblyContext,
+  type PreparedTurnAssembly,
+  type TurnAssemblyResult,
+  type TurnAssemblyCheckpoint,
+  type PromptModeComposeResult,
+  type ResolvedRunModelSnapshot,
+} from "./turn-assembly-processor-types.js";
+export {
+  computeAssemblyInputHash,
+  buildChatTurnGovernanceSummary,
+  type ChatTurnGovernanceSummaryInput,
+} from "./turn-assembly-support.js";
+export {
+  PromptModeTurnProcessor,
+  PromptModeTurnProcessorError,
+  createPromptModeTurnProcessor,
+} from "./prompt-mode-turn-processor.js";
+export {
+  CompositeTurnProcessor,
+  CompositeTurnProcessorError,
+  createCompositeTurnProcessor,
+} from "./composite-turn-processor.js";
+export {
+  NodeGraphTurnProcessor,
+  NodeGraphTurnProcessorError,
+  createNodeGraphTurnProcessor,
+} from "./node-graph-turn-processor.js";
+export {
+  NATIVE_PROMPT_CARRIERS,
+  DEFAULT_NATIVE_PROMPT_BRIDGE_DECISION,
+  resolveNativePromptBridgeDecision,
+  readNativePromptBridgeWorkspaceDefault,
+  compareTurnAssemblyResults,
+  type NativePromptCarrier,
+  type NativePromptBridgeDecision,
+  type NativePromptBridgeLayers,
+  type NativePromptBridgeComparison,
+} from "./native-prompt-bridge.js";
+export { selectTurnAssemblyProcessor } from "./turn-assembly-processor-factory.js";

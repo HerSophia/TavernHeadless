@@ -1,15 +1,32 @@
+import {
+  collectNodeGraphConditionValueRefs,
+  validateNodeGraphConditionExpr,
+  type NodeGraphConditionExpr,
+} from './condition.js';
+import {
+  isNodeGraphControlNodeType,
+  nodeGraphControlOutputPorts,
+  nodeGraphEdgeKind,
+  NODE_GRAPH_ON_SKIP_BEHAVIORS,
+} from './control.js';
 import { hasNodeGraphErrors } from './diagnostics.js';
+import { nodeGraphDocumentSchemaVersion } from './migration.js';
 import { createDefaultNodeTypeRegistry, NodeTypeRegistry } from './registry.js';
 import {
+  NODE_GRAPH_CHECKPOINT_POLICIES,
+  NODE_GRAPH_NODE_SCOPES,
   NODE_GRAPH_PHASES,
   NODE_GRAPH_PORT_TYPES,
-  NODE_GRAPH_SCHEMA_VERSION,
+  NODE_GRAPH_SCHEMA_VERSION_V2,
+  NODE_GRAPH_SUPPORTED_SCHEMA_VERSIONS,
+  type NodeGraphCheckpointPolicy,
   type NodeGraphCompilerOptions,
   type NodeGraphDiagnostic,
   type NodeGraphDocument,
   type NodeGraphEdge,
   type NodeGraphFailurePolicy,
   type NodeGraphNode,
+  type NodeGraphNodeScope,
   type NodeGraphPhase,
   type NodeGraphPortDefinition,
   type NodeGraphPortType,
@@ -245,9 +262,11 @@ function validateEdges(
   document: NodeGraphDocument,
   nodesById: Map<string, NodeGraphNode>,
   entriesByNodeId: Map<string, NodeTypeRegistryEntry>,
+  schemaVersion: number,
   diagnostics: NodeGraphDiagnostic[],
 ): void {
   const edgeIds = new Set<string>();
+  const controlEdgesEnabled = schemaVersion >= NODE_GRAPH_SCHEMA_VERSION_V2;
   const incomingDataEdgesByNodePort = new Map<string, {
     nodeId: string;
     portName: string;
@@ -264,20 +283,17 @@ function validateEdges(
     }
     edgeIds.add(edge.id);
 
-    if (edge.kind === 'control') {
+    const kind = nodeGraphEdgeKind(edge);
+
+    // NG2-CORE：control edge 仅在 schemaVersion >= 2 放行；v1 仍报 unsupported（保持 R5.1 行为）。
+    if (kind === 'control' && !controlEdgesEnabled) {
       add(diagnostics, {
         severity: 'error',
         code: 'node_graph_control_edge_unsupported',
-        message: `Control edge '${edge.id}' is not supported by the R5.1 runtime contract yet.`,
+        message: `Control edge '${edge.id}' requires NodeGraph schemaVersion >= 2.`,
         edgeId: edge.id,
       });
-    } else if (edge.kind !== 'data') {
-      add(diagnostics, {
-        severity: 'error',
-        code: 'node_graph_edge_kind_unsupported',
-        message: `Edge '${edge.id}' uses unsupported kind '${String(edge.kind)}'.`,
-        edgeId: edge.id,
-      });
+      continue;
     }
 
     const fromNode = nodesById.get(edge.from.nodeId);
@@ -308,6 +324,22 @@ function validateEdges(
         message: `Edge '${edge.id}' moves backward from '${fromNode.phase}' to '${toNode.phase}'.`,
         edgeId: edge.id,
       });
+    }
+
+    // NG2-CORE：control edge 只表达「是否执行下游」，不传数据。
+    // 源必须是控制流节点的控制输出端口（branch true/false 或 gate open）；不做 data 端口类型 / 基数校验。
+    if (kind === 'control') {
+      if (!isNodeGraphControlNodeType(fromNode.type) || !nodeGraphControlOutputPorts(fromNode.type).includes(edge.from.port)) {
+        add(diagnostics, {
+          severity: 'error',
+          code: 'node_graph_control_edge_invalid_source',
+          message: `Control edge '${edge.id}' must originate from a control node's control port (branch 'true'/'false' or gate 'open').`,
+          edgeId: edge.id,
+          nodeId: fromNode.id,
+          port: edge.from.port,
+        });
+      }
+      continue;
     }
 
     const sourceEntry = entriesByNodeId.get(fromNode.id);
@@ -351,7 +383,7 @@ function validateEdges(
       });
     }
 
-    if (edge.kind === 'data') {
+    if (kind === 'data') {
       const key = `${toNode.id}:${targetPort.name}`;
       const current = incomingDataEdgesByNodePort.get(key);
       if (current) {
@@ -387,7 +419,7 @@ function validateEdges(
     }
     const connectedPorts = new Set(
       document.edges
-        .filter((edge) => edge.kind === 'data' && edge.to.nodeId === node.id)
+        .filter((edge) => nodeGraphEdgeKind(edge) === 'data' && edge.to.nodeId === node.id)
         .map((edge) => edge.to.port),
     );
     for (const port of entry.inputPorts) {
@@ -575,6 +607,213 @@ function validateGroups(
   }
 }
 
+const NODE_SCOPE_SET = new Set<NodeGraphNodeScope>(NODE_GRAPH_NODE_SCOPES);
+const CHECKPOINT_POLICY_SET = new Set<NodeGraphCheckpointPolicy>(NODE_GRAPH_CHECKPOINT_POLICIES);
+const ON_SKIP_SET = new Set<string>(NODE_GRAPH_ON_SKIP_BEHAVIORS);
+const RESPONSE_AND_LATER_PHASES = new Set<NodeGraphPhase>(['response', 'post_response', 'commit']);
+
+/** NG2-CORE：scope / checkpointPolicy 取值与 phase 一致性校验。 */
+function validateNodeScopes(document: NodeGraphDocument, diagnostics: NodeGraphDiagnostic[]): void {
+  for (const node of document.nodes) {
+    if (node.scope !== undefined && !NODE_SCOPE_SET.has(node.scope)) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_node_scope_unknown',
+        message: `Node '${node.id}' declares unknown scope '${String(node.scope)}'.`,
+        nodeId: node.id,
+      });
+    }
+    if (node.checkpointPolicy !== undefined && !CHECKPOINT_POLICY_SET.has(node.checkpointPolicy)) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_checkpoint_policy_unknown',
+        message: `Node '${node.id}' declares unknown checkpointPolicy '${String(node.checkpointPolicy)}'.`,
+        nodeId: node.id,
+      });
+    }
+    if (
+      (node.scope === 'floor_stable' || node.scope === 'pre_response_deterministic')
+      && RESPONSE_AND_LATER_PHASES.has(node.phase)
+    ) {
+      add(diagnostics, {
+        severity: 'warning',
+        code: 'node_graph_scope_phase_conflict',
+        message: `Node '${node.id}' declares floor-scoped '${node.scope}' but runs in page-scoped phase '${node.phase}'; it will not be floor-checkpointed.`,
+        nodeId: node.id,
+      });
+    }
+  }
+}
+
+function isAncestorNode(
+  fromId: string,
+  toId: string,
+  outgoingEdgesByNodeId: Map<string, NodeGraphEdge[]>,
+): boolean {
+  const visited = new Set<string>([fromId]);
+  const queue: string[] = [fromId];
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    for (const edge of outgoingEdgesByNodeId.get(current) ?? []) {
+      const next = edge.to.nodeId;
+      if (next === toId) {
+        return true;
+      }
+      if (!visited.has(next)) {
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return false;
+}
+
+/** NG2-CORE：控制流节点（condition/branch/gate）的条件、来源引用与 onSkip 校验。 */
+function validateControlNodes(
+  document: NodeGraphDocument,
+  nodesById: Map<string, NodeGraphNode>,
+  schemaVersion: number,
+  incomingEdgesByNodeId: Map<string, NodeGraphEdge[]>,
+  outgoingEdgesByNodeId: Map<string, NodeGraphEdge[]>,
+  diagnostics: NodeGraphDiagnostic[],
+): void {
+  for (const node of document.nodes) {
+    if (!isNodeGraphControlNodeType(node.type)) {
+      continue;
+    }
+    if (schemaVersion < NODE_GRAPH_SCHEMA_VERSION_V2) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_control_node_unsupported',
+        message: `Control node '${node.id}' (${node.type}) requires NodeGraph schemaVersion >= 2.`,
+        nodeId: node.id,
+      });
+      continue;
+    }
+
+    const config = isRecord(node.config) ? node.config : {};
+    const condition = config.condition;
+    const incoming = incomingEdgesByNodeId.get(node.id) ?? [];
+    const hasConditionInput = incoming.some(
+      (edge) => nodeGraphEdgeKind(edge) === 'data' && edge.to.port === 'condition',
+    );
+
+    if (node.type === 'control.condition') {
+      if (condition === undefined) {
+        add(diagnostics, {
+          severity: 'error',
+          code: 'node_graph_control_condition_missing',
+          message: `Condition node '${node.id}' requires a structured config.condition.`,
+          nodeId: node.id,
+        });
+      }
+    } else if (condition === undefined && !hasConditionInput) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_control_condition_missing',
+        message: `Control node '${node.id}' requires either config.condition or a boolean 'condition' input edge.`,
+        nodeId: node.id,
+      });
+    }
+
+    if (condition !== undefined) {
+      const issues = validateNodeGraphConditionExpr(condition);
+      for (const issue of issues) {
+        add(diagnostics, {
+          severity: 'error',
+          code: issue.code === 'condition_too_deep'
+            ? 'node_graph_condition_too_deep'
+            : issue.code === 'condition_too_many_items'
+              ? 'node_graph_condition_too_many_items'
+              : 'node_graph_condition_invalid',
+          message: `Node '${node.id}': ${issue.message}`,
+          nodeId: node.id,
+        });
+      }
+      if (issues.length === 0) {
+        for (const ref of collectNodeGraphConditionValueRefs(condition as NodeGraphConditionExpr)) {
+          if (ref.source !== 'node_output') {
+            continue;
+          }
+          const targetId = ref.path[0];
+          if (!targetId || !nodesById.has(targetId)) {
+            add(diagnostics, {
+              severity: 'error',
+              code: 'node_graph_condition_node_output_missing',
+              message: `Condition on node '${node.id}' references unknown node output '${String(targetId)}'.`,
+              nodeId: node.id,
+            });
+          } else if (targetId === node.id || !isAncestorNode(targetId, node.id, outgoingEdgesByNodeId)) {
+            add(diagnostics, {
+              severity: 'error',
+              code: 'node_graph_condition_node_output_not_upstream',
+              message: `Condition on node '${node.id}' references node output '${targetId}' that is not an upstream ancestor.`,
+              nodeId: node.id,
+            });
+          }
+        }
+      }
+    }
+
+    if (node.type === 'control.gate' && config.onSkip !== undefined) {
+      if (typeof config.onSkip !== 'string' || !ON_SKIP_SET.has(config.onSkip)) {
+        add(diagnostics, {
+          severity: 'error',
+          code: 'node_graph_control_gate_on_skip_unknown',
+          message: `Gate node '${node.id}' declares unknown onSkip '${String(config.onSkip)}'.`,
+          nodeId: node.id,
+        });
+      }
+    }
+  }
+}
+
+/** NG2-CORE：system graph 严格校验（metadata.systemGraph === true 时）。 */
+function validateSystemGraph(document: NodeGraphDocument, diagnostics: NodeGraphDiagnostic[]): void {
+  if (document.metadata?.systemGraph !== true) {
+    return;
+  }
+  const narrators = document.nodes.filter((node) => node.type === 'narration.narrator');
+  const commitGates = document.nodes.filter((node) => node.type === 'output.commit_gate');
+  const composers = document.nodes.filter((node) => node.type === 'compose.final_messages');
+
+  if (narrators.length === 0) {
+    add(diagnostics, {
+      severity: 'error',
+      code: 'node_graph_system_graph_narrator_required',
+      message: 'System graph must contain a narration.narrator node.',
+    });
+  } else if (narrators.length > 1) {
+    add(diagnostics, {
+      severity: 'error',
+      code: 'node_graph_system_graph_narrator_not_unique',
+      message: `System graph must contain exactly one narration.narrator node, found ${narrators.length}.`,
+    });
+  }
+
+  if (commitGates.length === 0) {
+    add(diagnostics, {
+      severity: 'error',
+      code: 'node_graph_system_graph_commit_gate_required',
+      message: 'System graph must contain an output.commit_gate node.',
+    });
+  } else if (commitGates.length > 1) {
+    add(diagnostics, {
+      severity: 'error',
+      code: 'node_graph_system_graph_commit_gate_not_unique',
+      message: `System graph must contain exactly one output.commit_gate node, found ${commitGates.length}.`,
+    });
+  }
+
+  if (composers.length === 0) {
+    add(diagnostics, {
+      severity: 'error',
+      code: 'node_graph_system_graph_compose_required',
+      message: 'System graph must contain a compose.final_messages node.',
+    });
+  }
+}
+
 export function validateNodeGraph(
   document: NodeGraphDocument,
   options: NodeGraphValidationOptions = {},
@@ -582,11 +821,12 @@ export function validateNodeGraph(
   const registry = options.registry ?? createDefaultNodeTypeRegistry();
   const diagnostics: NodeGraphDiagnostic[] = [];
 
-  if (document.schemaVersion !== NODE_GRAPH_SCHEMA_VERSION) {
+  const schemaVersion = nodeGraphDocumentSchemaVersion(document);
+  if (!(NODE_GRAPH_SUPPORTED_SCHEMA_VERSIONS as readonly number[]).includes(schemaVersion)) {
     add(diagnostics, {
       severity: 'error',
       code: 'node_graph_schema_version_unsupported',
-      message: `Unsupported NodeGraph schema version '${document.schemaVersion}'.`,
+      message: `Unsupported NodeGraph schema version '${String(document.schemaVersion)}'.`,
       path: ['schemaVersion'],
     });
   }
@@ -599,13 +839,16 @@ export function validateNodeGraph(
     });
   }
 
+  const { incomingEdgesByNodeId, outgoingEdgesByNodeId } = buildEdgeMaps(document.edges);
   const nodesById = validateNodeShape(document, diagnostics);
   const entriesByNodeId = validateRegistryContracts(document, registry, options.availablePermissions, diagnostics);
-  validateEdges(document, nodesById, entriesByNodeId, diagnostics);
+  validateEdges(document, nodesById, entriesByNodeId, schemaVersion, diagnostics);
   validatePolicies(document, entriesByNodeId, diagnostics);
+  validateNodeScopes(document, diagnostics);
+  validateControlNodes(document, nodesById, schemaVersion, incomingEdgesByNodeId, outgoingEdgesByNodeId, diagnostics);
+  validateSystemGraph(document, diagnostics);
   validateGroups(document, nodesById, diagnostics);
 
-  const { incomingEdgesByNodeId, outgoingEdgesByNodeId } = buildEdgeMaps(document.edges);
   const topologicalLevels = collectTopologicalLevels(document.nodes, document.edges, diagnostics);
 
   return {

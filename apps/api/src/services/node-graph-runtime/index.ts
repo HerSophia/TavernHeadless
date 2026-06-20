@@ -24,6 +24,14 @@ export {
   isNodeGraphOutputTargetAllowedByManifest,
   resolveNodeGraphManifestOutputTargets,
 } from "./manifest.js";
+export {
+  NATIVE_PROMPT_SYSTEM_GRAPH_ID,
+  NATIVE_PROMPT_SYSTEM_GRAPH_VERSION,
+  buildNativePromptSystemGraph,
+  getNativePromptSystemGraph,
+  validateNativePromptSystemGraph,
+  assertNativePromptSystemGraphExecutable,
+} from "./system-graph/native-prompt-system-graph.js";
 
 export function createDefaultNodeGraphExecutor(): NodeGraphExecutor {
   const registry = new NodeGraphNodeHandlerRegistry();

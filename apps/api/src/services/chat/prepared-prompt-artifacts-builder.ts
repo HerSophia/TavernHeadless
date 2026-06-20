@@ -20,6 +20,10 @@ import {
   type SessionPromptInfo,
 } from "../prompt-assembler.js";
 import {
+  readNativePromptBridgeWorkspaceDefault,
+  resolveNativePromptBridgeDecision,
+} from "../agent-runtime/native-prompt-bridge.js";
+import {
   buildPromptRuntimeExecutionResult,
   type PromptRuntimeResolvedContext,
 } from "../prompt-runtime-execution.js";
@@ -378,6 +382,10 @@ export class PreparedPromptArtifactsBuilder {
         historyFloorNos: buildHistoryFloorNos(conversationState),
         sourceSelection: args.executionContext.effectivePolicy?.sourceSelection,
         memoryRuntimeTrace,
+        // NG2-BRIDGE：native 主链承载灰度（Workspace 默认经 env）。缺省 composite + shadow off，零回归。
+        nativePromptBridge: resolveNativePromptBridgeDecision({
+          workspace: readNativePromptBridgeWorkspaceDefault(),
+        }),
       },
     );
     preparePhaseTrace.push({

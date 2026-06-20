@@ -1,0 +1,66 @@
+/*
+  Tailwind v4 CSS-first 配置。设计令牌对齐 docs/frontend-vision.md §9 "Analog Lab"
+  与 docs/frontend-aesthetic-constraints.md：层次靠 app/panel/float 三阶 + 1px hairline，
+  不靠大阴影；信号色低饱和高亮度。颜色经 CSS 变量切换深浅双主题。
+
+  source(none) 关闭自动内容探测，仅显式扫描 studio 自己的 src 与 index.html，
+  避免扫到被打包的 workspace 依赖（@tavern/sdk / @tavern/core）源码里的类名样字符串而生成无用工具类。
+*/
+@import "tailwindcss" source(none);
+@source "../index.html";
+@source "./**/*.{vue,ts}";
+@theme {
+  --color-app: rgb(var(--c-app));
+  --color-panel: rgb(var(--c-panel));
+  --color-float: rgb(var(--c-float));
+  --color-text-primary: rgb(var(--c-text-primary));
+  --color-text-secondary: rgb(var(--c-text-secondary));
+  --color-text-muted: rgb(var(--c-text-muted));
+  --color-line-subtle: rgb(var(--c-line) / 0.08);
+  --color-line-active: rgb(var(--c-line) / 0.16);
+  --color-signal-success: #4ade80;
+  --color-signal-warn: #fbbf24;
+  --color-signal-error: #f87171;
+  --color-signal-info: #60a5fa;
+  --color-signal-accent: #2dd4bf;
+  --font-sans: "Geist", "Inter", "Noto Sans SC", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* 深色为默认（Analog Lab），浅色经 html:not(.dark) 覆盖。 */
+:root {
+  --c-app: 9 9 11;
+  --c-panel: 18 18 21;
+  --c-float: 24 24 27;
+  --c-text-primary: 228 228 231;
+  --c-text-secondary: 161 161 170;
+  --c-text-muted: 113 113 122;
+  --c-line: 255 255 255;
+}
+
+html:not(.dark) {
+  --c-app: 250 250 250;
+  --c-panel: 255 255 255;
+  --c-float: 244 244 245;
+  --c-text-primary: 24 24 27;
+  --c-text-secondary: 82 82 91;
+  --c-text-muted: 113 113 122;
+  --c-line: 0 0 0;
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-app);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv03", "cv04", "cv11";
+  }
+}

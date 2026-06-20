@@ -65,6 +65,13 @@ pnpm dev
 | 前端（管理台） | Vue 3 + Pinia + TailwindCSS |
 | 包管理 | pnpm (monorepo) |
 
+## 前端（开发中）
+
+仓库内有两个前端：
+
+- `apps/web`：现役管理台（Vue 3 + Pinia + TailwindCSS），当前主用前端。
+- `apps/studio`：**正在开发、目前处于验证（实验）阶段**的全新统一前端，以 NodeGraph 编辑器为核心（NodeGraph First），并作为现代化技术栈先锋（Vite / Vue / Tailwind / Vitest 等取最新大版本）。尚未稳定，不建议用于生产；其依赖栈可能与仓库其余部分不同，测试以其自身的任务运行。
+
 ## 许可证
 
 MIT
