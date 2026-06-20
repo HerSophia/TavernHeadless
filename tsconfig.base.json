@@ -16,6 +16,7 @@
     "sourceMap": true,
     "paths": {
       "@tavern/core": ["./packages/core/src/index.ts"],
+      "@tavern/core/node-graph": ["./packages/core/src/node-graph/browser.ts"],
       "@tavern/shared": ["./packages/shared/src/index.ts"],
       "@tavern/shared/types/*": ["./packages/shared/src/types/*"],
       "@tavern/adapters-sillytavern": ["./packages/adapters-sillytavern/src/index.ts"],

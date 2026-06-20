@@ -423,4 +423,121 @@ describe("NodeGraph routes", () => {
 
     expect(response.statusCode).toBe(400);
   });
+
+  async function exportPackage(graphId: string): Promise<Record<string, unknown>> {
+    await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graphs`,
+      headers: authHeaders(OWNER_KEY),
+      payload: { document: createMvpDocument(graphId) },
+    });
+    const exportResponse = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graphs/${graphId}/export`,
+      headers: authHeaders(OWNER_KEY),
+      payload: {},
+    });
+    expect(exportResponse.statusCode).toBe(200);
+    return exportResponse.json().package as Record<string, unknown>;
+  }
+
+  it("exports, preflights and imports a node graph package", async () => {
+    const exportResponse = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graphs`,
+      headers: authHeaders(OWNER_KEY),
+      payload: { document: createMvpDocument("ngraph_export_src") },
+    });
+    expect(exportResponse.statusCode).toBe(201);
+
+    const pkgResponse = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graphs/ngraph_export_src/export`,
+      headers: authHeaders(OWNER_KEY),
+      payload: {},
+    });
+    expect(pkgResponse.statusCode).toBe(200);
+    const exported = pkgResponse.json();
+    expect(exported.package.kind).toBe("tavernheadless.nodegraph");
+    expect(exported.package.graph.schemaVersion).toBe(2);
+    expect(exported.security_summary.long_term_data_reads).toContain("chat_history");
+
+    const preflightResponse = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graph-imports/preflight`,
+      headers: authHeaders(OWNER_KEY),
+      payload: { package: exported.package },
+    });
+    expect(preflightResponse.statusCode).toBe(200);
+    expect(preflightResponse.json().installable).toBe(true);
+    expect(preflightResponse.json().diagnostics).toEqual([]);
+
+    const importResponse = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graph-imports`,
+      headers: authHeaders(OWNER_KEY),
+      payload: { package: exported.package, confirm: true, name: "Imported Graph" },
+    });
+    expect(importResponse.statusCode).toBe(201);
+    expect(importResponse.json().confirmed).toBe(true);
+    expect(importResponse.json().definition.name).toBe("Imported Graph");
+    expect(importResponse.json().definition.id).not.toBe("ngraph_export_src");
+
+    const actions = testApp.database.select().from(operationLogs).all().map((log) => log.action);
+    expect(actions).toContain("node_graph.export");
+    expect(actions).toContain("node_graph.import");
+  });
+
+  it("returns a preflight and does not install without confirmation", async () => {
+    const pkg = await exportPackage("ngraph_confirm_src");
+
+    const importResponse = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graph-imports`,
+      headers: authHeaders(OWNER_KEY),
+      payload: { package: pkg },
+    });
+    expect(importResponse.statusCode).toBe(200);
+    expect(importResponse.json().confirmed).toBe(false);
+    expect(importResponse.json().requires_confirmation).toBe(true);
+
+    const list = await testApp.app.inject({
+      method: "GET",
+      url: `/projects/${PROJECT_ID}/node-graphs`,
+      headers: authHeaders(OWNER_KEY),
+    });
+    expect(list.json().items).toHaveLength(1);
+  });
+
+  it("rejects a not-installable import with 422 and diagnostics", async () => {
+    const pkg = await exportPackage("ngraph_future_src");
+    const future = {
+      ...pkg,
+      compatibility: { ...(pkg.compatibility as Record<string, unknown>), graphApiVersion: "3" },
+    };
+
+    const importResponse = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graph-imports`,
+      headers: authHeaders(OWNER_KEY),
+      payload: { package: future, confirm: true },
+    });
+    expect(importResponse.statusCode).toBe(422);
+    const body = importResponse.json();
+    expect(body.error.code).toBe("node_graph_package_not_installable");
+    expect(Array.isArray(body.error.details)).toBe(true);
+    expect(body.error.details.some((d: { code: string }) => d.code === "MIGRATION_REQUIRED")).toBe(true);
+  });
+
+  it("requires write permission to preflight an import", async () => {
+    const pkg = await exportPackage("ngraph_perm_src");
+
+    const denied = await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graph-imports/preflight`,
+      headers: authHeaders(OBSERVER_KEY),
+      payload: { package: pkg },
+    });
+    expect(denied.statusCode).toBe(403);
+  });
 });

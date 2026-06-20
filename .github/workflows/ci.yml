@@ -332,6 +332,35 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         run: pnpm build
 
+  # apps/studio 是现代化先锋（vitest 4 / TS6），被根 vitest（2.x）分片排除，
+  # 故用独立 job 跑它自己的测试套件并强制其覆盖率门槛（B10 阶段 9）。
+  studio-test:
+    name: Studio test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Studio unit + integration tests (with coverage gate)
+        run: pnpm --filter @tavern/studio test:coverage
+
   coverage:
     name: Coverage
     if: (github.event_name == 'workflow_dispatch' && github.event.inputs.run_coverage == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
