@@ -29,6 +29,11 @@ import {
   type ProjectToolPolicyOverrideRecord,
 } from "./project-tool-policy-override-service.js";
 import { SessionEffectiveToolPolicyProvider } from "./tooling/shared/session-effective-tool-policy-provider.js";
+import {
+  readNativePromptBridgeWorkspaceDefault,
+  resolveNativePromptBridgeDecision,
+  type NativePromptBridgeDecision,
+} from "./agent-runtime/native-prompt-bridge.js";
 
 export type EffectiveConfigSource = "workspace" | "project" | "session";
 
@@ -68,6 +73,15 @@ export interface ProjectEffectiveConfigView {
     overrides: ProjectToolPolicyOverrideRecord[];
   };
   mcp: EffectiveMcpBindingView;
+}
+
+/**
+ * NG2-BRIDGE：native prompt 主链承载灰度的有效视图。
+ *
+ * 分层 Workspace 默认（env）→ Project → Session；`source` 标识本次承载决策由哪层决定。
+ */
+export interface EffectiveNativePromptBridgeView extends NativePromptBridgeDecision {
+  source: EffectiveConfigSource;
 }
 
 export interface SessionEffectiveConfigView extends ProjectEffectiveConfigView {
@@ -119,6 +133,35 @@ export class EffectiveConfigService {
     this.llmInstanceService = options.llmInstanceService ?? new LlmInstanceService(db as AppDb);
     this.toolTransportResolver = options.toolTransportResolver ?? new ToolCallTransportResolver();
     this.sessionToolPolicyProvider = options.sessionToolPolicyProvider ?? new SessionEffectiveToolPolicyProvider(db as AppDb);
+  }
+
+  /**
+   * NG2-BRIDGE（阶段 13）：解析 native prompt 主链承载灰度决策。
+   *
+   * 分层 Workspace 默认（env `NATIVE_PROMPT_SYSTEM_GRAPH_CARRIER` / `..._SHADOW`）→ Project →
+   * Session，后层覆盖前层。缺省退化为 composite + shadow off（与既有行为一致）。
+   * 把承载决策设回 composite 即配置级一键回退，不回滚代码。静态方法，不依赖 DB。
+   */
+  static resolveNativePromptBridge(
+    input: {
+      project?: Partial<NativePromptBridgeDecision>;
+      session?: Partial<NativePromptBridgeDecision>;
+      env?: NodeJS.ProcessEnv;
+    } = {},
+  ): EffectiveNativePromptBridgeView {
+    const workspace = readNativePromptBridgeWorkspaceDefault(input.env);
+    const decision = resolveNativePromptBridgeDecision({
+      workspace,
+      project: input.project,
+      session: input.session,
+    });
+    const source: EffectiveConfigSource =
+      input.session?.carrier !== undefined
+        ? "session"
+        : input.project?.carrier !== undefined
+          ? "project"
+          : "workspace";
+    return { ...decision, source };
   }
 
   forProject(input: { projectId: string; accountId: string }): ProjectEffectiveConfigView {

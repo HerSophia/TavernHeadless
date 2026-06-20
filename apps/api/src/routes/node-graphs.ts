@@ -11,6 +11,11 @@ import {
   type NodeGraphDefinitionRecord,
   type NodeGraphVersionRecord,
 } from "../services/node-graph-definition-service.js";
+import {
+  NodeGraphPackageService,
+  NodeGraphPackageServiceError,
+  type PreflightNodeGraphPackageResult,
+} from "../services/node-graph-package-service.js";
 import { NodeGraphRunService, type NodeGraphNodeRunRecord, type NodeGraphRunRecord } from "../services/node-graph-run-service.js";
 import {
   buildNodeGraphRuntimeScopeKey,
@@ -59,7 +64,8 @@ function isNodeGraphDocumentInput(value: unknown): value is NodeGraphDocument {
   }
   const graphId = value.graphId;
   const policies = value.policies;
-  return value.schemaVersion === 1
+  // NG2-CORE：接受 schemaVersion 1（v1）或 2（v2 control edge / checkpoint / system graph）。
+  return (value.schemaVersion === 1 || value.schemaVersion === 2)
     && (graphId === undefined || typeof graphId === "string")
     && typeof value.name === "string"
     && value.mode === "native_graph"
@@ -113,6 +119,22 @@ const runBodySchema = z.object({
   page_id: z.string().min(1).nullable().optional(),
   dedupe_key: z.string().min(1).nullable().optional(),
 }).strict().optional();
+
+// NG2-PKG：package export / import 公共面。
+const exportBodySchema = z.object({
+  version_id: z.string().min(1).optional(),
+  package_version: z.string().min(1).optional(),
+}).strict().optional();
+
+const importPreflightBodySchema = z.object({
+  package: z.record(z.string(), z.unknown()),
+}).strict();
+
+const importBodySchema = z.object({
+  package: z.record(z.string(), z.unknown()),
+  confirm: z.boolean().optional(),
+  name: z.string().min(1).nullable().optional(),
+}).strict();
 
 function actorFromRequest(request: FastifyRequest): ProjectActorInput {
   const auth = getRequestAuthContext(request);
@@ -255,7 +277,41 @@ function handleNodeGraphError(reply: FastifyReply, error: unknown): boolean {
     sendError(reply, error.statusCode, error.code, error.message);
     return true;
   }
+  if (error instanceof NodeGraphPackageServiceError) {
+    // NG2-PKG：not_installable 时把缺失依赖诊断放进 error.details，供导入方修复。
+    sendError(reply, error.statusCode, error.code, error.message, error.diagnostics);
+    return true;
+  }
   return false;
+}
+
+function securitySummaryToResponse(summary: PreflightNodeGraphPackageResult["securitySummary"]) {
+  return {
+    long_term_data_reads: summary.longTermDataReads,
+    session_state_namespace_reads: summary.sessionStateNamespaceReads,
+    proposes_committed_writes: summary.proposesCommittedWrites,
+    persistent_output_targets: summary.persistentOutputTargets,
+    mcp_servers: summary.mcpServers,
+    requests_network_access: summary.requestsNetworkAccess,
+    requests_file_write: summary.requestsFileWrite,
+    required_permissions: summary.requiredPermissions,
+  };
+}
+
+function preflightToResponse(result: PreflightNodeGraphPackageResult) {
+  return {
+    package_id: result.packageId,
+    content_hash: result.contentHash,
+    installable: result.installable,
+    migration_available: result.migrationAvailable,
+    migration_required: result.migrationRequired,
+    counts: result.counts,
+    diagnostics: result.diagnostics,
+    required_node_types: result.requiredNodeTypes,
+    missing_node_types: result.missingNodeTypes,
+    degradable_node_types: result.degradableNodeTypes,
+    security_summary: securitySummaryToResponse(result.securitySummary),
+  };
 }
 
 export interface NodeGraphRoutesOptions {
@@ -599,6 +655,90 @@ export async function registerNodeGraphRoutes(
         run: runToResponse(result.run, { includeDebug }),
         node_runs: result.nodeRuns.map((nodeRun) => nodeRunToResponse(nodeRun, { includeDebug })),
         restricted: !includeDebug,
+      });
+    } catch (error) {
+      if (handleNodeGraphError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  // NG2-PKG（阶段 9）：把某个 graph version 导出为 NodeGraphPackage（manifest + 依赖 + 安全摘要）。
+  app.post("/projects/:id/node-graphs/:graph_id/export", async (request, reply) => {
+    const params = parseWithSchema(graphParamsSchema, request.params, reply);
+    if (!params.ok) return;
+    const body = parseWithSchema(exportBodySchema, request.body ?? {}, reply);
+    if (!body.ok) return;
+    const actor = actorFromRequest(request);
+    try {
+      const result = new NodeGraphPackageService(db).exportPackage({
+        actor,
+        projectId: params.data.id,
+        graphId: params.data.graph_id,
+        versionId: body.data?.version_id,
+        packageVersion: body.data?.package_version,
+      });
+      return reply.send({
+        package: result.package,
+        security_summary: securitySummaryToResponse(result.securitySummary),
+        graph_id: result.graphId,
+        version_id: result.versionId,
+        version_no: result.versionNo,
+      });
+    } catch (error) {
+      if (handleNodeGraphError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  // NG2-PKG（阶段 10）：导入预检——执行前对照 Workspace / Project 边界产出缺失依赖诊断与安全摘要。
+  app.post("/projects/:id/node-graph-imports/preflight", async (request, reply) => {
+    const params = parseWithSchema(projectIdParamsSchema, request.params, reply);
+    if (!params.ok) return;
+    const body = parseWithSchema(importPreflightBodySchema, request.body, reply);
+    if (!body.ok) return;
+    const actor = actorFromRequest(request);
+    try {
+      const result = new NodeGraphPackageService(db).preflightImport({
+        actor,
+        projectId: params.data.id,
+        package: body.data.package,
+      });
+      return reply.send(preflightToResponse(result));
+    } catch (error) {
+      if (handleNodeGraphError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  // NG2-PKG（阶段 10/11）：导入。预检通过且 confirm=true 才安装为新图；否则返回预检供用户确认。
+  app.post("/projects/:id/node-graph-imports", async (request, reply) => {
+    const params = parseWithSchema(projectIdParamsSchema, request.params, reply);
+    if (!params.ok) return;
+    const body = parseWithSchema(importBodySchema, request.body, reply);
+    if (!body.ok) return;
+    const actor = actorFromRequest(request);
+    try {
+      const result = new NodeGraphPackageService(db).importPackage({
+        actor,
+        projectId: params.data.id,
+        package: body.data.package,
+        confirm: body.data.confirm,
+        name: body.data.name,
+      });
+      if (!result.confirmed) {
+        return reply.code(200).send({
+          confirmed: false,
+          requires_confirmation: true,
+          preflight: preflightToResponse(result.preflight),
+        });
+      }
+      return reply.code(201).send({
+        confirmed: true,
+        requires_confirmation: false,
+        definition: definitionToResponse(result.definition),
+        version: versionToResponse(result.version),
+        validation: result.validation,
+        preflight: preflightToResponse(result.preflight),
       });
     } catch (error) {
       if (handleNodeGraphError(reply, error)) return;
