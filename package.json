@@ -92,9 +92,14 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.2",
-    "vite": "^6.0.5",
+    "vite": "^6.4.3",
     "vitest": "^2.1.8",
     "vue-tsc": "^2.2.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "defu": ">=6.1.5"
+    }
   },
   "lint-staged": {
     "*.{js,cjs,mjs,ts,cts,mts,tsx,vue,json,yml,yaml}": [

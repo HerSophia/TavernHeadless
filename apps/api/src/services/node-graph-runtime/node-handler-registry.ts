@@ -48,6 +48,13 @@ export type NodeGraphRuntimeContext = {
    * 不传时 executor 使用默认运行预算；preview 路径传入更严格的同步预算。
    */
   budget?: NodeGraphRuntimeBudget;
+  /** NG2-CORE：运行的 graph version id（checkpoint 复用键的一部分）。 */
+  graphVersionId?: string | null;
+  /**
+   * NG2-CORE：控制流节点的受控条件求值上下文，由 executor 为 control.* 节点注入；
+   * 形如 `{ variable, session_state, node_output, runtime }`。其他节点不可见。
+   */
+  conditionContext?: Record<string, unknown>;
 };
 
 export interface NodeGraphNodeHandler {

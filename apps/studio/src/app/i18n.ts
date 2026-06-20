@@ -1,0 +1,352 @@
+import { createI18n } from "vue-i18n";
+
+const messages = {
+  "zh-CN": {
+    app: { brand: "Studio" },
+    nav: { graph: "图编辑", chat: "对话" },
+    topbar: { project: "项目", session: "会话", theme: "主题" },
+    graph: {
+      emptyTitle: "NodeGraph 编辑器",
+      emptyHint: "选择一个图开始渲染、编辑与校验。",
+      source: "图",
+      sample: "示例图",
+      loading: "加载中…",
+      noVersion: "该图尚无版本",
+      nodes: "节点",
+      edges: "边",
+      groups: "组",
+      placeholder: "占位布局",
+      placeholderHint: "节点缺省坐标，先按 phase 占位排列；可点右上角自动布局整理。",
+      autoLayout: "自动布局",
+      addNode: "添加节点",
+      version: "版本",
+      versionCurrent: "当前",
+      setCurrent: "设为当前",
+      save: "保存版本",
+      saving: "保存中…",
+      dirty: "有未保存改动",
+      panelToggle: "面板",
+      draftRestored: "已恢复未保存草稿",
+      discardDraft: "丢弃草稿",
+      selectProjectFirst: "请先在顶栏选择项目",
+      blockedSave: "存在 {count} 个错误，无法保存为版本（草稿已保留在本地）",
+      diagnostics: {
+        title: "诊断",
+        empty: "无诊断，图可执行"
+      },
+      inspector: {
+        title: "检查器",
+        empty: "在画布中选择节点或边以查看与编辑。",
+        deselect: "取消选择",
+        name: "名称",
+        phase: "阶段",
+        enabled: "启用",
+        config: "配置（JSON）",
+        applyConfig: "应用",
+        configInvalid: "JSON 无效",
+        preview: "预览",
+        runPreview: "运行预览",
+        previewing: "预览中…",
+        previewInput: "用户输入（可选）",
+        previewUnavailable: "预览需要先保存图与版本；示例图不可预览。",
+        previewDisabled: "该节点预览策略为 disabled，不提供预览。",
+        previewStale: "有未保存改动：预览反映的是已保存版本，非当前草稿。",
+        deleteNode: "删除节点",
+        deleteEdge: "删除边",
+        confirmDelete: "确认删除？",
+        edge: "边"
+      }
+    },
+    graphNode: {
+      type: {
+        source_user_input: "用户输入",
+        source_chat_history: "对话历史",
+        source_character: "角色",
+        source_persona: "用户人设",
+        source_session_state: "会话状态",
+        select_worldbook_match: "世界书匹配",
+        select_memory_retrieve: "记忆检索",
+        select_token_budget_allocator: "Token 预算分配",
+        compose_session_state_projection_block: "状态投影块",
+        compose_template_render: "模板渲染",
+        compose_final_messages: "最终消息",
+        agent_director_plan: "导演规划",
+        agent_player_agency_precheck: "玩家自主预检",
+        agent_call: "Agent 调用",
+        narration_narrator: "叙述者",
+        verify_continuity: "连续性校验",
+        verify_player_agency_postcheck: "玩家自主后检",
+        output_commit_gate: "提交门",
+        output_graph_run_summary: "运行摘要",
+        output_derived_output: "派生输出",
+        output_project_inbox: "项目收件箱",
+        output_session_state_proposal: "状态提案",
+        group_input: "组输入",
+        group_output: "组输出",
+        control_condition: "条件",
+        control_branch: "分支",
+        control_gate: "门控"
+      },
+      phase: {
+        floor_prepare: "准备",
+        pre_response: "前置",
+        response: "生成",
+        post_response: "后置",
+        commit: "提交"
+      },
+      status: {
+        skipped: "跳过",
+        running: "运行中",
+        succeeded: "成功",
+        failed: "失败",
+        reused: "复用"
+      }
+    },
+    chat: {
+      emptyTitle: "对话",
+      emptyHint: "选择或新建一个会话开始对话。",
+      noSession: "未选择会话",
+      selectSession: "在顶栏选择一个会话，或新建一个开始对话。",
+      selectProjectFirst: "请先在顶栏选择项目。",
+      newSession: "新建会话",
+      newSessionTitle: "Studio 会话",
+      noMessages: "还没有消息，说点什么开始吧。",
+      send: "发送",
+      stop: "停止",
+      retry: "重生",
+      regenerating: "重生中…",
+      composerPlaceholder: "输入消息，Enter 发送，Shift+Enter 换行",
+      composerDisabled: "请先选择一个会话",
+      thinking: "正在生成…",
+      pages: "页",
+      dismiss: "关闭",
+      role: {
+        user: "你",
+        assistant: "助手",
+        narrator: "叙述者",
+        system: "系统"
+      },
+      phase: {
+        preparing: "准备",
+        generating: "生成",
+        verifying: "校验",
+        committing: "提交",
+        post_processing: "后处理"
+      },
+      state: {
+        draft: "草稿",
+        generating: "生成中",
+        committed: "已提交",
+        failed: "失败"
+      },
+      trace: {
+        title: "Trace",
+        label: "trace",
+        toggle: "Trace 抽屉",
+        close: "关闭",
+        inspect: "查看该回合 trace",
+        empty: "暂无该回合的 trace。",
+        carrierTitle: "承载路径",
+        carrierUnknown: "（未知）",
+        carrier: {
+          composite: "composite（复合编排）",
+          system_graph: "system_graph（节点图）",
+          unknown: "未知"
+        },
+        phasesTitle: "Floor 阶段",
+        active: "进行中",
+        commitTitle: "CommitGate 决策",
+        decision: {
+          allow: "放行",
+          warn: "警告",
+          block: "阻断",
+          skipped: "跳过",
+          pending: "待定",
+          unknown: "未知"
+        },
+        agenticTitle: "Agentic Trace",
+        summaries: "摘要",
+        governance: "来源治理",
+        restricted: "受限内容默认裁剪"
+      }
+    }
+  },
+  en: {
+    app: { brand: "Studio" },
+    nav: { graph: "Graph", chat: "Chat" },
+    topbar: { project: "Project", session: "Session", theme: "Theme" },
+    graph: {
+      emptyTitle: "NodeGraph Editor",
+      emptyHint: "Select a graph to render, edit and validate.",
+      source: "Graph",
+      sample: "Sample graph",
+      loading: "Loading…",
+      noVersion: "This graph has no version yet",
+      nodes: "nodes",
+      edges: "edges",
+      groups: "groups",
+      placeholder: "placeholder layout",
+      placeholderHint: "Nodes lack coordinates; arranged by phase as a placeholder. Use auto-layout (top-right) to tidy.",
+      autoLayout: "Auto layout",
+      addNode: "Add node",
+      version: "Version",
+      versionCurrent: "current",
+      setCurrent: "Set current",
+      save: "Save version",
+      saving: "Saving…",
+      dirty: "Unsaved changes",
+      panelToggle: "Panel",
+      draftRestored: "Restored unsaved draft",
+      discardDraft: "Discard draft",
+      selectProjectFirst: "Select a project first",
+      blockedSave: "{count} error(s) block saving as a version (draft kept locally)",
+      diagnostics: {
+        title: "Diagnostics",
+        empty: "No diagnostics, graph is executable"
+      },
+      inspector: {
+        title: "Inspector",
+        empty: "Select a node or edge on the canvas to view and edit.",
+        deselect: "Deselect",
+        name: "Name",
+        phase: "Phase",
+        enabled: "Enabled",
+        config: "Config (JSON)",
+        applyConfig: "Apply",
+        configInvalid: "Invalid JSON",
+        preview: "Preview",
+        runPreview: "Run preview",
+        previewing: "Previewing…",
+        previewInput: "User input (optional)",
+        previewUnavailable: "Preview requires a saved graph and version; the sample graph cannot be previewed.",
+        previewDisabled: "This node's preview policy is disabled.",
+        previewStale: "Unsaved changes: preview reflects the saved version, not the current draft.",
+        deleteNode: "Delete node",
+        deleteEdge: "Delete edge",
+        confirmDelete: "Confirm delete?",
+        edge: "Edge"
+      }
+    },
+    graphNode: {
+      type: {
+        source_user_input: "User Input",
+        source_chat_history: "Chat History",
+        source_character: "Character",
+        source_persona: "Persona",
+        source_session_state: "Session State",
+        select_worldbook_match: "Worldbook Match",
+        select_memory_retrieve: "Memory Retrieve",
+        select_token_budget_allocator: "Token Budget Allocator",
+        compose_session_state_projection_block: "State Projection Block",
+        compose_template_render: "Template Render",
+        compose_final_messages: "Final Messages",
+        agent_director_plan: "Director Plan",
+        agent_player_agency_precheck: "Player Agency Precheck",
+        agent_call: "Agent Call",
+        narration_narrator: "Narrator",
+        verify_continuity: "Continuity Check",
+        verify_player_agency_postcheck: "Player Agency Postcheck",
+        output_commit_gate: "Commit Gate",
+        output_graph_run_summary: "Run Summary",
+        output_derived_output: "Derived Output",
+        output_project_inbox: "Project Inbox",
+        output_session_state_proposal: "State Proposal",
+        group_input: "Group Input",
+        group_output: "Group Output",
+        control_condition: "Condition",
+        control_branch: "Branch",
+        control_gate: "Gate"
+      },
+      phase: {
+        floor_prepare: "prepare",
+        pre_response: "pre",
+        response: "response",
+        post_response: "post",
+        commit: "commit"
+      },
+      status: {
+        skipped: "skipped",
+        running: "running",
+        succeeded: "ok",
+        failed: "failed",
+        reused: "reused"
+      }
+    },
+    chat: {
+      emptyTitle: "Chat",
+      emptyHint: "Select or create a session to start.",
+      noSession: "No session selected",
+      selectSession: "Select a session in the top bar, or create one to start.",
+      selectProjectFirst: "Select a project first.",
+      newSession: "New session",
+      newSessionTitle: "Studio session",
+      noMessages: "No messages yet. Say something to begin.",
+      send: "Send",
+      stop: "Stop",
+      retry: "Regenerate",
+      regenerating: "Regenerating…",
+      composerPlaceholder: "Type a message. Enter to send, Shift+Enter for newline",
+      composerDisabled: "Select a session first",
+      thinking: "Generating…",
+      pages: "pages",
+      dismiss: "Dismiss",
+      role: {
+        user: "You",
+        assistant: "Assistant",
+        narrator: "Narrator",
+        system: "System"
+      },
+      phase: {
+        preparing: "preparing",
+        generating: "generating",
+        verifying: "verifying",
+        committing: "committing",
+        post_processing: "post-processing"
+      },
+      state: {
+        draft: "draft",
+        generating: "generating",
+        committed: "committed",
+        failed: "failed"
+      },
+      trace: {
+        title: "Trace",
+        label: "trace",
+        toggle: "Trace drawer",
+        close: "Close",
+        inspect: "Inspect this turn's trace",
+        empty: "No trace for this turn yet.",
+        carrierTitle: "Carrier path",
+        carrierUnknown: "(unknown)",
+        carrier: {
+          composite: "composite",
+          system_graph: "system_graph",
+          unknown: "unknown"
+        },
+        phasesTitle: "Floor phases",
+        active: "active",
+        commitTitle: "CommitGate decision",
+        decision: {
+          allow: "allow",
+          warn: "warn",
+          block: "block",
+          skipped: "skipped",
+          pending: "pending",
+          unknown: "unknown"
+        },
+        agenticTitle: "Agentic trace",
+        summaries: "Summaries",
+        governance: "Source governance",
+        restricted: "Restricted content is trimmed by default"
+      }
+    }
+  }
+} as const;
+
+export const i18n = createI18n({
+  legacy: false,
+  globalInjection: true,
+  locale: "zh-CN",
+  fallbackLocale: "en",
+  messages
+});

@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
@@ -16,6 +16,9 @@ export default defineConfig({
     }
   },
   test: {
+    // apps/studio 是现代化先锋（vitest 4），用它自己的测试任务运行；
+    // 根工作区 vitest（2.x）不发现 studio 测试，避免版本冲突。
+    exclude: [...configDefaults.exclude, "apps/studio/**"],
     coverage: {
       provider: "v8",
       exclude: [
@@ -23,6 +26,7 @@ export default defineConfig({
         "**/scripts/**",
         "**/drizzle/**",
         "apps/web/**",
+        "apps/studio/**",
         "**/*.d.ts",
         "**/node_modules/**",
         "vitepress/**",

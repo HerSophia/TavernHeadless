@@ -1570,6 +1570,41 @@ export const nodeGraphNodeRuns = sqliteTable(
   })
 );
 
+// NG2-CORE（批次 9）：floor 级持久 checkpoint。PageRun 重试时复用 floor-stable /
+// pre-response deterministic 节点输出，避免重跑。终态宽限期后由 retention 裁剪 output_json 正文。
+export const nodeGraphCheckpoints = sqliteTable(
+  "node_graph_checkpoint",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    sessionId: text("session_id").references(() => sessions.id, { onDelete: "set null" }),
+    floorId: text("floor_id").notNull().references(() => floors.id, { onDelete: "cascade" }),
+    graphId: text("graph_id").notNull().references(() => nodeGraphDefinitions.id, { onDelete: "cascade" }),
+    graphVersionId: text("graph_version_id").notNull().references(() => nodeGraphVersions.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    phase: text("phase").notNull(),
+    scope: text("scope"),
+    inputHash: text("input_hash").notNull(),
+    configHash: text("config_hash").notNull(),
+    outputJson: text("output_json"),
+    /** 终态宽限期后正文清理时间戳；null 表示尚未清理。 */
+    cleanedAt: integer("cleaned_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    floorVersionNodeUnique: uniqueIndex("node_graph_checkpoint_floor_version_node_uq").on(
+      table.floorId,
+      table.graphVersionId,
+      table.nodeId,
+    ),
+    floorVersionIdx: index("node_graph_checkpoint_floor_version_idx").on(table.floorId, table.graphVersionId),
+    cleanedCreatedIdx: index("node_graph_checkpoint_cleaned_created_idx").on(table.cleanedAt, table.createdAt),
+  })
+);
+
 export const agentTypes = sqliteTable(
   "agent_type",
   {

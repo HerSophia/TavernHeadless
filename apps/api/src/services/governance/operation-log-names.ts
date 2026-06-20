@@ -34,6 +34,9 @@ export const GOVERNANCE_OPERATION_ACTIONS = {
     archive: buildOperationLogAction("node_graph", "archive"),
     unarchive: buildOperationLogAction("node_graph", "unarchive"),
     versionSetCurrent: buildOperationLogResourceAction("node_graph", "version", "set_current"),
+    // NG2-PKG：package import / export 审计。只写摘要与 hash，不写完整图正文。
+    export: buildOperationLogAction("node_graph", "export"),
+    import: buildOperationLogAction("node_graph", "import"),
   },
   nodeGraphRun: {
     run: buildOperationLogAction("node_graph_run", "run"),
@@ -41,6 +44,7 @@ export const GOVERNANCE_OPERATION_ACTIONS = {
     outputDispatched: buildOperationLogAction("node_graph_run", "output_dispatched"),
     outputRejected: buildOperationLogAction("node_graph_run", "output_rejected"),
     cleanup: buildOperationLogAction("node_graph_run", "cleanup"),
+    checkpointCleanup: buildOperationLogAction("node_graph_run", "checkpoint_cleanup"),
     inspect: buildOperationLogAction("node_graph_run", "inspect"),
   },
 } as const;
