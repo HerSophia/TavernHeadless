@@ -18,13 +18,18 @@ import {
   type TurnAssemblyProcessor,
   type TurnAssemblyResult,
 } from "./turn-assembly-processor-types.js";
-import type { PromptProcessorRecipe } from "./prompt-processor-recipe.js";
+import type { PromptProcessorRecipe, PromptProcessorRecipeKind } from "./prompt-processor-recipe.js";
 import { buildChatTurnGovernanceSummary, computeAssemblyInputHash } from "./turn-assembly-support.js";
 import {
   NATIVE_PROMPT_SYSTEM_GRAPH_ID,
   NATIVE_PROMPT_SYSTEM_GRAPH_VERSION,
   assertNativePromptSystemGraphExecutable,
 } from "../node-graph-runtime/system-graph/native-prompt-system-graph.js";
+import {
+  COMPAT_PROMPT_SYSTEM_GRAPH_ID,
+  COMPAT_PROMPT_SYSTEM_GRAPH_VERSION,
+  assertCompatPromptSystemGraphExecutable,
+} from "../node-graph-runtime/system-graph/compat-prompt-system-graph.js";
 
 export class NodeGraphTurnProcessorError extends Error {
   constructor(message: string) {
@@ -33,28 +38,64 @@ export class NodeGraphTurnProcessorError extends Error {
   }
 }
 
-let systemGraphValidated = false;
-
-/** 惰性校验内置 system graph 可执行（只做一次，失败即抛）。 */
-function ensureSystemGraphExecutable(): void {
-  if (!systemGraphValidated) {
-    assertNativePromptSystemGraphExecutable();
-    systemGraphValidated = true;
-  }
+/**
+ * CG11：system graph 承载描述符。把「承载哪张内置 system graph + 接受哪些 recipe」抽象出来，
+ * 使 `NodeGraphTurnProcessor` 同时服务 native（NG2-BRIDGE）与 compat（CG11）两条承载路径。
+ */
+export interface TurnSystemGraphCarrier {
+  /** 内置 system graph id（进入承载 trace）。 */
+  id: string;
+  /** 内置 system graph 版本（进入承载 trace）。 */
+  version: string;
+  /** 惰性断言该 system graph 可执行（只做一次，失败即抛）。 */
+  assertExecutable(): void;
+  /** 该承载是否接受给定 recipe kind。 */
+  acceptsRecipeKind(kind: PromptProcessorRecipeKind): boolean;
 }
+
+let nativeSystemGraphValidated = false;
+let compatSystemGraphValidated = false;
+
+/** NG2-BRIDGE：native prompt system graph 承载描述符（默认）。 */
+export const NATIVE_SYSTEM_GRAPH_CARRIER: TurnSystemGraphCarrier = {
+  id: NATIVE_PROMPT_SYSTEM_GRAPH_ID,
+  version: NATIVE_PROMPT_SYSTEM_GRAPH_VERSION,
+  assertExecutable(): void {
+    if (!nativeSystemGraphValidated) {
+      assertNativePromptSystemGraphExecutable();
+      nativeSystemGraphValidated = true;
+    }
+  },
+  acceptsRecipeKind: (kind) => kind === "native_prompt",
+};
+
+/** CG11：compat prompt system graph 承载描述符（接受 compat_strict / compat_plus）。 */
+export const COMPAT_SYSTEM_GRAPH_CARRIER: TurnSystemGraphCarrier = {
+  id: COMPAT_PROMPT_SYSTEM_GRAPH_ID,
+  version: COMPAT_PROMPT_SYSTEM_GRAPH_VERSION,
+  assertExecutable(): void {
+    if (!compatSystemGraphValidated) {
+      assertCompatPromptSystemGraphExecutable();
+      compatSystemGraphValidated = true;
+    }
+  },
+  acceptsRecipeKind: (kind) => kind === "compat_strict" || kind === "compat_plus",
+};
 
 export class NodeGraphTurnProcessor implements TurnAssemblyProcessor {
   readonly kind = "node_graph" as const;
   readonly recipe: PromptProcessorRecipe;
+  private readonly carrier: TurnSystemGraphCarrier;
 
-  constructor(recipe: PromptProcessorRecipe) {
-    if (recipe.kind !== "native_prompt") {
+  constructor(recipe: PromptProcessorRecipe, carrier: TurnSystemGraphCarrier = NATIVE_SYSTEM_GRAPH_CARRIER) {
+    if (!carrier.acceptsRecipeKind(recipe.kind)) {
       throw new NodeGraphTurnProcessorError(
-        "node_graph processor only accepts the native_prompt recipe",
+        `node_graph carrier "${carrier.id}" does not accept recipe "${recipe.kind}"`,
       );
     }
-    ensureSystemGraphExecutable();
+    carrier.assertExecutable();
     this.recipe = recipe;
+    this.carrier = carrier;
   }
 
   prepare(context: TurnAssemblyContext): PreparedTurnAssembly {
@@ -90,14 +131,14 @@ export class NodeGraphTurnProcessor implements TurnAssemblyProcessor {
       finishedAt,
       inlineAgentsEngaged,
     });
-    // 标注承载路径：本次 native 编排由内置 system graph 承载（图 id / version 进 trace）。
+    // 标注承载路径：本次编排由内置 system graph 承载（图 id / version 进 trace）。
     const governanceSummary = {
       ...baseSummary,
       diagnostics: {
         ...(baseSummary.diagnostics ?? {}),
         carrier: "system_graph" as const,
-        system_graph_id: NATIVE_PROMPT_SYSTEM_GRAPH_ID,
-        system_graph_version: NATIVE_PROMPT_SYSTEM_GRAPH_VERSION,
+        system_graph_id: this.carrier.id,
+        system_graph_version: this.carrier.version,
       },
     };
 

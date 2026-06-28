@@ -8,6 +8,7 @@ import type {
   PendingToolJobRequest,
   ToolPermissions,
   ToolCallRecord,
+  ToolSideEffectLevel,
 } from '../tools/types.js';
 import type { ToolRegistry } from '../tools/tool-registry.js';
 import type { DirectorInput, DirectorResult } from './director.js';
@@ -19,6 +20,10 @@ import type {
   FloorRunVerifierIssue,
   FloorRunVerifierStatus,
 } from '../events/event-types.js';
+import type {
+  AgentLoopStopReason,
+  GraphToolConfirmationDecider,
+} from './text-protocol-agent-loop.js';
 
 // ── Turn Config ───────────────────────────────────────
 
@@ -139,8 +144,54 @@ export interface TurnInput {
   onChunk?: (chunk: string) => void;
   /** 可选：中止信号（用于客户端断连等场景） */
   abortSignal?: AbortSignal;
-  /** 可选：回合运行阶段观察器（由上层接入运行快照、候选输出等） */
+    /** 可选：回合运行阶段观察器（由上层接入运行快照、候选输出等） */
   runObserver?: TurnRunObserver;
+
+  /**
+   * 图助手 text_protocol 多轮 agent 循环配置（可选）。
+   *
+ * 仅当本字段存在且 `toolTransport.selection.transport === 'text_protocol'`
+   * 时，TurnOrchestrator 才走图助手多轮循环，并在 confirm 工具前暂停等待确认。
+   * 不提供时，text_protocol 仍走既有单轮逻辑，主链与其他会话行为不变。
+   *
+   * 依赖方向：auto/confirm 决策由 apps/api 通过 `decideConfirmation` 回调注入，
+   * core 不反向依赖图助手策略服务。
+   */
+  graphAssistantAgentLoop?: GraphAssistantAgentLoopConfig;
+}
+
+/** 图助手 text_protocol 多轮 agent 循环配置。 */
+export interface GraphAssistantAgentLoopConfig {
+  /** 单个工具的执行前确认决策回调。 */
+  decideConfirmation: GraphToolConfirmationDecider;
+  /**
+   * 批准后续跑：进入生成循环前先执行这个已批准的工具调用。
+   *
+   * 仅「批准后续跑」路径传入；首次生成不传。
+   */
+  resumeApprovedCall?: {
+    callId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+  };
+}
+
+/**
+ * turn 因待确认而暂停时返回的待确认调用信息。
+ *
+ * apps/api 据此登记 `graph_assistant_pending_tool_calls` 记录并补全 confirmationId。
+ */
+export interface TurnPendingToolConfirmation {
+  callId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  sideEffectLevel?: ToolSideEffectLevel;
+  /**
+   * 暂停时的完整对话上下文，供续跑重建。
+   *
+   * 包含初始 messages、各步 assistant 原始输出与各步工具结果用户消息。
+   */
+  conversationMessages: ChatMessage[];
 }
 
 // ── Turn Execution Result ─────────────────────────────
@@ -199,6 +250,25 @@ export interface TurnExecutionResult {
    * @deprecated 新路径应使用 toolExecutionRecords。
    */
   toolCalls?: ToolCallRecord[];
+
+  /**
+   * 图助手多轮 agent 循环的停止原因（仅图助手 text_protocol 多轮路径存在）。
+   *
+   * - `natural_stop`：模型不再请求工具，自然停止。
+   * - `awaiting_confirmation`：遇到 confirm 工具暂停，等待用户批准。
+   * - `max_steps`：达到步数上限收尾。
+   */
+  agentLoopStopReason?: AgentLoopStopReason;
+
+  /**图助手多轮 agent 循环实际执行的生成步数。 */
+  agentLoopSteps?: number;
+
+  /**
+   * 因 confirm 工具暂停时的待确认调用信息（仅 agentLoopStopReason='awaiting_confirmation'）。
+   *
+   * apps/api据此登记待确认记录、持久化续跑上下文、推送 SSE。
+   */
+  pendingToolConfirmation?: TurnPendingToolConfirmation;
 }
 
 /** @deprecated 使用 TurnExecutionResult。 */

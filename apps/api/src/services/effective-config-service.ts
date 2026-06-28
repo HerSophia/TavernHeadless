@@ -1,8 +1,14 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import type { ToolCallTransportKind, ToolCallTransportReasonCode } from "@tavern/core";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { projects, sessions } from "../db/schema.js";
+import {
+  llmProfileBindings,
+  llmProfiles,
+  mcpServerConfigs,
+  projects,
+  sessions,
+} from "../db/schema.js";
 import { parseJsonField } from "../lib/http.js";
 import type { LlmInstanceCapabilities } from "../lib/llm-capabilities.js";
 import { LlmInstanceService } from "./llm-instance-service.js";
@@ -34,6 +40,16 @@ import {
   resolveNativePromptBridgeDecision,
   type NativePromptBridgeDecision,
 } from "./agent-runtime/native-prompt-bridge.js";
+import {
+  readCompatPromptBridgeWorkspaceDefault,
+  resolveCompatPromptBridgeDecision,
+  type CompatPromptBridgeDecision,
+} from "./agent-runtime/compat-prompt-bridge.js";
+
+/** global scope 绑定使用的固定 scopeId（与 LlmProfileService 一致）。 */
+const GLOBAL_LLM_SCOPE_ID = "global";
+/** effective config 只解释通配槽位（'*'）的默认绑定，逐 slot 解析仍走 LlmProfileService。 */
+const DEFAULT_LLM_INSTANCE_SLOT = "*";
 
 export type EffectiveConfigSource = "workspace" | "project" | "session";
 
@@ -49,9 +65,22 @@ export interface EffectiveToolPolicyView {
   override: Record<string, unknown> | null;
 }
 
+export interface EffectiveMcpServerSummary {
+  mcpServerId: string;
+  name: string;
+  transport: "stdio" | "http";
+  enabled: boolean;
+  toolPrefix: string | null;
+}
+
 export interface EffectiveMcpBindingView {
   source: EffectiveConfigSource;
   bindings: ProjectMcpBindingRecord[];
+  /**
+   * WP-C1：Workspace 默认 MCP 来源（account + workspace 下启用的 MCP server 摘要）。
+   * 仅含非敏感标识字段，不含 config / secret，用于让 source: "workspace" 真正有据可查。
+   */
+  workspaceServers: EffectiveMcpServerSummary[];
 }
 
 export interface EffectiveToolTransportView {
@@ -81,6 +110,15 @@ export interface ProjectEffectiveConfigView {
  * 分层 Workspace 默认（env）→ Project → Session；`source` 标识本次承载决策由哪层决定。
  */
 export interface EffectiveNativePromptBridgeView extends NativePromptBridgeDecision {
+  source: EffectiveConfigSource;
+}
+
+/**
+ * CG11：compat prompt 主链承载灰度的有效视图。
+ *
+ * 分层 Workspace 默认（env）→ Project → Session；`source` 标识本次承载决策由哪层决定。
+ */
+export interface EffectiveCompatPromptBridgeView extends CompatPromptBridgeDecision {
   source: EffectiveConfigSource;
 }
 
@@ -164,6 +202,35 @@ export class EffectiveConfigService {
     return { ...decision, source };
   }
 
+  /**
+   * CG11：解析 compat prompt 主链承载灰度决策。
+   *
+   * 与 native 同构地分层 Workspace 默认（env `COMPAT_PROMPT_SYSTEM_GRAPH_CARRIER` / `..._SHADOW`）→
+   * Project → Session，后层覆盖前层。缺省退化为 prompt_mode + shadow off（与既有行为一致）。
+   * 把承载决策设回 prompt_mode 即配置级一键回退，不回滚代码。静态方法，不依赖 DB。
+   */
+  static resolveCompatPromptBridge(
+    input: {
+      project?: Partial<CompatPromptBridgeDecision>;
+      session?: Partial<CompatPromptBridgeDecision>;
+      env?: NodeJS.ProcessEnv;
+    } = {},
+  ): EffectiveCompatPromptBridgeView {
+    const workspace = readCompatPromptBridgeWorkspaceDefault(input.env);
+    const decision = resolveCompatPromptBridgeDecision({
+      workspace,
+      project: input.project,
+      session: input.session,
+    });
+    const source: EffectiveConfigSource =
+      input.session?.carrier !== undefined
+        ? "session"
+        : input.project?.carrier !== undefined
+          ? "project"
+          : "workspace";
+    return { ...decision, source };
+  }
+
   forProject(input: { projectId: string; accountId: string }): ProjectEffectiveConfigView {
     const project = this.db
       .select({
@@ -186,13 +253,21 @@ export class EffectiveConfigService {
     return {
       projectId: project.id,
       workspaceId: project.workspaceId,
-      llmProfile: viewLlm(llmOverride),
+      llmProfile: this.resolveProjectLlmProfile({
+        accountId: input.accountId,
+        workspaceId: project.workspaceId,
+        projectOverride: llmOverride,
+      }),
       toolPolicies: {
         overrides: toolOverrides,
       },
       mcp: {
         source: mcpBindings.length > 0 ? "project" : "workspace",
         bindings: mcpBindings,
+        workspaceServers: this.listWorkspaceMcpServers({
+          accountId: input.accountId,
+          workspaceId: project.workspaceId,
+        }),
       },
     };
   }
@@ -233,7 +308,11 @@ export class EffectiveConfigService {
       ...projectView,
       sessionId: input.sessionId,
       sessionOverrides: {
-        llmProfile: null,
+        llmProfile: this.resolveSessionLlmOverride({
+          accountId: input.accountId,
+          workspaceId: projectView.workspaceId,
+          sessionId: input.sessionId,
+        }),
       },
       toolTransport,
     };
@@ -276,6 +355,128 @@ export class EffectiveConfigService {
       },
     };
   }
+
+  /**
+   * WP-C1：解析 Project 层 LLM profile 视图。
+   *
+   * 有 Project override 时来源为 project；否则回退到 Workspace 默认（global binding 的 '*' 槽位），
+   * 让 source: "workspace" 真正对应已绑定的默认 profile，而不是恒为 null 的占位。
+   */
+  private resolveProjectLlmProfile(input: {
+    accountId: string;
+    workspaceId: string;
+    projectOverride: ProjectLlmProfileOverrideRecord | null;
+  }): EffectiveLlmProfileView {
+    if (input.projectOverride) {
+      return {
+        source: "project",
+        profileId: input.projectOverride.baseProfileId,
+        override: input.projectOverride.overrideJson,
+      };
+    }
+    const workspaceDefault = this.resolveBoundLlmProfile({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      scope: "global",
+      scopeId: GLOBAL_LLM_SCOPE_ID,
+    });
+    return {
+      source: "workspace",
+      profileId: workspaceDefault?.profileId ?? null,
+      override: workspaceDefault?.override ?? null,
+    };
+  }
+
+  /**
+   * WP-C1：解析 Session 层 LLM override 视图。
+   *
+   * 读取 session scope 的 '*' 槽位绑定；没有会话级绑定时返回 null（沿用 Project / Workspace 层）。
+   */
+  private resolveSessionLlmOverride(input: {
+    accountId: string;
+    workspaceId: string;
+    sessionId: string;
+  }): EffectiveLlmProfileView | null {
+    const bound = this.resolveBoundLlmProfile({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      scope: "session",
+      scopeId: input.sessionId,
+    });
+    if (!bound) {
+      return null;
+    }
+    return { source: "session", profileId: bound.profileId, override: bound.override };
+  }
+
+  /**
+   * 读取某 scope 下 '*' 槽位的活跃 profile 绑定。
+   *
+   * 与 LlmProfileService 的 workspace 回退规则保持一致（workspace 命中或 null workspace 的历史行），
+   * 但不解密 secret，只取 profileId 与 generation params 作为 override 视图。
+   */
+  private resolveBoundLlmProfile(input: {
+    accountId: string;
+    workspaceId: string;
+    scope: "global" | "session";
+    scopeId: string;
+  }): { profileId: string; override: Record<string, unknown> | null } | null {
+    const row = this.db
+      .select({
+        profileId: llmProfileBindings.profileId,
+        paramsJson: llmProfileBindings.paramsJson,
+      })
+      .from(llmProfileBindings)
+      .innerJoin(llmProfiles, eq(llmProfileBindings.profileId, llmProfiles.id))
+      .where(and(
+        eq(llmProfileBindings.scope, input.scope),
+        eq(llmProfileBindings.scopeId, input.scopeId),
+        eq(llmProfileBindings.instanceSlot, DEFAULT_LLM_INSTANCE_SLOT),
+        eq(llmProfileBindings.accountId, input.accountId),
+        eq(llmProfiles.accountId, input.accountId),
+        eq(llmProfiles.status, "active"),
+        or(eq(llmProfileBindings.workspaceId, input.workspaceId), isNull(llmProfileBindings.workspaceId)),
+        or(eq(llmProfiles.workspaceId, input.workspaceId), isNull(llmProfiles.workspaceId)),
+      ))
+      .limit(1)
+      .all()[0];
+    if (!row) {
+      return null;
+    }
+    return { profileId: row.profileId, override: parseOverrideJson(row.paramsJson) };
+  }
+
+  /**
+   * WP-C1：列出 Workspace 层启用的 MCP server 摘要（account + workspace，enabled）。
+   * 仅返回非敏感标识字段，作为 source: "workspace" 的真实来源。
+   */
+  private listWorkspaceMcpServers(input: {
+    accountId: string;
+    workspaceId: string;
+  }): EffectiveMcpServerSummary[] {
+    return this.db
+      .select({
+        mcpServerId: mcpServerConfigs.id,
+        name: mcpServerConfigs.name,
+        transport: mcpServerConfigs.transport,
+        enabled: mcpServerConfigs.enabled,
+        toolPrefix: mcpServerConfigs.toolPrefix,
+      })
+      .from(mcpServerConfigs)
+      .where(and(
+        eq(mcpServerConfigs.accountId, input.accountId),
+        eq(mcpServerConfigs.enabled, 1),
+        or(eq(mcpServerConfigs.workspaceId, input.workspaceId), isNull(mcpServerConfigs.workspaceId)),
+      ))
+      .all()
+      .map((row) => ({
+        mcpServerId: row.mcpServerId,
+        name: row.name,
+        transport: row.transport,
+        enabled: row.enabled === 1,
+        toolPrefix: row.toolPrefix ?? null,
+      }));
+  }
 }
 
 function viewLlm(record: ProjectLlmProfileOverrideRecord | null): EffectiveLlmProfileView {
@@ -287,6 +488,22 @@ function viewLlm(record: ProjectLlmProfileOverrideRecord | null): EffectiveLlmPr
     profileId: record.baseProfileId,
     override: record.overrideJson,
   };
+}
+
+/**
+ * 把 llm profile binding 的 params_json 解析成 generation params override 视图。
+ *
+ * 空列（null/空串）或非对象值返回 null，表示该绑定没有 override；
+ * 合法 JSON 对象原样作为 Record 返回，供下游合并进 generationParams。
+ */
+function parseOverrideJson(raw: string | null): Record<string, unknown> | null {
+  if (!raw) {
+    return null;
+  }
+  const parsed = parseJsonField(raw);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : null;
 }
 
 function parseSessionMetadata(raw: string | null): SessionMetadata {

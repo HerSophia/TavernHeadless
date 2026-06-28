@@ -23,7 +23,24 @@ export {
   type SessionStatePublicSnapshotInput,
 } from "./session-state-public-service.js";
 export { SessionStateSlotRegistry, createDefaultSessionStateSlotRegistry } from "./session-state-slot-registry.js";
+export {
+  BUILTIN_GAME_STATE_SLOT_BOUNDARIES,
+  BuiltInGameStateSlotSchemaError,
+  FIRST_PARTY_INVENTORY_STATE_WRITER_SCHEMA_VERSION,
+  FIRST_PARTY_INVENTORY_STATE_MIN_SUPPORTED_SCHEMA_VERSION,
+  FIRST_PARTY_COMBAT_STATE_WRITER_SCHEMA_VERSION,
+  FIRST_PARTY_COMBAT_STATE_MIN_SUPPORTED_SCHEMA_VERSION,
+  getBuiltInGameStateSlotBoundary,
+  normalizeCombatValue,
+  normalizeInventoryValue,
+  type BuiltInGameStateSlot,
+  type BuiltInGameStateSlotBoundary,
+} from "./builtin-game-state-slot-schemas.js";
 export type {
+  FirstPartyCombatParticipant,
+  FirstPartyCombatStateValue,
+  FirstPartyInventoryItem,
+  FirstPartyInventoryStateValue,
   FirstPartyReplayBlocker,
   FirstPartyReplayEvaluation,
   FirstPartySceneContext,
@@ -33,6 +50,8 @@ export type {
   FirstPartyWorldContext,
   FirstPartyWorldPromptSnapshot,
   FirstPartyWorldStateValue,
+  NormalizedFirstPartyCombatState,
+  NormalizedFirstPartyInventoryState,
   LoadFirstPartySceneContextInput,
   LoadFirstPartyWorldContextInput,
   NormalizedFirstPartySceneState,

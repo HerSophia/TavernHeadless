@@ -1,4 +1,9 @@
-import type { NodeGraphDocument } from "@tavern/core/node-graph";
+import {
+  buildDirectorAdvisorSubgraph,
+  buildMemoryRetrieveSubgraph,
+  deriveSubgraphInterface,
+  type NodeGraphDocument,
+} from "@tavern/core/node-graph";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,6 +27,7 @@ vi.mock("../lib/nodegraph-api", () => {
       create: vi.fn(),
       createVersion: vi.fn(),
       setCurrentVersion: vi.fn(),
+      remove: vi.fn(),
     },
   };
 });
@@ -104,22 +110,85 @@ describe("pure helpers", () => {
 });
 
 describe("graph-editor store: sample + validation gating", () => {
-  it("loads the sample as an editable working copy with live diagnostics", () => {
+  it("loads the bundled Narrator sample as an editable, executable working copy", () => {
     const store = useGraphEditorStore();
     store.loadSample();
     expect(store.isSample).toBe(true);
     expect(store.graphId).toBeNull();
     expect(store.document).not.toBeNull();
     expect(store.dirty).toBe(false);
-    // 示例图刻意含错误（control.condition 缺 config、write 节点权限/策略）。
-    expect(store.errorCount).toBeGreaterThan(0);
-    expect(store.isExecutable).toBe(false);
+    // 示例图刻意做成干净可执行（无 error 级诊断）。
+    expect(store.errorCount).toBe(0);
+    expect(store.isExecutable).toBe(true);
+    // 刚加载未改动 → 仍不可另存（canSaveVersion 需 dirty）。
     expect(store.canSaveVersion).toBe(false);
+  });
+
+  it("enters and exits a group (drill-in) and resets on reload", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    expect(store.activeGroupId).toBeNull();
+
+    store.enterGroup("g_preflight");
+    expect(store.activeGroupId).toBe("g_preflight");
+    expect(store.activeGroup?.id).toBe("g_preflight");
+
+    // 不存在的组：忽略（保持当前钻入）。
+    store.enterGroup("does_not_exist");
+    expect(store.activeGroupId).toBe("g_preflight");
+
+    store.exitGroup();
+    expect(store.activeGroupId).toBeNull();
+
+    // 重新加载样例应清空钻入态。
+    store.enterGroup("g_preflight");
+    store.loadSample();
+    expect(store.activeGroupId).toBeNull();
+  });
+
+  it("imports a preset document as a fresh unsaved draft", () => {
+    const store = useGraphEditorStore();
+    store.importPreset(
+      {
+        schemaVersion: 2,
+        graphId: "imported-narrator",
+        name: "原名",
+        mode: "native_graph",
+        nodes: [
+          { id: "n_narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
+          { id: "n_commit", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
+        ],
+        edges: [
+          { id: "e1", from: { nodeId: "n_narrator", port: "text" }, to: { nodeId: "n_commit", port: "text" } },
+        ],
+        policies: {},
+      },
+      "我的预设图",
+    );
+    // 全新草稿：无 graphId、非示例、已 dirty（选项目后可另存）。
+    expect(store.graphId).toBeNull();
+    expect(store.isSample).toBe(false);
+    expect(store.dirty).toBe(true);
+    expect(store.graphName).toBe("我的预设图");
+    expect(store.document?.name).toBe("我的预设图");
+    expect(store.isExecutable).toBe(true);
+    expect(store.baseVersionId).toBeNull();
   });
 
   it("blocks saving an invalid graph and keeps the draft", async () => {
     const store = useGraphEditorStore();
     store.loadSample();
+    // 注入含 error 的草稿（未知节点类型）→ 保存应被诊断阻断。
+    store.document = {
+      schemaVersion: 2,
+      graphId: "draft",
+      name: "draft",
+      mode: "native_graph",
+      nodes: [{ id: "bad", type: "does.not.exist", typeVersion: "1", phase: "response" }],
+      edges: [],
+      policies: {},
+    };
+    expect(store.isExecutable).toBe(false);
     const ok = await store.saveAsNewVersion("p1");
     expect(ok).toBe(false);
     expect(store.error).toBe("blocked_by_diagnostics");
@@ -127,6 +196,219 @@ describe("graph-editor store: sample + validation gating", () => {
     expect(nodeGraphApi.createVersion).not.toHaveBeenCalled();
     // 草稿仍在。
     expect(store.document).not.toBeNull();
+  });
+});
+
+describe("graph-editor store: default floor template (DG11)", () => {
+  it("loads the default floor template as a forkable, dirty, executable draft", () => {
+    const store = useGraphEditorStore();
+    store.loadTemplate("native", "默认楼层模板");
+    expect(store.isTemplate).toBe(true);
+    expect(store.templateKind).toBe("native");
+    expect(store.isSample).toBe(false);
+    expect(store.graphId).toBeNull();
+    expect(store.baseVersionId).toBeNull();
+    expect(store.document).not.toBeNull();
+    expect(store.graphName).toBe("默认楼层模板");
+    expect(store.document?.name).toBe("默认楼层模板");
+    expect(store.document?.metadata?.template).toBe("native_prompt_floor");
+    // 与系统图同结构、干净可执行 → 载入即 dirty，可立即保存（即 fork）。
+    expect(store.errorCount).toBe(0);
+    expect(store.isExecutable).toBe(true);
+    expect(store.dirty).toBe(true);
+    expect(store.canSaveVersion).toBe(true);
+  });
+
+  it("forks into a brand-new project graph on save (clears graphId for create)", async () => {
+    vi.mocked(nodeGraphApi.create).mockResolvedValue({
+      definition: defResponse({ id: "g_fork", current_version_id: "v1" }),
+      version: verResponse({ id: "v1", graph_id: "g_fork" }),
+      validation: { diagnostics: [], isValid: true },
+    });
+    vi.mocked(nodeGraphApi.listVersions).mockResolvedValue({ items: [verResponse({ graph_id: "g_fork" })] });
+
+    const store = useGraphEditorStore();
+    store.loadTemplate("native", "默认楼层模板");
+    const ok = await store.saveAsNewVersion("p1");
+    expect(ok).toBe(true);
+    expect(nodeGraphApi.create).toHaveBeenCalledWith(
+      "p1",
+      expect.objectContaining({ graphId: "" }),
+      "默认楼层模板",
+    );
+    expect(store.graphId).toBe("g_fork");
+    expect(store.isTemplate).toBe(false);
+    expect(store.templateKind).toBeNull();
+    expect(store.isSample).toBe(false);
+    expect(store.dirty).toBe(false);
+  });
+
+  it("clears the template flag when switching to the sample graph", () => {
+    const store = useGraphEditorStore();
+    store.loadTemplate();
+    expect(store.isTemplate).toBe(true);
+    expect(store.templateKind).toBe("native");
+    store.loadSample();
+    expect(store.isTemplate).toBe(false);
+    expect(store.templateKind).toBeNull();
+    expect(store.isSample).toBe(true);
+  });
+
+  it("loads the compat default template (CG11-2): zero-agentic, forkable", () => {
+    const store = useGraphEditorStore();
+    store.loadTemplate("compat", "compat 默认模板");
+    expect(store.templateKind).toBe("compat");
+    expect(store.isTemplate).toBe(true);
+    expect(store.isSample).toBe(false);
+    expect(store.graphId).toBeNull();
+    expect(store.graphName).toBe("compat 默认模板");
+    expect(store.document?.metadata?.template).toBe("compat_prompt_floor");
+    // compat 模板零 Agentic：无 agent.* / verify.* 决策节点。
+    expect(store.document?.nodes.some((n) => n.type.startsWith("agent."))).toBe(false);
+    expect(store.document?.nodes.some((n) => n.type.startsWith("verify."))).toBe(false);
+    expect(store.isExecutable).toBe(true);
+    expect(store.dirty).toBe(true);
+    expect(store.canSaveVersion).toBe(true);
+  });
+});
+
+describe("graph-editor store: insert built-in advisor subgraph (SG11-2)", () => {
+  it("forks a built-in advisor subgraph into the project and places a group.node", async () => {
+    vi.mocked(nodeGraphApi.create).mockResolvedValue({
+      definition: defResponse({ id: "sub_director", current_version_id: "v1" }),
+      version: verResponse({ id: "v1", graph_id: "sub_director" }),
+      validation: { diagnostics: [], isValid: true },
+    });
+
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const before = store.nodeCount;
+    const director = buildDirectorAdvisorSubgraph();
+
+    const ok = await store.insertBuiltinAdvisorSubgraph("p1", director);
+    expect(ok).toBe(true);
+    // 子图被 fork 进项目（metadata.subgraph）。
+    expect(nodeGraphApi.create).toHaveBeenCalledTimes(1);
+    const createdDoc = vi.mocked(nodeGraphApi.create).mock.calls[0]?.[1] as { metadata?: { subgraph?: boolean }; graphId?: string };
+    expect(createdDoc.metadata?.subgraph).toBe(true);
+    expect(createdDoc.graphId).toBe("");
+
+    // 父图新增一个 group.node，ref 指向新建子图 + 接口缓存来自 deriveSubgraphInterface。
+    expect(store.nodeCount).toBe(before + 1);
+    const groupNode = store.document?.nodes.find((node) => node.type === "group.node");
+    expect(groupNode).toBeDefined();
+    const config = groupNode?.config as { ref: { graphId: string; versionId?: string }; interface: { inputs: unknown[]; outputs: unknown[] } };
+    expect(config.ref).toEqual({ graphId: "sub_director", versionId: "v1" });
+    expect(config.interface).toEqual(deriveSubgraphInterface(director));
+    expect(store.dirty).toBe(true);
+    expect(store.selectedNodeId).toBe(groupNode?.id);
+  });
+
+  it("no-ops without a loaded document", async () => {
+    const store = useGraphEditorStore();
+    const ok = await store.insertBuiltinAdvisorSubgraph("p1", buildDirectorAdvisorSubgraph());
+    expect(ok).toBe(false);
+    expect(nodeGraphApi.create).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a backend error and keeps the document", async () => {
+    vi.mocked(nodeGraphApi.create).mockRejectedValue(new NodeGraphApiError(400, { message: "invalid" }));
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const ok = await store.insertBuiltinAdvisorSubgraph("p1", buildMemoryRetrieveSubgraph());
+    expect(ok).toBe(false);
+    expect(store.error).toBe("invalid");
+    expect(store.document).not.toBeNull();
+  });
+});
+
+describe("graph-editor store: import overwrite + delete", () => {
+  it("importPreset with target binds the draft to an existing graph for createVersion", () => {
+    const store = useGraphEditorStore();
+    store.importPreset(validDocument(), "G", { graphId: "gX", baseVersionId: "vX" });
+    expect(store.graphId).toBe("gX");
+    expect(store.baseVersionId).toBe("vX");
+    expect(store.isSample).toBe(false);
+    expect(store.dirty).toBe(true);
+  });
+
+  it("deleteGraph removes the definition and returns to the sample graph", async () => {
+    const store = useGraphEditorStore();
+    store.importPreset(validDocument(), "G", { graphId: "g9", baseVersionId: "v9" });
+    expect(store.graphId).toBe("g9");
+    vi.mocked(nodeGraphApi.remove).mockResolvedValue(undefined);
+    const ok = await store.deleteGraph("p1");
+    expect(ok).toBe(true);
+    expect(nodeGraphApi.remove).toHaveBeenCalledWith("p1", "g9");
+    expect(store.isSample).toBe(true);
+    expect(store.graphId).toBeNull();
+  });
+
+  it("deleteGraph no-ops for the sample / unsaved graph", async () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const ok = await store.deleteGraph("p1");
+    expect(ok).toBe(false);
+    expect(nodeGraphApi.remove).not.toHaveBeenCalled();
+  });
+
+  it("deleteGraph surfaces a backend error and keeps the graph loaded", async () => {
+    const store = useGraphEditorStore();
+    store.importPreset(validDocument(), "G", { graphId: "g9", baseVersionId: "v9" });
+    vi.mocked(nodeGraphApi.remove).mockRejectedValue(
+      new NodeGraphApiError(409, { message: "has runs" }),
+    );
+    const ok = await store.deleteGraph("p1");
+    expect(ok).toBe(false);
+    expect(store.error).toBe("has runs");
+    expect(store.graphId).toBe("g9");
+  });
+});
+
+
+describe("graph-editor store: extract to node group", () => {
+  it("persists a subgraph and replaces the group with a group.node", async () => {
+    vi.mocked(nodeGraphApi.create).mockResolvedValue({
+      definition: defResponse({ id: "sub-1", current_version_id: "v1" }),
+      version: verResponse({ id: "v1", graph_id: "sub-1" }),
+      validation: { diagnostics: [], isValid: true },
+    });
+
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const before = store.nodeCount;
+
+    const ok = await store.extractGroupToNodeGroup("p1", "g_post");
+    expect(ok).toBe(true);
+    expect(nodeGraphApi.create).toHaveBeenCalledTimes(1);
+
+    // 子图文档以 metadata.subgraph 标记持久化。
+    const createdDoc = vi.mocked(nodeGraphApi.create).mock.calls[0]?.[1] as { metadata?: { subgraph?: boolean } };
+    expect(createdDoc.metadata?.subgraph).toBe(true);
+
+    // 父图：移除 2 个成员 + 新增 1 个 group.node → 净 -1。
+    expect(store.nodeCount).toBe(before - 1);
+    const gn = store.document?.nodes.find((node) => node.type === "group.node");
+    expect(gn).toBeDefined();
+    expect((gn?.config as { ref: { graphId: string; versionId?: string } }).ref).toEqual({
+      graphId: "sub-1",
+      versionId: "v1",
+    });
+
+    // 被抽取的组移除；父图仍可执行；标记 dirty。
+    expect(store.document?.groups?.some((group) => group.id === "g_post")).toBe(false);
+    expect(store.isExecutable).toBe(true);
+    expect(store.dirty).toBe(true);
+    expect(store.selectedNodeId).toBe(gn?.id);
+  });
+
+  it("fails fast (no API call) when the group is unknown", async () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const ok = await store.extractGroupToNodeGroup("p1", "nope");
+    expect(ok).toBe(false);
+    expect(store.error).toBe("extract_failed:group_not_found");
+    expect(nodeGraphApi.create).not.toHaveBeenCalled();
   });
 });
 
@@ -168,6 +450,141 @@ describe("graph-editor store: editing actions", () => {
     store.removeEdge("e_user_wb");
     expect(store.document?.edges.some((e) => e.id === "e_user_wb")).toBe(false);
   });
+
+  it("toggles a group switch, syncing member node.enabled in both directions", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const group = store.document?.groups?.[0];
+    expect(group).toBeDefined();
+    const memberIds = group!.nodeIds;
+    const members = () => store.document!.nodes.filter((n) => memberIds.includes(n.id));
+
+    // 关：组 enabled=false，所有成员置 enabled:false。
+    store.setGroupEnabled(group!.id, false);
+    expect(store.document?.groups?.find((g) => g.id === group!.id)?.enabled).toBe(false);
+    expect(members().every((n) => n.enabled === false)).toBe(true);
+    expect(store.dirty).toBe(true);
+
+    // 开：组 enabled=true，所有成员清除禁用。
+    store.setGroupEnabled(group!.id, true);
+    expect(store.document?.groups?.find((g) => g.id === group!.id)?.enabled).toBe(true);
+    expect(members().every((n) => n.enabled !== false)).toBe(true);
+  });
+
+  it("ignores group switch for an unknown group id", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    store.setGroupEnabled("does_not_exist", false);
+    expect(store.dirty).toBe(false);
+  });
+
+  it("collapses and expands a group (Blender-style single node ↔ region)", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const group = store.document?.groups?.[0];
+    expect(group).toBeDefined();
+
+    store.setGroupCollapsed(group!.id, true);
+    expect(store.document?.groups?.find((g) => g.id === group!.id)?.collapsed).toBe(true);
+    expect(store.dirty).toBe(true);
+
+    store.setGroupCollapsed(group!.id, false);
+    expect(store.document?.groups?.find((g) => g.id === group!.id)?.collapsed).toBe(false);
+  });
+
+  it("ignores collapse for an unknown group id", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    store.setGroupCollapsed("does_not_exist", true);
+    expect(store.dirty).toBe(false);
+  });
+  it("selects a group and clears node/edge selection", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const group = store.document?.groups?.[0];
+    expect(group).toBeDefined();
+
+    store.selectNode(store.document!.nodes[0]!.id);
+    store.selectGroup(group!.id);
+    expect(store.selectedGroupId).toBe(group!.id);
+    expect(store.selectedGroup?.id).toBe(group!.id);
+    expect(store.selectedNodeId).toBeNull();
+    expect(store.selectedEdgeId).toBeNull();
+
+    // 选节点反过来清除组选中。
+    store.selectNode(store.document!.nodes[0]!.id);
+    expect(store.selectedGroupId).toBeNull();
+  });
+
+  it("toggles an output channel via group.disabledChannels", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const group = store.document?.groups?.[0];
+    expect(group).toBeDefined();
+    const channelId = "out:n_x:y";
+
+    // 关闭：加入 disabledChannels。
+    store.setGroupChannelEnabled(group!.id, channelId, false);
+    expect(store.document?.groups?.find((g) => g.id === group!.id)?.disabledChannels).toEqual([channelId]);
+    expect(store.dirty).toBe(true);
+
+    // 开启：移出后集合为空 → 字段被删除。
+    store.setGroupChannelEnabled(group!.id, channelId, true);
+    expect(store.document?.groups?.find((g) => g.id === group!.id)?.disabledChannels).toBeUndefined();
+  });
+
+  it("moves a collapsed group by shifting all members, preserving internal layout", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const doc = store.document!;
+    const group = doc.groups![0]!;
+    // 为成员赋予初始坐标（保证最小角可计算）。
+    group.nodeIds.forEach((nodeId, index) => {
+      const node = doc.nodes.find((n) => n.id === nodeId)!;
+      node.ui = { position: { x: 100 + index * 50, y: 200 + index * 30 } };
+    });
+    const before = group.nodeIds.map((id) => ({
+      id,
+      pos: { ...doc.nodes.find((n) => n.id === id)!.ui!.position! },
+    }));
+
+    store.moveCollapsedGroup(group.id, { x: 400, y: 500 });
+
+    const minX = Math.min(...before.map((m) => m.pos.x));
+    const minY = Math.min(...before.map((m) => m.pos.y));
+    const dx = 400 - minX;
+    const dy = 500 - minY;
+    for (const member of before) {
+      const after = store.document!.nodes.find((n) => n.id === member.id)!.ui!.position!;
+      expect(after).toEqual({ x: member.pos.x + dx, y: member.pos.y + dy });
+    }
+    expect(store.dirty).toBe(true);
+  });
+  it("moves a collapsed group whose members lack coordinates without overlapping them", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const doc = store.document!;
+    const group = doc.groups![0]!;
+    // 成员均无坐标（模拟导入未布局的图）。
+    group.nodeIds.forEach((nodeId) => {
+      const node = doc.nodes.find((n) => n.id === nodeId)!;
+      delete node.ui;
+    });
+
+    store.moveCollapsedGroup(group.id, { x: 400, y: 500 });
+
+    const positions = group.nodeIds.map(
+      (id) => store.document!.nodes.find((n) => n.id === id)!.ui!.position!,
+    );
+    // 所有成员都被赋予坐标，且互不重叠。
+    expect(positions.every((p) => p !== undefined)).toBe(true);
+    const keys = new Set(positions.map((p) => `${p.x}:${p.y}`));
+    expect(keys.size).toBe(group.nodeIds.length);
+  });
+
+
+
+
 
   it("persists positions into ui.position (auto-layout / drag write-back)", () => {
     const store = useGraphEditorStore();
@@ -317,7 +734,7 @@ describe("graph-editor store: more editing actions", () => {
   it("adds a control edge with kind control", () => {
     const store = useGraphEditorStore();
     store.loadSample();
-    const edge = store.addEdge({ nodeId: "n_branch", port: "false" }, { nodeId: "n_compose", port: "messages" }, "control");
+    const edge = store.addEdge({ nodeId: "n_gate", port: "open" }, { nodeId: "n_compose", port: "messages" }, "control");
     expect(edge?.kind).toBe("control");
   });
 

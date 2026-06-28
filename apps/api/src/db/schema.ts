@@ -86,6 +86,8 @@ export const clients = sqliteTable(
     status: text("status", { enum: ["active", "disabled"] }).notNull().default("active"),
     isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
     metadataJson: text("metadata_json").notNull().default("{}"),
+    // WP-B2：显式 capability override（JSON array）。NULL 表示按 client kind 默认模板解析。
+    capabilitiesJson: text("capabilities_json"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -118,6 +120,11 @@ export const clientApiKeys = sqliteTable(
     status: text("status", { enum: ["active", "revoked"] }).notNull().default("active"),
     lastUsedAt: integer("last_used_at"),
     expiresAt: integer("expires_at"),
+    // WP-B2：API Key 的最小 scope 声明（JSON array）。NULL 表示继承所属 Client 的全部有效能力。
+    scopesJson: text("scopes_json"),
+    // WP-B2：rotation 溯源。记录本 key 由哪个旧 key 轮换而来。
+    rotatedFromId: text("rotated_from_id"),
+    rotatedAt: integer("rotated_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -1747,7 +1754,7 @@ export const projectToolPolicyOverrides = sqliteTable(
   },
   (table) => ({
     projectBaseUnique: uniqueIndex("project_tool_policy_override_project_base_uq").on(
-      table.projectId,
+           table.projectId,
       table.basePolicyId,
     ),
     workspaceIdx: index("project_tool_policy_override_workspace_idx").on(
@@ -1757,6 +1764,80 @@ export const projectToolPolicyOverrides = sqliteTable(
     ),
   })
 );
+
+/**
+ * 图助手逐工具「自动执行 / 需要确认」策略表。
+ *
+ * 项目级存储，跨临时对话持久。仅覆盖 NodeGraph 工具；mode=auto 表示可自动执行，
+ * mode=confirm 表示需要人工确认（阶段 2 后端实际会将 confirm 工具完全扣住不暴露给 LLM，
+ * 直到阶段 3 human-in-the-loop 门控实现）。未显式配置的工具由默认值（按 sideEffectLevel 推导）决定。
+ */
+export const graphAssistantToolPolicies = sqliteTable(
+  "graph_assistant_tool_policy",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    toolName: text("tool_name").notNull(),
+    decision: text("decision", { enum: ["auto", "confirm"] }).notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectToolUnique: uniqueIndex("graph_assistant_tool_policy_project_tool_uq").on(
+      table.projectId,
+      table.toolName,
+    ),
+    workspaceIdx: index("graph_assistant_tool_policy_workspace_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  })
+);
+
+/**
+ * 图助手「执行前确认闸」待确认工具调用表（阶段 3 human-in-the-loop）。
+ *
+ * 图助手 text_protocol 多轮 agent 循环遇到 confirm 工具时，不执行该工具，
+ * 而是登记一条 pending 记录并暂停，等待用户批准/拒绝。批准后据
+ * `conversation_messages_json` 重建上下文续跑多轮，直到 agent 自然停止。
+ *
+ * 命名遵循协作指南：图助手专用、聊天主链路之外的状态，不使用 runtime 命名，
+ * 与 graph_assistant_tool_policy 风格一致。`expires_at` 预留，本阶段不设硬过期。
+ */
+export const graphAssistantPendingToolCalls = sqliteTable(
+  "graph_assistant_pending_tool_call",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    conversationId: text("conversation_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    branchId: text("branch_id").notNull(),
+    floorId: text("floor_id").notNull(),
+    callId: text("call_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    argsJson: text("args_json").notNull(),
+    sideEffectLevel: text("side_effect_level"),
+    status: text("status", {
+      enum: ["pending", "approved", "rejected", "executed", "expired","cancelled"],
+    }).notNull().default("pending"),
+    conversationMessagesJson: text("conversation_messages_json").notNull(),
+    agentSteps: integer("agent_steps").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    expiresAt: integer("expires_at"),
+  },
+  (table) => ({
+    conversationStatusIdx: index("graph_assistant_pending_tool_call_conversation_status_idx").on(
+      table.conversationId,
+      table.status,
+    ),
+    floorIdx: index("graph_assistant_pending_tool_call_floor_idx").on(table.floorId),
+  })
+);
+
 
 
 
@@ -2162,6 +2243,10 @@ export const llmInstanceConfigs = sqliteTable(
     scope: text("scope", { enum: ["global", "session"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot", { enum: ["*", "narrator", "director", "verifier", "memory"] }).notNull(),
+    // LI11（批次 11）命名坑澄清：`preset_id` 的真实语义是「提示词预设覆盖」（指向 `preset` 表），
+    // 在 narrator Prompt 组装阶段优先于 `session.preset_id`——它**不是** LLM Profile id。
+    // 选 Profile（连接/模型）走独立的 `llm_profile_binding`（见 /llm-profiles 的 activate / runtime）。
+    // 这是**过渡字段**：方案 A 下提示词配方将由图节点装配承载，该覆盖职责图化后进入废弃流程，不再扩展其用途。
     presetId: text("preset_id"),
     modelIdOverride: text("model_id_override"),
     enabled: integer("enabled").notNull().default(1),

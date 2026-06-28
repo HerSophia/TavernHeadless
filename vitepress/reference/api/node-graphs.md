@@ -677,6 +677,45 @@ NATIVE_PROMPT_SYSTEM_GRAPH_SHADOW=true
 
 承载路径与影子比对结果写进批次 8 统一治理 trace（`runtime_kind = "chat_turn"`，diagnostics 含 `carrier` / `system_graph_id` / `system_graph_version`），属内部元数据，不进入公共 OpenAPI / SDK。
 
+## DG11：默认楼层运行模板图（批次 11）
+
+DG11 在不改变系统图执行语义的前提下，给用户一份**与 `system.native_prompt` 同结构、可 fork、可编辑**的
+**默认楼层运行模板**作为起点。心智模型见
+`.limcode/design/agentic-batch10-wb10-agent-nodegraph-relationship-discussion.md` §10.5。
+
+- **单一结构事实源**：楼层图的节点 / 边 / 权限骨架下沉到 `@tavern/core` 的
+  `buildNativePromptFloorStructure()`；系统图（`buildNativePromptSystemGraph()`，`systemGraph = true`）与
+  默认模板（`buildNativePromptFloorTemplate()`，`graphId = "template.native_prompt_floor"`、
+  `systemGraph = false`、`metadata.template = "native_prompt_floor"`）都由它派生，结构由测试守卫，永不漂移。
+- **系统图仍权威、不可改**：模板是它的同结构副本，二者运行期解耦——fork 出的图与系统图无耦合。
+- **fork = 一次普通 `create`**：在 `apps/studio` 选「默认楼层模板」载入为可保存草稿，选定项目后保存即在该项目下
+  新建一张普通可编辑 NodeGraph（走既有创建 / 版本体系）。**零配置可用**（载入即合法可执行可保存），
+  **可编辑起点**（保存后是普通项目图，可任意增删改）。
+- 不引入「agent ↔ graph 一等持久绑定」（模板 fork 不绑定为项目活跃楼层图），不扩展公共 HTTP / SDK 契约，
+  不触发 `sdk:generate`，不改 `apps/web`。
+
+## CG11：compat 模式图化（批次 11）
+
+CG11 把 `compat_strict` / `compat_plus` 两种 SillyTavern 兼容编排，**与 native 同构**地纳入「由内置 system graph
+承载 + 影子比对 + golden 等价门槛」的模式，守住兼容底线。心智模型见
+`.limcode/design/agentic-batch11-cg11-compat-graphization-design.md`。
+
+- **内置 compat system graph**：`system.compat_prompt`（`metadata.systemGraph = true`）。compat 主链**零 Agentic**，
+  故结构是 native 的子集：`source.user_input` / `source.chat_history` → `compose.final_messages` →
+  `narration.narrator` → `output.commit_gate`，**无** `agent.*` / `verify.*`，`permissions.required` 为空。
+  `compat_strict` 与 `compat_plus` 结构相同（差异在 recipe / 装配），故只有这一张图。
+- **可 fork 模板**：core `buildCompatPromptFloorTemplate()`（`graphId = "template.compat_prompt_floor"`、
+  `systemGraph = false`），与系统图同结构（测试守卫），是用户可编辑的 compat 起点（studio 表层接入后续 CG11-2）。
+- **承载灰度（compat bridge）**：承载路径 `prompt_mode`（默认，命令式 compat 编排）或 `system_graph`
+  （由 compat system graph 承载，`NodeGraphTurnProcessor` + compat 描述符）。分层解析 Workspace 默认 → Project →
+  Session（env `COMPAT_PROMPT_SYSTEM_GRAPH_CARRIER` / `..._SHADOW`），`EffectiveConfigService.resolveCompatPromptBridge`
+  标注 source。缺省 `prompt_mode` + shadow off，与 CG11 前行为完全一致；设回 `prompt_mode` 即配置级一键回退。
+- **影子比对 + golden 等价门槛**：开启 shadow 时并行跑两条承载并逐字段比对（复用 `compareTurnAssemblyResults`）。
+  两条承载复用同一 compat 装配闭包，故 PromptIR / `assemblyInputHash` / 装配标志应**逐字段一致**；diff 非空即承载表达回归，
+  **golden 不绿不切流**。承载路径写进治理 trace（`carrier` / `system_graph_id = system.compat_prompt` / `recipe_kind`）。
+- compat 仍**零 Agentic**（compat 描述符只接受 `compat_strict` / `compat_plus`，图无 agent / verify 节点，无 inline 子 Agent）；
+  Narrator 单一持笔 / CommitGate 单一正史不破坏；不扩展公共 OpenAPI / SDK，不触发 `sdk:generate`。
+
 ## Agent 自修改边界
 
 R5 提供 `NodeGraphToolProvider` 给 Agent 使用，但只暴露 draft / patch / validate / proposal 类工具，不提供：
@@ -688,8 +727,237 @@ R5 提供 `NodeGraphToolProvider` 给 Agent 使用，但只暴露 draft / patch 
 
 Project 绑定的 Session runtime catalog 会暴露 `nodegraph.*` 工具。Agent 可以读取图、创建内存草稿、修改节点 / 边 / group、运行校验和 diff，并通过 `nodegraph.patch.submit_proposal` 提交建议。
 
+除上述工具外，还提供 `nodegraph.graph.create`：它从零创建一张**全新**图与其 v1 版本，是唯一会 live 持久写入的工具。它只创建新产物，不修改任何受保护的既有图；对既有图的改动仍只能经 `submit_proposal` 进入 Project Inbox。创建的图可逆（可归档 / 删除），其 `sideEffectLevel` 为 `sandbox`。
+
 提交 proposal 前会重新编译草稿；存在 error diagnostics 时拒绝提交。合法 proposal 会写入 Project Inbox，返回 `project_inbox_item_id`，live graph 版本写入仍需要用户确认或显式 API 调用。
 
 ::: warning 草稿是进程内非持久态（R6-3）
 `nodegraph.draft.*` 草稿刻意不落库：进程重启即丢、不跨进程共享，并受 TTL 滑动过期与数量上限约束（访问会续期，过期或超额的草稿被驱逐）。草稿过期后相关工具会返回“非持久、需重新创建”的错误。真正的版本变更只能经 `nodegraph.patch.submit_proposal` 进入 Project Inbox，再由具备 `project.nodegraph.write` 的人创建正式版本；持久化草稿与跨进程编辑属于后续 NodeGraph editor（批次 9 / 10）范围。
 :::
+
+## 图助手工具策略（自动执行 /需要确认）
+
+Studio 图编辑器的「图助手」基于临时对话（`purpose="graph-assistant"`）运行。后端对这类临时对话做这几件事：
+
+1. **强制启用 NodeGraph 工具**：图助手临时对话 respond 时强制 `enableTools=true`，让助手能看到并调用 `nodegraph.*` 工具。其他用途（purpose）的临时对话不受影响，工具仍默认关闭。
+2. **一次性 system 引导**：图助手会话首条 respond 前注入一条 system 引导消息，说明可用工具集合、典型工作流（读图 → 建草稿 → 改节点 / 边 → 校验 → 提交提案 / 新建图）与「除新建图外不直接改线上图」的边界。引导只注入一次。
+3. **强制 text_protocol + 多轮 agent 循环**：图助手临时对话的工具调用强制走 text_protocol，并在该路径上由后端自实现多轮 agent 循环（一轮生成 → 解析工具调用 → 逐个执行 → 把结果喂回上下文继续，直到不再请求工具而自然停止）。这是执行前确认闸「可暂停」与「批准后自动续跑」的前提；主链与其他用途会话仍保持原有 transport 与单轮行为，不受影响。
+
+在此基础上，提供**逐工具「自动执行 / 需要确认」策略**：对图助手可调用的每个 NodeGraph 工具，标记 `auto`（自动执行）或 `confirm`（需要确认）。
+
+- 作用域：**项目级**（每个 project + 每个 tool name 一条），持久存储在后端表 `graph_assistant_tool_policy`，跨临时对话生效。
+- 默认值（无显式记录时）按工具推导：
+  - 只读工具（如 `nodegraph.graph.get`、`nodegraph.patch.validate`）→ `auto`
+  - 改草稿工具（`nodegraph.draft.*` / `nodegraph.node.*` / `nodegraph.edge.*` / `nodegraph.group.*`）→ `auto`
+  - live 持久写工具 `nodegraph.graph.create` 与 `nodegraph.patch.submit_proposal` → `confirm`
+
+::: tip `confirm` 工具：执行前暂停待批（human-in-the-loop）
+执行前确认闸已落地。`confirm` 工具**不再被 withheld**，而是和 `auto` 工具一起正常暴露给助手；逐工具决策移到执行阶段判定。助手请求调用某个 `confirm` 工具时，后端在**执行前暂停**：登记一条待确认记录、经 SSE `tool` 事件（`phase="awaiting_confirmation"`，携带 `call_id` 与 `args`）通知前端，并以待确认收尾本次请求（已生成的可见文本与已执行的 `auto` 工具结果照常提交）。随后由用户**批准**（执行该调用并自动续跑多轮，直到自然停止）或**拒绝**（不执行、向 transcript 注入说明并把控制权交回用户）。详见下文[执行前确认闸与恢复接口](#执行前确认闸与恢复接口)。
+
+同一回合出现多个工具时，`auto` 先执行，遇到第一个 `confirm` 即登记待确认并中止后续；批准后从暂停点续跑（已完成轮次与工具结果从持久化上下文保留，不重跑）。`confirm` 仍可作为「彻底禁用某工具」的占位语义保留，但默认不再隐藏工具。
+:::
+
+这组策略路由属于 NodeGraph 周边第一方接入面，**不进入 OpenAPI / `@tavern/sdk` 生成面**；Studio 经第一方薄客户端直连。读用 `project.nodegraph.read`，写用 `project.nodegraph.write`。
+
+### GET /projects/:id/graph-assistant/tool-policy
+
+返回该项目下所有图助手工具的 effective 策略（默认值与 override 合并）。需要 `project.nodegraph.read`。
+
+#### 成功响应（200）
+
+```json
+{
+  "items": [
+    {
+      "tool_name": "nodegraph.graph.get",
+      "side_effect_level": "none",
+      "default_decision": "auto",
+      "decision": "auto",
+      "source": "default"
+    },
+    {
+      "tool_name": "nodegraph.graph.create",
+  "side_effect_level": "sandbox",
+      "default_decision": "confirm",
+      "decision": "confirm",
+      "source": "default"
+}
+  ]
+}
+```
+
+| 字段 | 类型 |说明 |
+| ---- | ---- | ---- |
+| `tool_name` | `string` | NodeGraph 工具名 |
+| `side_effect_level` | `string` | 工具副作用级别：`none` / `sandbox` / `irreversible` |
+| `default_decision` | `string` | 按工具推导的默认决策：`auto` / `confirm` |
+| `decision` | `string` | 当前 effective 决策：`auto` / `confirm` |
+| `source` | `string` | 决策来源：`default`（默认值）/ `override`（显式覆盖） |
+
+### PUT /projects/:id/graph-assistant/tool-policy
+
+批量 upsert 逐工具策略。需要 `project.nodegraph.write`。返回更新后的完整 effective 列表（形态同 GET）。
+
+#### 请求体
+
+```json
+{
+  "policies": [
+    { "tool_name": "nodegraph.node.add", "decision": "confirm" },
+    { "tool_name": "nodegraph.graph.create", "decision": "auto" }
+  ]
+}
+```
+
+| 字段 | 类型 | 必填| 说明 |
+| ---- | ---- | ---- | ---- |
+| `policies` | `array` | 是 | 至少一条；每条含 `tool_name` 与 `decision` |
+| `policies[].tool_name` | `string` | 是 |必须是已知的图助手工具名，否则返回 400 |
+| `policies[].decision` | `string` | 是 | `auto` 或 `confirm` |
+
+####错误
+
+| 状态码 | `error.code` |说明 |
+| ---- | ---- | ---- |
+| 400 | `unknown_tool` | `tool_name` 不在已知工具目录内 |
+| 400 | `invalid_decision` | `decision` 非 `auto` / `confirm` |
+| 403 | `project_access_denied` | 缺少 `project.nodegraph.read`（读）或 `project.nodegraph.write`（写）权限 |
+
+#### 示例
+
+```bash
+curl -X PUT http://localhost:3000/projects/proj_main/graph-assistant/tool-policy \
+  -H 'Content-Type: application/json' \
+ -d '{"policies":[{"tool_name":"nodegraph.node.add","decision":"confirm"}]}'
+```
+
+## 执行前确认闸与恢复接口
+
+`confirm` 工具在图助手会话里采用 human-in-the-loop「执行前暂停待批」：助手请求调用某个 `confirm` 工具时，后端不直接执行，而是登记一条**待确认记录**（持久化在 `graph_assistant_pending_tool_calls`，含暂停时刻的续跑上下文），并以待确认收尾本次 respond。前端据此渲染待确认卡片，由用户批准或拒绝。
+
+这组恢复接口挂在临时对话作用域下，属于 NodeGraph 周边第一方接入面，**不进入 OpenAPI / `@tavern/sdk` 生成面**；Studio 经第一方薄客户端直连。读用 `project.nodegraph.read`，写用 `project.nodegraph.write`。
+
+### 暂停信号（SSE）
+
+图助手会话强制 text_protocol，`respond` 的 SSE 流在登记待确认时会发出一条 `tool` 事件：
+
+```text
+event: tool
+data: {"execution_id":"call_x","tool_name":"nodegraph.graph.create","provider_id":"","phase":"awaiting_confirmation","side_effect_level":"irreversible","replay_safety":"confirm_on_replay","call_id":"call_x","args":{"name":"新图"}}
+```
+
+- `phase="awaiting_confirmation"` 表示该工具在执行前暂停，等待批准。
+- `call_id` / `args` 仅在此 phase 出现：分别是模型生成的调用 id 与参数快照。
+- 暂停发生在执行之前，`provider_id` 为空串。
+- 流随后以正常 `done` 收尾（`final_state` 仍为 `committed`，因为已生成的可见文本照常提交）。**「这一回合是否停在确认闸」以下文的待确认列表为准**，不依赖 `done` 的 `final_state`。
+
+> SDK 侧 `client.temporaryConversations.respondStream(...)` 的 `onTool` 会透传该 phase 与 `callId` / `args`；但待确认列表与批准 / 拒绝必须经下面的第一方恢复接口。
+
+### GET /temporary-conversations/:id/pending-tool-calls
+
+列出该临时对话当前处于 `pending` 的待确认工具调用。需要 `project.nodegraph.read`。非图助手会话恒返回空列表。
+
+#### 成功响应（200）
+
+```json
+{
+  "items": [
+    {
+      "id": "ptc_001",
+      "conversation_id": "temp_001",
+      "branch_id": "main",
+      "floor_id": "floor_002",
+      "call_id": "call_x",
+      "tool_name": "nodegraph.graph.create",
+      "args": { "name": "新图" },
+      "side_effect_level": "irreversible",
+      "status": "pending",
+      "created_at": 1735689600000,
+      "updated_at": 1735689600000,
+      "expires_at": null
+    }
+  ]
+}
+```
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | `string` | 待确认记录 ID（即恢复接口的 `confirmationId`） |
+| `call_id` | `string` | 模型生成的工具调用 id |
+| `tool_name` | `string` | 待确认的工具名 |
+| `args` | `object` | 调用参数快照 |
+| `side_effect_level` | `string \| null` | 副作用级别：`none` / `sandbox` / `irreversible` |
+| `status` | `string` | 当前状态，列表只返回 `pending` |
+| `expires_at` | `integer \| null` | 预留过期时间（当前不设硬过期） |
+
+### POST /temporary-conversations/:id/pending-tool-calls/:confirmationId
+
+解决一条待确认：批准或拒绝。需要 `project.nodegraph.write`。
+
+#### 请求体
+
+```json
+{ "decision": "approve" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `decision` | `"approve" \| "reject"` | 是 | 批准或拒绝 |
+
+- **`approve`**：经确认闸放行执行该调用，把结果喂回循环上下文，并**自动续跑多轮** agent 循环——助手可继续调用更多工具（`auto` 直接执行、`confirm` 再次暂停），直到不再请求工具而自然停止。批准后不等用户再发消息。
+- **`reject`**：标记 `rejected`，不执行，向 transcript 注入一条说明消息，控制权交回用户。
+
+#### 成功响应（200）
+
+批准（`approved`）返回续跑后的最终一轮结果；若续跑再次命中 `confirm` 工具，应重新拉取待确认列表：
+
+```json
+{
+  "data": {
+    "decision": "approved",
+    "pending_tool_call": { "id": "ptc_001", "status": "approved" },
+    "result": {
+      "conversation_id": "temp_001",
+      "branch_id": "main",
+      "floor_id": "floor_003",
+      "floor_no": 3,
+      "page_id": "page_003",
+      "generated_text": "已新建图……",
+      "total_usage": { "prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20 },
+      "final_state": "committed"
+    }
+  }
+}
+```
+
+拒绝（`rejected`）不带 `result`：
+
+```json
+{
+  "data": {
+    "decision": "rejected",
+    "pending_tool_call": { "id": "ptc_001", "status": "rejected" }
+  }
+}
+```
+
+#### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| 400 | `validation_error` | `decision` 缺失或非法 |
+| 403 | `project_access_denied` | 缺少 `project.nodegraph.read`（读）或 `project.nodegraph.write`（写）权限 |
+| 404 | `conversation_not_found` / `pending_tool_call_not_found` | 临时对话或待确认记录不存在 |
+| 409 | `conversation_not_active` / `pending_tool_call_not_pending` | 会话已进入终态，或该待确认已被处理（非 `pending`） |
+
+#### 示例
+
+```bash
+# 列出待确认
+curl http://localhost:3000/temporary-conversations/temp_001/pending-tool-calls
+
+# 批准并自动续跑
+curl -X POST http://localhost:3000/temporary-conversations/temp_001/pending-tool-calls/ptc_001 \
+  -H 'Content-Type: application/json' \
+  -d '{"decision":"approve"}'
+```

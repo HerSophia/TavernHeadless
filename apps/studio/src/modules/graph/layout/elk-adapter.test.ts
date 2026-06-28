@@ -23,25 +23,29 @@ describe("buildElkGraph", () => {
   it("maps groups to compound nodes containing their members", () => {
     const root = buildElkGraph(SAMPLE_NODE_GRAPH_DOCUMENT);
 
-    // 12 节点，其中 4 个在组内 → 8 个顶层叶子 + 1 个分组容器
-    expect(root.children).toHaveLength(9);
+    // 23 节点，其中 15 个在三个组内 → 8 个顶层叶子 + 3 个分组容器
+    expect(root.children).toHaveLength(11);
 
-    const group = child(root, "group:g_pre");
+    const group = child(root, "group:g_preflight");
     expect(group).toBeDefined();
     expect(group?.children?.map((node) => node.id).sort()).toEqual([
-      "n_branch",
+      "n_agency_pre",
       "n_cond",
+      "n_director",
       "n_gate",
-      "n_wb",
+      "n_lore",
     ]);
     // 组内成员不应再出现在顶层
-    expect(child(root, "n_wb")).toBeUndefined();
+    expect(child(root, "n_director")).toBeUndefined();
   });
 
   it("assigns phase partition and ELK ports to leaf nodes", () => {
     const root = buildElkGraph(SAMPLE_NODE_GRAPH_DOCUMENT);
 
-    const narrator = child(root, "n_narrator");
+    // n_narrator 现位于「Narrator 预设主体」分组内 → 从组容器里取叶子。
+    const narratorGroup = child(root, "group:g_narrator");
+    expect(narratorGroup).toBeDefined();
+    const narrator = narratorGroup?.children?.find((node) => node.id === "n_narrator");
     expect(narrator).toBeDefined();
     // narration.narrator 在 response phase（order 2）
     expect(narrator?.layoutOptions?.["elk.partitioning.partition"]).toBe("2");
@@ -97,6 +101,60 @@ describe("buildElkGraph", () => {
     // source 端口存在 → 端口 id；target 端口在未知节点上不存在 → 回退节点 id
     expect(edge?.sources).toEqual(["a::out::text"]);
     expect(edge?.targets).toEqual(["x"]);
+  });
+});
+
+describe("buildElkGraph · collapsed node groups", () => {
+  function collapsedDoc(): NodeGraphDocument {
+    return {
+      schemaVersion: 2,
+      graphId: "c",
+      name: "c",
+      mode: "native_graph",
+      nodes: [
+        { id: "ext", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+        { id: "a", type: "compose.template_render", typeVersion: "1", phase: "pre_response" },
+        { id: "b", type: "compose.final_messages", typeVersion: "1", phase: "response" },
+        { id: "ext2", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
+      ],
+      edges: [
+        { id: "e_in", from: { nodeId: "ext", port: "text" }, to: { nodeId: "a", port: "blocks" } },
+        { id: "e_ab", from: { nodeId: "a", port: "block" }, to: { nodeId: "b", port: "blocks" } },
+        { id: "e_out", from: { nodeId: "b", port: "messages" }, to: { nodeId: "ext2", port: "text" } },
+      ],
+      groups: [{ id: "grp", name: "Grp", kind: "subgraph", collapsed: true, nodeIds: ["a", "b"] }],
+      policies: {},
+    };
+  }
+
+  it("lays out a collapsed group as a single leaf node (members excluded, edges rerouted)", () => {
+    const root = buildElkGraph(collapsedDoc());
+
+    // 折叠叶子存在于顶层；成员 a/b 不参与布局；无复合 group:grp。
+    const leaf = child(root, "groupx:grp");
+    expect(leaf).toBeDefined();
+    expect(child(root, "a")).toBeUndefined();
+    expect(child(root, "b")).toBeUndefined();
+    expect(child(root, "group:grp")).toBeUndefined();
+    expect(child(root, "ext")).toBeDefined();
+
+    // 跨界边重路由到折叠叶子的派生端口；组内边被略去。
+    const portIds = (leaf?.ports ?? []).map((port) => port.id);
+    expect(portIds).toContain("in:a:blocks");
+    expect(portIds).toContain("out:b:messages");
+    const eIn = root.edges?.find((edge) => edge.id === "e_in");
+    expect(eIn?.targets).toEqual(["in:a:blocks"]);
+    const eOut = root.edges?.find((edge) => edge.id === "e_out");
+    expect(eOut?.sources).toEqual(["out:b:messages"]);
+    expect(root.edges?.some((edge) => edge.id === "e_ab")).toBe(false);
+  });
+
+  it("keeps members and the compound group when not collapsed", () => {
+    const doc = collapsedDoc();
+    doc.groups![0]!.collapsed = false;
+    const root = buildElkGraph(doc);
+    expect(child(root, "group:grp")).toBeDefined();
+    expect(child(root, "groupx:grp")).toBeUndefined();
   });
 });
 

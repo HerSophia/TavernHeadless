@@ -31,4 +31,21 @@ export type {
   TurnRunObserver,
   VerifierFailStrategy,
   ToolMode,
+  GraphAssistantAgentLoopConfig,
+  TurnPendingToolConfirmation,
 } from './types.js';
+
+// ── 图助手 text_protocol 多轮 agent 循环 ───────────
+export { TextProtocolAgentLoop } from './text-protocol-agent-loop.js';
+export type {
+  GraphToolConfirmationDecision,
+  GraphToolConfirmationContext,
+  GraphToolConfirmationDecider,
+  AgentLoopStepInput,
+  AgentLoopStepOutput,
+  AgentLoopGenerate,
+  AgentLoopStopReason,
+  AgentLoopPendingConfirmation,
+  AgentLoopResult,
+  AgentLoopRunInput,
+} from './text-protocol-agent-loop.js';

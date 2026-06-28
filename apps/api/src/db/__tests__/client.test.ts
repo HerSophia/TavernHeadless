@@ -405,6 +405,93 @@ describe("createDatabase", () => {
     });
   });
 
+  it("repairs the graph assistant tool policy `mode`→`decision` rename drift and recreates the pending table", () => {
+    tempDir = mkdtempSync(join(tmpdir(), "tavern-db-"));
+    tempMigrationsDir = createMigrationsDirBeforeIndex(76);
+
+    const databasePath = join(tempDir, "tavern.db");
+    const now = 1_735_700_300_000;
+
+    seedSqlite = new Database(databasePath);
+    seedSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(seedSqlite, { schema }), { migrationsFolder: tempMigrationsDir });
+
+    // 既无图助手策略表（按旧列 `mode` 漂移建出），也无阶段 3 待确认表。
+    expect(getTableNames(seedSqlite)).not.toEqual(
+      expect.arrayContaining(["graph_assistant_tool_policy", "graph_assistant_pending_tool_call"]),
+    );
+
+    // 模拟历史漂移：策略表存在但列名仍为旧的 `mode`（无 FK，便于直接插入数据）。
+    seedSqlite.exec(`CREATE TABLE \`graph_assistant_tool_policy\` (
+      \`id\` text PRIMARY KEY NOT NULL,
+      \`workspace_id\` text NOT NULL,
+      \`project_id\` text NOT NULL,
+      \`account_id\` text NOT NULL,
+      \`tool_name\` text NOT NULL,
+      \`mode\` text NOT NULL,
+      \`created_at\` integer NOT NULL,
+      \`updated_at\` integer NOT NULL
+    );`);
+    seedSqlite
+      .prepare(
+        `INSERT INTO graph_assistant_tool_policy (
+          id, workspace_id, project_id, account_id, tool_name, mode, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("gatp-1", "ws-1", "proj-1", "default-admin", "nodegraph.graph.create", "confirm", now, now);
+
+    migrationSourceSqlite = new Database(":memory:");
+    migrationSourceSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(migrationSourceSqlite, { schema }), { migrationsFolder: MIGRATIONS_PATH });
+    replaceMigrationHistory(seedSqlite, migrationSourceSqlite);
+
+    seedSqlite.close();
+    seedSqlite = undefined;
+
+    connection = createDatabase(databasePath);
+    connection.close();
+    connection = undefined;
+
+    verifySqlite = new Database(databasePath);
+
+    // 旧列 `mode` 被原地重命名为 `decision`，既有数据保留（非 drop+recreate）。
+    const policyColumns = getTableColumns(verifySqlite, "graph_assistant_tool_policy").map((column) => column.name);
+    expect(policyColumns).toContain("decision");
+    expect(policyColumns).not.toContain("mode");
+    expect(
+      verifySqlite.prepare("SELECT decision FROM graph_assistant_tool_policy WHERE id = ?").get("gatp-1"),
+    ).toEqual({ decision: "confirm" });
+    expect(getIndexNames(verifySqlite, "graph_assistant_tool_policy")).toEqual(
+      expect.arrayContaining([
+        "graph_assistant_tool_policy_project_tool_uq",
+        "graph_assistant_tool_policy_workspace_idx",
+      ]),
+    );
+
+    // 阶段 3 待确认表被补建，含关键列与索引。
+    expect(getTableNames(verifySqlite)).toContain("graph_assistant_pending_tool_call");
+    expect(getTableColumns(verifySqlite, "graph_assistant_pending_tool_call").map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "id",
+        "conversation_id",
+        "call_id",
+        "tool_name",
+        "args_json",
+        "side_effect_level",
+        "status",
+        "conversation_messages_json",
+        "agent_steps",
+        "expires_at",
+      ]),
+    );
+    expect(getIndexNames(verifySqlite, "graph_assistant_pending_tool_call")).toEqual(
+      expect.arrayContaining([
+        "graph_assistant_pending_tool_call_conversation_status_idx",
+        "graph_assistant_pending_tool_call_floor_idx",
+      ]),
+    );
+  });
+
   it("upgrades pre-I2 databases with prompt runtime injection tables and indexes", () => {
     tempDir = mkdtempSync(join(tmpdir(), "tavern-db-"));
     tempMigrationsDir = createMigrationsDirBeforeIndex(63);

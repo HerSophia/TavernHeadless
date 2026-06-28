@@ -38,6 +38,10 @@ export interface LlmInstanceConfigItem {
   scope: LlmInstanceScope;
   scopeId: string;
   instanceSlot: LlmInstanceSlot;
+  /**
+   * LI11 命名坑：提示词预设覆盖（指向 `preset` 表），**不是 LLM Profile id**。
+   * 选 Profile 走 `llm_profile_binding`（activate / resolveActiveProfiles）。过渡字段：图化后废弃，勿扩展用途。
+   */
   presetId: string | null;
   modelIdOverride: string | null;
   enabled: boolean;
@@ -52,6 +56,7 @@ export interface ResolvedInstanceSlot {
   source: "session_config" | "global_config" | "default";
   scope: LlmInstanceScope | null;
   configId: string | null;
+  /** LI11：提示词预设覆盖（非 Profile id；过渡字段）。Profile 解析见 `/llm-profiles/runtime`。 */
   presetId: string | null;
   modelIdOverride: string | null;
   enabled: boolean;
@@ -60,6 +65,7 @@ export interface ResolvedInstanceSlot {
 }
 
 export interface UpsertInstanceConfigInput {
+  /** LI11：提示词预设覆盖（非 Profile id；过渡字段）。新客户端勿用它选 Profile，应走 profile binding。 */
   presetId?: string | null;
   modelIdOverride?: string | null;
   enabled?: boolean;

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PromptIR } from "@tavern/core";
+import { buildNativePromptFloorTemplate } from "@tavern/core";
 
 import {
   COMPAT_STRICT_RECIPE,
@@ -21,6 +22,7 @@ import {
   NATIVE_PROMPT_SYSTEM_GRAPH_ID,
   NATIVE_PROMPT_SYSTEM_GRAPH_VERSION,
   assertNativePromptSystemGraphExecutable,
+  buildNativePromptSystemGraph,
   validateNativePromptSystemGraph,
 } from "../../node-graph-runtime/index.js";
 import { EffectiveConfigService } from "../../effective-config-service.js";
@@ -81,6 +83,28 @@ describe("NG2-BRIDGE native prompt system graph", () => {
     expect([...doc.values()].filter((n) => n.type === "narration.narrator")).toHaveLength(1);
     expect([...doc.values()].filter((n) => n.type === "output.commit_gate")).toHaveLength(1);
     expect([...doc.values()].filter((n) => n.type === "compose.final_messages")).toHaveLength(1);
+  });
+});
+
+describe("DG11 default floor template ↔ system graph drift guard", () => {
+  it("the system graph and the forkable template share the same structure", () => {
+    const system = buildNativePromptSystemGraph();
+    const template = buildNativePromptFloorTemplate();
+    // 同结构（§10.5）：节点 / 边 / 权限 / policies / mode 逐字段相等。
+    expect(template.nodes).toEqual(system.nodes);
+    expect(template.edges).toEqual(system.edges);
+    expect(template.permissions).toEqual(system.permissions);
+    expect(template.policies).toEqual(system.policies);
+    expect(template.mode).toBe(system.mode);
+  });
+
+  it("differs only in identity (id / systemGraph flag), keeping the system graph immutable & authoritative", () => {
+    const system = buildNativePromptSystemGraph();
+    const template = buildNativePromptFloorTemplate();
+    expect(system.metadata?.systemGraph).toBe(true);
+    expect(template.metadata?.systemGraph).toBe(false);
+    expect(template.graphId).not.toBe(system.graphId);
+    expect(system.graphId).toBe(NATIVE_PROMPT_SYSTEM_GRAPH_ID);
   });
 });
 
@@ -198,12 +222,19 @@ describe("EffectiveConfigService.resolveNativePromptBridge", () => {
 });
 
 describe("selectTurnAssemblyProcessor (carrier-aware)", () => {
-  it("routes native carriers and never graphizes compat", () => {
+  it("routes native carriers (NG2-BRIDGE)", () => {
     expect(selectTurnAssemblyProcessor("native")).toBeInstanceOf(CompositeTurnProcessor);
     expect(selectTurnAssemblyProcessor("native", "composite")).toBeInstanceOf(CompositeTurnProcessor);
     expect(selectTurnAssemblyProcessor("native", "system_graph")).toBeInstanceOf(NodeGraphTurnProcessor);
-    // compat 永不进入 system graph 灰度，即使传入 system_graph carrier。
-    expect(selectTurnAssemblyProcessor("compat_strict", "system_graph")).toBeInstanceOf(PromptModeTurnProcessor);
-    expect(selectTurnAssemblyProcessor("compat_plus", "system_graph")).toBeInstanceOf(PromptModeTurnProcessor);
+  });
+
+  it("routes compat carriers (CG11): default prompt_mode, system_graph graphizes", () => {
+    // 默认（无 carrier / prompt_mode）→ 命令式 PromptModeTurnProcessor，零回归。
+    expect(selectTurnAssemblyProcessor("compat_strict")).toBeInstanceOf(PromptModeTurnProcessor);
+    expect(selectTurnAssemblyProcessor("compat_strict", "prompt_mode")).toBeInstanceOf(PromptModeTurnProcessor);
+    expect(selectTurnAssemblyProcessor("compat_plus", "prompt_mode")).toBeInstanceOf(PromptModeTurnProcessor);
+    // CG11：compat + system_graph carrier → 图化承载（NodeGraphTurnProcessor，compat 描述符）。
+    expect(selectTurnAssemblyProcessor("compat_strict", "system_graph")).toBeInstanceOf(NodeGraphTurnProcessor);
+    expect(selectTurnAssemblyProcessor("compat_plus", "system_graph")).toBeInstanceOf(NodeGraphTurnProcessor);
   });
 });

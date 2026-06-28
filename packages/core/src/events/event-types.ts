@@ -475,6 +475,30 @@ export interface ToolCallDeniedEvent {
   reason: string;
 }
 
+/**
+ * 工具调用等待人工确认事件（执行前暂停）。
+ *
+ * 语义：图助手多轮循环遇到「需确认（confirm）」工具时，不执行该工具，
+ * 改为发出本事件并暂停，等待上层登记待确认记录、推送前端、由用户批准/拒绝。
+ *
+ * 依赖方向约束：core 只发出工具调用本身的信息；`confirmationId` 由 apps/api
+ * 在登记持久化记录后补全，core 发事件时通常为空。
+ */
+export interface ToolCallAwaitingConfirmationEvent {
+  floorId: string;
+  pageId?: string;
+  callerSlot: InstanceSlot;
+  /** 文本协议解析出的工具调用标识 */
+  callId: string;
+  providerId?: string;
+  providerType?: ToolExecutionProviderType;
+  sideEffectLevel?: ToolSideEffectLevel;
+  toolName: string;
+  args: Record<string, unknown>;
+  /** 由 apps/api 登记后补全；core 发事件时通常为空 */
+  confirmationId?: string;
+}
+
 // ── MCP 事件 ─────────────────────────────────────────
 
 /** MCP 服务器连接成功事件 */
@@ -547,6 +571,7 @@ export interface CoreEventMap {
   'tool.call_completed': ToolCallCompletedEvent;
   'tool.call_failed': ToolCallFailedEvent;
   'tool.call_denied': ToolCallDeniedEvent;
+  'tool.call_awaiting_confirmation': ToolCallAwaitingConfirmationEvent;
   'mcp.connected': McpServerConnectedEvent;
   'mcp.disconnected': McpServerDisconnectedEvent;
   'mcp.error': McpServerErrorEvent;

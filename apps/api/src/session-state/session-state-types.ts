@@ -456,3 +456,57 @@ export interface StageFirstPartyWorldStateInput {
   stagedAt?: number;
   requestId?: string | null;
 }
+
+/**
+ * 内建 `game_state.inventory` slot 的正史状态条目。
+ *
+ * 与 scene / world 不同，inventory 只承载会话正史背包状态，不混入 summary /
+ * prompt trace / tool 运行产物（运行产物应回到 prompt snapshot / runtime trace /
+ * derived output）。该 slot 当前仍为 internal_only，schema 用于在公开前固定契约。
+ */
+export interface FirstPartyInventoryItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface FirstPartyInventoryStateValue {
+  kind: "first_party_inventory_state";
+  schemaVersion: number;
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  items: FirstPartyInventoryItem[];
+  updatedAt: number;
+}
+
+export type NormalizedFirstPartyInventoryState = FirstPartyInventoryStateValue;
+
+/**
+ * 内建 `game_state.combat` slot 的正史状态。
+ *
+ * 仅承载会话正史战斗状态（回合、参与者、HP 等），不承载运行产物。该 slot 当前仍为
+ * internal_only，schema 用于在公开前固定契约与读写边界。
+ */
+export interface FirstPartyCombatParticipant {
+  participantId: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  statuses: string[];
+}
+
+export interface FirstPartyCombatStateValue {
+  kind: "first_party_combat_state";
+  schemaVersion: number;
+  sessionId: string;
+  branchId: string;
+  floorId: string;
+  active: boolean;
+  round: number;
+  participants: FirstPartyCombatParticipant[];
+  updatedAt: number;
+}
+
+export type NormalizedFirstPartyCombatState = FirstPartyCombatStateValue;

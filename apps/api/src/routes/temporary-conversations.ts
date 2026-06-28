@@ -19,6 +19,7 @@ import {
 } from "../services/project-access-service.js";
 import { TemporaryConversationError } from "../services/temporary-conversation-errors.js";
 import { TemporaryConversationService } from "../services/temporary-conversation-service.js";
+import type { GraphAssistantPendingToolCallRecord } from "../services/graph-assistant-tool-confirmation-service.js";
 import {
   TEMPORARY_CONVERSATION_BRANCH_ID,
   type TemporaryConversationAgentOrigin,
@@ -35,6 +36,15 @@ import { writeSse } from "./chat/sse-writer.js";
 const idParamsSchema = z.object({
   id: z.string().min(1),
 });
+
+const pendingToolCallParamsSchema = z.object({
+  id: z.string().min(1),
+  confirmationId: z.string().min(1),
+});
+
+const resolvePendingToolCallBodySchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+}).strict();
 
 const createTemporaryConversationBodySchema = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -884,6 +894,8 @@ export async function registerTemporaryConversationRoutes(
               message: chunk.event.message ?? null,
               duration_ms: chunk.event.durationMs ?? null,
               replay_safety: chunk.event.replaySafety,
+              ...(chunk.event.callId ? { call_id: chunk.event.callId } : {}),
+              ...(chunk.event.args ? { args: chunk.event.args } : {}),
             });
             continue;
           }
@@ -989,6 +1001,80 @@ export async function registerTemporaryConversationRoutes(
       throw error;
     }
   });
+  // 图助手「执行前确认闸」恢复接口（阶段 3）。
+  // 这两个路由属于 NodeGraph 周边第一方接入面，不进入 OpenAPI / @tavern/sdk 生成面；
+  // studio 经第一方薄客户端直连。读用 project.nodegraph.read，写用 project.nodegraph.write。
+  app.get("/temporary-conversations/:id/pending-tool-calls", async (request, reply) => {
+    const parsedParams = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+    if (!authorizeConversationAction(reply, request, parsedParams.data.id, "project.nodegraph.read")) {
+      return;
+    }
+    try {
+      const items = await temporaryConversationService.listPendingToolCalls({
+        accountId: getRequestAuthContext(request).accountId,
+        conversationId: parsedParams.data.id,
+      });
+      return reply.code(200).send({ items: items.map(toPendingToolCallResponse) });
+    } catch (error) {
+      if (handleTemporaryConversationRouteError(reply, error)) {
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.post("/temporary-conversations/:id/pending-tool-calls/:confirmationId", async (request, reply) => {
+    const parsedParams = parseWithSchema(pendingToolCallParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+    if (!authorizeConversationAction(reply, request, parsedParams.data.id, "project.nodegraph.write")) {
+      return;
+    }
+    ensureOptionalObjectBody(request);
+    const parsedBody = parseWithSchema(resolvePendingToolCallBodySchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    try {
+      const resolved = await temporaryConversationService.resolveToolConfirmation({
+        accountId: getRequestAuthContext(request).accountId,
+        conversationId: parsedParams.data.id,
+        confirmationId: parsedParams.data.confirmationId,
+        decision: parsedBody.data.decision,
+      });
+      if (resolved.decision === "rejected") {
+        return reply.code(200).send({
+          data: {
+            decision: "rejected",
+            pending_tool_call: toPendingToolCallResponse(resolved.pending),
+          },
+        });
+      }
+        return reply.code(200).send({
+        data: {
+          decision: "approved",
+          pending_tool_call: toPendingToolCallResponse(resolved.pending),
+          result: {
+            conversation_id: resolved.result.conversationId,
+            branch_id: resolved.result.branchId,
+            floor_id: resolved.result.floorId,
+            floor_no: resolved.result.floorNo,
+            page_id: resolved.result.pageId,
+            generated_text: resolved.result.text,
+            total_usage: resolved.result.usage
+              ? mapUsageToSnakeCase(resolved.result.usage)
+              : mapUsageToSnakeCase({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
+            final_state: resolved.result.finalState ?? resolved.result.finishReason ?? null,
+          },
+        },
+      });
+    } catch (error) {
+      if (handleTemporaryConversationRouteError(reply, error)) {
+        return;
+      }
+      throw error;
+    }
+  });
+
 
   app.get("/temporary-conversations/:id/transcript", {
     schema: {
@@ -1355,6 +1441,10 @@ function mapTemporaryConversationRouteError(error: unknown): {
     case "unsupported_export_target":
     case "invalid_source_output_page":
       return { statusCode: 400, code: error.code, message: error.message };
+    case "pending_tool_call_not_found":
+      return { statusCode: 404, code: error.code, message: error.message };
+    case "pending_tool_call_not_pending":
+      return { statusCode: 409, code: error.code, message: error.message };
     case "ttl_required":
       return { statusCode: 400, code: error.code, message: error.message };
     case "conversation_not_active":
@@ -1365,6 +1455,23 @@ function mapTemporaryConversationRouteError(error: unknown): {
     default:
       return { statusCode: 500, code: "internal_error", message: error.message };
   }
+}
+
+function toPendingToolCallResponse(record: GraphAssistantPendingToolCallRecord) {
+  return {
+    id: record.id,
+    conversation_id: record.conversationId,
+    branch_id: record.branchId,
+    floor_id: record.floorId,
+    call_id: record.callId,
+    tool_name: record.toolName,
+    args: record.args,
+    side_effect_level: record.sideEffectLevel,
+    status: record.status,
+    created_at: record.createdAt,
+    updated_at: record.updatedAt,
+    expires_at: record.expiresAt,
+  };
 }
 
 function toTemporaryConversationResourceResponse(detail: TemporaryConversationResource) {

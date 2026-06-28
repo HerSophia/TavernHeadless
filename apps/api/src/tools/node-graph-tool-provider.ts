@@ -5,6 +5,7 @@ import {
   type ToolDefinition,
   type ToolExecutionContext,
   type ToolProvider,
+  type ToolSideEffectLevel,
   type NodeGraphDocument,
   type NodeGraphEdge,
   type NodeGraphGroup,
@@ -88,6 +89,8 @@ export class NodeGraphToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     try {
       switch (name) {
+        case "nodegraph.graph.create":
+          return { data: this.createGraph(args) };
         case "nodegraph.graph.get":
           return { data: this.getGraph(args) };
         case "nodegraph.graph.list_versions":
@@ -134,6 +137,25 @@ export class NodeGraphToolProvider implements ToolProvider {
         executionReasonCode: "nodegraph_tool_failed",
       };
     }
+  }
+
+  /**
+   * 从零创建一张新图（真实持久写入）。
+   *
+   * 这是 NodeGraph 工具里唯一会 live 持久写入的工具：它创建的是**全新**图与其 v1 版本，
+   * 不修改任何受保护的既有图。改动既有图仍只能经 `nodegraph.patch.submit_proposal`
+   * 进入 project_inbox，由有权限的人创建正式版本，工具本身永远不会 live apply 既有图的改动。
+   * 因此其 sideEffectLevel 取 `sandbox`（可逆：可归档 / 删除），而非 `irreversible`。
+   */
+  private createGraph(args: Record<string, unknown>) {
+    const document = requireRecord(args.document, "document") as unknown as NodeGraphDocument;
+    const name = typeof args.name === "string" && args.name.trim().length > 0 ? args.name.trim() : null;
+    return this.options.service.create({
+      actor: this.options.actor,
+      projectId: this.options.projectId,
+      name,
+      document,
+    });
   }
 
   private getGraph(args: Record<string, unknown>) {
@@ -453,6 +475,22 @@ const commonObjectSchema = {
 
 const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
+    name: "nodegraph.graph.create",
+    description:
+      "Create a brand-new NodeGraph and its first version (a real, persistent write). This only creates a new graph; it never modifies an existing graph. Changes to existing graphs must still go through nodegraph.patch.submit_proposal. The created graph is reversible (can be archived or deleted).",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        document: { type: "object" },
+      },
+      required: ["document"],
+    },
+    sideEffectLevel: "sandbox",
+    allowedSlots: [],
+ source: "builtin",
+  },
+  {
     name: "nodegraph.graph.get",
     description: "Read a NodeGraph definition and its current version.",
     parameters: {
@@ -677,3 +715,22 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
     source: "builtin",
   },
 ];
+
+/** 图助手工具目录条目：工具名 + 其副作用级别，用于策略默认值推导。 */
+export interface NodeGraphToolCatalogEntry {
+  name: string;
+  sideEffectLevel: ToolSideEffectLevel;
+}
+
+/**
+ * 图助手可见的 NodeGraph 工具目录（名称 + sideEffectLevel）。
+ *
+ * 直接从工具定义派生，避免与 `GraphAssistantToolPolicyService` 的默认值推导脱节。
+ */
+export const NODE_GRAPH_TOOL_CATALOG: NodeGraphToolCatalogEntry[] = NODE_GRAPH_TOOL_DEFINITIONS.map(
+  (tool) => ({
+    name: tool.name,
+    sideEffectLevel: tool.sideEffectLevel ?? "none",
+  }),
+);
+
