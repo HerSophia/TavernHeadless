@@ -191,6 +191,28 @@ export class LlmProfileService {
     return profile ? this.toListItem(profile) : null;
   }
 
+  // 按档案 ID 读取并解密其凭证，供“发现模型 / 测试模型”在编辑已有档案时复用，
+  // 避免要求用户重新输入已保存的密钥。
+  // 找不到档案抛 profile_not_found；密钥无法解密时由 decrypt 抛 secret_* 错误。
+  // 返回的 apiKey 为明文，仅在请求处理期间使用，不得写入日志或响应。
+  async getProfileSecret(
+    id: string,
+    accountId?: string,
+  ): Promise<{ provider: string; modelId: string; baseUrl: string | null; apiKey: string }> {
+    accountId = this.resolveAccountId(accountId);
+    const profile = await this.findProfileById(id, accountId);
+    if (!profile) {
+      throw new LlmProfileServiceError("profile_not_found", `Profile not found: ${id}`);
+    }
+
+    return {
+      provider: profile.provider,
+      modelId: profile.modelId,
+      baseUrl: profile.baseUrl,
+      apiKey: this.decrypt(profile.apiKeyEncrypted),
+    };
+  }
+
   async updateProfile(id: string, patch: UpdateLlmProfileInput, accountId?: string): Promise<LlmProfileListItem> {
     accountId = this.resolveAccountId(accountId);
     try {

@@ -353,15 +353,21 @@ GET /llm-profiles/runtime
 POST /llm-profiles/models/discover
 ```
 
-通过指定的 provider 和 API Key 查询可用的模型列表。
+通过指定的 provider 和 API Key 查询可用的模型列表。也可以只传 `profile_id`，复用已保存档案里的凭证，这样在编辑已有档案时无需重新输入 API Key。
 
 ### 请求体
 
+凭证有两种提供方式，二选一：
+
+- 传 `profile_id`：复用该档案已保存并加密的 API Key 与 base URL。
+- 传 `api_key` + `provider`：直接使用明文凭证。
+
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `provider` | string | **是** | 供应商 |
-| `api_key` | string | **是** | API Key |
-| `base_url` | string | 否 | 自定义 base URL |
+| `profile_id` | string | 条件必填 | 已保存档案 ID；提供后复用其凭证，可省略 `api_key` 与 `provider` |
+| `provider` | string | 条件必填 | 供应商；未提供 `profile_id` 时必填 |
+| `api_key` | string | 条件必填 | API Key；未提供 `profile_id` 时必填 |
+| `base_url` | string | 否 | 自定义 base URL；不传时回退到档案保存的 base URL |
 | `allow_private_network` | boolean | 否 | 是否允许私有网络 |
 
 ### 响应 `200`
@@ -379,7 +385,10 @@ POST /llm-profiles/models/discover
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `400` | `validation_error` / `ssrf_blocked` | 请求体校验失败，或 `base_url` 被 URL Guard 拒绝 |
+| `400` | `validation_error` / `ssrf_blocked` / `invalid_request` | 请求体校验失败，`base_url` 被 URL Guard 拒绝，或未提供 `profile_id` 时缺少 `api_key`/`provider` |
+| `404` | `profile_not_found` | `profile_id` 指向的档案不存在 |
+| `500` | `secret_invalid_format` | 档案密钥无法解密 |
+| `503` | `secret_unavailable` | 缺少解密所需的主密钥 |
 | `502` | `model_discovery_failed` / `model_discovery_invalid_response` | 上游模型发现请求失败，或返回了无效响应 |
 
 ## 测试模型连通性
@@ -388,16 +397,22 @@ POST /llm-profiles/models/discover
 POST /llm-profiles/models/test
 ```
 
-向指定模型发送一条测试消息，验证连通性。
+向指定模型发送一条测试消息，验证连通性。也可以只传 `profile_id`，复用已保存档案里的凭证；此时 `model_id` 可省略，默认使用档案保存的模型。
 
 ### 请求体
 
+凭证有两种提供方式，二选一：
+
+- 传 `profile_id`：复用该档案已保存并加密的 API Key 与 base URL，`model_id` 可省略。
+- 传 `api_key` + `provider` + `model_id`：直接使用明文凭证。
+
 | 字段 | 类型 | 必填 | 说明 |
 | ---- | ---- | ---- | ---- |
-| `provider` | string | **是** | 供应商 |
-| `model_id` | string | **是** | 模型 ID |
-| `api_key` | string | **是** | API Key |
-| `base_url` | string | 否 | 自定义 base URL |
+| `profile_id` | string | 条件必填 | 已保存档案 ID；提供后复用其凭证，可省略 `api_key`、`provider` 与 `model_id` |
+| `provider` | string | 条件必填 | 供应商；未提供 `profile_id` 时必填 |
+| `model_id` | string | 条件必填 | 模型 ID；未提供 `profile_id` 时必填，提供 `profile_id` 时不传则用档案保存的模型 |
+| `api_key` | string | 条件必填 | API Key；未提供 `profile_id` 时必填 |
+| `base_url` | string | 否 | 自定义 base URL；不传时回退到档案保存的 base URL |
 | `reasoning_effort` | string | 否 | 推理力度 |
 | `allow_private_network` | boolean | 否 | 是否允许私有网络 |
 
@@ -416,7 +431,10 @@ POST /llm-profiles/models/test
 
 | 状态码 | code | 说明 |
 | ------ | ---- | ---- |
-| `400` | `validation_error` / `ssrf_blocked` | 请求体校验失败，或 `base_url` 被 URL Guard 拒绝 |
+| `400` | `validation_error` / `ssrf_blocked` / `invalid_request` | 请求体校验失败，`base_url` 被 URL Guard 拒绝，或未提供 `profile_id` 时缺少 `api_key`/`provider`/`model_id` |
+| `404` | `profile_not_found` | `profile_id` 指向的档案不存在 |
+| `500` | `secret_invalid_format` | 档案密钥无法解密 |
+| `503` | `secret_unavailable` | 缺少解密所需的主密钥 |
 | `502` | `model_test_failed` / `model_test_invalid_response` | 上游模型测试请求失败，或返回了无效响应 |
 
 另外，session 删除时服务端会同步清理该 session 对应的 `llm_profile_binding`；`DELETE /llm-profiles/:id` 也会在判定前自动清理失效的 session 绑定，避免历史脏数据长期阻塞 Profile 删除。

@@ -266,7 +266,8 @@ export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerR
       ...context.variables,
       ...asRecord(firstInput(inputs, ["data"])),
     };
-    const rendered = renderTemplate(readString(config.template ?? ""), variables);
+    // `template` 为通用模板字段；导入的酒馆预设块把正文放在 `content`，二者择一作为提示词正文。
+    const rendered = renderTemplate(readString(config.template ?? config.content ?? ""), variables);
     return textOutput("Template", rendered, "live", { block: rendered });
   }));
 
@@ -459,11 +460,97 @@ export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerR
 
   registry.register(makeHandler("group.input", ({ node, context }) => {
     const config = asRecord(node.config);
-    return jsonOutput("Group Input", context.input?.[readString(config.key ?? node.id)]);
+    // NG2-β：单 Group Input 多端口（config.ports）。按 portName 从 context.input 取，
+    // 输出到对应 outputs.<portName>，供下游边解析。
+    if (Array.isArray(config.ports)) {
+      const outputs: Record<string, unknown> = {};
+      for (const port of config.ports) {
+        const name = readString(asRecord(port).name);
+        if (name) {
+          outputs[name] = context.input?.[name];
+        }
+      }
+      return jsonOutput("Group Input", outputs, "live", outputs);
+    }
+    // 旧式单端口兜底。
+    const key = readString(config.portName ?? config.key ?? node.id);
+    return jsonOutput("Group Input", context.input?.[key]);
   }));
 
-  registry.register(makeHandler("group.output", ({ inputs }) =>
-    jsonOutput("Group Output", firstInput(inputs, ["value"]))));
+  registry.register(makeHandler("group.output", ({ node, inputs }) => {
+    const config = asRecord(node.config);
+    // NG2-β：单 Group Output 多端口（config.ports）。收集各 portName 输入，回流到 outputs.<portName>，
+    // 供 group.node runner 映射回实例输出端口。
+    if (Array.isArray(config.ports)) {
+      const outputs: Record<string, unknown> = {};
+      for (const port of config.ports) {
+        const name = readString(asRecord(port).name);
+        if (name) {
+          outputs[name] = inputs[name];
+        }
+      }
+      return jsonOutput("Group Output", outputs, "live", outputs);
+    }
+    return jsonOutput("Group Output", firstInput(inputs, ["value"]));
+  }));
+
+  // NG2-β：NodeGroup 实例。把实例输入端口值映射为子图边界输入，递归执行被引用子图，
+  // 再把子图边界输出映射回实例输出端口（outputs.<portName>，供下游边解析）。
+  registry.register(makeHandler("group.node", async ({ node, inputs, context }) => {
+    const config = asRecord(node.config);
+    const ref = asRecord(config.ref);
+    const graphId = readString(ref.graphId);
+    const iface = asRecord(config.interface);
+    const declaredOutputs = Array.isArray(iface.outputs) ? iface.outputs : [];
+
+    // 实例输入端口值（剔除无数据边时的占位 __node_id）。
+    const inputsByPort: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(inputs)) {
+      if (key !== "__node_id") {
+        inputsByPort[key] = value;
+      }
+    }
+
+    // dry-run 或未注入 runner：合成兜底，按声明输出端口给出 null，避免下游解析崩溃。
+    if (context.dryRun || !context.subgraphRunner) {
+      const synthetic: Record<string, unknown> = {};
+      for (const port of declaredOutputs) {
+        const name = readString(asRecord(port).name);
+        if (name) {
+          synthetic[name] = null;
+        }
+      }
+      return jsonOutput("Node Group", { planned: true, ref: { graphId } }, context.dryRun ? "dry_run" : "synthetic", {
+        ...synthetic,
+        diagnostics: [],
+      });
+    }
+
+    const result = await context.subgraphRunner(
+      {
+        ref: { graphId, versionId: typeof ref.versionId === "string" ? ref.versionId : undefined },
+        inputsByPort,
+        parentNode: node,
+      },
+      context,
+    );
+    if (result.status === "failed") {
+      throw new NodeGraphNodeExecutionError(
+        `Node group '${node.id}' subgraph run failed.`,
+        result.diagnostics ?? [{
+          severity: "error",
+          code: "node_graph_group_node_subgraph_failed",
+          message: `Node group '${node.id}' subgraph run failed.`,
+          nodeId: node.id,
+        }],
+        "node_graph_group_node_subgraph_failed",
+      );
+    }
+    return jsonOutput("Node Group", result.outputsByPort, "live", {
+      ...result.outputsByPort,
+      diagnostics: result.diagnostics ?? [],
+    });
+  }));
 
   // NG2-CORE：控制流节点。condition 算 boolean；branch/gate 产出控制信号门控下游。
   registry.register(makeHandler("control.condition", ({ node, inputs, context }) => {

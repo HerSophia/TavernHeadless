@@ -16,12 +16,22 @@ import {
   type ClientKind,
   type ClientRecord,
 } from "../services/client-service.js";
+import { CLIENT_CAPABILITIES } from "../services/client-capability.js";
 import { OperationLogService } from "../services/operation-log-service.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 
 const CLIENT_KIND_VALUES = ["basic", "advanced", "deriver", "worker", "custom"] as const;
 const CLIENT_STATUS_VALUES = ["active", "disabled"] as const;
 const CLIENT_API_KEY_STATUS_VALUES = ["active", "revoked"] as const;
+const CLIENT_CAPABILITY_VALUES = [...CLIENT_CAPABILITIES];
+
+const capabilityArrayJsonSchema = {
+  type: "array",
+  items: { type: "string", enum: CLIENT_CAPABILITY_VALUES },
+} as const;
+const nullableCapabilityArrayJsonSchema = {
+  anyOf: [capabilityArrayJsonSchema, { type: "null" }],
+} as const;
 
 const clientIdParamsSchema = z.object({ id: z.string().min(1) });
 const clientKeyParamsSchema = z.object({ id: z.string().min(1), key_id: z.string().min(1) });
@@ -37,11 +47,14 @@ const listClientsQuerySchema = z.object({
   cursor: z.string().trim().min(1).optional(),
 });
 
+const clientCapabilitySchema = z.enum(CLIENT_CAPABILITIES);
+
 const createClientBodySchema = z
   .object({
     name: z.string().trim().min(1).max(120),
     kind: clientKindSchema.optional(),
     metadata: z.unknown().optional(),
+    capabilities: z.array(clientCapabilitySchema).optional().nullable(),
   })
   .strict();
 
@@ -50,13 +63,15 @@ const updateClientBodySchema = z
     name: z.string().trim().min(1).max(120).optional(),
     kind: clientKindSchema.optional(),
     metadata: z.unknown().optional(),
+    capabilities: z.array(clientCapabilitySchema).optional().nullable(),
   })
   .strict()
   .refine(
     (value) =>
       Object.prototype.hasOwnProperty.call(value, "name")
         || Object.prototype.hasOwnProperty.call(value, "kind")
-        || Object.prototype.hasOwnProperty.call(value, "metadata"),
+        || Object.prototype.hasOwnProperty.call(value, "metadata")
+        || Object.prototype.hasOwnProperty.call(value, "capabilities"),
     { message: "At least one client field must be provided" },
   );
 
@@ -70,6 +85,7 @@ const createClientApiKeyBodySchema = z
   .object({
     name: z.string().trim().max(120).optional().nullable(),
     expires_at: z.number().int().optional().nullable(),
+    scopes: z.array(clientCapabilitySchema).optional().nullable(),
   })
   .strict()
   .optional();
@@ -87,6 +103,8 @@ const clientJsonSchema = {
     "status",
     "is_default",
     "metadata",
+    "capabilities",
+    "explicit_capabilities",
     "created_at",
     "updated_at",
   ],
@@ -98,6 +116,8 @@ const clientJsonSchema = {
     status: { type: "string", enum: [...CLIENT_STATUS_VALUES] },
     is_default: { type: "boolean" },
     metadata: {},
+    capabilities: capabilityArrayJsonSchema,
+    explicit_capabilities: nullableCapabilityArrayJsonSchema,
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
@@ -130,6 +150,9 @@ const clientApiKeyJsonSchema = {
     "name",
     "key_prefix",
     "status",
+    "scopes",
+    "rotated_from_id",
+    "rotated_at",
     "last_used_at",
     "expires_at",
     "created_at",
@@ -142,6 +165,9 @@ const clientApiKeyJsonSchema = {
     name: nullableStringJsonSchema,
     key_prefix: { type: "string" },
     status: { type: "string", enum: [...CLIENT_API_KEY_STATUS_VALUES] },
+    scopes: nullableCapabilityArrayJsonSchema,
+    rotated_from_id: nullableStringJsonSchema,
+    rotated_at: nullableIntegerJsonSchema,
     last_used_at: nullableIntegerJsonSchema,
     expires_at: nullableIntegerJsonSchema,
     created_at: { type: "integer", minimum: 0 },
@@ -267,6 +293,7 @@ export async function registerClientRoutes(
           name: { type: "string", minLength: 1, maxLength: 120 },
           kind: { type: "string", enum: [...CLIENT_KIND_VALUES] },
           metadata: {},
+          capabilities: nullableCapabilityArrayJsonSchema,
         },
         additionalProperties: false,
       },
@@ -289,6 +316,7 @@ export async function registerClientRoutes(
         name: parsedBody.data.name,
         kind: parsedBody.data.kind,
         metadata: parsedBody.data.metadata,
+        capabilities: parsedBody.data.capabilities ?? undefined,
       });
       writeOperationLog(operationLogService, {
         accountId: actor.accountId,
@@ -343,11 +371,13 @@ export async function registerClientRoutes(
        name: { type: "string", minLength: 1, maxLength: 120 },
           kind: { type: "string", enum: [...CLIENT_KIND_VALUES] },
           metadata: {},
+          capabilities: nullableCapabilityArrayJsonSchema,
         },
         anyOf: [
           { required: ["name"] },
           { required: ["kind"] },
           { required: ["metadata"] },
+          { required: ["capabilities"] },
         ],
       additionalProperties: false,
       },
@@ -374,6 +404,9 @@ export async function registerClientRoutes(
         name: parsedBody.data.name,
         kind: parsedBody.data.kind,
         metadata:parsedBody.data.metadata,
+        capabilities: Object.prototype.hasOwnProperty.call(parsedBody.data, "capabilities")
+          ? parsedBody.data.capabilities
+          : undefined,
       });
       writeOperationLog(operationLogService, {
         accountId: actor.accountId,
@@ -516,6 +549,7 @@ status: parsedQuery.data.status,
         properties: {
           name: nullableStringJsonSchema,
           expires_at: nullableIntegerJsonSchema,
+          scopes: nullableCapabilityArrayJsonSchema,
         },
         additionalProperties: false,
       },
@@ -541,6 +575,7 @@ status: parsedQuery.data.status,
         clientId: parsedParams.data.id,
         name: parsedBody.data?.name ?? null,
         expiresAt: parsedBody.data?.expires_at ?? null,
+        scopes: parsedBody.data?.scopes ?? null,
       });
       writeOperationLog(operationLogService, {
         accountId: actor.accountId,
@@ -551,6 +586,52 @@ status: parsedQuery.data.status,
       return reply.code(201).send(toCreatedApiKeyResponse(result));
     } catch (error) {
       if(handleServiceError(error, reply)) return;
+      throw error;
+    }
+  });
+
+  app.post("/clients/:id/api-keys/:key_id/rotate", {
+    schema: {
+      tags: ["clients"],
+      summary: "Rotate a client API key",
+      description: "Revokes the existing key and issues a new key inheriting its name, expiration and scope.",
+      params: {
+        type: "object",
+        required: ["id", "key_id"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          key_id: { type: "string", minLength: 1 },
+        },
+        additionalProperties: false,
+      },
+      response: {
+        200: clientApiKeyCreateResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const actor = requireAccountActor(request, reply);
+    if (!actor) return;
+    const parsedParams = parseWithSchema(clientKeyParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    try {
+      const result = apiKeyService.rotate({
+        accountId: actor.accountId,
+        clientId: parsedParams.data.id,
+        apiKeyId: parsedParams.data.key_id,
+      });
+      writeOperationLog(operationLogService, {
+        accountId: actor.accountId,
+        actorId: actor.actorId,
+        action: "client_api_key.rotate",
+        targetId: result.created.apiKey.id,
+      });
+      return reply.send(toCreatedApiKeyResponse(result.created));
+    } catch (error) {
+      if (handleServiceError(error, reply)) return;
       throw error;
     }
   });
@@ -630,6 +711,8 @@ function toClientResponse(record: ClientRecord) {
     status: record.status,
     is_default: record.isDefault,
     metadata: record.metadata,
+    capabilities: record.capabilities,
+    explicit_capabilities: record.explicitCapabilities,
     created_at: record.createdAt,
     updated_at: record.updatedAt,
   };
@@ -643,6 +726,9 @@ function toApiKeyResponse(record: ClientApiKeyRecord) {
     name: record.name,
     key_prefix: record.keyPrefix,
     status: record.status,
+    scopes: record.scopes,
+    rotated_from_id: record.rotatedFromId,
+    rotated_at: record.rotatedAt,
     last_used_at: record.lastUsedAt,
     expires_at: record.expiresAt,
     created_at: record.createdAt,

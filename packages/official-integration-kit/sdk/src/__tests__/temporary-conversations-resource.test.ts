@@ -274,6 +274,39 @@ describe("sdk temporary conversation resources", () => {
     }));
   });
 
+  it("surfaces the awaiting_confirmation tool phase with call id and args", async () => {
+    // 图助手在 confirm 工具执行前暂停：发一条 awaiting_confirmation 工具事件（携带 call_id / args），
+    // 已生成的可见文本仍照常提交，故 done 的 final_state 仍是 "committed"（暂停由 pending 列表探测）。
+    const stream = [
+      "event: start\n",
+      'data: {"branch_id":"main","floor_id":"floor-1","floor_no":2}\n\n',
+      "event: tool\n",
+      'data: {"execution_id":"call-9","tool_name":"nodegraph.graph.create","provider_id":"","phase":"awaiting_confirmation","replay_safety":"confirm_on_replay","side_effect_level":"irreversible","call_id":"call-9","args":{"name":"New Graph"}}\n\n',
+      "event: done\n",
+      'data: {"conversation_id":"tmp-1","branch_id":"main","floor_id":"floor-1","floor_no":2,"page_id":"page-out-1","generated_text":"","summaries":[],"total_usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1},"final_state":"committed"}\n\n',
+    ].join("");
+
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(stream, { headers: { "content-type": "text/event-stream" }, status: 200 }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    const toolEvents: Array<{ phase: string; callId?: string; args?: Record<string, unknown> }> = [];
+    await expect(client.temporaryConversations.respondStream({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      inputMessage: { role: "user", content: "create a graph" },
+      onTool: (payload) => toolEvents.push({ phase: payload.phase, callId: payload.callId, args: payload.args }),
+    })).resolves.toMatchObject({
+      conversationId: "tmp-1",
+      finalState: "committed",
+    });
+
+    expect(toolEvents).toEqual([
+      { phase: "awaiting_confirmation", callId: "call-9", args: { name: "New Graph" } },
+    ]);
+  });
+
   it("maps the inspect view and forwards include_agent_private", async () => {
     const inspectPayload = {
       conversation: { ...temporaryConversationPayload, status: "finalized", finalized_at: 50, cleaned_at: null },

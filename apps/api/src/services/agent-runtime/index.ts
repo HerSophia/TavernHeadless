@@ -117,6 +117,9 @@ export {
   NodeGraphTurnProcessor,
   NodeGraphTurnProcessorError,
   createNodeGraphTurnProcessor,
+  NATIVE_SYSTEM_GRAPH_CARRIER,
+  COMPAT_SYSTEM_GRAPH_CARRIER,
+  type TurnSystemGraphCarrier,
 } from "./node-graph-turn-processor.js";
 export {
   NATIVE_PROMPT_CARRIERS,
@@ -129,4 +132,13 @@ export {
   type NativePromptBridgeLayers,
   type NativePromptBridgeComparison,
 } from "./native-prompt-bridge.js";
-export { selectTurnAssemblyProcessor } from "./turn-assembly-processor-factory.js";
+export {
+  COMPAT_PROMPT_CARRIERS,
+  DEFAULT_COMPAT_PROMPT_BRIDGE_DECISION,
+  resolveCompatPromptBridgeDecision,
+  readCompatPromptBridgeWorkspaceDefault,
+  type CompatPromptCarrier,
+  type CompatPromptBridgeDecision,
+  type CompatPromptBridgeLayers,
+} from "./compat-prompt-bridge.js";
+export { selectTurnAssemblyProcessor, type TurnAssemblyCarrier } from "./turn-assembly-processor-factory.js";

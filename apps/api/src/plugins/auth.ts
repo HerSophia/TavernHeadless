@@ -6,6 +6,7 @@ import { getAccountAuthState } from "../accounts/service.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "../accounts/constants.js";
 import type { AppDb } from "../db/client.js";
 import { sendError } from "../lib/http.js";
+import { CLIENT_CAPABILITIES, type ClientCapability } from "../services/client-capability.js";
 import {
   ClientApiKeyService,
   ClientApiKeyServiceError,
@@ -32,6 +33,11 @@ export type AuthenticatedAuthContext = {
   actorAccountId:string;
   actorClientId: string | null;
   authMethod: AuthMethod;
+  /**
+   * WP-B2：client actor 的有效能力（client capability ∩ key scope）。
+   * account actor 等价于账户主人，能力由 {@link getRequestCapabilities} 解析为全部能力。
+   */
+  capabilities?: ClientCapability[];
 };
 
 export type PublicAuthContext = {
@@ -277,7 +283,25 @@ auth = service.authenticate(secret);
     actorAccountId: account.id,
     actorClientId: auth.clientId,
     authMethod: "client_api_key",
+    capabilities: auth.capabilities,
   };
+}
+
+/**
+ * WP-B2：解析请求 actor 的有效能力集合。
+ *
+ * account actor 等价于账户主人，拥有全部能力；client actor 使用 API Key 解析出的能力。
+ */
+export function getRequestCapabilities(auth: AuthenticatedAuthContext): ClientCapability[] {
+  if (auth.actorType === "account") {
+    return [...CLIENT_CAPABILITIES];
+  }
+  return auth.capabilities ?? [];
+}
+
+/** Returns whether the request actor holds a specific capability. */
+export function authHasCapability(auth: AuthenticatedAuthContext, capability: ClientCapability): boolean {
+  return getRequestCapabilities(auth).includes(capability);
 }
 
 function createDevelopmentAuthContext(defaultAccountId: string): AuthenticatedAuthContext {

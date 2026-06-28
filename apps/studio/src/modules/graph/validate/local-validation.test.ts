@@ -62,9 +62,17 @@ describe("validateGraphDocument", () => {
     expect(result.isExecutable).toBe(true);
   });
 
-  it("locates diagnostics onto the offending node id", () => {
+  it("treats the bundled Narrator sample as executable (no errors)", () => {
     const result = validateGraphDocument(SAMPLE_NODE_GRAPH_DOCUMENT);
-    // 示例图含 control.condition 缺 config 等错误，应至少有一条带 nodeId 的诊断。
+    expect(result.counts.error).toBe(0);
+    expect(result.isExecutable).toBe(true);
+  });
+
+  it("locates diagnostics onto the offending node id", () => {
+    // control.condition 缺 config.condition → 带 nodeId 的 error，且不可执行。
+    const result = validateGraphDocument(
+      doc({ nodes: [{ id: "n_bad_cond", type: "control.condition", typeVersion: "1", phase: "pre_response" }] }),
+    );
     expect(result.diagnostics.some((d) => Boolean(d.nodeId))).toBe(true);
     expect(result.isExecutable).toBe(false);
   });

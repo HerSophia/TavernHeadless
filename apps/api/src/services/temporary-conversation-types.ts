@@ -18,6 +18,15 @@ import type {
 export const TEMPORARY_CONVERSATION_SESSION_KIND = "temporary" as const;
 export const TEMPORARY_CONVERSATION_BRANCH_ID = "main" as const;
 
+/**
+ * 图助手临时对话的 purpose 标记。
+ *
+ * studio 图编辑器助手创建临时对话时必填该 purpose（取值与前端
+ * `apps/studio/src/lib/temp-conversation` 的 `GRAPH_ASSISTANT_PURPOSE` 一致）。
+ * 后端据此在 respond 路径强制启用 NodeGraph 工具与一次性引导注入，不影响其他 purpose。
+ */
+export const GRAPH_ASSISTANT_PURPOSE = "graph-assistant" as const;
+
 export const TEMPORARY_CONVERSATION_RETENTION_POLICIES = [
   "delete_on_finalize",
   "ttl",

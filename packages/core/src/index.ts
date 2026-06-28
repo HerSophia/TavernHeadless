@@ -66,6 +66,7 @@ export type {
   ToolCallCompletedEvent,
   ToolCallFailedEvent,
   ToolCallDeniedEvent,
+  ToolCallAwaitingConfirmationEvent,
   McpServerConnectedEvent,
   McpServerDisconnectedEvent,
   McpServerErrorEvent,
@@ -330,8 +331,28 @@ export type {
   NodeTypeDependency,
   SessionStateDependency,
   ToolPermissionRequirement,
+  NativePromptFloorStructure,
+  CompatPromptFloorStructure,
 } from './node-graph/index.js';
 export {
+  buildNativePromptFloorStructure,
+  buildNativePromptFloorTemplate,
+  NATIVE_PROMPT_FLOOR_TEMPLATE_ID,
+  NATIVE_PROMPT_FLOOR_TEMPLATE_VERSION,
+  buildCompatPromptFloorStructure,
+  buildCompatPromptFloorTemplate,
+  COMPAT_PROMPT_FLOOR_TEMPLATE_ID,
+  COMPAT_PROMPT_FLOOR_TEMPLATE_VERSION,
+  BUILTIN_ADVISOR_SUBGRAPH_VERSION,
+  DIRECTOR_ADVISOR_SUBGRAPH_ID,
+  CONTINUITY_VERIFIER_SUBGRAPH_ID,
+  PLAYER_AGENCY_VERIFIER_SUBGRAPH_ID,
+  MEMORY_RETRIEVE_SUBGRAPH_ID,
+  buildDirectorAdvisorSubgraph,
+  buildContinuityVerifierSubgraph,
+  buildPlayerAgencyVerifierSubgraph,
+  buildMemoryRetrieveSubgraph,
+  listBuiltinAdvisorSubgraphs,
   NODE_GRAPH_BUILTIN_NODE_TYPES,
   NODE_GRAPH_CHECKPOINT_POLICIES,
   NODE_GRAPH_CONTROL_NODE_TYPES,
@@ -488,7 +509,22 @@ export type {
   TurnExecutionResult,
   TurnOutput,
   TurnRunObserver,
+  GraphAssistantAgentLoopConfig,
+  TurnPendingToolConfirmation,
 } from './orchestration/types.js';
+export { TextProtocolAgentLoop } from './orchestration/text-protocol-agent-loop.js';
+export type {
+  GraphToolConfirmationDecision,
+  GraphToolConfirmationContext,
+  GraphToolConfirmationDecider,
+  AgentLoopStepInput,
+  AgentLoopStepOutput,
+  AgentLoopGenerate,
+  AgentLoopStopReason,
+  AgentLoopPendingConfirmation,
+  AgentLoopResult,
+  AgentLoopRunInput,
+} from './orchestration/text-protocol-agent-loop.js';
 export type { DirectorInput, DirectorResult } from './orchestration/director.js';
 export type { VerifierInput, VerifierResult } from './orchestration/verifier.js';
 

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { MessageSquare, Moon, Sun, Workflow } from "lucide-vue-next";
+import { Activity, Library, MessageSquare, Moon, SlidersHorizontal, Sun, Workflow } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 
 import UiIconButton from "../../ui/UiIconButton.vue";
+import TopBarConnection from "./TopBarConnection.vue";
 import TopBarContext from "./TopBarContext.vue";
 
 const { t } = useI18n();
@@ -12,7 +13,10 @@ const route = useRoute();
 
 const navItems = computed(() => [
   { name: "graph", to: "/graph", label: t("nav.graph"), icon: Workflow },
-  { name: "chat", to: "/chat", label: t("nav.chat"), icon: MessageSquare }
+  { name: "chat", to: "/chat", label: t("nav.chat"), icon: MessageSquare },
+  { name: "workbench", to: "/workbench", label: t("nav.workbench"), icon: Activity },
+  { name: "library", to: "/library", label: t("nav.library"), icon: Library },
+  { name: "settings", to: "/settings", label: t("nav.settings"), icon: SlidersHorizontal }
 ]);
 
 const isDark = ref(true);
@@ -49,6 +53,10 @@ function toggleTheme(): void {
       </div>
 
       <div class="flex items-center gap-4">
+        <div class="hidden sm:block">
+          <TopBarConnection />
+        </div>
+        <div class="hidden h-4 w-px bg-line-subtle sm:block" aria-hidden="true" />
         <div class="hidden sm:block">
           <TopBarContext />
         </div>

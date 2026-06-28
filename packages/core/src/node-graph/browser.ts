@@ -118,3 +118,43 @@ export {
   type NodeGraphValidationOptions,
   type NodeGraphValidationResult,
 } from './validator.js';
+export {
+  deriveSubgraphInterface,
+  groupSwitchState,
+  isNodeGraphGroupNodeType,
+  readGroupNodeInterface,
+  readGroupNodeRef,
+  resolveNodeGraphNodePorts,
+  NODE_GRAPH_GROUP_INPUT_TYPE,
+  NODE_GRAPH_GROUP_NODE_TYPE,
+  NODE_GRAPH_GROUP_OUTPUT_TYPE,
+  type NodeGraphGroupNodeRef,
+  type NodeGraphGroupSwitchState,
+  type NodeGraphSubgraphInterface,
+} from './subgraph.js';
+export {
+  buildNativePromptFloorStructure,
+  buildNativePromptFloorTemplate,
+  NATIVE_PROMPT_FLOOR_TEMPLATE_ID,
+  NATIVE_PROMPT_FLOOR_TEMPLATE_VERSION,
+  type NativePromptFloorStructure,
+} from './templates/native-prompt-floor.js';
+export {
+  buildCompatPromptFloorStructure,
+  buildCompatPromptFloorTemplate,
+  COMPAT_PROMPT_FLOOR_TEMPLATE_ID,
+  COMPAT_PROMPT_FLOOR_TEMPLATE_VERSION,
+  type CompatPromptFloorStructure,
+} from './templates/compat-prompt-floor.js';
+export {
+  BUILTIN_ADVISOR_SUBGRAPH_VERSION,
+  DIRECTOR_ADVISOR_SUBGRAPH_ID,
+  CONTINUITY_VERIFIER_SUBGRAPH_ID,
+  PLAYER_AGENCY_VERIFIER_SUBGRAPH_ID,
+  MEMORY_RETRIEVE_SUBGRAPH_ID,
+  buildDirectorAdvisorSubgraph,
+  buildContinuityVerifierSubgraph,
+  buildPlayerAgencyVerifierSubgraph,
+  buildMemoryRetrieveSubgraph,
+  listBuiltinAdvisorSubgraphs,
+} from './templates/builtin-advisor-subgraphs.js';

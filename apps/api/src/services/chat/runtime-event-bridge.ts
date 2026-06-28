@@ -108,16 +108,39 @@ export class ChatRuntimeEventBridge {
       }));
     };
 
-    this.eventBus.on("tool.call_started", handleStarted);
+    const handleAwaitingConfirmation = (event: CoreEventMap["tool.call_awaiting_confirmation"]) => {
+      if (event.floorId !== floorId) {
+        return;
+      }
+
+      // 待确认事件发生在执行之前，没有 executionId / providerId；
+      // 以 callId 作为 executionId，providerId 缺失时置空串。
+      runtimeOptions.onTool?.(this.toRespondRuntimeToolEvent({
+        executionId: event.callId,
+        toolName: event.toolName,
+        providerId: event.providerId ?? "",
+        ...(event.providerType ? { providerType: event.providerType } : {}),
+        ...(event.sideEffectLevel ? { sideEffectLevel: event.sideEffectLevel } : {}),
+        status: "running",
+        lifecycleState: "opened",
+        phaseOverride: "awaiting_confirmation",
+     args: event.args,
+        callId: event.callId,
+   }));
+    };
+
+    this.eventBus.on("tool.call_started",handleStarted);
     this.eventBus.on("tool.call_completed", handleCompleted);
     this.eventBus.on("tool.call_failed", handleFailed);
     this.eventBus.on("tool.call_denied", handleDenied);
+    this.eventBus.on("tool.call_awaiting_confirmation", handleAwaitingConfirmation);
 
     return () => {
       this.eventBus.off("tool.call_started", handleStarted);
-      this.eventBus.off("tool.call_completed", handleCompleted);
+       this.eventBus.off("tool.call_completed",handleCompleted);
       this.eventBus.off("tool.call_failed", handleFailed);
       this.eventBus.off("tool.call_denied", handleDenied);
+      this.eventBus.off("tool.call_awaiting_confirmation", handleAwaitingConfirmation);
     };
   }
 
@@ -131,6 +154,9 @@ export class ChatRuntimeEventBridge {
     lifecycleState: "opened" | "finished";
     message?: string;
     durationMs?: number;
+    phaseOverride?: RespondRuntimeToolEvent["phase"];
+    args?: Record<string, unknown>;
+    callId?: string;
   }): RespondRuntimeToolEvent {
     const evaluation = evaluateToolReplaySafety({
       providerId: input.providerId,
@@ -147,9 +173,11 @@ export class ChatRuntimeEventBridge {
       providerId: input.providerId,
       providerType: input.providerType,
       sideEffectLevel: input.sideEffectLevel,
-      phase: input.status === "running" ? "start" : input.status,
+      phase: input.phaseOverride ?? (input.status === "running" ? "start" : input.status),
       ...(input.message ? { message: input.message } : {}),
       ...(typeof input.durationMs === "number" ? { durationMs: input.durationMs } : {}),
+      ...(input.args ? { args: input.args } : {}),
+      ...(input.callId ? { callId: input.callId } : {}),
       replaySafety: evaluation.replaySafety,
     };
   }

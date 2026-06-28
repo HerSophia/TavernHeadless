@@ -112,6 +112,8 @@ const instanceConfigJsonSchema = {
     scope: { type: "string", enum: ["global", "session"] },
     scope_id: { type: "string" },
     instance_slot: { type: "string", enum: [...instanceSlotValues] },
+    // LI11：preset_id = 提示词预设覆盖（非 LLM Profile id；过渡字段）。选 Profile 走 /llm-profiles 绑定。
+    // 不在此处加 schema `description` 以免改动生成的 OpenAPI；语义见 VitePress llm-instances.md 与 schema.ts 注释。
     preset_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     model_id_override: { anyOf: [{ type: "string" }, { type: "null" }] },
     enabled: { type: "boolean" },
