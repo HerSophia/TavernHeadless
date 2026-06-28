@@ -73,17 +73,19 @@ type CreateProfileBody = {
 };
 
 type DiscoverModelsBody = {
-  api_key: string;
+  profile_id?: string;
+  api_key?: string;
   base_url?: string;
-  provider: z.infer<typeof providerSchema>;
-  allow_private_network?: boolean;
+  provider?: z.infer<typeof providerSchema>;
+  allow_private_network?:boolean;
 };
 
 type TestModelBody = {
-  api_key: string;
+  profile_id?: string;
+  api_key?: string;
   base_url?: string;
-  model_id: string;
-  provider: z.infer<typeof providerSchema>;
+  model_id?: string;
+  provider?: z.infer<typeof providerSchema>;
   reasoning_effort?: RuntimeParamsResponse["reasoning_effort"];
   allow_private_network?: boolean;
 };
@@ -156,11 +158,11 @@ const unbindBindingSchema = z
   });
 
 const discoverModelsSchema = buildZodObjectSchema<DiscoverModelsBody>(discoverModelsBodyJsonSchema, {
-  trimStringFields: ["api_key", "base_url"],
+  trimStringFields: ["profile_id", "api_key", "base_url"],
 });
 
 const testModelSchema = buildZodObjectSchema<TestModelBody>(testModelBodyJsonSchema, {
-  trimStringFields: ["api_key", "base_url", "model_id"],
+  trimStringFields: ["profile_id", "api_key", "base_url", "model_id"],
 });
 
 
@@ -281,7 +283,29 @@ export async function registerLlmProfileRoutes(
         return;
       }
 
-      const discoverBaseUrlError = guardProfileBaseUrl(reply, body.data.base_url, {
+      // 凭证二选一：传 profile_id 时复用已保存档案的密钥；否则要求 api_key + provider。
+      let resolvedProvider: z.infer<typeof providerSchema>;
+      let resolvedApiKey: string;
+      let resolvedBaseUrl = body.data.base_url;
+
+      if (body.data.profile_id) {
+        try {
+          const secret = await service.getProfileSecret(body.data.profile_id, getRequestAuthContext(request).accountId);
+          resolvedProvider = secret.provider as z.infer<typeof providerSchema>;
+          resolvedApiKey = secret.apiKey;
+          resolvedBaseUrl = body.data.base_url ?? secret.baseUrl ?? undefined;
+        } catch (error) {
+          return sendServiceError(reply, error);
+        }
+      } else {
+        if (!body.data.api_key || !body.data.provider) {
+          return sendError(reply, 400, "invalid_request", "api_key 与 provider 在未提供 profile_id 时必填");
+        }
+        resolvedProvider = body.data.provider;
+        resolvedApiKey = body.data.api_key;
+      }
+
+      const discoverBaseUrlError = guardProfileBaseUrl(reply, resolvedBaseUrl, {
         allowPrivateNetwork: body.data.allow_private_network || isPrivateBaseUrlAllowed(),
       });
       if (discoverBaseUrlError) {
@@ -290,9 +314,9 @@ export async function registerLlmProfileRoutes(
 
       try {
         const models = await discoverModels({
-          apiKey: body.data.api_key,
-          baseUrl: body.data.base_url,
-          provider: body.data.provider,
+          apiKey: resolvedApiKey,
+          baseUrl: resolvedBaseUrl,
+          provider: resolvedProvider,
         });
 
         return reply.send({ data: models });
@@ -327,7 +351,33 @@ export async function registerLlmProfileRoutes(
         return;
       }
 
-      const testBaseUrlError = guardProfileBaseUrl(reply, body.data.base_url, {
+      // 凭证二选一：传 profile_id 时复用已保存档案的密钥（model_id 可省略，默认用档案的 model_id）；
+      // 否则要求 api_key + provider + model_id。
+      let resolvedProvider: z.infer<typeof providerSchema>;
+      let resolvedApiKey: string;
+      let resolvedModelId: string;
+      let resolvedBaseUrl = body.data.base_url;
+
+      if (body.data.profile_id) {
+        try {
+          const secret = await service.getProfileSecret(body.data.profile_id, getRequestAuthContext(request).accountId);
+          resolvedProvider = secret.provider as z.infer<typeof providerSchema>;
+          resolvedApiKey = secret.apiKey;
+          resolvedModelId = body.data.model_id ?? secret.modelId;
+          resolvedBaseUrl = body.data.base_url ?? secret.baseUrl ?? undefined;
+        } catch (error) {
+          return sendServiceError(reply, error);
+        }
+      } else {
+        if (!body.data.api_key || !body.data.provider || !body.data.model_id) {
+          return sendError(reply, 400, "invalid_request", "api_key、provider 与 model_id 在未提供 profile_id 时必填");
+        }
+        resolvedProvider = body.data.provider;
+        resolvedApiKey = body.data.api_key;
+        resolvedModelId = body.data.model_id;
+      }
+
+      const testBaseUrlError = guardProfileBaseUrl(reply, resolvedBaseUrl, {
         allowPrivateNetwork: body.data.allow_private_network || isPrivateBaseUrlAllowed(),
       });
       if (testBaseUrlError) {
@@ -335,10 +385,10 @@ export async function registerLlmProfileRoutes(
       }
       try {
         const tested = await testProviderModelWithHello({
-          apiKey: body.data.api_key,
-          baseUrl: body.data.base_url,
-          modelId: body.data.model_id,
-          provider: body.data.provider,
+          apiKey: resolvedApiKey,
+          baseUrl: resolvedBaseUrl,
+          modelId: resolvedModelId,
+          provider: resolvedProvider,
           reasoningEffort: body.data.reasoning_effort ?? undefined,
         });
 

@@ -58,6 +58,10 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairTemporaryConversationDrift(sqlite);
   repairNodeGraphRunCleanupDrift(sqlite);
   repairNodeGraphCheckpointDrift(sqlite);
+  repairClientCapabilityScopeDrift(sqlite);
+  repairWorkspaceMembershipDrift(sqlite);
+  repairGraphAssistantToolPolicyDrift(sqlite);
+  repairGraphAssistantPendingToolCallDrift(sqlite);
 }
 
 function tableHasColumns(
@@ -1612,6 +1616,140 @@ function createWorkspacePhase5Indexes(sqlite: Database.Database): void {
   );
 }
 
+
+// WP-B2：Client 能力声明与 API Key scope 的 additive 漂移修复。
+function repairClientCapabilityScopeDrift(sqlite: Database.Database): void {
+  addColumnIfMissing(sqlite, "client", "capabilities_json", "`capabilities_json` text");
+  addColumnIfMissing(sqlite, "client_api_key", "scopes_json", "`scopes_json` text");
+  addColumnIfMissing(sqlite, "client_api_key", "rotated_from_id", "`rotated_from_id` text");
+  addColumnIfMissing(sqlite, "client_api_key", "rotated_at", "`rotated_at` integer");
+}
+
+// WP-B1：Workspace 成员表的 additive 漂移修复。
+function repairWorkspaceMembershipDrift(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "account") || !tableExists(sqlite, "workspace")) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "workspace_membership")) {
+    sqlite.exec(`CREATE TABLE \`workspace_membership\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`role\` text NOT NULL,
+  \`status\` text NOT NULL DEFAULT 'active',
+  \`subject_type\` text NOT NULL,
+  \`subject_id\` text NOT NULL,
+  \`client_id\` text,
+  \`created_by_account_id\` text,
+  \`created_by_client_id\` text,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE restrict,
+  FOREIGN KEY (\`client_id\`) REFERENCES \`client\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`created_by_account_id\`) REFERENCES \`account\`(\`id\`) ON DELETE set null,
+  FOREIGN KEY (\`created_by_client_id\`) REFERENCES \`client\`(\`id\`) ON DELETE set null
+);`);
+  }
+
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `workspace_membership_workspace_subject_uq` ON `workspace_membership` (`workspace_id`, `subject_type`, `subject_id`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `workspace_membership_account_status_idx` ON `workspace_membership` (`account_id`, `status`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `workspace_membership_workspace_role_status_idx` ON `workspace_membership` (`workspace_id`, `role`, `status`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `workspace_membership_client_workspace_status_idx` ON `workspace_membership` (`client_id`, `workspace_id`, `status`);");
+}
+
+// 图助手逐工具策略表（阶段 2）的 additive 漂移修复。
+//
+// 历史本地库可能停留在旧列名 `mode`（该列后改名为 `decision`），或表/索引未真正落库。
+// 旧库一旦把 0076 记成已应用，drizzle 不会再因文件内容改动而重跑，于是出现
+// “表在但 `decision` 列不存在 / 仍叫 `mode`” 的漂移，触发 `no such column: decision`。
+function repairGraphAssistantToolPolicyDrift(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "account") || !tableExists(sqlite, "workspace") || !tableExists(sqlite, "project")) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "graph_assistant_tool_policy")) {
+    sqlite.exec(`CREATE TABLE \`graph_assistant_tool_policy\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`project_id\` text NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`tool_name\` text NOT NULL,
+  \`decision\` text NOT NULL,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON UPDATE no action ON DELETE restrict
+);`);
+  } else {
+    const columns = getTableColumnNames(sqlite, "graph_assistant_tool_policy");
+    if (!columns.has("decision")) {
+      if (columns.has("mode")) {
+        // 旧库列名为 `mode`，原地重命名为 `decision`（保留既有数据）。
+        sqlite.exec("ALTER TABLE `graph_assistant_tool_policy` RENAME COLUMN `mode` TO `decision`;");
+      } else {
+        // 兜底：既无 `decision` 也无 `mode`，按 additive 补列（空表场景默认 auto）。
+        sqlite.exec("ALTER TABLE `graph_assistant_tool_policy` ADD COLUMN `decision` text NOT NULL DEFAULT 'auto';");
+      }
+    }
+  }
+
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `graph_assistant_tool_policy_project_tool_uq` ON `graph_assistant_tool_policy` (`project_id`, `tool_name`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `graph_assistant_tool_policy_workspace_idx` ON `graph_assistant_tool_policy` (`workspace_id`, `created_at`);");
+}
+
+// 图助手「执行前确认闸」待确认表（阶段 3）的 additive 漂移修复：历史库可能尚未创建该表。
+function repairGraphAssistantPendingToolCallDrift(sqlite: Database.Database): void {
+  if (
+    !tableExists(sqlite, "account")
+    || !tableExists(sqlite, "workspace")
+    || !tableExists(sqlite, "project")
+    || !tableExists(sqlite, "session")
+  ) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "graph_assistant_pending_tool_call")) {
+    sqlite.exec(`CREATE TABLE \`graph_assistant_pending_tool_call\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`project_id\` text NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`conversation_id\` text NOT NULL,
+  \`branch_id\` text NOT NULL,
+  \`floor_id\` text NOT NULL,
+  \`call_id\` text NOT NULL,
+  \`tool_name\` text NOT NULL,
+  \`args_json\` text NOT NULL,
+  \`side_effect_level\` text,
+  \`status\` text DEFAULT 'pending' NOT NULL,
+  \`conversation_messages_json\` text NOT NULL,
+  \`agent_steps\` integer DEFAULT 0 NOT NULL,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  \`expires_at\` integer,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON UPDATE no action ON DELETE restrict,
+  FOREIGN KEY (\`conversation_id\`) REFERENCES \`session\`(\`id\`) ON UPDATE no action ON DELETE cascade
+);`);
+  }
+
+  createIndexIfColumnsExist(
+    sqlite,
+    "graph_assistant_pending_tool_call",
+    ["conversation_id", "status"],
+    "CREATE INDEX IF NOT EXISTS `graph_assistant_pending_tool_call_conversation_status_idx` ON `graph_assistant_pending_tool_call` (`conversation_id`, `status`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "graph_assistant_pending_tool_call",
+    ["floor_id"],
+    "CREATE INDEX IF NOT EXISTS `graph_assistant_pending_tool_call_floor_idx` ON `graph_assistant_pending_tool_call` (`floor_id`);",
+  );
+}
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 

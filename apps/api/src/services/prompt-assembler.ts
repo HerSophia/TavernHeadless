@@ -109,8 +109,12 @@ import {
   compareTurnAssemblyResults,
   type NativePromptBridgeComparison,
   type NativePromptBridgeDecision,
-  type NativePromptCarrier,
 } from "./agent-runtime/native-prompt-bridge.js";
+import {
+  DEFAULT_COMPAT_PROMPT_BRIDGE_DECISION,
+  type CompatPromptBridgeDecision,
+} from "./agent-runtime/compat-prompt-bridge.js";
+import type { TurnAssemblyCarrier } from "./agent-runtime/turn-assembly-processor-factory.js";
 import type { PromptProcessorRecipeKind } from "./agent-runtime/prompt-processor-recipe.js";
 import type { RuntimeGovernanceTraceSummary } from "./governance/runtime-governance-types.js";
 
@@ -564,9 +568,9 @@ export interface TurnAssemblyMetadata {
   recipeVersion: string;
   assemblyInputHash: string;
   governanceSummary: RuntimeGovernanceTraceSummary;
-  /** NG2-BRIDGE：本次 native 编排的承载路径（composite / system_graph）。 */
-  carrier?: NativePromptCarrier;
-  /** NG2-BRIDGE：影子运行开启时的逐字段比对结果（只观测，不切流）。 */
+  /** NG2-BRIDGE / CG11：本次编排的承载路径（native: composite/system_graph；compat: prompt_mode/system_graph）。 */
+  carrier?: TurnAssemblyCarrier;
+  /** NG2-BRIDGE / CG11：影子运行开启时的逐字段比对结果（只观测，不切流）。 */
   bridgeComparison?: NativePromptBridgeComparison;
 }
 
@@ -695,6 +699,11 @@ export interface AssemblePromptOptions {
    * 仅 native mode 消费；缺省为 composite + shadow off（与既有行为一致）。
    */
   nativePromptBridge?: NativePromptBridgeDecision;
+  /**
+   * CG11：compat 主链承载灰度决策（prompt_mode / system_graph + shadow）。
+   * 仅 compat_strict / compat_plus 消费；缺省为 prompt_mode + shadow off（与既有行为一致）。
+   */
+  compatPromptBridge?: CompatPromptBridgeDecision;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -1077,14 +1086,19 @@ export async function assemblePrompt(
       };
     };
 
-    // NG2-BRIDGE：仅 native mode 消费承载灰度决策；其余 mode 恒走默认（composite），
-    // compat_strict / compat_plus 永不进入 system graph 灰度。缺省 = composite + shadow off。
-    const nativePromptBridgeDecision = promptSnapshot.promptMode === "native"
+    // NG2-BRIDGE / CG11：按 mode 消费对应承载灰度决策。native → nativePromptBridge（默认 composite）；
+    // compat_strict / compat_plus → compatPromptBridge（默认 prompt_mode）。两者缺省均 shadow off、零回归。
+    const isNativeMode = promptSnapshot.promptMode === "native";
+    const isCompatMode =
+      promptSnapshot.promptMode === "compat_strict" || promptSnapshot.promptMode === "compat_plus";
+    const carrierDecision: { carrier: TurnAssemblyCarrier; shadow: boolean } = isNativeMode
       ? (options.nativePromptBridge ?? DEFAULT_NATIVE_PROMPT_BRIDGE_DECISION)
-      : DEFAULT_NATIVE_PROMPT_BRIDGE_DECISION;
+      : isCompatMode
+        ? (options.compatPromptBridge ?? DEFAULT_COMPAT_PROMPT_BRIDGE_DECISION)
+        : DEFAULT_NATIVE_PROMPT_BRIDGE_DECISION;
     const turnAssemblyProcessor = selectTurnAssemblyProcessor(
       promptSnapshot.promptMode,
-      nativePromptBridgeDecision.carrier,
+      carrierDecision.carrier,
     );
     const turnRunKind = resolvePromptRunKind(options);
     const turnAssemblyContext: TurnAssemblyContext = {
@@ -1141,11 +1155,13 @@ export async function assemblePrompt(
     characterOverridesHandledInPromptIR = turnAssemblyResult.characterOverridesHandledInPromptIR;
     memorySummaryHandledInPromptIR = turnAssemblyResult.memorySummaryHandledInPromptIR;
 
-    // NG2-BRIDGE：影子运行——并行跑另一条承载路径并逐字段比对，只观测、不切流。
+    // NG2-BRIDGE / CG11：影子运行——并行跑另一条承载路径并逐字段比对，只观测、不切流。
+    // 命令式默认承载按 mode 取：native → composite，compat → prompt_mode。
     let nativePromptBridgeComparison: NativePromptBridgeComparison | undefined;
-    if (promptSnapshot.promptMode === "native" && nativePromptBridgeDecision.shadow) {
-      const shadowCarrier: NativePromptCarrier =
-        nativePromptBridgeDecision.carrier === "system_graph" ? "composite" : "system_graph";
+    if ((isNativeMode || isCompatMode) && carrierDecision.shadow) {
+      const imperativeCarrier: TurnAssemblyCarrier = isNativeMode ? "composite" : "prompt_mode";
+      const shadowCarrier: TurnAssemblyCarrier =
+        carrierDecision.carrier === "system_graph" ? imperativeCarrier : "system_graph";
       const shadowProcessor = selectTurnAssemblyProcessor(promptSnapshot.promptMode, shadowCarrier);
       const shadowPrepared = await shadowProcessor.prepare(turnAssemblyContext);
       const shadowResult = await shadowProcessor.execute(shadowPrepared);
@@ -1158,7 +1174,7 @@ export async function assemblePrompt(
       recipeVersion: turnAssemblyResult.recipeVersion,
       assemblyInputHash: turnAssemblyResult.assemblyInputHash,
       governanceSummary: turnAssemblyResult.governanceSummary,
-      carrier: nativePromptBridgeDecision.carrier,
+      carrier: carrierDecision.carrier,
       ...(nativePromptBridgeComparison ? { bridgeComparison: nativePromptBridgeComparison } : {}),
     };
 

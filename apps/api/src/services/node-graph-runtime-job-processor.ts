@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import type { NodeGraphDocument } from "@tavern/core";
+import type { NodeGraphDiagnostic, NodeGraphDocument } from "@tavern/core";
 
 import { nodeGraphDefinitions, nodeGraphVersions } from "../db/schema.js";
 import { NodeGraphCheckpointService } from "./node-graph-checkpoint-service.js";
@@ -30,6 +30,8 @@ import {
   NODE_GRAPH_OUTPUT_TARGET_NOT_IN_MANIFEST_REASON,
   type NodeGraphOutputDispatchTraceRef,
   type NodeGraphExecutionResult,
+  type NodeGraphSubgraphRunner,
+  type NodeGraphSubgraphRunResult,
 } from "./node-graph-runtime/index.js";
 import type { AgentExecutorRouter } from "./agent-runtime/agent-executor-router.js";
 import { OperationLogService } from "./operation-log-service.js";
@@ -122,6 +124,8 @@ export class NodeGraphRuntimeJobProcessor
         })
       : undefined;
     const executor = createDefaultNodeGraphExecutor();
+    // NG2-β：注入子图递归运行器（加载子图版本 + 嵌套 executor + 边界 I/O 映射 + 环检测）。
+    const subgraphRunner = buildSubgraphRunner({ db, payload, executor });
     const execution = await executor.execute({
       document,
       graphVersionId: version.id,
@@ -144,6 +148,8 @@ export class NodeGraphRuntimeJobProcessor
         graphRunId,
         graphVersionId: version.id,
         rootRunId: graphRunId,
+        subgraphRunner,
+        subgraphStack: [payload.graphId],
         ...(this.deps.agentRouter ? { agentRouter: this.deps.agentRouter } : {}),
       },
     });
@@ -441,6 +447,133 @@ export class NodeGraphRuntimeJobProcessor
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** NG2-β：子图引用最大嵌套深度（防止过深 / 间接环引发的栈/预算放大）。 */
+const MAX_SUBGRAPH_DEPTH = 8;
+
+function subgraphFailure(code: string, message: string): NodeGraphSubgraphRunResult {
+  return { status: "failed", outputsByPort: {}, diagnostics: [{ severity: "error", code, message }] };
+}
+
+/** 在同租户范围内加载子图版本文档（指定 versionId 则锁定，否则取当前版本）。 */
+function loadSubgraphVersion(
+  db: RuntimeJobPrepareContext<NodeGraphRunJobPayload>["db"],
+  payload: NodeGraphRunJobPayload,
+  ref: { graphId: string; versionId?: string },
+): { document: NodeGraphDocument; versionId: string } | null {
+  const tenant = and(
+    eq(nodeGraphDefinitions.id, ref.graphId),
+    eq(nodeGraphDefinitions.accountId, payload.accountId),
+    eq(nodeGraphDefinitions.workspaceId, payload.workspaceId),
+    eq(nodeGraphDefinitions.projectId, payload.projectId),
+  );
+  if (ref.versionId) {
+    const row = db
+      .select({ id: nodeGraphVersions.id, documentJson: nodeGraphVersions.documentJson })
+      .from(nodeGraphVersions)
+      .innerJoin(nodeGraphDefinitions, eq(nodeGraphVersions.graphId, nodeGraphDefinitions.id))
+      .where(and(eq(nodeGraphVersions.id, ref.versionId), eq(nodeGraphVersions.graphId, ref.graphId), tenant))
+      .limit(1)
+      .get();
+    return row ? { document: parseDocument(row.documentJson), versionId: row.id } : null;
+  }
+  const definition = db
+    .select({ currentVersionId: nodeGraphDefinitions.currentVersionId })
+    .from(nodeGraphDefinitions)
+    .where(tenant)
+    .limit(1)
+    .get();
+  if (!definition?.currentVersionId) {
+    return null;
+  }
+  const row = db
+    .select({ id: nodeGraphVersions.id, documentJson: nodeGraphVersions.documentJson })
+    .from(nodeGraphVersions)
+    .where(eq(nodeGraphVersions.id, definition.currentVersionId))
+    .limit(1)
+    .get();
+  return row ? { document: parseDocument(row.documentJson), versionId: row.id } : null;
+}
+
+/**
+ * 构造生产级 `subgraphRunner`：被 `group.node` handler 调用，加载被引用子图并以**嵌套 graph run**
+ * 复用同一 executor 递归执行；把实例输入端口值（按 portName）经 `context.input` 喂给子图 `group.input`，
+ * 再把子图 `group.output` 的值按 portName 映射回实例输出端口。含引用环检测与深度上限。
+ */
+function buildSubgraphRunner(input: {
+  db: RuntimeJobPrepareContext<NodeGraphRunJobPayload>["db"];
+  payload: NodeGraphRunJobPayload;
+  executor: ReturnType<typeof createDefaultNodeGraphExecutor>;
+}): NodeGraphSubgraphRunner {
+  const { db, payload, executor } = input;
+  const runner: NodeGraphSubgraphRunner = async (subInput, parentContext) => {
+    const stack = parentContext.subgraphStack ?? [];
+    if (stack.includes(subInput.ref.graphId)) {
+      return subgraphFailure(
+        "node_graph_subgraph_cycle",
+        `Subgraph reference cycle: ${[...stack, subInput.ref.graphId].join(" -> ")}`,
+      );
+    }
+    if (stack.length >= MAX_SUBGRAPH_DEPTH) {
+      return subgraphFailure(
+        "node_graph_subgraph_depth_exceeded",
+        `Subgraph nesting exceeds the maximum depth of ${MAX_SUBGRAPH_DEPTH}.`,
+      );
+    }
+    const loaded = loadSubgraphVersion(db, payload, subInput.ref);
+    if (!loaded) {
+      return subgraphFailure("node_graph_subgraph_not_found", `Subgraph definition not found: ${subInput.ref.graphId}`);
+    }
+
+    const childExecution = await executor.execute({
+      document: loaded.document,
+      graphVersionId: loaded.versionId,
+      context: {
+        ...parentContext,
+        input: subInput.inputsByPort,
+        userInput: undefined,
+        chatHistory: undefined,
+        graphVersionId: loaded.versionId,
+        subgraphStack: [...stack, subInput.ref.graphId],
+        subgraphRunner: runner,
+      },
+    });
+    if (childExecution.status !== "succeeded") {
+      const diagnostics: NodeGraphDiagnostic[] = childExecution.trace.failedNodes.flatMap((failed) => failed.diagnostics);
+      return {
+        status: "failed",
+        outputsByPort: {},
+        diagnostics: diagnostics.length > 0
+          ? diagnostics
+          : [{ severity: "error", code: "node_graph_subgraph_failed", message: "Subgraph run failed." }],
+      };
+    }
+
+    const outputsByPort: Record<string, unknown> = {};
+    for (const node of loaded.document.nodes) {
+      if (node.type !== "group.output") {
+        continue;
+      }
+      const config = isRecord(node.config) ? node.config : {};
+      const nodeOutput = childExecution.nodeOutputs[node.id];
+      const outs = isRecord(nodeOutput?.outputs) ? nodeOutput.outputs : {};
+      if (Array.isArray(config.ports)) {
+        // 单 Group Output 多端口：按 portName 回收。
+        for (const port of config.ports) {
+          const name = isRecord(port) && typeof port.name === "string" ? port.name : null;
+          if (name) {
+            outputsByPort[name] = outs[name] ?? null;
+          }
+        }
+      } else {
+        const portName = typeof config.portName === "string" && config.portName.length > 0 ? config.portName : node.id;
+        outputsByPort[portName] = nodeOutput?.value ?? null;
+      }
+    }
+    return { status: "succeeded", outputsByPort };
+  };
+  return runner;
 }
 
 function readTraceString(value: unknown): string | null {

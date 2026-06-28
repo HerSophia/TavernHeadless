@@ -204,6 +204,30 @@ describe("SessionToolRegistryService", () => {
     );
   });
 
+  it("exposes both auto and confirm NodeGraph tools for graph-assistant sessions", async () => {
+    await insertSession({ id: "sess-ga", purpose: "graph-assistant" });
+    const service = new SessionToolRegistryService(db, { baseRegistry });
+    const runtime = await service.buildRuntime("sess-ga", DEFAULT_ADMIN_ACCOUNT_ID);
+    const names = (await runtime.registry.listAll()).map((tool) => tool.name);
+    // 阶段 3 确认闸：auto 与 confirm 工具同时暴露，逐工具决策下沉到执行阶段。
+    expect(names).toContain("nodegraph.graph.get");
+    expect(names).toContain("nodegraph.node.add");
+    expect(names).toContain("nodegraph.graph.create");
+    expect(names).toContain("nodegraph.patch.submit_proposal");
+    // 同样出现在运行时目录中。
+    const catalogNames = runtime.catalog.tools.map((tool) => tool.name);
+    expect(catalogNames).toContain("nodegraph.graph.create");
+  });
+
+  it("keeps all NodeGraph tools for non graph-assistant sessions", async () => {
+    await insertSession({ id: "sess-plain" });
+    const service = new SessionToolRegistryService(db, { baseRegistry });
+    const runtime = await service.buildRuntime("sess-plain", DEFAULT_ADMIN_ACCOUNT_ID);
+    const names = (await runtime.registry.listAll()).map((tool) => tool.name);
+    expect(names).toContain("nodegraph.graph.create");
+    expect(names).toContain("nodegraph.patch.submit_proposal");
+  });
+
   it("loads only tool definitions from the session Workspace", async () => {
     const otherWorkspace = createTestWorkspace(db, {
       accountId: DEFAULT_ADMIN_ACCOUNT_ID,
