@@ -26,8 +26,16 @@ const phase = computed(() => phaseStyle(d.value.phase));
 const sideEffect = computed(() => sideEffectStyle(d.value.sideEffects));
 const status = computed(() => (d.value.runStatus ? runStatusStyle(d.value.runStatus) : null));
 
-/** 节点文案随界面语言：命中 i18n 键则用之，否则回退 registry 标题 / 英文短码。 */
+/**
+ * 节点标题：优先显示节点自定义 name（导入预设的 slot 名、用户重命名）。
+ * 模板渲染等通用节点会被复用为多种用途，显示具体 name 才能在画布上区分；
+ * 无 name 时按界面语言回退 i18n 类型标题，再回退 registry 标题 / 英文短码。
+ */
 const displayTitle = computed(() => {
+  const name = d.value.node.name?.trim();
+  if (name) {
+    return name;
+  }
   const key = `graphNode.type.${d.value.node.type.replaceAll(".", "_")}`;
   return te(key) ? t(key) : d.value.title;
 });

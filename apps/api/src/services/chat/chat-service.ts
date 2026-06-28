@@ -4,6 +4,9 @@ import type {
   CoreEventBus,
   CoreEventMap,
   FloorRunType,
+  GraphAssistantAgentLoopConfig,
+  GraphToolConfirmationDecider,
+  ToolCallTransportKind,
   ToolExecutionCommitOutcome,
   TurnExecutionResult,
   TurnInput,
@@ -44,6 +47,9 @@ import {
 } from "../generation-guard-service.js";
 import { TurnCommitService, TurnAttemptConflictError } from "../turn-commit-service.js";
 import { OwnedSessionRepository } from "../owned-resource-repositories.js";
+import { GraphAssistantToolPolicyService } from "../graph-assistant-tool-policy-service.js";
+import { GraphAssistantToolConfirmationService } from "../graph-assistant-tool-confirmation-service.js";
+import { GRAPH_ASSISTANT_PURPOSE } from "../temporary-conversation-types.js";
 import {
   BranchLocalVariableSnapshotService,
   isBranchLocalSnapshotMissingError,
@@ -1270,6 +1276,34 @@ export class ChatService {
             commitFailureMessage: "Turn commit failed",
           });
 
+          // 阶段 3 待确认暂停收尾：图助手多轮循环遇 confirm 工具暂停时，
+          // 登记一条待确认记录（含续跑上下文），等待用户批准/拒绝。
+          // auto 工具结果与可见文本已随本次 commit 落库；commit 付出后才登记，
+          // 避免 commit 失败时遗留孤立的 pending 记录。
+          if (
+            session.purpose === GRAPH_ASSISTANT_PURPOSE
+            && execution.pendingToolConfirmation
+            && session.projectId
+            && session.workspaceId
+          ) {
+            new GraphAssistantToolConfirmationService(this.db).createPending({
+              workspaceId: session.workspaceId,
+              projectId: session.projectId,
+              accountId: args.accountId,
+              conversationId: args.sessionId,
+              branchId,
+              floorId: args.floorId,
+              callId: execution.pendingToolConfirmation.callId,
+              toolName: execution.pendingToolConfirmation.toolName,
+              args: execution.pendingToolConfirmation.args,
+              ...(execution.pendingToolConfirmation.sideEffectLevel
+                ? { sideEffectLevel: execution.pendingToolConfirmation.sideEffectLevel }
+                : {}),
+              conversationMessages: execution.pendingToolConfirmation.conversationMessages,
+              agentSteps: execution.agentLoopSteps ?? 0,
+            });
+          }
+
           return {
             floorId: args.floorId,
             floorNo: args.floorNo,
@@ -1277,7 +1311,7 @@ export class ChatService {
             summaries: execution.summaries,
             totalUsage: commit.usage,
             finalState: commit.finalState,
-            branchId,
+                 branchId,
             memory: commit.memory,
             promptSnapshot: prepared.promptDebug.promptSnapshot,
             runtimeTrace: prepared.promptDebug.runtimeTrace,
@@ -1373,6 +1407,55 @@ export class ChatService {
     }
   }
 
+  /**
+   * 为图助手临时对话（purpose=graph-assistant）构造 text_protocol 多轮 agent 循环配置。
+   *
+   * 返回两件东西：
+   * - `toolTransportOverride`：强制该会话走 text_protocol（覆盖默认 native），拿到「可暂停」能力。
+   * - `graphAssistantAgentLoop`：含 auto/confirm 决策回调，决策来源是项目级逐工具策略。
+   *
+   * 非图助手会话返回 undefined，不影响主链与其他会话。决策在构造时从 DB 快照一次，
+   * 一个 turn 内保持一致；core 不反向依赖图助手策略服务，只消费该回调。
+   */
+  private buildGraphAssistantAgentLoopTurnConfig(
+session: typeof sessions.$inferSelect,
+  ): {
+    toolTransportOverride: ToolCallTransportKind;
+    graphAssistantAgentLoop: GraphAssistantAgentLoopConfig;
+    resumedPendingId?: string;
+  } | undefined {
+    if (session.purpose !== GRAPH_ASSISTANT_PURPOSE || !session.projectId) {
+      return undefined;
+    }
+    const projectId = session.projectId;
+    const effective = new GraphAssistantToolPolicyService(this.db).resolveEffective({ projectId });
+    const decisionByTool = new Map(effective.map((entry) => [entry.toolName, entry.decision] as const));
+    const decideConfirmation: GraphToolConfirmationDecider = (ctx) =>
+      decisionByTool.get(ctx.toolName) ?? "auto";
+
+    // 批准后续跑：若该会话存在已批准但未执行的待确认调用，本轮先执行它再续跑。
+    const resumable = new GraphAssistantToolConfirmationService(this.db).findResumable({
+      conversationId: session.id,
+    });
+
+    return {
+      toolTransportOverride: "text_protocol",
+      graphAssistantAgentLoop: {
+        decideConfirmation,
+        ...(resumable
+          ? {
+              resumeApprovedCall: {
+                callId: resumable.callId,
+                toolName: resumable.toolName,
+                args: resumable.args,
+           },
+            }
+          : {}),
+      },
+      ...(resumable ? { resumedPendingId: resumable.id } : {}),
+    };
+  }
+
   private async runPreparedFloorGeneration(args: {
     mode: "respond" | "regenerate" | "retry_floor" | "edit_and_regenerate";
     runType: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
@@ -1435,6 +1518,7 @@ export class ChatService {
         })
       : undefined;
 
+    const graphAssistantTurn = this.buildGraphAssistantAgentLoopTurnConfig(args.session);
     const prepared = await this.preparedTurnContextBuilder.prepare({
       mode: args.mode,
       runType: args.runType,
@@ -1454,9 +1538,15 @@ export class ChatService {
       conversationWindow: args.conversationWindow,
       resolvedTurnModels: args.resolvedTurnModels,
       firstPartyStateContext: args.firstPartyStateContext,
-      abortSignal: args.abortSignal,
+         abortSignal: args.abortSignal,
       onChunk: args.onChunk,
       stream: args.stream,
+      ...(graphAssistantTurn
+        ? {
+            toolTransportOverride: graphAssistantTurn.toolTransportOverride,
+            graphAssistantAgentLoop: graphAssistantTurn.graphAssistantAgentLoop,
+          }
+        : {}),
       ...(agenticPreResponse ? { agentContributors: agenticPreResponse.aggregated.contributors } : {}),
     });
     const { execution, commit } = await this.turnWorkflowRunner.runPreparedTurnWorkflow({
@@ -1515,12 +1605,18 @@ export class ChatService {
         : {}),
     });
 
+    // 批准后续跑：本轮已执行并 commit 完成，把已批准的待确认记录标为 executed。
+    // 若本轮又遇新 confirm 工具，新的 pending 已由 respondFromPreparedDraftFloor 的收尾逻辑登记。
+    if (graphAssistantTurn?.resumedPendingId) {
+      new GraphAssistantToolConfirmationService(this.db).markExecuted(graphAssistantTurn.resumedPendingId);
+    }
+
     if (prepared.promptDebug.runtimeTrace && execution.toolTransport) {
       prepared.promptDebug.runtimeTrace = mergeToolResultBudgetTrace({
         ...prepared.promptDebug.runtimeTrace,
         toolTransport: execution.toolTransport,
       }, execution.toolTransport);
-    }
+        }
 
     if (prepared.promptDebug.runtimeTrace) {
       prepared.promptDebug.runtimeTrace = this.augmentRuntimeTraceWithAiOutputRegex({

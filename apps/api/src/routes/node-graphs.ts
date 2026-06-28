@@ -453,6 +453,21 @@ export async function registerNodeGraphRoutes(
     }
   });
 
+  // 硬删除图定义本身（删除「数据存在本身」，区别于归档/清空节点）。需 project.nodegraph.manage。
+  app.delete("/projects/:id/node-graphs/:graph_id", async (request, reply) => {
+    const params = parseWithSchema(graphParamsSchema, request.params, reply);
+    if (!params.ok) return;
+    const actor = actorFromRequest(request);
+    try {
+      const service = new NodeGraphDefinitionService(db);
+      service.delete({ actor, projectId: params.data.id, graphId: params.data.graph_id });
+      return reply.code(204).send();
+    } catch (error) {
+      if (handleNodeGraphError(reply, error)) return;
+      throw error;
+    }
+  });
+
   app.post("/projects/:id/node-graphs/:graph_id/current-version", async (request, reply) => {
     const params = parseWithSchema(graphParamsSchema, request.params, reply);
     if (!params.ok) return;

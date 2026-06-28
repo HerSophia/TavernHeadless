@@ -43,6 +43,8 @@ import type {
   TurnInput,
   ToolMode,
 } from './types.js';
+import { TextProtocolAgentLoop } from './text-protocol-agent-loop.js';
+import type { AgentLoopGenerate } from './text-protocol-agent-loop.js';
 
 // ── 错误类 ────────────────────────────────────────────
 
@@ -408,6 +410,9 @@ export class TurnOrchestrator {
     let generation: GenerationOutput | undefined;
     let toolResultWritebackText: TurnExecutionResult['toolResultWritebackText'];
     let toolTransport: TurnExecutionResult['toolTransport'] = input.toolTransport;
+    let agentLoopStopReason: TurnExecutionResult['agentLoopStopReason'];
+    let agentLoopSteps: TurnExecutionResult['agentLoopSteps'];
+    let pendingToolConfirmation: TurnExecutionResult['pendingToolConfirmation'];
 
     try {
       // ── 1. draft → generating ──
@@ -461,21 +466,46 @@ export class TurnOrchestrator {
       }
 
       // ── 4 & 5. 生成 + Verifier（含重试逻辑 + 工具注入） ──
-      const genResult = await this.runGenerationWithVerifier(
-        input,
-        cfg,
-        narratorLLMTools,
-        toolExecutor,
-        narratorTools,
-        narratorToolContext,
-      );
-      generation = genResult.generation;
-      verifierResult = genResult.verifierResult;
-      toolResultWritebackText = genResult.toolResultWritebackText;
-      toolTransport = genResult.toolTransport ?? toolTransport;
-      totalUsage = addUsage(totalUsage, generation.usage);
-      if (verifierResult) {
-        totalUsage = addUsage(totalUsage, verifierResult.usage);
+      const useGraphAssistantAgentLoop =
+        cfg.enableTools
+        && input.graphAssistantAgentLoop !== undefined
+        && input.toolTransport?.selection.transport === 'text_protocol'
+        && toolExecutor !== undefined
+        && narratorToolContext !== undefined
+        && input.toolPermissions !== undefined;
+
+      if (useGraphAssistantAgentLoop) {
+        //图助手 text_protocol 多轮 agent 循环（主链与其他会话不走此路径）
+        const loopResult = await this.runTextProtocolAgentLoop({
+          input,
+          toolExecutor: toolExecutor!,
+          narratorTools: narratorTools ?? [],
+          narratorToolContext: narratorToolContext!,
+        });
+        generation = loopResult.generation;
+        toolResultWritebackText = loopResult.toolResultWritebackText;
+        toolTransport = loopResult.toolTransport ?? toolTransport;
+        agentLoopStopReason = loopResult.agentLoopStopReason;
+        agentLoopSteps = loopResult.agentLoopSteps;
+        pendingToolConfirmation = loopResult.pendingToolConfirmation;
+        totalUsage = addUsage(totalUsage, generation.usage);
+      } else {
+        const genResult = await this.runGenerationWithVerifier(
+          input,
+          cfg,
+          narratorLLMTools,
+          toolExecutor,
+          narratorTools,
+          narratorToolContext,
+        );
+        generation = genResult.generation;
+        verifierResult = genResult.verifierResult;
+        toolResultWritebackText = genResult.toolResultWritebackText;
+        toolTransport = genResult.toolTransport ?? toolTransport;
+        totalUsage = addUsage(totalUsage, generation.usage);
+        if (verifierResult) {
+          totalUsage = addUsage(totalUsage, verifierResult.usage);
+        }
       }
 
       // ── 6. Memory 整理（可选） ──
@@ -511,7 +541,10 @@ export class TurnOrchestrator {
           : {}),
         ...(pendingToolJobs && pendingToolJobs.length > 0
           ? { pendingToolJobs }
-          : {}),
+            : {}),
+          ...(agentLoopStopReason ? { agentLoopStopReason } : {}),
+          ...(agentLoopSteps !== undefined ? { agentLoopSteps } : {}),
+          ...(pendingToolConfirmation ? { pendingToolConfirmation } : {}),
       };
     } catch (error) {
       // 尝试将楼层标记为 failed
@@ -982,6 +1015,180 @@ export class TurnOrchestrator {
           budgetGroup: TEXT_PROTOCOL_TOOL_RESULT_BUDGET_GROUP,
         },
       },
+    };
+  }
+  /**
+   * 图助手 text_protocol 多轮 agent 循环驱动。
+   *
+   * 只在 `input.graphAssistantAgentLoop` 存在且 transport 为 text_protocol 时由 executeTurn 调用；
+   * 主链与其他会话仍走单轮 `runGenerationWithVerifier` + `applyToolTransportToGeneration`。
+   */
+  private async runTextProtocolAgentLoop(args: {
+    input: TurnInput;
+    toolExecutor: ToolExecutor;
+    narratorTools: ToolDefinition[];
+    narratorToolContext: ToolExecutionContext;
+  }): Promise<{
+    generation: GenerationOutput;
+    toolResultWritebackText?: TurnExecutionResult['toolResultWritebackText'];
+    toolTransport?: TurnExecutionResult['toolTransport'];
+    agentLoopStopReason: TurnExecutionResult['agentLoopStopReason'];
+    agentLoopSteps: number;
+    pendingToolConfirmation?: TurnExecutionResult['pendingToolConfirmation'];
+  }> {
+    const { input } = args;
+    const loopConfig = input.graphAssistantAgentLoop!;
+    const baseTransport = input.toolTransport;
+    const maxSteps = input.toolPermissions?.maxStepsPerGeneration ?? 5;
+
+    let lastFinishReason = 'stop';
+
+    const generate: AgentLoopGenerate = async ({ messages, stepIndex }) => {
+      await this.notifyRunPhaseChange(input, 'page_generating', stepIndex);
+      await this.notifyPendingOutputUpdate(input, { text: '', state: 'draft', attemptNo: stepIndex, force: true });
+
+      await this.deps.eventBus.emit('generation.started', {
+        floorId: input.floorId,
+      });
+
+      let accumulatedLength = 0;
+      let accumulatedText = '';
+      const streamBuffer = new TextProtocolStreamOutputBuffer();
+      const emitChunk = (chunk: string) => {
+        if (chunk.length === 0) {
+          return;
+        }
+        accumulatedLength += chunk.length;
+        accumulatedText += chunk;
+        void this.deps.eventBus.emit('generation.chunk', {
+          floorId: input.floorId,
+          chunk,
+          accumulatedLength,
+        });
+        void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo: stepIndex });
+        input.onChunk?.(chunk);
+      };
+
+      const result = await this.deps.generationPipeline.run(
+        {
+          messages,
+          params: resolveSlotGenerationParams(input, 'narrator') ?? input.generationParams,
+          preProcess: input.preProcess,
+          postProcess: input.postProcess,
+          model: resolveSlotModel(input, 'narrator'),
+          abortSignal: input.abortSignal,
+          summaryOptions: input.summaryOptions,
+        },
+        {
+          onChunk: (chunk) => {
+            emitChunk(streamBuffer.process(chunk));
+          },
+        },
+      );
+      const trailing = streamBuffer.finalize();
+      if (trailing) {
+        emitChunk(trailing);
+      }
+
+      lastFinishReason = result.finishReason;
+
+      const visibleText = stripTextProtocolToolCallBlocksPreservingTrailingMalformed(result.text);
+
+      await this.deps.eventBus.emit('generation.completed', {
+        floorId: input.floorId,
+        text: visibleText,
+        usage: result.usage,
+        finishReason: result.finishReason,
+        summaries: result.summaries,
+      });
+
+      return {
+        visibleText,
+        rawText: result.rawText,
+        usage: result.usage,
+        finishReason: result.finishReason,
+        summaries: result.summaries,
+      };
+    };
+
+    const loop = new TextProtocolAgentLoop({ eventBus: this.deps.eventBus });
+    const loopResult = await loop.run({
+      floorId: input.floorId,
+      ...(input.pageId ? { pageId: input.pageId } : {}),
+      callerSlot: 'narrator',
+      initialMessages: input.messages,
+      tools: args.narratorTools,
+      toolContext: args.narratorToolContext,
+      permissions: input.toolPermissions!,
+      toolExecutor: args.toolExecutor,
+      generate,
+      decideConfirmation: loopConfig.decideConfirmation,
+      ...(loopConfig.resumeApprovedCall ? { resumeApprovedCall: loopConfig.resumeApprovedCall } : {}),
+      maxSteps,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+    });
+
+    const finishReason =
+      loopResult.stopReason === 'awaiting_confirmation'
+        ? 'awaiting_tool_confirmation'
+        : lastFinishReason;
+
+    const generation: GenerationOutput = {
+      text: loopResult.visibleText,
+      rawText: loopResult.visibleText,
+      summaries: loopResult.summaries,
+      usage: loopResult.totalUsage,
+      finishReason,
+    };
+
+    await this.notifyPendingOutputUpdate(input, {
+      text: generation.text,
+      state: 'generated',
+      attemptNo: loopResult.steps,
+      force: true,
+    });
+
+    const writeback = loopResult.toolResultWritebackText;
+    const writebackBlockCount = writeback ? writeback.split('\n\n').filter((block) => block.length > 0).length : 0;
+
+    const toolTransport: TurnExecutionResult['toolTransport'] = baseTransport
+      ? {
+          ...baseTransport,
+          parsing: {
+            blockCount: loopResult.parsing.blockCount,
+            acceptedCount: loopResult.parsing.acceptedCount,
+            rejectedCount: loopResult.parsing.rejectedCount,
+            diagnostics: loopResult.parsing.diagnostics,
+            diagnosticsByReason: groupToolCallDiagnosticsByReason(loopResult.parsing.diagnostics),
+          },
+          toolResult: {
+            writtenBack: writeback !== undefined,
+            blockCount: writebackBlockCount,
+            tokenCount: writeback ? (this.deps.tokenCounter?.count(writeback) ?? writeback.length) : 0,
+            budgetGroup: TEXT_PROTOCOL_TOOL_RESULT_BUDGET_GROUP,
+          },
+        }
+      : undefined;
+
+    return {
+      generation,
+      ...(writeback ? { toolResultWritebackText: writeback } : {}),
+      ...(toolTransport ? { toolTransport } : {}),
+      agentLoopStopReason: loopResult.stopReason,
+      agentLoopSteps: loopResult.steps,
+      ...(loopResult.pendingConfirmation
+        ? {
+            pendingToolConfirmation: {
+              callId: loopResult.pendingConfirmation.callId,
+              toolName: loopResult.pendingConfirmation.toolName,
+              args: loopResult.pendingConfirmation.args,
+              ...(loopResult.pendingConfirmation.sideEffectLevel
+                ? { sideEffectLevel: loopResult.pendingConfirmation.sideEffectLevel }
+                : {}),
+              conversationMessages: loopResult.conversationMessages,
+            },
+          }
+        : {}),
     };
   }
 

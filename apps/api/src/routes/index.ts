@@ -39,6 +39,7 @@ import { registerWorkspaceRoutes } from "./workspaces.js";
 import { registerProjectAgentBindingRoutes } from "./project-agent-bindings.js";
 import { registerProjectAgentJobRoutes } from "./project-agent-jobs.js";
 import { registerNodeGraphRoutes } from "./node-graphs.js";
+import { registerGraphAssistantToolPolicyRoutes } from "./graph-assistant-tool-policy.js";
 import { registerVcTagRoutes } from "./vc-tags.js";
 import type { AccountMode } from "../accounts/constants.js";
 
@@ -86,8 +87,9 @@ export async function registerCrudRoutes(
   await registerProjectAgentBindingRoutes(app, connection);
   await registerProjectAgentJobRoutes(app, connection);
   await registerNodeGraphRoutes(app, connection, {
-    workerEnabled: options.nodeGraphWorkerEnabled === true,
+  workerEnabled: options.nodeGraphWorkerEnabled === true,
   });
+  await registerGraphAssistantToolPolicyRoutes(app, connection);
   await registerCharacterRoutes(app, connection);
   await registerFloorRoutes(app, connection, {
     floorRun: options.floorRun,

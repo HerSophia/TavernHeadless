@@ -11,7 +11,11 @@
  * 修复后再保存，满足「阻断但不丢草稿」。
  */
 import {
+  buildCompatPromptFloorTemplate,
+  buildNativePromptFloorTemplate,
   createDefaultNodeTypeRegistry,
+  deriveSubgraphInterface,
+  NODE_GRAPH_GROUP_NODE_TYPE,
   type NodeGraphDocument,
   type NodeGraphEdge,
   type NodeGraphEdgeKind,
@@ -28,6 +32,7 @@ import {
   type NodeGraphVersionResponse,
 } from "../lib/nodegraph-api";
 import { SAMPLE_NODE_GRAPH_DOCUMENT } from "../modules/graph/canvas/sample-document";
+import { extractSubgraph } from "../modules/graph/subgraph/extract-subgraph";
 import {
   EMPTY_LOCAL_VALIDATION,
   validateGraphDocument,
@@ -94,6 +99,11 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   const graphId = ref<string | null>(null);
   const graphName = ref<string>("");
   const isSample = ref<boolean>(false);
+  /**
+   * DG11 / CG11-2：当前工作文档来自哪种「默认楼层模板」（可 fork 的同结构副本，未保存即新建图）。
+   * `null` = 非模板。`native` = native 默认楼层模板（DG11）；`compat` = compat 默认楼层模板（CG11-2）。
+   */
+  const templateKind = ref<"native" | "compat" | null>(null);
   const document = ref<NodeGraphDocument | null>(null);
   /** 工作文档所基于的版本 id（保存时作为 parent_version_id；草稿匹配亦用之）。 */
   const baseVersionId = ref<string | null>(null);
@@ -106,9 +116,16 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   const error = ref<string | null>(null);
   const selectedNodeId = ref<string | null>(null);
   const selectedEdgeId = ref<string | null>(null);
+  /** 选中的节点组 id（点击折叠节点组）；null = 未选中组。供右侧检视器展示输出通道开关。 */
+  const selectedGroupId = ref<string | null>(null);
+  /** 钻入（drill-in）的当前分组 id；null = 根图。 */
+  const activeGroupId = ref<string | null>(null);
   const draftRestored = ref<boolean>(false);
   /** 每次 load / 切换版本自增，供画布以 `:key` 重挂载（干净渲染并 fitView）。 */
   const loadToken = ref<number>(0);
+
+  /** 兼容保留：是否处于任一「默认楼层模板」态（fork 起点）。 */
+  const isTemplate = computed(() => templateKind.value !== null);
 
   const validation = computed(() =>
     document.value ? validateGraphDocument(document.value) : EMPTY_LOCAL_VALIDATION,
@@ -122,6 +139,11 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   const edgeCount = computed(() => document.value?.edges.length ?? 0);
   const groupCount = computed(() => document.value?.groups?.length ?? 0);
 
+  /** 当前钻入的分组（id 失效或不存在时为 null）。 */
+  const activeGroup = computed(
+    () => document.value?.groups?.find((group) => group.id === activeGroupId.value) ?? null,
+  );
+
   const selectedNode = computed<NodeGraphNode | null>(
     () => document.value?.nodes.find((node) => node.id === selectedNodeId.value) ?? null,
   );
@@ -130,6 +152,10 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   );
   const selectedNodeEntry = computed<NodeTypeRegistryEntry | undefined>(() =>
     selectedNode.value ? registry.find(selectedNode.value.type, selectedNode.value.typeVersion) : undefined,
+  );
+  /** 当前选中的节点组（id 失效或不存在时为 null）。 */
+  const selectedGroup = computed(
+    () => document.value?.groups?.find((group) => group.id === selectedGroupId.value) ?? null,
   );
 
   /** 可新增的内置节点类型（按 type / version 排序）。 */
@@ -210,6 +236,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     graphId.value = null;
     graphName.value = SAMPLE_NODE_GRAPH_DOCUMENT.name;
     isSample.value = true;
+    templateKind.value = null;
     baseVersionId.value = null;
     serverCurrentVersionId.value = null;
     versions.value = [];
@@ -217,7 +244,70 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     error.value = null;
     selectedNodeId.value = null;
     selectedEdgeId.value = null;
+    activeGroupId.value = null;
     draftRestored.value = false;
+    loadToken.value += 1;
+  }
+
+  /**
+   * DG11 / CG11-2：载入「默认楼层运行模板」为**全新可保存草稿**（fork 起点）。
+   *
+   * 模板是对应 system graph 的同结构、可 fork 副本（`@tavern/core` 单一事实源）：
+   * `native` = `system.native_prompt`（DG11）；`compat` = `system.compat_prompt`（CG11-2，零 Agentic）。
+   * 载入即标记 dirty（选定项目后点保存即新建一张普通可编辑图——「零配置可用」），系统图本身不受影响。
+   * `name` 可由调用方传入本地化显示名（缺省用模板内置英文名）。
+   */
+  function loadTemplate(kind: "native" | "compat" = "native", name?: string): void {
+    const source = kind === "compat" ? buildCompatPromptFloorTemplate() : buildNativePromptFloorTemplate();
+    const next = cloneGraphDocument(source);
+    if (name && name.trim().length > 0) {
+      next.name = name.trim();
+    }
+    document.value = next;
+    graphId.value = null;
+    graphName.value = next.name;
+    isSample.value = false;
+    templateKind.value = kind;
+    baseVersionId.value = null;
+    serverCurrentVersionId.value = null;
+    versions.value = [];
+    error.value = null;
+    selectedNodeId.value = null;
+    selectedEdgeId.value = null;
+    selectedGroupId.value = null;
+    activeGroupId.value = null;
+    draftRestored.value = false;
+    dirty.value = true;
+    loadToken.value += 1;
+  }
+
+  /**
+   * 载入一份外部导入的文档（如酒馆预设转换结果）为**全新未保存草稿**：
+   * 无 graphId（保存时走新建），标记 dirty 以便选定项目后可另存为版本。
+   */
+  function importPreset(
+    doc: NodeGraphDocument,
+    name?: string,
+    target?: { graphId: string; baseVersionId: string | null },
+  ): void {
+    const next = cloneGraphDocument(doc);
+    if (name && name.trim().length > 0) {
+      next.name = name.trim();
+    }
+    document.value = next;
+    graphId.value = target?.graphId ?? null;
+    graphName.value = next.name;
+   isSample.value = false;
+    templateKind.value = null;
+    baseVersionId.value = target?.baseVersionId ?? null;
+    serverCurrentVersionId.value = target?.baseVersionId ?? null;
+    versions.value = [];
+    error.value = null;
+    selectedNodeId.value = null;
+    selectedEdgeId.value = null;
+    activeGroupId.value = null;
+    draftRestored.value = false;
+    dirty.value = true;
     loadToken.value += 1;
   }
 
@@ -226,12 +316,14 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     error.value = null;
     selectedNodeId.value = null;
     selectedEdgeId.value = null;
+    activeGroupId.value = null;
     draftRestored.value = false;
     try {
       const result = await nodeGraphApi.get(projectId, id);
       graphId.value = result.definition.id;
       graphName.value = result.definition.name;
       isSample.value = false;
+      templateKind.value = null;
       serverCurrentVersionId.value = result.definition.current_version_id;
       if (!result.current_version) {
         document.value = null;
@@ -269,6 +361,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     draftRestored.value = false;
     selectedNodeId.value = null;
     selectedEdgeId.value = null;
+    activeGroupId.value = null;
     error.value = null;
     loadToken.value += 1;
   }
@@ -309,6 +402,8 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     }
     if (isSample.value) {
       loadSample();
+    } else if (templateKind.value) {
+      loadTemplate(templateKind.value, graphName.value);
     }
   }
 
@@ -331,6 +426,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
         graphId.value = result.definition.id;
         graphName.value = result.definition.name;
         isSample.value = false;
+        templateKind.value = null;
         serverCurrentVersionId.value = result.definition.current_version_id;
         baseVersionId.value = result.version.id;
         document.value = cloneGraphDocument(result.version.document);
@@ -361,6 +457,31 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
       saving.value = false;
     }
   }
+  /**
+   * 硬删除当前已保存的图定义本身（连同其所有版本），随后回到示例图。
+   *
+   * 仅对已保存的图（有graphId、非示例图）有效；示例图 / 未保存草稿无需删除。
+   * 删除「数据存在本身」，区别于清空节点。后端若因运行历史拒绝（409），错误会回填 `error`。
+   */
+  async function deleteGraph(projectId: string): Promise<boolean> {
+    if (!graphId.value || isSample.value) {
+      return false;
+    }
+    saving.value = true;
+    error.value = null;
+    try {
+      await nodeGraphApi.remove(projectId, graphId.value);
+      clearDraft();
+      loadSample();
+      return true;
+    } catch (cause) {
+      error.value = describeError(cause);
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
 
   // —— 编辑动作（就地变更 + markDirty）——
 
@@ -510,6 +631,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     selectedNodeId.value = nodeId;
     if (nodeId) {
       selectedEdgeId.value = null;
+      selectedGroupId.value = null;
     }
   }
 
@@ -517,12 +639,254 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     selectedEdgeId.value = edgeId;
     if (edgeId) {
       selectedNodeId.value = null;
+      selectedGroupId.value = null;
+    }
+  }
+
+  /** 选中一个节点组（折叠节点组）；传 null 清除组选中。选中组时清除节点/边选中。 */
+  function selectGroup(groupId: string | null): void {
+    selectedGroupId.value = groupId;
+    if (groupId) {
+      selectedNodeId.value = null;
+      selectedEdgeId.value = null;
     }
   }
 
   function clearSelection(): void {
     selectedNodeId.value = null;
     selectedEdgeId.value = null;
+    selectedGroupId.value = null;
+  }
+
+  /**
+   * 「Extract to NodeGroup」：把一个组抽取为**可复用子图定义**（持久化为普通 NodeGraph 定义），
+   * 并在父图原处替换为单个 `group.node` 实例（引用该定义 + 接口缓存）。需项目上下文与
+   * `project.nodegraph.write`。成功后父图标记 dirty（可另存为新版本），并选中新建的 group.node。
+   */
+  async function extractGroupToNodeGroup(projectId: string, groupId: string): Promise<boolean> {
+    const doc = document.value;
+    if (!doc) {
+      return false;
+    }
+    const extracted = extractSubgraph(doc, groupId);
+    if ("error" in extracted) {
+      error.value = `extract_failed:${extracted.error}`;
+      return false;
+    }
+    saving.value = true;
+    error.value = null;
+    try {
+      const created = await nodeGraphApi.create(
+        projectId,
+        { ...cloneGraphDocument(extracted.subDocument), graphId: "" },
+        extracted.subDocument.name || null,
+      );
+      const parent = cloneGraphDocument(extracted.parentDocument);
+      const groupNode = parent.nodes.find((node) => node.id === extracted.groupNodeId);
+      if (groupNode && groupNode.config && typeof groupNode.config === "object") {
+        (groupNode.config as { ref: { graphId: string; versionId?: string } }).ref = {
+          graphId: created.definition.id,
+          versionId: created.version.id,
+        };
+      }
+      document.value = parent;
+      activeGroupId.value = null;
+      selectedNodeId.value = extracted.groupNodeId;
+      selectedEdgeId.value = null;
+      markDirty();
+      return true;
+    } catch (cause) {
+      error.value = describeError(cause);
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  /**
+   * SG11-2：把一个**内置顾问子图**（director / verifier / memory）插入当前图。
+   *
+   * 先把内置子图 fork 进当前项目（持久化为 `metadata.subgraph=true` 的普通定义），再在画布放置一个
+   * `group.node` 实例引用它（ref + 反规范化接口缓存，与 Extract to NodeGroup 同构）。需项目上下文与
+   * `project.nodegraph.write`。成功后父图标记 dirty 并选中新建的 group.node。
+   */
+  async function insertBuiltinAdvisorSubgraph(projectId: string, builtin: NodeGraphDocument): Promise<boolean> {
+    const doc = document.value;
+    if (!doc) {
+      return false;
+    }
+    saving.value = true;
+    error.value = null;
+    try {
+      const created = await nodeGraphApi.create(
+        projectId,
+        { ...cloneGraphDocument(builtin), graphId: "" },
+        builtin.name || null,
+      );
+      const iface = deriveSubgraphInterface(builtin);
+      // group.node 相位取被引用子图的内核（非边界）节点相位，缺省 pre_response。
+      const innerPhase =
+        builtin.nodes.find((node) => node.type !== "group.input" && node.type !== "group.output")?.phase
+        ?? "pre_response";
+      const node: NodeGraphNode = {
+        id: generateNodeId(doc, NODE_GRAPH_GROUP_NODE_TYPE),
+        type: NODE_GRAPH_GROUP_NODE_TYPE,
+        typeVersion: "1",
+        name: builtin.name,
+        phase: innerPhase,
+        config: {
+          ref: { graphId: created.definition.id, versionId: created.version.id },
+          interface: iface,
+        },
+      };
+      const position = nextNodePosition(doc);
+      if (position) {
+        node.ui = { position };
+      }
+      doc.nodes.push(node);
+      selectedNodeId.value = node.id;
+      selectedEdgeId.value = null;
+      markDirty();
+      return true;
+    } catch (cause) {
+      error.value = describeError(cause);
+      return false;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  /**
+   * 节点组「开关」：无需钻入组内部即可整体启停其绑定节点。把开关位写入 `group.enabled`，
+   * 并同步所有成员 `node.enabled`（开 → 清除禁用；关 → 置 `enabled:false`）——运行时仍只读
+   * `node.enabled`，故开关即时生效、无需新增运行时语义。
+   */
+  function setGroupEnabled(groupId: string, enabled: boolean): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    const group = doc.groups?.find((candidate) => candidate.id === groupId);
+    if (!group) {
+      return;
+    }
+    group.enabled = enabled;
+    for (const nodeId of group.nodeIds) {
+      const node = doc.nodes.find((candidate) => candidate.id === nodeId);
+      if (!node) {
+        continue;
+      }
+      if (enabled) {
+        delete node.enabled;
+      } else {
+        node.enabled = false;
+      }
+    }
+    markDirty();
+  }
+
+  /**
+   * 节点组折叠/展开：`collapsed=true` 时该子图组在画布上对外表现为单个折叠节点（Blender 式），
+   * 双击进入其内部子图；`false` 则铺开为区域包围盒。纯展示态。
+   */
+  function setGroupCollapsed(groupId: string, collapsed: boolean): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    const group = doc.groups?.find((candidate) => candidate.id === groupId);
+    if (!group) {
+      return;
+    }
+    group.collapsed = collapsed;
+    markDirty();
+  }
+
+  /**
+   * 节点组输出通道「显式开关」：把通道 handle id（`out:<memberNodeId>:<port>`）写入/移出
+   * `group.disabledChannels`。纯展示/编排显示状态——关闭后该通道在画布上灰显标签、
+   * 虚化连线，但不改写底层数据与边。
+   */
+  function setGroupChannelEnabled(groupId: string, channelId: string, enabled: boolean): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    const group = doc.groups?.find((candidate) => candidate.id === groupId);
+    if (!group) {
+      return;
+    }
+    const next = new Set(group.disabledChannels ?? []);
+    if (enabled) {
+      next.delete(channelId);
+    } else {
+      next.add(channelId);
+    }
+    if (next.size === 0) {
+      delete group.disabledChannels;
+    } else {
+      group.disabledChannels = [...next];
+    }
+    markDirty();
+  }
+
+  /**
+   * 移动折叠节点组：折叠节点位置由成员坐标的最小角派生，故按「新位置 - 当前最小角」的位移
+   * 整体平移所有成员，保留其内部相对布局。
+   */
+  function moveCollapsedGroup(groupId: string, position: { x: number; y: number }): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    const group = doc.groups?.find((candidate) => candidate.id === groupId);
+    if (!group) {
+      return;
+    }
+    const members = group.nodeIds
+      .map((nodeId) => doc.nodes.find((node) => node.id === nodeId))
+      .filter((node): node is NodeGraphNode => Boolean(node));
+    if (members.length === 0) {
+      return;
+    }
+    // 仅依据「有坐标」的成员推导整体最小角与位移，避免把缺省坐标当成 (0,0) 拉偏整组。
+    const positioned = members
+      .map((node) => node.ui?.position)
+      .filter((position): position is { x: number; y: number } => Boolean(position));
+    const minX = positioned.length > 0 ? Math.min(...positioned.map((p) => p.x)) : 0;
+    const minY = positioned.length > 0 ? Math.min(...positioned.map((p) => p.y)) : 0;
+    const dx = position.x - minX;
+    const dy = position.y - minY;
+    if (positioned.length === members.length && dx === 0 && dy === 0) {
+      return;
+    }
+    // 缺省坐标的成员按列堆叠落位，避免「全部落在同一点」导致重叠。
+    let stackOffset = 0;
+    for (const node of members) {
+      const base = node.ui?.position;
+      if (base) {
+        node.ui = { ...node.ui, position: { x: base.x + dx, y: base.y + dy } };
+      } else {
+        node.ui = { ...node.ui, position: { x: position.x, y: position.y + stackOffset } };
+        stackOffset += 160;
+      }
+    }
+    markDirty();
+  }
+
+  /** 钻入某分组（drill-in）：仅当该组存在时生效。 */
+  function enterGroup(groupId: string): void {
+    if (document.value?.groups?.some((group) => group.id === groupId)) {
+      activeGroupId.value = groupId;
+      selectedNodeId.value = null;
+      selectedEdgeId.value = null;
+      selectedGroupId.value = null;
+    }
+  }
+
+  /** 退出钻入，回到根图。 */
+  function exitGroup(): void {
+    activeGroupId.value = null;
   }
 
   return {
@@ -530,6 +894,8 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     graphId,
     graphName,
     isSample,
+    isTemplate,
+    templateKind,
     document,
     baseVersionId,
     serverCurrentVersionId,
@@ -538,8 +904,10 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     loading,
     saving,
     error,
-    selectedNodeId,
+      selectedNodeId,
     selectedEdgeId,
+    selectedGroupId,
+    activeGroupId,
     draftRestored,
     loadToken,
     // derived
@@ -551,18 +919,23 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     nodeCount,
     edgeCount,
     groupCount,
+    activeGroup,
     selectedNode,
     selectedEdge,
+    selectedGroup,
     selectedNodeEntry,
     availableNodeTypes,
     canSaveVersion,
     // actions
     loadSample,
+    loadTemplate,
+    importPreset,
     loadGraph,
     loadVersion,
     setAsCurrentVersion,
     discardDraft,
     saveAsNewVersion,
+    deleteGraph,
     renameGraph,
     addNode,
     removeNode,
@@ -574,7 +947,16 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     removeEdge,
     selectNode,
     selectEdge,
+    selectGroup,
     clearSelection,
+    setGroupEnabled,
+    setGroupCollapsed,
+    setGroupChannelEnabled,
+    moveCollapsedGroup,
+    enterGroup,
+    exitGroup,
+    extractGroupToNodeGroup,
+    insertBuiltinAdvisorSubgraph,
   };
 });
 

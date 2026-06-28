@@ -540,4 +540,35 @@ describe("NodeGraph routes", () => {
     });
     expect(denied.statusCode).toBe(403);
   });
+
+  it("hard-deletes a graph definition (manage only) and removes it from the list", async () => {
+    await testApp.app.inject({
+      method: "POST",
+      url: `/projects/${PROJECT_ID}/node-graphs`,
+      headers: authHeaders(OWNER_KEY),
+      payload: { document: createMvpDocument("ngraph_delete") },
+    });
+
+    const denied = await testApp.app.inject({
+      method: "DELETE",
+      url: `/projects/${PROJECT_ID}/node-graphs/ngraph_delete`,
+      headers: authHeaders(OBSERVER_KEY),
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const deleted = await testApp.app.inject({
+      method: "DELETE",
+      url: `/projects/${PROJECT_ID}/node-graphs/ngraph_delete`,
+      headers: authHeaders(OWNER_KEY),
+    });
+    expect(deleted.statusCode).toBe(204);
+
+    const list = await testApp.app.inject({
+      method: "GET",
+      url: `/projects/${PROJECT_ID}/node-graphs`,
+      headers: authHeaders(OWNER_KEY),
+    });
+    expect(list.json().items.some((g: { id: string }) => g.id === "ngraph_delete")).toBe(false);
+  });
+
 });

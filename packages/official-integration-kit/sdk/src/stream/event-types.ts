@@ -54,7 +54,16 @@ export type TavernRespondRunPayload = {
   runId: string; runType: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate"; startedAt: number; status: "running" | "completed" | "failed" | "cancelled"; updatedAt: number; verifier?: TavernRespondRunVerifierPayload | null;
 };
 
-export type TavernRespondToolPhase = "start" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+export type TavernRespondToolPhase =
+  | "start"
+  | "success"
+  | "error"
+  | "denied"
+  | "timeout"
+  | "uncertain"
+  | "blocked"
+  // 图助手「执行前确认闸」：工具在执行前暂停，等待用户批准 / 拒绝。
+  | "awaiting_confirmation";
 export type TavernRespondToolReplaySafety = "safe" | "confirm_on_replay" | "never_auto_replay" | "uncertain";
 export type TavernRespondToolProviderType = "builtin" | "preset" | "mcp" | "unknown";
 export type TavernRespondToolSideEffectLevel = "none" | "sandbox" | "irreversible";
@@ -69,6 +78,10 @@ export type TavernRespondToolPayload = {
   replaySafety: TavernRespondToolReplaySafety;
   sideEffectLevel?: TavernRespondToolSideEffectLevel;
   toolName: string;
+  /** 仅 phase=awaiting_confirmation 时存在：模型生成的工具调用 id。 */
+  callId?: string;
+  /** 仅 phase=awaiting_confirmation 时存在：待确认调用的参数快照。 */
+  args?: Record<string, unknown>;
 };
 
 export type TavernRespondErrorPayload = {

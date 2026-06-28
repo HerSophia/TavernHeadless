@@ -226,14 +226,20 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
     const payload = parsed as Record<string, unknown> | null;
     const executionId = readOptionalString(payload?.execution_id);
     const toolName = readOptionalString(payload?.tool_name);
-    const providerId = readOptionalString(payload?.provider_id);
+    // awaiting_confirmation 在工具执行前发生，尚无 provider，providerId 可能为空串。
+    const providerId = readOptionalString(payload?.provider_id) ?? "";
     const phase = readToolPhase(payload?.phase);
     const replaySafety = readToolReplaySafety(payload?.replay_safety);
 
-    if (!executionId || !toolName || !providerId || !phase || !replaySafety) {
+    if (!executionId || !toolName || !phase || !replaySafety) {
+      return null;
+    }
+    if (phase !== "awaiting_confirmation" && !providerId) {
       return null;
     }
 
+    const callId = readOptionalString(payload?.call_id);
+    const args = readArgsRecord(payload?.args);
     const toolPayload: TavernRespondToolPayload = {
       executionId,
       toolName,
@@ -246,6 +252,8 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
       ...(typeof readOptionalNumber(payload?.duration_ms) === "number"
         ? { durationMs: readOptionalNumber(payload?.duration_ms) }
         : {}),
+      ...(callId ? { callId } : {}),
+      ...(args ? { args } : {}),
     };
 
     return { payload: toolPayload, type: "tool" };
@@ -355,6 +363,7 @@ function readToolPhase(value: unknown): TavernRespondToolPhase | undefined {
     || value === "timeout"
     || value === "uncertain"
     || value === "blocked"
+    || value === "awaiting_confirmation"
     ? value
     : undefined;
 }
@@ -379,6 +388,13 @@ function readToolProviderType(value: unknown): TavernRespondToolProviderType | u
 
 function readToolSideEffectLevel(value: unknown): TavernRespondToolSideEffectLevel | undefined {
   return value === "none" || value === "sandbox" || value === "irreversible" ? value : undefined;
+}
+
+/** 仅把纯对象（非数组 / 非 null）作为工具调用参数快照接受。 */
+function readArgsRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function readRunType(value: unknown): TavernRespondRunPayload["runType"] | undefined {

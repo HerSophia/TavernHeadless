@@ -166,6 +166,26 @@ export interface NodeGraphGroup {
   exposedConfig?: NodeGraphExposedGroupConfig[];
   nodeIds: string[];
   version?: string;
+  /**
+   * 节点组级「开关」（小部件）：无需钻入组内部即可整体启停其成员节点。
+   * 缺省（undefined）= 开（成员各自的 `node.enabled` 生效）。开关与成员 `node.enabled`
+   * 保持同步（关 → 成员置 `enabled:false`；开 → 成员清除禁用）；运行时仍只读 `node.enabled`，
+   * 因此本字段不引入新的运行时语义，仅为「绑定节点的成组启停」提供持久化状态与 UI 锚点。
+   */
+  enabled?: boolean;
+  /**
+   * UI 折叠态：`true` 时该子图组在画布上**对外表现为单个节点**（Blender 式 NodeGroup，
+   * 左入右出的接口端口由跨边界连线派生），双击该节点即可钻入其内部子图；`false`/缺省时
+   * 铺开为包围盒区域。纯展示状态，不影响校验/运行。
+   */
+  collapsed?: boolean;
+  /**
+   * UI 输出通道显式关闭集合：折叠节点组对外暴露的「输出通道」（组内成员→ 外部连线派生）
+   * 可被逐条显式开关，关闭项以其通道 handle id（`out:<memberNodeId>:<port>`）记入本集合。
+   * 纯展示/编排显示状态：被关闭的通道在画布上灰显标签、虚化连线，但不改写底层数据与边。
+   * 缺省/空数组 = 全部通道开启。
+   */
+  disabledChannels?: string[];
   /** NG2-CORE：节点组级 checkpoint 复用策略。 */
   checkpointPolicy?: NodeGraphRetryPolicy;
 }

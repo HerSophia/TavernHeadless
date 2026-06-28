@@ -18,6 +18,7 @@ import {
 import { registerTemporaryConversationRoutes } from "../src/routes/temporary-conversations.js";
 import type { ChatService } from "../src/services/chat/chat-service.js";
 import { TemporaryConversationService } from "../src/services/temporary-conversation-service.js";
+import { GraphAssistantToolConfirmationService } from "../src/services/graph-assistant-tool-confirmation-service.js";
 import { SessionBranchRegistryService } from "../src/services/variables/host/session-branch-registry-service.js";
 
 describe("temporary conversation routes", () => {
@@ -367,6 +368,106 @@ describe("temporary conversation routes", () => {
       restricted: false,
     });
   });
+
+    it("lists pending tool calls and resolves them via approve/reject routes", async () => {
+    const { conversationId, scope } = await seedGraphAssistantConversation(app, database, "Pending Project");
+
+    const confirmationService = new GraphAssistantToolConfirmationService(database);
+    const approveRecord = confirmationService.createPending({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId,
+      branchId: "main",
+      floorId: "floor_pending",
+      callId: "call_approve",
+      toolName: "nodegraph.graph.create",
+      args: { name: "demo" },
+      sideEffectLevel: "sandbox",
+      conversationMessages: [{ role: "user", content: "建图" }],
+      agentSteps: 1,
+    });
+    const rejectRecord = confirmationService.createPending({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId,
+      branchId: "main",
+      floorId: "floor_pending",
+      callId: "call_reject",
+      toolName: "nodegraph.node.add",
+      args: { id: "n1" },
+      sideEffectLevel: "sandbox",
+      conversationMessages: [{ role: "user", content: "加节点" }],
+      agentSteps: 1,
+    });
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: `/temporary-conversations/${conversationId}/pending-tool-calls`,
+    });
+    expect(listResponse.statusCode, listResponse.body).toBe(200);
+    const listed = listResponse.json<{ items: Array<{ id: string; tool_name: string; call_id: string }> }>().items;
+    expect(listed.map((item) => item.call_id)).toEqual(["call_approve", "call_reject"]);
+
+    const rejectResponse =await app.inject({
+      method: "POST",
+    url: `/temporary-conversations/${conversationId}/pending-tool-calls/${rejectRecord.id}`,
+      payload: { decision: "reject" },
+    });
+    expect(rejectResponse.statusCode, rejectResponse.body).toBe(200);
+    expect(rejectResponse.json<{ data: { decision: string } }>().data.decision).toBe("rejected");
+    expect(confirmationService.getById(rejectRecord.id)?.status).toBe("rejected");
+
+   const approveResponse = await app.inject({
+      method: "POST",
+      url: `/temporary-conversations/${conversationId}/pending-tool-calls/${approveRecord.id}`,
+ payload: { decision: "approve" },
+    });
+    expect(approveResponse.statusCode, approveResponse.body).toBe(200);
+    const approveData = approveResponse.json<{ data: { decision: string; result: { generated_text: string } } }>().data;
+    expect(approveData.decision).toBe("approved");
+    expect(approveData.result.generated_text).toContain("reply:");
+    expect(confirmationService.getById(approveRecord.id)?.status).toBe("approved");
+  });
+
+  it("returns 404 for unknown pending tool call and 409 for already-resolved ones", async () => {
+  const { conversationId, scope } = await seedGraphAssistantConversation(app, database, "Pending Error Project");
+
+    const notFound = await app.inject({
+      method: "POST",
+      url: `/temporary-conversations/${conversationId}/pending-tool-calls/gaptc_missing`,
+      payload: { decision: "approve" },
+    });
+    expect(notFound.statusCode, notFound.body).toBe(404);
+    expect(notFound.json<{ error: { code: string } }>().error.code).toBe("pending_tool_call_not_found");
+
+    const confirmationService = new GraphAssistantToolConfirmationService(database);
+    const record = confirmationService.createPending({
+      workspaceId: scope.workspaceId,
+      projectId: scope.projectId,
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId,
+      branchId: "main",
+        floorId: "floor_pending",
+      callId: "call_done",
+      toolName: "nodegraph.graph.create",
+      args: {},
+      sideEffectLevel: "sandbox",
+      conversationMessages: [{ role: "user", content: "x" }],
+      agentSteps: 1,
+    });
+    confirmationService.reject(record.id);
+
+    const conflict = await app.inject({
+      method: "POST",
+      url: `/temporary-conversations/${conversationId}/pending-tool-calls/${record.id}`,
+      payload: { decision: "approve" },
+    });
+    expect(conflict.statusCode, conflict.body).toBe(409);
+    expect(conflict.json<{ error: { code: string } }>().error.code).toBe("pending_tool_call_not_pending");
+  });
+
 });
 
 function createMockChatService(database: DatabaseConnection["db"]): ChatService {
@@ -441,10 +542,42 @@ function createMockChatService(database: DatabaseConnection["db"]): ChatService 
   } as unknown as ChatService;
 }
 
+/**
+ * 创建一个挂在真实 project 作用域下的图助手临时对话。
+ *
+ * 待确认表的 workspace_id / project_id 带外键约束，所以需要真实的作用域 ID。
+ * 返回会话 ID 与其作用域，供登记待确认记录使用。
+ */
+async function seedGraphAssistantConversation(
+  app: FastifyInstance,
+  database: DatabaseConnection["db"],
+  name: string,
+): Promise<{
+  conversationId: string;
+  scope: { workspaceId: string; projectId: string };
+}> {
+  const projectId = await seedProject(database, name);
+  const projectRow = await database
+    .select({ workspaceId: projects.workspaceId })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+  const workspaceId = String(projectRow[0]?.workspaceId);
+
+  const createResponse = await app.inject({
+    method: "POST",
+    url: `/projects/${projectId}/temporary-conversations`,
+    payload: {purpose: "graph-assistant" },
+  });
+  expect(createResponse.statusCode, createResponse.body).toBe(201);
+  const conversationId = String(createResponse.json<{ data: Record<string, unknown> }>().data.id);
+
+  return { conversationId, scope: { workspaceId,projectId } };
+}
+
 async function seedSession(
   db: DatabaseConnection["db"],
   input: {
-    title: string;
+       title: string;
     metadataJson?: string | null;
   },
 ): Promise<string> {

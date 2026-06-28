@@ -3,10 +3,13 @@ import type { EdgeMarker } from "@vue-flow/core";
 import { describe, expect, it } from "vitest";
 
 import {
+  COLLAPSED_NODE_ID_PREFIX,
+  GROUP_COLLAPSED_NODE_TYPE,
   GROUP_NODE_TYPE,
   NODE_WIDTH,
   TAVERN_NODE_TYPE,
   mapDocumentToFlow,
+  type GraphCollapsedGroupNodeData,
   type GraphFlowNode,
   type GraphGroupNodeData,
   type GraphTavernNodeData,
@@ -26,10 +29,10 @@ describe("mapDocumentToFlow", () => {
   it("maps a v2 document with groups and control edges", () => {
     const { nodes, edges } = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT);
 
-    // 12 个文档节点 + 1 个分组容器
-    expect(nodes).toHaveLength(13);
-    expect(nodes.filter((node) => node.type === TAVERN_NODE_TYPE)).toHaveLength(12);
-    expect(nodes.filter((node) => node.type === GROUP_NODE_TYPE)).toHaveLength(1);
+    // 23 个文档节点 + 3 个分组容器
+    expect(nodes).toHaveLength(26);
+    expect(nodes.filter((node) => node.type === TAVERN_NODE_TYPE)).toHaveLength(23);
+    expect(nodes.filter((node) => node.type === GROUP_NODE_TYPE)).toHaveLength(3);
     // 分组容器排在最前（绘制于成员之后）
     expect(nodes[0]?.type).toBe(GROUP_NODE_TYPE);
 
@@ -42,6 +45,27 @@ describe("mapDocumentToFlow", () => {
         y: expect.any(Number),
       });
     }
+  });
+
+  it("prefers an explicit node name over the registry title", () => {
+    const document: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: "named",
+      name: "named",
+      mode: "native_graph",
+      nodes: [
+        // source.user_input 注册表标题为 "User Input"，但带 name 时应显示 name（slot 名）。
+        { id: "n1", type: "source.user_input", typeVersion: "1", phase: "pre_response", name: "Main Prompt" },
+        // 无 name → 回退注册表标题。
+        { id: "n2", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+      ],
+      edges: [],
+      policies: {},
+    };
+
+    const { nodes } = mapDocumentToFlow(document);
+    expect(tavernData(nodes, "n1").title).toBe("Main Prompt");
+    expect(tavernData(nodes, "n2").title).toBe("User Input");
   });
 
   it("encodes registry metadata onto node data", () => {
@@ -66,8 +90,7 @@ describe("mapDocumentToFlow", () => {
 
     const controlEdges = edges.filter((edge) => edge.data?.kind === "control");
     expect(controlEdges.map((edge) => edge.id).sort()).toEqual([
-      "c_branch_narrator",
-      "c_gate_compose",
+      "c_gate_lore",
     ]);
     for (const edge of controlEdges) {
       expect((edge.style as Record<string, unknown>).strokeDasharray).toBeDefined();
@@ -161,22 +184,199 @@ describe("mapDocumentToFlow", () => {
     expect(data.outputPorts).toHaveLength(0);
   });
 
+  it("drills into a group: renders only its members and intra-group edges", () => {
+    const { nodes, edges } = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT, { focusGroupId: "g_preflight" });
+
+    // 仅 g_preflight 的 5 个成员，无分组容器。
+    expect(nodes.filter((node) => node.type === GROUP_NODE_TYPE)).toHaveLength(0);
+    expect(nodes.filter((node) => node.type === TAVERN_NODE_TYPE).map((node) => node.id).sort()).toEqual([
+      "n_agency_pre",
+      "n_cond",
+      "n_director",
+      "n_gate",
+      "n_lore",
+    ]);
+    // 仅组内边（n_cond→n_gate 与 gate→lore 控制边），跨组边（n_wb→…）被隐藏。
+    expect(edges.map((edge) => edge.id).sort()).toEqual(["c_gate_lore", "e_cond_gate"]);
+  });
+  it("de-overlaps drilled-in members whose explicit positions collide", () => {
+    // 构造一个组，其成员被写入了相同坐标（模拟被写坏的数据）。
+    const document: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: "overlap",
+      name: "overlap",
+      mode: "native_graph",
+      nodes: [
+        { id: "m1", type: "compose.template_render", typeVersion: "1", phase: "pre_response", ui: { position: { x: 100, y: 100 } } },
+        { id: "m2", type: "compose.template_render", typeVersion: "1", phase: "pre_response", ui: { position: { x: 100, y: 100 } } },
+        { id: "m3", type: "compose.template_render", typeVersion: "1", phase: "pre_response", ui: { position: { x: 100, y: 100 } } },
+      ],
+      edges: [],
+      groups: [{ id: "g", name: "G", kind: "subgraph", nodeIds: ["m1", "m2", "m3"] }],
+      policies: {},
+    };
+
+    const { nodes } = mapDocumentToFlow(document, { focusGroupId: "g" });
+    const tavern = nodes.filter((node) => node.type === TAVERN_NODE_TYPE);
+    const positionKeys = new Set(tavern.map((node) => `${Math.round(node.position.x)}:${Math.round(node.position.y)}`));
+    // 检测到重叠后应回退占位布局，三个成员坐标互不相同。
+    expect(positionKeys.size).toBe(3);
+  });
+
+
+  it("falls back to the full graph when the focus group id is unknown", () => {
+    const { nodes } = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT, { focusGroupId: "does_not_exist" });
+    expect(nodes).toHaveLength(26);
+  });
+
+  it("renders group.node ports from its interface cache", () => {
+    const document: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: "gn",
+      name: "gn",
+      mode: "native_graph",
+      nodes: [
+        {
+          id: "g",
+          type: "group.node",
+          typeVersion: "1",
+          phase: "pre_response",
+          name: "My Group",
+          config: {
+            ref: { graphId: "sub" },
+            interface: { inputs: [{ name: "q", type: "text" }], outputs: [{ name: "r", type: "json" }] },
+          },
+        },
+      ],
+      edges: [],
+      policies: {},
+    };
+
+    const { nodes } = mapDocumentToFlow(document);
+    const data = tavernData(nodes, "g");
+    expect(data.inputPorts.map((port) => port.name)).toEqual(["q"]);
+    expect(data.outputPorts.map((port) => port.name)).toEqual(["r"]);
+  });
+
   it("computes a group container bounding box covering its members", () => {
     const { nodes } = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT);
 
-    const groupNode = nodes.find((node) => node.id === "group:g_pre");
+    const groupNode = nodes.find((node) => node.id === "group:g_preflight");
     expect(groupNode).toBeDefined();
     expect(groupNode?.type).toBe(GROUP_NODE_TYPE);
 
     const data = groupNode!.data as GraphGroupNodeData;
     expect(data.kind).toBe("group");
-    expect(data.group.id).toBe("g_pre");
-    expect(data.memberCount).toBe(4);
+    expect(data.group.id).toBe("g_preflight");
+    expect(data.memberCount).toBe(5);
+    // 样例图成员均启用 → 组开关呈「开」。
+    expect(data.switchState).toBe("on");
 
     const style = groupNode!.style as Record<string, string>;
     expect(style.width).toMatch(/px$/);
     expect(style.height).toMatch(/px$/);
     expect(groupNode!.selectable).toBe(false);
     expect(groupNode!.draggable).toBe(false);
+  });
+});
+
+describe("mapDocumentToFlow · collapsed node groups", () => {
+  function collapsedDoc(collapsed: boolean): NodeGraphDocument {
+    return {
+      schemaVersion: 2,
+      graphId: "c",
+      name: "c",
+      mode: "native_graph",
+      nodes: [
+        { id: "ext", type: "source.user_input", typeVersion: "1", phase: "pre_response", ui: { position: { x: 0, y: 0 } } },
+        { id: "a", type: "compose.template_render", typeVersion: "1", phase: "pre_response", ui: { position: { x: 300, y: 0 } } },
+        { id: "b", type: "compose.final_messages", typeVersion: "1", phase: "response", ui: { position: { x: 600, y: 0 } } },
+        { id: "ext2", type: "output.commit_gate", typeVersion: "1", phase: "commit", ui: { position: { x: 900, y: 0 } } },
+      ],
+      edges: [
+        { id: "e_in", from: { nodeId: "ext", port: "text" }, to: { nodeId: "a", port: "blocks" } },
+        { id: "e_ab", from: { nodeId: "a", port: "block" }, to: { nodeId: "b", port: "blocks" } },
+        { id: "e_out", from: { nodeId: "b", port: "messages" }, to: { nodeId: "ext2", port: "text" } },
+      ],
+      groups: [{ id: "grp", name: "Grp", kind: "subgraph", collapsed, nodeIds: ["a", "b"] }],
+      policies: {},
+    };
+  }
+
+  it("renders a collapsed subgraph group as a single node with derived interface ports", () => {
+    const { nodes, edges } = mapDocumentToFlow(collapsedDoc(true));
+
+    // 折叠节点存在；成员 a/b 隐藏；无包围盒容器；外部节点照常。
+    const collapsed = nodes.find((n) => n.id === `${COLLAPSED_NODE_ID_PREFIX}grp`);
+    expect(collapsed?.type).toBe(GROUP_COLLAPSED_NODE_TYPE);
+    expect(nodes.some((n) => n.id === "a")).toBe(false);
+    expect(nodes.some((n) => n.id === "b")).toBe(false);
+    expect(nodes.some((n) => n.id === "group:grp")).toBe(false);
+    expect(nodes.some((n) => n.id === "ext")).toBe(true);
+    expect(nodes.some((n) => n.id === "ext2")).toBe(true);
+
+    const data = collapsed!.data as GraphCollapsedGroupNodeData;
+    expect(data.kind).toBe("groupCollapsed");
+    expect(data.memberCount).toBe(2);
+    expect(data.inputs.map((h) => h.id)).toEqual(["in:a:blocks"]);
+    expect(data.outputs.map((h) => h.id)).toEqual(["out:b:messages"]);
+
+    // 跨界边重路由到折叠节点端口；组内边隐藏。
+    const eIn = edges.find((e) => e.id === "e_in");
+    expect(eIn?.source).toBe("ext");
+    expect(eIn?.target).toBe(`${COLLAPSED_NODE_ID_PREFIX}grp`);
+    expect(eIn?.targetHandle).toBe("in:a:blocks");
+    const eOut = edges.find((e) => e.id === "e_out");
+    expect(eOut?.source).toBe(`${COLLAPSED_NODE_ID_PREFIX}grp`);
+    expect(eOut?.sourceHandle).toBe("out:b:messages");
+    expect(eOut?.target).toBe("ext2");
+    expect(edges.some((e) => e.id === "e_ab")).toBe(false);
+  });
+
+  it("keeps the bounding box (no collapsed node) when collapsed is false", () => {
+    const { nodes, edges } = mapDocumentToFlow(collapsedDoc(false));
+    expect(nodes.some((n) => n.id === "group:grp")).toBe(true);
+    expect(nodes.some((n) => n.id === `${COLLAPSED_NODE_ID_PREFIX}grp`)).toBe(false);
+    expect(nodes.some((n) => n.id === "a")).toBe(true);
+    // 未折叠：边保持原样（不重路由）。
+    expect(edges.find((e) => e.id === "e_ab")).toBeDefined();
+    expect(edges.find((e) => e.id === "e_in")?.target).toBe("a");
+  });
+
+  it("ignores collapse while focused (drill-in shows members)", () => {
+    const { nodes } = mapDocumentToFlow(collapsedDoc(true), { focusGroupId: "grp" });
+    expect(nodes.some((n) => n.id === "a")).toBe(true);
+    expect(nodes.some((n) => n.id === "b")).toBe(true);
+    expect(nodes.some((n) => n.id === `${COLLAPSED_NODE_ID_PREFIX}grp`)).toBe(false);
+  });
+
+  it("marks an explicitly disabled output channel and mutes its edge", () => {
+    const doc = collapsedDoc(true);
+    doc.groups![0]!.disabledChannels = ["out:b:messages"];
+    const { nodes, edges } = mapDocumentToFlow(doc);
+
+    const collapsed = nodes.find((n) => n.id === `${COLLAPSED_NODE_ID_PREFIX}grp`);
+    const data = collapsed!.data as GraphCollapsedGroupNodeData;
+    const channel = data.outputs.find((o) => o.id === "out:b:messages");
+    expect(channel?.disabled).toBe(true);
+    expect(channel?.producerNodeId).toBe("b");
+
+    const eOut = edges.find((e) => e.id === "e_out");
+    expect(eOut?.data?.muted).toBe(true);
+  });
+
+  it("treats a channel as semantically closed when its end node is disabled", () => {
+    const doc = collapsedDoc(true);
+    // 末端节点 b 禁用 → out:b:messages 语义上关闭（数据未变）。
+    doc.nodes.find((n) => n.id === "b")!.enabled = false;
+    const { nodes, edges } = mapDocumentToFlow(doc);
+
+    const collapsed = nodes.find((n) => n.id === `${COLLAPSED_NODE_ID_PREFIX}grp`);
+    const data = collapsed!.data as GraphCollapsedGroupNodeData;
+    const channel = data.outputs.find((o) => o.id === "out:b:messages");
+    expect(channel?.disabled).toBe(true);
+
+    const eOut = edges.find((e) => e.id === "e_out");
+    expect(eOut?.data?.muted).toBe(true);
   });
 });

@@ -570,4 +570,82 @@ describe("NodeGraph runtime", () => {
     });
     expect(runTrace.nestedJobRefs[0].jobId).toBe(agentJob.id);
   });
+
+  it("recursively runs a referenced subgraph through a group.node (boundary I/O mapping)", async () => {
+    const service = new NodeGraphDefinitionService(database.db);
+
+    // 子图：group.input(in_1) → group.output(out_1) 透传（持久化为普通定义，metadata.subgraph）。
+    const sub = service.create({
+      actor: ACTOR,
+      projectId: "proj_1",
+      document: {
+        schemaVersion: 2,
+        graphId: "ngraph_sub",
+        name: "Reusable Sub",
+        mode: "native_graph",
+        policies: {},
+        permissions: { required: [] },
+        metadata: { subgraph: true },
+        nodes: [
+          { id: "gi", type: "group.input", typeVersion: "1", phase: "pre_response", config: { ports: [{ name: "in_1", type: "text" }] } },
+          { id: "go", type: "group.output", typeVersion: "1", phase: "commit", config: { ports: [{ name: "out_1", type: "text" }] } },
+        ],
+        edges: [{ id: "e_gi_go", kind: "data", from: { nodeId: "gi", port: "in_1" }, to: { nodeId: "go", port: "out_1" } }],
+      },
+    });
+
+    // 父图：user_input → group.node（引用子图）。
+    const parent = service.create({
+      actor: ACTOR,
+      projectId: "proj_1",
+      document: {
+        schemaVersion: 2,
+        graphId: "ngraph_parent_gn",
+        name: "Parent with NodeGroup",
+        mode: "native_graph",
+        policies: {},
+        permissions: { required: [] },
+        nodes: [
+          { id: "u", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+          {
+            id: "g",
+            type: "group.node",
+            typeVersion: "1",
+            phase: "pre_response",
+            config: {
+              ref: { graphId: sub.definition.id, versionId: sub.version.id },
+              interface: { inputs: [{ name: "in_1", type: "text" }], outputs: [{ name: "out_1", type: "text" }] },
+            },
+          },
+        ],
+        edges: [{ id: "e_u_g", kind: "data", from: { nodeId: "u", port: "text" }, to: { nodeId: "g", port: "in_1" } }],
+      },
+    });
+
+    enqueueGraphRun(database, {
+      accountId: "default-admin",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+      graphId: parent.definition.id,
+      graphVersionId: parent.version.id,
+      intent: "normal",
+      dryRun: false,
+      inputJson: { user_input: "hello" },
+    });
+
+    const worker = new NodeGraphWorker(database.db, {
+      workerId: "node-graph-worker-subgraph-test",
+      pollIntervalMs: 60_000,
+    });
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    const run = database.db.select().from(nodeGraphRuns).limit(1).get();
+    expect(run?.status).toBe("succeeded");
+
+    // group.node 递归跑通子图，并把 group.output 的值按 portName 映射回实例输出端口。
+    const gRun = database.db.select().from(nodeGraphNodeRuns).all().find((nodeRun) => nodeRun.nodeId === "g");
+    expect(gRun?.status).toBe("succeeded");
+    const preview = JSON.parse(gRun!.previewJson!);
+    expect(preview.value).toMatchObject({ out_1: "hello" });
+  });
 });

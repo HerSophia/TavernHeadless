@@ -1,4 +1,5 @@
 import type {
+  NodeGraphDiagnostic,
   NodeGraphNode,
   NodeGraphNodeRunOutput,
   NodeGraphRunIntent,
@@ -10,6 +11,33 @@ import type { NodeGraphRunService } from "../node-graph-run-service.js";
 import type { NodeGraphRuntimeBudget } from "./budget.js";
 
 export type NodeGraphNodeInputs = Record<string, unknown>;
+
+/**
+ * NG2-β：`group.node`（NodeGroup 实例）递归执行的注入式运行器。
+ *
+ * handler 负责把父图实例端口值映射为子图边界输入（按 portName），调用 runner 加载并以
+ * **嵌套 graph run** 执行被引用的子图，再把子图边界输出按 portName 映射回实例输出。
+ * runner 的实际实现（加载子图版本 + 复用 executor 递归 + 血缘 + 环检测）由运行编排处注入；
+ * 不注入时 handler 走 dry/synthetic 兜底（不崩溃）。
+ */
+export type NodeGraphSubgraphRunInput = {
+  ref: { graphId: string; versionId?: string };
+  /** 父图实例输入端口值（key = group.node 输入端口名 = 子图 group.input 的 portName）。 */
+  inputsByPort: Record<string, unknown>;
+  parentNode: NodeGraphNode;
+};
+
+export type NodeGraphSubgraphRunResult = {
+  status: "succeeded" | "failed";
+  /** 子图边界输出（key = 子图 group.output 的 portName = group.node 输出端口名）。 */
+  outputsByPort: Record<string, unknown>;
+  diagnostics?: NodeGraphDiagnostic[];
+};
+
+export type NodeGraphSubgraphRunner = (
+  input: NodeGraphSubgraphRunInput,
+  context: NodeGraphRuntimeContext,
+) => Promise<NodeGraphSubgraphRunResult>;
 
 export type NodeGraphRuntimeContext = {
   accountId: string;
@@ -55,6 +83,10 @@ export type NodeGraphRuntimeContext = {
    * 形如 `{ variable, session_state, node_output, runtime }`。其他节点不可见。
    */
   conditionContext?: Record<string, unknown>;
+  /** NG2-β：`group.node` 递归执行运行器（由运行编排注入；缺省走 dry/synthetic 兜底）。 */
+  subgraphRunner?: NodeGraphSubgraphRunner;
+  /** NG2-β：当前递归路径上的 graphId 栈（含顶层），用于子图引用环检测。 */
+  subgraphStack?: string[];
 };
 
 export interface NodeGraphNodeHandler {

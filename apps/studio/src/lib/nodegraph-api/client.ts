@@ -1,10 +1,12 @@
 import type { NodeGraphDocument } from "@tavern/core/node-graph";
 
-import { apiBaseUrl } from "../sdk";
+import { getActiveAuthHeaders, getActiveBaseUrl } from "../backend/active";
 import type {
   NodeGraphArchiveResponse,
+  NodeGraphExportResponse,
   NodeGraphGetResponse,
   NodeGraphImportPreflightResponse,
+  NodeGraphImportResponse,
   NodeGraphListResponse,
   NodeGraphMutationResponse,
   NodeGraphPreviewInput,
@@ -16,9 +18,6 @@ import type {
   NodeGraphValidationResponse,
   NodeGraphVersionsResponse,
 } from "./types";
-
-/** 兼容用途的账号提示（dev 可不设）。设置后以 `x-account-id` 头透传，与 SDK 口径一致。 */
-const accountIdHint = import.meta.env.VITE_ACCOUNT_ID;
 
 export class NodeGraphApiError extends Error {
   constructor(
@@ -36,11 +35,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (body !== undefined) {
     headers["content-type"] = "application/json";
   }
-  if (accountIdHint) {
-    headers["x-account-id"] = accountIdHint;
+  // 鉴权头随当前后端连接动态注入（dev/api_key/client_api_key/jwt + x-account-id 提示）。
+  const authHeaders = getActiveAuthHeaders();
+  if (authHeaders) {
+    Object.assign(headers, authHeaders);
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await fetch(`${getActiveBaseUrl()}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -118,16 +119,24 @@ export const nodeGraphApi = {
   archive(projectId: string, graphId: string): Promise<NodeGraphArchiveResponse> {
     return request("POST", `${graphPath(projectId, graphId)}/archive`);
   },
+  /** 硬删除图定义本身（连同其所有版本）。后端 DELETE，成功返回 204。 */
+  remove(projectId: string, graphId: string): Promise<void> {
+    return request("DELETE", graphPath(projectId, graphId));
+  },
   unarchive(projectId: string, graphId: string): Promise<NodeGraphArchiveResponse> {
     return request("POST", `${graphPath(projectId, graphId)}/unarchive`);
   },
-  exportPackage(projectId: string, graphId: string, body?: { version_id?: string; package_version?: string }): Promise<unknown> {
+  exportPackage(
+    projectId: string,
+    graphId: string,
+    body?: { version_id?: string; package_version?: string },
+  ): Promise<NodeGraphExportResponse> {
     return request("POST", `${graphPath(projectId, graphId)}/export`, body);
   },
   importPreflight(projectId: string, pkg: unknown): Promise<NodeGraphImportPreflightResponse> {
     return request("POST", `/projects/${enc(projectId)}/node-graph-imports/preflight`, { package: pkg });
   },
-  importPackage(projectId: string, pkg: unknown, options?: { confirm?: boolean; name?: string | null }): Promise<unknown> {
+  importPackage(projectId: string, pkg: unknown, options?: { confirm?: boolean; name?: string | null }): Promise<NodeGraphImportResponse> {
     return request("POST", `/projects/${enc(projectId)}/node-graph-imports`, {
       package: pkg,
       confirm: options?.confirm,

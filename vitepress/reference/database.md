@@ -508,7 +508,7 @@ LLM Profile 绑定表。
 
 ## llm_instance_config
 
-LLM 实例配置表。独立管理各实例槽位的配置（预设绑定、启用状态、生成参数）。
+LLM 实例配置表。独立管理各实例槽位的配置（提示词预设覆盖、启用状态、生成参数、能力声明、模型名覆盖）。选哪个 LLM Profile（连接 / 模型）由独立的 `llm_profile_binding` 负责，不在本表。
 
 | 列名 | 类型 | 约束/默认值 | 说明 |
 | ---- | ---- | ----------- | ---- |
@@ -517,7 +517,7 @@ LLM 实例配置表。独立管理各实例槽位的配置（预设绑定、启�
 | `scope` | `TEXT` | `NOT NULL` | 作用域（`global \| session`） |
 | `scope_id` | `TEXT` | `NOT NULL` | 作用域 ID |
 | `instance_slot` | `TEXT` | `NOT NULL` | 槽位（`* \| narrator \| director \| verifier \| memory`） |
-| `preset_id` | `TEXT` | `NULL` | 关联预设 ID |
+| `preset_id` | `TEXT` | `NULL` | 提示词预设覆盖（指向 `preset` 表）。**非 LLM Profile id**；LI11 标注的过渡字段，图化后废弃 |
 | `enabled` | `INTEGER` | `NOT NULL`, default `1` | 是否启用 |
 | `params_json` | `TEXT` | `NULL` | 生成参数 JSON |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |

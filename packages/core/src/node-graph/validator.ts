@@ -13,6 +13,12 @@ import { hasNodeGraphErrors } from './diagnostics.js';
 import { nodeGraphDocumentSchemaVersion } from './migration.js';
 import { createDefaultNodeTypeRegistry, NodeTypeRegistry } from './registry.js';
 import {
+  isNodeGraphGroupNodeType,
+  readGroupNodeInterface,
+  readGroupNodeRef,
+  resolveNodeGraphNodePorts,
+} from './subgraph.js';
+import {
   NODE_GRAPH_CHECKPOINT_POLICIES,
   NODE_GRAPH_NODE_SCOPES,
   NODE_GRAPH_PHASES,
@@ -348,7 +354,11 @@ function validateEdges(
       continue;
     }
 
-    const sourcePort = findPort(sourceEntry.outputPorts, edge.from.port);
+    // group.node 端口来自 config.interface（动态），其余取注册表静态端口。
+    const sourcePorts = resolveNodeGraphNodePorts(fromNode, sourceEntry);
+    const targetPorts = resolveNodeGraphNodePorts(toNode, targetEntry);
+
+    const sourcePort = findPort(sourcePorts.outputPorts, edge.from.port);
     if (!sourcePort) {
       add(diagnostics, {
         severity: 'error',
@@ -361,7 +371,7 @@ function validateEdges(
       continue;
     }
 
-    const targetPort = findPort(targetEntry.inputPorts, edge.to.port);
+    const targetPort = findPort(targetPorts.inputPorts, edge.to.port);
     if (!targetPort) {
       add(diagnostics, {
         severity: 'error',
@@ -399,8 +409,10 @@ function validateEdges(
   }
 
   for (const { nodeId, portName, edges } of incomingDataEdgesByNodePort.values()) {
+    const node = nodesById.get(nodeId);
     const entry = entriesByNodeId.get(nodeId);
-    const port = entry ? findPort(entry.inputPorts, portName) : undefined;
+    const inputPorts = node ? resolveNodeGraphNodePorts(node, entry).inputPorts : (entry?.inputPorts ?? []);
+    const port = findPort(inputPorts, portName);
     if (port && !port.multiple && edges.length > 1) {
       add(diagnostics, {
         severity: 'error',
@@ -422,7 +434,7 @@ function validateEdges(
         .filter((edge) => nodeGraphEdgeKind(edge) === 'data' && edge.to.nodeId === node.id)
         .map((edge) => edge.to.port),
     );
-    for (const port of entry.inputPorts) {
+    for (const port of resolveNodeGraphNodePorts(node, entry).inputPorts) {
       if (!port.required || connectedPorts.has(port.name) || nodeConfigSatisfiesInput(node, port.name)) {
         continue;
       }
@@ -768,6 +780,39 @@ function validateControlNodes(
   }
 }
 
+/** NG2-β：`group.node`（NodeGroup 实例）配置校验：子图引用 + 反规范化接口缓存。 */
+function validateGroupNodes(document: NodeGraphDocument, diagnostics: NodeGraphDiagnostic[]): void {
+  for (const node of document.nodes) {
+    if (!isNodeGraphGroupNodeType(node.type)) {
+      continue;
+    }
+    if (!readGroupNodeRef(node)) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_group_node_ref_missing',
+        message: `Node group '${node.id}' requires config.ref.graphId pointing to a subgraph definition.`,
+        nodeId: node.id,
+      });
+    }
+    const config = isRecord(node.config) ? node.config : {};
+    if (config.interface === undefined) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_group_node_interface_missing',
+        message: `Node group '${node.id}' requires a config.interface { inputs, outputs } cached from its subgraph boundary.`,
+        nodeId: node.id,
+      });
+    } else if (!readGroupNodeInterface(node)) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_group_node_interface_invalid',
+        message: `Node group '${node.id}' has a malformed config.interface; inputs/outputs must be arrays of { name, type } with known port types.`,
+        nodeId: node.id,
+      });
+    }
+  }
+}
+
 /** NG2-CORE：system graph 严格校验（metadata.systemGraph === true 时）。 */
 function validateSystemGraph(document: NodeGraphDocument, diagnostics: NodeGraphDiagnostic[]): void {
   if (document.metadata?.systemGraph !== true) {
@@ -846,6 +891,7 @@ export function validateNodeGraph(
   validatePolicies(document, entriesByNodeId, diagnostics);
   validateNodeScopes(document, diagnostics);
   validateControlNodes(document, nodesById, schemaVersion, incomingEdgesByNodeId, outgoingEdgesByNodeId, diagnostics);
+  validateGroupNodes(document, diagnostics);
   validateSystemGraph(document, diagnostics);
   validateGroups(document, nodesById, diagnostics);
 
