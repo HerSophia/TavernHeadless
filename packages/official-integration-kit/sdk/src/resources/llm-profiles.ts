@@ -64,19 +64,21 @@ export type LlmProfilesResource = {
   delete(options: { accountId?: AccountIdHint; profileId: string }): Promise<boolean>;
   discoverModels(options: {
     accountId?: AccountIdHint;
-    apiKey: string;
+    apiKey?: string;
     baseUrl?: string;
-    provider: LlmProvider;
+    profileId?: string;
+    provider?: LlmProvider;
   }): Promise<LlmDiscoveredModel[]>;
   getDetail(options: { accountId?: AccountIdHint; profileId: string }): Promise<LlmProfile>;
   list(options?: { accountId?: AccountIdHint }): Promise<LlmProfile[]>;
   runtime(options?: { accountId?: AccountIdHint; sessionId?: string }): Promise<LlmRuntimeSlot[]>;
   testModel(options: {
     accountId?: AccountIdHint;
-    apiKey: string;
+    apiKey?: string;
     baseUrl?: string;
-    modelId: string;
-    provider: LlmProvider;
+    modelId?: string;
+    profileId?: string;
+    provider?: LlmProvider;
   }): Promise<LlmModelTestResult>;
   update(options: {
     accountId?: AccountIdHint;
@@ -155,6 +157,7 @@ export function createLlmProfilesResource(client: TransportClient): LlmProfilesR
         body: compactObject({
           api_key: options.apiKey,
           base_url: options.baseUrl,
+          profile_id: options.profileId,
           provider: options.provider,
         }),
         headers: buildAccountHeaders(options.accountId),
@@ -213,6 +216,7 @@ export function createLlmProfilesResource(client: TransportClient): LlmProfilesR
           api_key: options.apiKey,
           base_url: options.baseUrl,
           model_id: options.modelId,
+          profile_id: options.profileId,
           provider: options.provider,
         }),
         headers: buildAccountHeaders(options.accountId),

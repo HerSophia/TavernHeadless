@@ -17,7 +17,9 @@ export type TemporaryConversationErrorCode =
   | "unsupported_export_target"
   | "source_output_page_not_found"
   | "invalid_source_output_page"
-  | "target_page_not_found";
+  | "target_page_not_found"
+  | "pending_tool_call_not_found"
+  | "pending_tool_call_not_pending";
 
 export class TemporaryConversationError extends Error {
   constructor(

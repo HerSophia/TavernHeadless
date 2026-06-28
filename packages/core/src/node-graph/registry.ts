@@ -286,6 +286,20 @@ export const NODE_GRAPH_BUILTIN_NODE_TYPES: NodeTypeRegistryEntry[] = [
     previewPolicy: 'auto',
     sideEffects: 'none',
   }),
+  // NodeGroup（子图实例，方案 β）：端口为**动态**——不来自此处静态声明，而来自
+  // `config.interface`（绑定子图时从其 group.input/output 边界反规范化缓存）。validator /
+  // 画布 / ELK 对 group.node 走 `resolveNodeGraphNodePorts` 读取 config.interface。
+  define({
+    type: 'group.node',
+    typeVersion: '1',
+    title: 'Node Group',
+    description: 'Instantiates a reusable subgraph definition; ports come from its boundary interface.',
+    inputPorts: [],
+    outputPorts: [],
+    supportedPhases: ALL_PHASES,
+    previewPolicy: 'manual',
+    sideEffects: 'none',
+  }),
   // NG2-CORE：控制流节点最小集合（schemaVersion >= 2 才放行 control edge）。
   define({
     type: 'control.condition',

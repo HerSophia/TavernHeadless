@@ -358,10 +358,12 @@ export const unbindQueryJsonSchema = {
   oneOf: [unbindGlobalQueryVariantJsonSchema, unbindSessionQueryVariantJsonSchema],
 } as const;
 
+// 发现模型时凭证二选一：传 profile_id 复用已保存档案的密钥，或直接传 api_key + provider。
+// 因此这里不再用 required 强制 api_key/provider，改由路由层做“二选一”校验。
 export const discoverModelsBodyJsonSchema = {
   type: "object",
-  required: ["api_key", "provider"],
   properties: {
+    profile_id: { type: "string", minLength: 1, maxLength: 120 },
     api_key: { type: "string", minLength: 1, maxLength: 2048 },
     base_url: { type: "string", minLength: 1, maxLength: 500 },
     provider: { type: "string", enum: ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] },
@@ -371,15 +373,17 @@ export const discoverModelsBodyJsonSchema = {
   additionalProperties: false,
 } as const;
 
+// 测试模型时凭证二选一：传 profile_id 复用已保存档案的密钥（model_id 可省略，默认用档案的 model_id），
+// 或直接传 api_key + model_id + provider。同样改由路由层做“二选一”校验。
 export const testModelBodyJsonSchema = {
   type: "object",
-  required: ["api_key", "model_id", "provider"],
   properties: {
+    profile_id: { type: "string", minLength: 1, maxLength: 120 },
     api_key: { type: "string", minLength: 1, maxLength: 2048 },
     base_url: { type: "string", minLength: 1, maxLength: 500 },
     model_id: { type: "string", minLength: 1, maxLength: 200 },
     provider: { type: "string", enum: ["openai", "anthropic", "google", "deepseek", "xai", "openai-compatible"] },
-    reasoning_effort: { type: "string", enum: ["low", "medium", "high"] },
+    reasoning_effort: { type: "string",enum: ["low", "medium", "high"] },
     allow_private_network: { type: "boolean" },
   },
   examples: [testModelBodyExample],

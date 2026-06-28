@@ -7,6 +7,12 @@ outline: [2, 3]
 LLM 实例配置用来控制每个生成槽位具体用哪个 LLM Profile、是否启用、额外的生成参数覆盖，以及可选的 `model_id_override`。
 
 它和 LLM Profiles 的关系是：Profile 继续负责 provider、base URL、API Key 这类连接信息；Instance Config 负责"哪个槽位用哪个 Profile"，以及是否只把模型名改成别的值。
+## 定位
+
+这套实例配置面向传统对话流场景，给不想直接编排图（NodeGraph）的使用者一个熟悉的配置入口。它是一种配置方式，而不是独立于 Agentic 体系之外的执行路径：在原生（`native`）模式下，主回合编排可以由内置的图运行承载，实例配置最终落到同一套执行体系中。
+
+四个槽位分两种性质：`narrator` 是唯一的正文生成者（持笔人），每个回合只有它产出进入正史的文本；`director` / `verifier` / `memory` 是顾问角色，只产出指令、校验结论或摘要，不直接写正文，可选、按需开启。
+
 
 ## 什么时候需要看这页
 
@@ -17,13 +23,14 @@ LLM 实例配置用来控制每个生成槽位具体用哪个 LLM Profile、是�
 ## 一个简单例子
 
 ```bash
-# 为某个会话的 narrator 槽位指定 LLM Profile，并覆盖模型名
+# 为某个会话的 narrator 槽位覆盖提示词预设，并覆盖模型名
+# 注意：preset_id 指向「提示词预设」（preset 表），不是 LLM Profile id；选 Profile 走 /llm-profiles 绑定。
 curl -X PUT http://localhost:3000/llm-instances/narrator \
   -H 'Content-Type: application/json' \
   -d '{
     "scope": "session",
     "session_id": "sess_001",
-    "preset_id": "llm_profile_001",
+    "preset_id": "preset_001",
     "model_id_override": "gpt-4.1-mini",
     "enabled": true
   }'
@@ -69,7 +76,7 @@ curl -X PUT http://localhost:3000/llm-instances/narrator \
 | `scope` | string | `global` / `session` |
 | `scope_id` | string | 作用域 ID |
 | `instance_slot` | string | 实例槽位 |
-| `preset_id` | string \| null | 关联的 LLM Profile ID |
+| `preset_id` | string \| null | 提示词预设覆盖（指向 `preset` 表）。**不是 LLM Profile ID**——选 Profile 请用 `/llm-profiles` 的绑定（`activate` / `runtime`）。过渡字段，详见下方说明。 |
 | `model_id_override` | string \| null | 仅覆盖模型名。`null` 表示继承 Profile 默认 `model_id` |
 | `enabled` | boolean | 是否启用 |
 | `params` | object \| null | 生成参数覆盖 |
@@ -165,7 +172,7 @@ PUT /llm-instances/:slot
 | ---- | ---- | ---- | ---- |
 | `scope` | string | 否 | `global`（默认）/ `session` |
 | `session_id` | string | 条件 | 当 scope=session 时必填 |
-| `preset_id` | string \| null | 否 | 关联 LLM Profile ID |
+| `preset_id` | string \| null | 否 | 提示词预设覆盖（指向 `preset` 表）。**不是 LLM Profile ID**（选 Profile 走 `/llm-profiles` 绑定）。过渡字段。 |
 | `model_id_override` | string \| null | 否 | 仅覆盖模型名。传 `null` 表示清除覆盖 |
 | `enabled` | boolean | 否 | 是否启用（默认 `true`） |
 | `params` | object \| null | 否 | 生成参数覆盖 |
@@ -186,7 +193,7 @@ PUT /llm-instances/:slot
 
 - `enabled=false` 且 `slot=narrator` 时，真实聊天执行会返回 `409 instance_slot_disabled_required`，不会再回退到环境变量 narrator。
 - `enabled=false` 且 `slot=director` / `verifier` / `memory` 时，对应子流程会在本轮 turn 中被强制跳过。
-- `preset_id` 在当前实现中作为 narrator Prompt 组装阶段的显式覆盖值；当它为非空字符串时，优先于 `session.presetId`。
+- `preset_id` 是 narrator Prompt 组装阶段的**提示词预设覆盖**（指向 `preset` 表）；当它为非空字符串时，优先于 `session.presetId`。它**不是 LLM Profile id**——选哪个 Profile（连接 / 模型）走 `/llm-profiles` 的绑定（`activate`）与解析（`runtime`）。这是 LI11（批次 11）标注的**过渡字段**：方案 A 下提示词配方将由 NodeGraph 节点装配承载，该覆盖职责图化后进入废弃流程，请勿再扩展其用途。
 - `model_id_override` 只影响最终使用的模型名，不会改动 provider、base URL、API Key 这类 Profile 连接信息。
 - `model_id_override` 只有在当前槽位最终解析到 active profile 时才生效；如果没有 active profile，它不会单独把环境变量 fallback 模型替换掉。
 - `params` 采用浅层 merge，同名键覆盖。当前槽位原有参数（包括 Profile 绑定参数和默认运行参数）先建立基线，再由 `llm_instance_config.params` 覆盖同名字段。

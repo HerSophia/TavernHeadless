@@ -114,16 +114,57 @@ export interface NodeGraphRunInput {
 
 export type NodeGraphPreviewResponse = Record<string, unknown>;
 
+/** 导入预检诊断（对齐 core `GraphImportDiagnostic`；浏览器子路径不导出 package 模块，故本地声明）。 */
+export interface PreflightDiagnostic {
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  nodeId?: string;
+  dependencyId?: string;
+  degradable?: boolean;
+  resolution?: { action: string; label: string };
+}
+
+/** 导入安全摘要（对齐路由 `securitySummaryToResponse`）。 */
+export interface PreflightSecuritySummary {
+  long_term_data_reads?: string[];
+  session_state_namespace_reads?: string[];
+  proposes_committed_writes?: boolean;
+  persistent_output_targets?: string[];
+  mcp_servers?: string[];
+  requests_network_access?: boolean;
+  requests_file_write?: boolean;
+  required_permissions?: string[];
+}
+
 export interface NodeGraphImportPreflightResponse {
   package_id: string;
   content_hash: string;
   installable: boolean;
   migration_available: boolean;
   migration_required: boolean;
-  counts: Record<string, number>;
-  diagnostics: unknown[];
-  required_node_types: unknown[];
-  missing_node_types: unknown[];
-  degradable_node_types: unknown[];
-  security_summary: Record<string, unknown>;
+  counts: { error?: number; warning?: number; info?: number };
+  diagnostics: PreflightDiagnostic[];
+  required_node_types: string[];
+  missing_node_types: string[];
+  degradable_node_types: string[];
+  security_summary: PreflightSecuritySummary;
+}
+
+export interface NodeGraphExportResponse {
+  /** NodeGraphPackage 信封（下载为 JSON）。 */
+  package: Record<string, unknown>;
+  security_summary: PreflightSecuritySummary;
+  graph_id: string;
+  version_id: string;
+  version_no: number;
+}
+
+export interface NodeGraphImportResponse {
+  confirmed: boolean;
+  requires_confirmation: boolean;
+  preflight: NodeGraphImportPreflightResponse;
+  definition?: NodeGraphDefinitionResponse;
+  version?: NodeGraphVersionResponse;
+  validation?: NodeGraphValidationResponse;
 }

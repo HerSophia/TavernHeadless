@@ -2,6 +2,8 @@ import type {
   TurnInput,
   FloorRunType,
   GenerationParams,
+  GraphAssistantAgentLoopConfig,
+  ToolCallTransportKind,
   TurnConfig,
   PromptRunIntent,
 } from "@tavern/core";
@@ -62,6 +64,16 @@ export class PreparedTurnContextBuilder {
     onChunk?: (chunk: string) => void;
     stream?: boolean;
     agentContributors?: PromptRuntimeContributorOutput[];
+    /**
+     * 图助手临时对话强制的工具传输覆盖（text_protocol）。
+     * 仅图助手路径传入；其他会话不传，保持默认解析。
+     */
+    toolTransportOverride?: ToolCallTransportKind;
+    /**
+     * 图助手 text_protocol 多轮 agent 循环配置（含确认决策回调）。
+     * 仅图助手路径传入；与 toolTransportOverride 成对出现。
+     */
+    graphAssistantAgentLoop?: GraphAssistantAgentLoopConfig;
   }): Promise<PreparedTurnContext> {
     const artifacts = await this.preparedPromptArtifactsBuilder.prepare({
       mode: args.mode,
@@ -85,6 +97,7 @@ export class PreparedTurnContextBuilder {
       includeRuntimeTrace: args.request.debugOptions?.includeRuntimeTrace === true,
       baseRuntimeTrace: args.baseRuntimeTrace,
       stream: args.stream,
+      ...(args.toolTransportOverride ? { toolTransportOverride: args.toolTransportOverride } : {}),
       ...(args.agentContributors ? { agentContributors: args.agentContributors } : {}),
     });
     const inspection = {
@@ -136,6 +149,7 @@ export class PreparedTurnContextBuilder {
       toolRegistry: toolRuntime.toolRegistry,
       toolPermissions: toolRuntime.toolPermissions,
       ...(artifacts.toolTransport ? { toolTransport: artifacts.toolTransport } : {}),
+      ...(args.graphAssistantAgentLoop ? { graphAssistantAgentLoop: args.graphAssistantAgentLoop } : {}),
       runObserver: this.turnRunTracker.createTurnRunObserver(args.floorId),
       ...(args.onChunk ? { onChunk: args.onChunk } : {}),
       ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),

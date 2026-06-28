@@ -3,6 +3,14 @@ import { nanoid } from "nanoid";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { clients } from "../db/schema.js";
+import {
+  ClientCapabilityError,
+  normalizeCapabilities,
+  parseCapabilityJson,
+  resolveClientCapabilities,
+  stringifyCapabilityJson,
+  type ClientCapability,
+} from "./client-capability.js";
 
 export type ClientKind = "basic" | "advanced" | "deriver" | "worker" | "custom";
 export type ClientStatus = "active" | "disabled";
@@ -15,6 +23,8 @@ export type ClientRecord = {
   status: ClientStatus;
   isDefault: boolean;
   metadata: unknown;
+  capabilities: ClientCapability[];
+  explicitCapabilities: ClientCapability[] | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -30,6 +40,7 @@ export type ClientServiceErrorCode =
   | "client_kind_invalid"
   | "client_metadata_invalid"
   | "client_metadata_too_large"
+  | "client_capability_invalid"
   | "client_not_found"
   | "client_default_disable_not_supported"
   | "client_cursor_invalid"
@@ -58,6 +69,7 @@ export type CreateClientInput = {
   name: string;
   kind?: ClientKind;
   metadata?: unknown;
+  capabilities?: readonly string[] | null;
   now?: number;
 };
 
@@ -80,6 +92,7 @@ export type UpdateClientInput = {
   name?: string;
   kind?: ClientKind;
   metadata?: unknown;
+  capabilities?: readonly string[] | null;
   now?: number;
 };
 
@@ -161,6 +174,7 @@ export class ClientService {
     const name = normalizeName(input.name);
     const kind = normalizeKind(input.kind ?? "custom");
     const metadata = serializeMetadata(input.metadata ?? {});
+    const capabilitiesJson = serializeCapabilities(input.capabilities);
 
     const inserted = this.db
       .insert(clients)
@@ -172,6 +186,7 @@ export class ClientService {
         status: "active",
         isDefault: false,
         metadataJson: metadata,
+        capabilitiesJson,
         createdAt: now,
         updatedAt: now,
       })
@@ -240,6 +255,10 @@ export class ClientService {
     }
     if (input.metadata !== undefined) {
       patch.metadataJson = serializeMetadata(input.metadata);
+      touched = true;
+    }
+    if (input.capabilities !== undefined) {
+      patch.capabilitiesJson = serializeCapabilities(input.capabilities);
       touched = true;
     }
 
@@ -330,6 +349,12 @@ export function mapClientRow(row:typeof clients.$inferSelect): ClientRecord {
     status: row.status as ClientStatus,
     isDefault: row.isDefault,
     metadata: parseMetadata(row.metadataJson),
+    capabilities: resolveClientCapabilities({
+      kind: row.kind as ClientKind,
+      isDefault: row.isDefault,
+      explicit: parseCapabilityJson(row.capabilitiesJson),
+    }),
+    explicitCapabilities: parseCapabilityJson(row.capabilitiesJson),
     createdAt:row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -380,6 +405,27 @@ function serializeMetadata(value: unknown): string {
     );
   }
   return json;
+}
+
+/**
+ * 归一化并序列化 Client 显式 capability override，写入 capabilities_json 列。
+ *
+ * null/undefined 表示按 client kind 默认模板解析（列写 NULL）。
+ * 校验失败时把 {@link ClientCapabilityError} 收敛成 ClientServiceError，
+ * 以便路由层统一按 client_capability_invalid 返回 400。
+ */
+function serializeCapabilities(values: readonly string[] | null | undefined): string | null {
+  if (values === null || values === undefined) {
+    return null;
+  }
+try {
+    return stringifyCapabilityJson(normalizeCapabilities(values));
+  } catch (error) {
+    if (error instanceof ClientCapabilityError) {
+      throw new ClientServiceError(400, "client_capability_invalid", error.message);
+    }
+    throw error;
+  }
 }
 
 function parseMetadata(json: string): unknown {

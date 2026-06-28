@@ -16,6 +16,9 @@ export {
   type NodeGraphNodeHandler,
   type NodeGraphNodeInputs,
   type NodeGraphRuntimeContext,
+  type NodeGraphSubgraphRunInput,
+  type NodeGraphSubgraphRunResult,
+  type NodeGraphSubgraphRunner,
 } from "./node-handler-registry.js";
 export { previewNodeGraph, type NodeGraphPreviewInput } from "./preview.js";
 export { registerBuiltinNodeGraphHandlers } from "./handlers/builtin.js";
@@ -32,6 +35,14 @@ export {
   validateNativePromptSystemGraph,
   assertNativePromptSystemGraphExecutable,
 } from "./system-graph/native-prompt-system-graph.js";
+export {
+  COMPAT_PROMPT_SYSTEM_GRAPH_ID,
+  COMPAT_PROMPT_SYSTEM_GRAPH_VERSION,
+  buildCompatPromptSystemGraph,
+  getCompatPromptSystemGraph,
+  validateCompatPromptSystemGraph,
+  assertCompatPromptSystemGraphExecutable,
+} from "./system-graph/compat-prompt-system-graph.js";
 
 export function createDefaultNodeGraphExecutor(): NodeGraphExecutor {
   const registry = new NodeGraphNodeHandlerRegistry();

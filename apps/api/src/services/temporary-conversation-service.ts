@@ -37,9 +37,14 @@ import {
   type SessionBranchAssetBindingState,
 } from "./variables/host/session-branch-registry-service.js";
 import {
-  TemporaryConversationError,
+    TemporaryConversationError,
 } from "./temporary-conversation-errors.js";
 import {
+  GraphAssistantToolConfirmationService,
+  type GraphAssistantPendingToolCallRecord,
+} from "./graph-assistant-tool-confirmation-service.js";
+import {
+  GRAPH_ASSISTANT_PURPOSE,
   TEMPORARY_CONVERSATION_BRANCH_ID,
   TEMPORARY_CONVERSATION_RETENTION_POLICIES,
   TEMPORARY_CONVERSATION_SESSION_KIND,
@@ -73,6 +78,19 @@ import {
 interface TemporaryConversationServiceOptions {
   tokenCounter?: TokenCounter;
 }
+
+/** 图助手一次性引导消息的专用 source 标记，用于幂等识别。 */
+const GRAPH_ASSISTANT_GUIDANCE_SOURCE = "graph_assistant_guidance";
+
+/** 图助手首次 respond 时注入的 system 引导文案。 */
+const GRAPH_ASSISTANT_GUIDANCE_TEXT = [
+  "你是 NodeGraph 图编辑助手，可以调用一组 NodeGraph 工具来读取与编辑图。",
+  "典型工作流：先用 nodegraph.graph.get / list_versions 读取现状；需要改图时用 nodegraph.draft.create_from_version 建草稿，",
+  "再用 nodegraph.node.* / nodegraph.edge.* / nodegraph.group.* 修改草稿，用 nodegraph.patch.validate 校验，",
+  "最后用 nodegraph.patch.submit_proposal 提交提案。",
+  "重要边界：除 nodegraph.graph.create（从零新建一张图）外，工具不会直接改线上图；",
+  "对既有图的改动只能经 submit_proposal 进入 Project Inbox，再由有权限的人创建正式版本。",
+].join("");
 
 interface PreparedDraftConversationState {
   branchId: string;
@@ -325,6 +343,23 @@ export class TemporaryConversationService {
 
   async appendMessage(input: TemporaryConversationAppendInput): Promise<TemporaryConversationMessageRef> {
     const session = await this.requireActiveTemporaryConversation(input.accountId, input.conversationId);
+    return this.insertConversationMessage(session, {
+      branchId: input.branchId,
+      role: input.role,
+      content: input.content,
+    });
+  }
+
+  /**
+   * 向已加载的临时对话 session 追加一条消息。
+   *
+   * 与 `appendMessage` 公开入口共用同一插入逻辑，额外允许指定 `source`（默认
+   * `temporary_conversation`），供图助手一次性引导消息用专用 source 标记做幂等识别。
+   */
+  private async insertConversationMessage(
+    session: typeof sessions.$inferSelect,
+    input: { branchId?: string; role: TemporaryConversationAppendInput["role"]; content: string; source?: string },
+  ): Promise<TemporaryConversationMessageRef> {
     const branchId = normalizeTemporaryConversationBranchId(input.branchId);
     const role = normalizeAppendRole(input.role);
     const content = requireMessageContent(input.content);
@@ -343,7 +378,7 @@ export class TemporaryConversationService {
       contentFormat: "text",
       tokenCount: this.tokenCounter.count(content),
       isHidden: false,
-      source: "temporary_conversation",
+      source: input.source ?? "temporary_conversation",
       createdAt: now,
     });
     await this.touchConversation(session.id, now);
@@ -358,9 +393,67 @@ export class TemporaryConversationService {
     };
   }
 
+  /** 是否为图助手临时对话（按 purpose 判定）。 */
+  private isGraphAssistantSession(session: typeof sessions.$inferSelect): boolean {
+    return session.purpose === GRAPH_ASSISTANT_PURPOSE;
+  }
+
+  /**
+   * 图助手会话强制启用 NodeGraph 工具。
+   *
+   * 非图助手会话原样返回传入 config（工具默认关闭）。图助手会话在原 config 基础上合并
+   * `enableTools: true`；调用方未给 config 时也构造一个仅含该字段的 config。
+   */
+  private withGraphAssistantToolConfig(
+    session: typeof sessions.$inferSelect,
+    config: TemporaryConversationRespondInput["config"],
+  ): TemporaryConversationRespondInput["config"] {
+    if (!this.isGraphAssistantSession(session)) {
+    return config;
+    }
+    return { ...(config ?? {}),enableTools: true };
+  }
+
+  /**
+   * 首次为图助手会话注入一次性 system 引导消息。
+   *
+   * 仅对 purpose=graph-assistant 的会话生效，且经专用 source 标记做幂等：已存在引导消息时跳过。
+   * 引导消息为可见 system 消息（历史装载会过滤 isHidden=true 的消息，故不能隐藏），
+   * 说明可用工具集合、典型工作流与「除新建图外不直接改线上图」的边界。
+   */
+  private async maybeInjectGraphAssistantGuidance(
+    session: typeof sessions.$inferSelect,
+    branchId: string,
+  ): Promise<void> {
+    if (!this.isGraphAssistantSession(session)) {
+      return;
+    }
+    const existing = await this.db
+      .select({ id: messages.id })
+      .from(messages)
+      .innerJoin(messagePages, eq(messages.pageId, messagePages.id))
+      .innerJoin(floors, eq(messagePages.floorId, floors.id))
+      .where(and(
+        eq(floors.sessionId, session.id),
+        eq(messages.source, GRAPH_ASSISTANT_GUIDANCE_SOURCE),
+      ))
+      .limit(1);
+  if (existing.length > 0) {
+      return;
+    }
+    await this.insertConversationMessage(session, {
+      branchId,
+      role: "system",
+      content: GRAPH_ASSISTANT_GUIDANCE_TEXT,
+      source: GRAPH_ASSISTANT_GUIDANCE_SOURCE,
+    });
+  }
+
   async respond(input: TemporaryConversationRespondInput): Promise<TemporaryConversationResult> {
     const session = await this.requireActiveTemporaryConversation(input.accountId, input.conversationId);
     const branchId = normalizeTemporaryConversationBranchId(input.branchId);
+
+    await this.maybeInjectGraphAssistantGuidance(session, branchId);
 
     if (input.inputMessage) {
       await this.appendMessage({
@@ -388,7 +481,7 @@ export class TemporaryConversationService {
       pageMessageId: prepared.pageMessageId,
       sourceFloorId: prepared.sourceFloorId,
       request: {
-        config: input.config,
+        config: this.withGraphAssistantToolConfig(session, input.config),
         generationParams: input.generationParams,
         promptIntent: input.promptIntent,
         debugOptions: input.debugOptions,
@@ -428,6 +521,80 @@ export class TemporaryConversationService {
       finishReason: resolveTemporaryConversationFinishReason(result.runtimeTrace),
       warnings: resolveTemporaryConversationWarnings(result.runtimeTrace),
     };
+  }
+
+  /**
+   * 列出某临时对话当前处于 `pending` 的待确认工具调用。
+   *
+   * 仅图助手（purpose=graph-assistant）会话会产生待确认记录；其他会话返回空列表。
+   */
+  async listPendingToolCalls(input: {
+    accountId: string;
+    conversationId: string;
+  }): Promise<GraphAssistantPendingToolCallRecord[]> {
+    await this.requireActiveTemporaryConversation(input.accountId, input.conversationId);
+    return new GraphAssistantToolConfirmationService(this.db).listPending({
+      conversationId: input.conversationId,
+    });
+  }
+
+  /**
+   * 解决一条待确认工具调用：批准或拒绝。
+   *
+   * - 批准：标记 `approved`，随即发起一次续跑。续跑会先执行已批准的工具，
+   *   再自动多轮 agent 循环直到自然停止或再次遇 confirm 工具（决策 C）。
+   * - 拒绝：标记 `rejected`，不执行，向 transcript 注入一条说明消息（决策 E），
+   *   控制权交回用户，等下一条消息。
+   */
+  async resolveToolConfirmation(input: {
+    accountId: string;
+    conversationId: string;
+    confirmationId: string;
+    decision: "approve" | "reject";
+  }): Promise<
+    | { decision: "approved"; pending: GraphAssistantPendingToolCallRecord; result: TemporaryConversationResult }
+    | { decision: "rejected"; pending: GraphAssistantPendingToolCallRecord }
+  > {
+    const session = await this.requireActiveTemporaryConversation(input.accountId, input.conversationId);
+    const confirmationService = new GraphAssistantToolConfirmationService(this.db);
+    const pending = confirmationService.getById(input.confirmationId);
+    if (!pending || pending.conversationId !== input.conversationId) {
+      throw new TemporaryConversationError(
+        "pending_tool_call_not_found",
+        `Pending tool call '${input.confirmationId}' not found in this conversation.`,
+      );
+    }
+    if (pending.status !== "pending") {
+      throw new TemporaryConversationError(
+        "pending_tool_call_not_pending",
+        `Pending tool call '${input.confirmationId}' is '${pending.status}', cannot resolve.`,
+      );
+    }
+
+    if (input.decision === "reject") {
+      const rejected = confirmationService.reject(input.confirmationId);
+      const branchId = normalizeTemporaryConversationBranchId(undefined);
+      await this.insertConversationMessage(session, {
+        branchId,
+        role: "system",
+        content: `用户拒绝了工具调用 ${pending.toolName}。请不要再执行该调用，可改用其他方式继续。`,
+      });
+      await this.touchConversation(session.id);
+      return { decision: "rejected", pending: rejected };
+    }
+
+    const approved = confirmationService.approve(input.confirmationId);
+    // 批准后自动续跑：以一条「继续」用户消息驱动既有 respond 管线。
+    // buildGraphAssistantAgentLoopTurnConfig 会侦测到该已批准记录并先执行已批准工具，再续跑多轮。
+    const result = await this.respond({
+      accountId: input.accountId,
+      conversationId: input.conversationId,
+      inputMessage: {
+        role: "user",
+        content: `（已批准工具调用 ${pending.toolName}，请继续）`,
+      },
+    });
+    return { decision: "approved", pending: approved, result };
   }
 
   async *stream(input: TemporaryConversationStreamInput): AsyncIterable<TemporaryConversationStreamChunk> {
@@ -783,6 +950,8 @@ export class TemporaryConversationService {
     const session = await this.requireActiveTemporaryConversation(input.accountId, input.conversationId);
     const branchId = normalizeTemporaryConversationBranchId(input.branchId);
 
+    await this.maybeInjectGraphAssistantGuidance(session, branchId);
+
     if (input.inputMessage) {
       await this.appendMessage({
         accountId: input.accountId,
@@ -810,7 +979,7 @@ export class TemporaryConversationService {
       pageMessageId: prepared.pageMessageId,
       sourceFloorId: prepared.sourceFloorId,
       request: {
-        config: input.config,
+        config: this.withGraphAssistantToolConfig(session, input.config),
         generationParams: input.generationParams,
         promptIntent: input.promptIntent,
         debugOptions: input.debugOptions,

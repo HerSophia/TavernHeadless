@@ -118,6 +118,105 @@ export const nodeGraphHandlers = [
   ),
 ];
 
+/** 图助手工具策略 effective 项样本（后端 snake_case 形态）。 */
+export const sampleToolPolicyItems = [
+  {
+    tool_name: "nodegraph.graph.get",
+    side_effect_level: "none",
+    default_decision: "auto",
+    decision: "auto",
+    source: "default",
+  },
+  {
+    tool_name: "nodegraph.node.add",
+   side_effect_level: "sandbox",
+    default_decision: "auto",
+    decision: "auto",
+    source: "default",
+  },
+  {
+    tool_name: "nodegraph.graph.create",
+    side_effect_level: "sandbox",
+    default_decision: "confirm",
+    decision: "confirm",
+    source: "default",
+  },
+] as const;
+
+/** 图助手工具策略第一方路由 handlers（project p1）。 */
+export const graphAssistantToolPolicyHandlers = [
+  http.get(`${API_BASE}/projects/p1/graph-assistant/tool-policy`, () =>
+    HttpResponse.json({ items: sampleToolPolicyItems }),
+  ),
+  http.put(`${API_BASE}/projects/p1/graph-assistant/tool-policy`, async ({ request }) => {
+    const body = (await request.json())as { policies: Array<{ tool_name: string; decision: string }>};
+    const overrides = new Map(body.policies.map((policy) => [policy.tool_name, policy.decision]));
+    const items = sampleToolPolicyItems.map((item) => {
+      const override = overrides.get(item.tool_name);
+      return override
+        ? { ...item, decision: override, source: "override" }
+        : { ...item };
+    });
+    return HttpResponse.json({ items });
+  }),
+];
+
+/** 一条待确认工具调用样本（后端 snake_case 形态；会话 c1）。 */
+export const samplePendingToolCall = {
+  id: "ptc1",
+  conversation_id: "c1",
+  branch_id: "main",
+  floor_id: "f1",
+  call_id: "call_1",
+  tool_name: "nodegraph.graph.create",
+  args: { name: "New Graph", mode: "native_graph" },
+  side_effect_level: "irreversible",
+  status: "pending",
+  created_at: 0,
+  updated_at: 0,
+  expires_at: null,
+} as const;
+
+/** 续跑结果样本（respond 结果子集；会话 c1）。 */
+export const sampleResolveResult = {
+  conversation_id: "c1",
+  branch_id: "main",
+  floor_id: "f2",
+  floor_no: 2,
+  page_id: "pg2",
+  generated_text: "Done.",
+  total_usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  final_state: "assistant_message_committed",
+} as const;
+
+/** 图助手「执行前确认闸」恢复接口第一方路由 handlers（会话 c1）。 */
+export const graphAssistantConfirmationHandlers = [
+  http.get(`${API_BASE}/temporary-conversations/c1/pending-tool-calls`, () =>
+    HttpResponse.json({ items: [samplePendingToolCall] }),
+  ),
+  http.post(
+    `${API_BASE}/temporary-conversations/c1/pending-tool-calls/:confirmationId`,
+    async ({ request }) => {
+      const body = (await request.json()) as { decision: "approve" | "reject" };
+      if (body.decision === "reject") {
+        return HttpResponse.json({
+          data: {
+            decision: "rejected",
+            pending_tool_call: { ...samplePendingToolCall, status: "rejected" },
+          },
+        });
+      }
+      return HttpResponse.json({
+        data: {
+          decision: "approved",
+          pending_tool_call: { ...samplePendingToolCall, status: "approved" },
+          result: sampleResolveResult,
+        },
+      });
+    },
+  ),
+];
+
 export interface SseEvent {
   event: string;
   data: Record<string, unknown>;

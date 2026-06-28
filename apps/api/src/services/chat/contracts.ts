@@ -220,7 +220,11 @@ export interface RespondRuntimeToolEvent {
   providerId: string;
   providerType?: string;
   sideEffectLevel?: string;
-  phase: "start" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked";
+  phase: "start" | "success" | "error" | "denied" | "timeout" | "uncertain" | "blocked" | "awaiting_confirmation";
+  /** 仅 phase=awaiting_confirmation 时存在：待确认调用的参数快照。 */
+  args?: Record<string, unknown>;
+  /** 仅 phase=awaiting_confirmation 时存在：模型生成的调用 id。 */
+  callId?: string;
   message?: string;
   durationMs?: number;
   replaySafety: ToolReplaySafety;

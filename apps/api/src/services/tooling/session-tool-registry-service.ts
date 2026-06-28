@@ -39,6 +39,7 @@ import { ProjectInboxService } from "../project-inbox-service.js";
 import { OperationLogService } from "../operation-log-service.js";
 import { NodeGraphToolProvider } from "../../tools/node-graph-tool-provider.js";
 
+
 const INSTANCE_SLOTS = new Set<InstanceSlot>([
   "narrator",
   "director",
@@ -436,7 +437,13 @@ export class SessionToolRegistryService {
 
     await this.appendBaseProviders(registry, snapshot, callableOwners);
     if (session.projectId) {
-      await this.appendNodeGraphProvider(registry, snapshot, callableOwners, accountId, session.projectId);
+      await this.appendNodeGraphProvider(
+        registry,
+        snapshot,
+        callableOwners,
+        accountId,
+        session.projectId,
+      );
     }
 
     const definitionDescriptors = await this.loadDefinitionDescriptors(session, accountId, workspaceId);
@@ -574,6 +581,7 @@ export class SessionToolRegistryService {
         characterId: sessions.characterId,
         workspaceId: sessions.workspaceId,
         projectId: sessions.projectId,
+        purpose: sessions.purpose,
       })
       .from(sessions)
       .where(and(eq(sessions.id, sessionId), eq(sessions.accountId, accountId)))
@@ -642,13 +650,19 @@ export class SessionToolRegistryService {
     accountId: string,
     projectId: string,
   ): Promise<void> {
-    const provider = new NodeGraphToolProvider({
+    const baseProvider = new NodeGraphToolProvider({
       service: new NodeGraphDefinitionService(this.db),
-      projectInbox: new ProjectInboxService(this.db),
+   projectInbox: new ProjectInboxService(this.db),
       operationLog: new OperationLogService(this.db),
       actor: { actorType: "account", actorAccountId: accountId, actorClientId: null },
       projectId,
     });
+
+    // 阶段 3 确认闸语义：图助手临时对话（purpose=graph-assistant）同时暴露 auto 与 confirm 工具，
+    // 逐工具 auto/confirm 决策下沉到执行阶段（由 text_protocol 多轮 agent 循环的确认决策回调消费
+    // GraphAssistantToolPolicyService.resolveEffective 的结果），不再在可见性层过滤。
+    // 其他会话（主链等）不受影响。
+    const provider = baseProvider;
     registry.register(provider);
 
     const tools = await provider.listTools();

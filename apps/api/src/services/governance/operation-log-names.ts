@@ -33,6 +33,7 @@ export const GOVERNANCE_OPERATION_ACTIONS = {
     proposalSubmit: buildOperationLogResourceAction("node_graph", "proposal", "submit"),
     archive: buildOperationLogAction("node_graph", "archive"),
     unarchive: buildOperationLogAction("node_graph", "unarchive"),
+    delete: buildOperationLogAction("node_graph", "delete"),
     versionSetCurrent: buildOperationLogResourceAction("node_graph", "version", "set_current"),
     // NG2-PKG：package import / export 审计。只写摘要与 hash，不写完整图正文。
     export: buildOperationLogAction("node_graph", "export"),
@@ -46,6 +47,24 @@ export const GOVERNANCE_OPERATION_ACTIONS = {
     cleanup: buildOperationLogAction("node_graph_run", "cleanup"),
     checkpointCleanup: buildOperationLogAction("node_graph_run", "checkpoint_cleanup"),
     inspect: buildOperationLogAction("node_graph_run", "inspect"),
+  },
+  // WP-B3：权限审计统一 action。recordAllowed / recordDenied 复用这两个常量，
+  // 避免高风险允许路径与拒绝路径各自发明 action 名。
+  permission: {
+    allowed: buildOperationLogAction("permission", "allowed"),
+    denied: buildOperationLogAction("permission", "denied"),
+  },
+  // WP-B1：Workspace 成员治理。
+  workspace: {
+    memberAdd: buildOperationLogResourceAction("workspace", "member", "add"),
+    memberRemove: buildOperationLogResourceAction("workspace", "member", "remove"),
+    memberUpdate: buildOperationLogResourceAction("workspace", "member", "update"),
+  },
+  // WP-B1 / WP-A2：Project 成员与生命周期治理。
+  project: {
+    memberAdd: buildOperationLogResourceAction("project", "member", "add"),
+    memberRemove: buildOperationLogResourceAction("project", "member", "remove"),
+    memberUpdate: buildOperationLogResourceAction("project", "member", "update"),
   },
 } as const;
 
