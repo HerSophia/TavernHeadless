@@ -118,13 +118,17 @@ start → run? → (chunk | tool | run)* → summary? → done
 | ---- | ---- | ---- |
 | `executionId` | `string` | 工具执行 ID |
 | `toolName` | `string` | 工具名 |
-| `providerId` | `string` | provider ID |
+| `providerId` | `string` | provider ID（`phase="awaiting_confirmation"` 时为空串，因尚未分派到 provider） |
 | `providerType` | `"builtin" \| "preset" \| "mcp" \| "unknown"?` | provider 类型 |
 | `sideEffectLevel` | `"none" \| "sandbox" \| "irreversible"?` | 副作用级别 |
-| `phase` | `"start" \| "success" \| "error" \| "denied" \| "timeout" \| "uncertain" \| "blocked"` | 工具执行阶段 |
+| `phase` | `"start" \| "success" \| "error" \| "denied" \| "timeout" \| "uncertain" \| "blocked" \| "awaiting_confirmation"` | 工具执行阶段 |
 | `message` | `string?` | provider 返回的附加说明 |
 | `durationMs` | `number?` | 执行耗时 |
 | `replaySafety` | `"safe" \| "confirm_on_replay" \| "never_auto_replay" \| "uncertain"` | 回放安全级别 |
+| `callId` | `string?` | 仅 `phase="awaiting_confirmation"` 时存在：模型生成的工具调用 id |
+| `args` | `Record<string, unknown>?` | 仅 `phase="awaiting_confirmation"` 时存在：待确认调用的参数快照 |
+
+`phase="awaiting_confirmation"` 是图助手（`purpose="graph-assistant"` 的临时对话）「执行前确认闸」专用阶段：工具在执行**前**暂停等待用户批准，此时 `callId` / `args` 随事件一并下发。批准 / 拒绝须经第一方恢复接口完成，详见 [Temporary Conversations 的执行前确认闸](/reference/api/node-graphs#执行前确认闸与恢复接口)。其余会话不会出现该 phase。
 
 ### TavernRespondRunPayload
 

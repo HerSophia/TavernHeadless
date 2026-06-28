@@ -63,6 +63,15 @@ export const useContextStore = defineStore("context", () => {
     currentSessionId.value = sessionId || null;
   }
 
+  /** 清空上下文（切换后端连接后调用，丢弃旧后端的 project/session 选择）。 */
+  function reset(): void {
+    projects.value = [];
+    sessions.value = [];
+    currentProjectId.value = null;
+    currentSessionId.value = null;
+    error.value = null;
+  }
+
   return {
     projects,
     sessions,
@@ -75,5 +84,6 @@ export const useContextStore = defineStore("context", () => {
     loadSessions,
     selectProject,
     selectSession,
+    reset,
   };
 });

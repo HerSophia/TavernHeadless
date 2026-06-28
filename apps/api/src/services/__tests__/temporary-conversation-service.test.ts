@@ -327,6 +327,120 @@ describe("TemporaryConversationService", () => {
       "delivery:no_assistant_override",
     ]));
   });
+
+  it("forces NodeGraph tools and injects one-time guidance for graph-assistant conversations", async () => {
+   const source = await seedSourceSession(database, Date.now());
+    let capturedConfig: unknown;
+    const stubChatService = {
+      respondFromPreparedDraftFloor: vi.fn(async (args: { request:{ config?: unknown } }) => {
+        capturedConfig = args.request.config;
+        return {
+          floorId: "floor_ga_1",
+          floorNo: 1,
+          generatedText: "ok",
+          summaries: [],
+          totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+    finalState: "committed" as const,
+          branchId: "main",
+          outputPageId: "page_ga_1",
+          assistantMessageId: "msg_ga_1",
+        };
+      }),
+    } as unknown as ChatService;
+    const gaService = new TemporaryConversationService(database.db, stubChatService, {
+      tokenCounter: new SimpleTokenCounter(),
+    });
+
+    const handle = await gaService.create({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sourceSessionId: source.sessionId,
+      purpose: "graph-assistant",
+    });
+
+    await gaService.respond({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId: handle.conversationId,
+      inputMessage: { role: "user", content: "Build a graph for me." },
+    });
+
+    // 图助手会话强制启用工具。
+    expect((capturedConfig as { enableTools?: boolean } | undefined)?.enableTools).toBe(true);
+
+    // 首次 respond 注入一条 system 引导消息。
+    const transcript = await gaService.readTranscript({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId:handle.conversationId,
+    });
+    const guidanceMessages = transcript.floors
+      .flatMap((floor) => floor.pages)
+      .flatMap((page) => page.messages)
+      .filter((message) => message.role === "system" && message.content.includes("NodeGraph"));
+    expect(guidanceMessages).toHaveLength(1);
+
+    // 幂等：再次触发注入不会重复写入引导。
+    const [row] = await database.db.select().from(sessions).where(eq(sessions.id, handle.conversationId));
+    await (gaService as unknown as {
+      maybeInjectGraphAssistantGuidance: (s: typeof row, b: string) => Promise<void>;
+    }).maybeInjectGraphAssistantGuidance(row, "main");
+    const transcriptAfter = await gaService.readTranscript({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId: handle.conversationId,
+    });
+    const guidanceAfter = transcriptAfter.floors
+      .flatMap((floor) => floor.pages)
+      .flatMap((page) => page.messages)
+      .filter((message)=> message.role === "system" && message.content.includes("NodeGraph"));
+    expect(guidanceAfter).toHaveLength(1);
+  });
+
+  it("does not force tools or inject guidance for non graph-assistant conversations", async () => {
+    const source = await seedSourceSession(database, Date.now());
+    let capturedConfig: unknown;
+    const stubChatService = {
+      respondFromPreparedDraftFloor: vi.fn(async (args: { request: { config?: unknown } }) => {
+        capturedConfig = args.request.config;
+        return {
+          floorId: "floor_plain_1",
+       floorNo: 1,
+          generatedText: "ok",
+          summaries: [],
+          totalUsage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+          finalState: "committed" as const,
+          branchId: "main",
+          outputPageId: "page_plain_1",
+          assistantMessageId: "msg_plain_1",
+        };
+      }),
+    } as unknown as ChatService;
+    const plainService = new TemporaryConversationService(database.db, stubChatService, {
+      tokenCounter: new SimpleTokenCounter(),
+    });
+
+    const handle = await plainService.create({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      sourceSessionId: source.sessionId,
+      purpose: "utility",
+    });
+
+    await plainService.respond({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId: handle.conversationId,
+      inputMessage: { role: "user", content: "Hello." },
+    });
+
+    // 非图助手会话不强制启用工具。
+    expect((capturedConfig as { enableTools?: boolean } | undefined)?.enableTools).not.toBe(true);
+
+    const transcript = await plainService.readTranscript({
+      accountId: DEFAULT_ADMIN_ACCOUNT_ID,
+      conversationId: handle.conversationId,
+    });
+    const guidanceMessages = transcript.floors
+      .flatMap((floor) => floor.pages)
+      .flatMap((page) => page.messages)
+      .filter((message) => message.role === "system" && message.content.includes("NodeGraph"));
+    expect(guidanceMessages).toHaveLength(0);
+ });
 });
 
 function createMockTurnOrchestrator(): TurnOrchestrator {

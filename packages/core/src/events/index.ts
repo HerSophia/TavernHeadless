@@ -65,6 +65,7 @@ export type {
   ToolCallCompletedEvent,
   ToolCallFailedEvent,
   ToolCallDeniedEvent,
+  ToolCallAwaitingConfirmationEvent,
   McpServerConnectedEvent,
   McpServerDisconnectedEvent,
   McpServerErrorEvent,

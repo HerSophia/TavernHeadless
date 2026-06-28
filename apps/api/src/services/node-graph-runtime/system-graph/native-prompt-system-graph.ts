@@ -9,6 +9,7 @@
  * 影子比对使用。真正的 PromptIR 仍由既有 compose 闭包产出（golden 一致），本图不重写编排逻辑。
  */
 import {
+  buildNativePromptFloorStructure,
   compileNodeGraph,
   type NodeGraphDocument,
   type NodeGraphValidationResult,
@@ -24,6 +25,12 @@ export const NATIVE_PROMPT_SYSTEM_GRAPH_VERSION = "ng2-bridge.v1" as const;
 /**
  * 构造 native prompt system graph 文档。
  *
+ * DG11（批次 11）起，节点 / 边 / 权限**结构骨架**下沉到 `@tavern/core` 的
+ * `buildNativePromptFloorStructure()`，与「默认楼层模板」共享唯一事实源（保证二者同结构）；
+ * 本函数仅在该骨架上叠加系统图专属标识：固定 `graphId`、`systemGraph = true` 与 `version`。
+ * 重构前后文档**深度相等**，对 NG2-BRIDGE 承载与 golden 无影响（系统图只被按 id / version /
+ * 可执行性引用，PromptIR 仍由 compose 闭包产出）。
+ *
  * 节点覆盖主链阶段：
  * - source：`source.user_input` / `source.chat_history`（pre_response）。
  * - agent decision：`agent.director_plan`（pre_response，需 `project.agent.run`）。
@@ -33,32 +40,18 @@ export const NATIVE_PROMPT_SYSTEM_GRAPH_VERSION = "ng2-bridge.v1" as const;
  * - commit：`output.commit_gate`（commit，唯一正史写入边界）。
  */
 export function buildNativePromptSystemGraph(): NodeGraphDocument {
+  const structure = buildNativePromptFloorStructure();
   return {
     schemaVersion: 2,
     graphId: NATIVE_PROMPT_SYSTEM_GRAPH_ID,
     name: "Native Prompt System Graph",
     description: "Built-in system graph that carries the native prompt main chain (NG2-BRIDGE).",
-    mode: "native_graph",
-    policies: {},
-    permissions: { required: ["project.agent.run"] },
+    mode: structure.mode,
+    policies: structure.policies,
+    permissions: structure.permissions,
     metadata: { systemGraph: true, version: NATIVE_PROMPT_SYSTEM_GRAPH_VERSION },
-    nodes: [
-      { id: "user_input", type: "source.user_input", typeVersion: "1", phase: "pre_response", scope: "floor_stable" },
-      { id: "history", type: "source.chat_history", typeVersion: "1", phase: "pre_response", scope: "floor_stable" },
-      { id: "director", type: "agent.director_plan", typeVersion: "1", phase: "pre_response", scope: "pre_response_stochastic" },
-      { id: "compose", type: "compose.final_messages", typeVersion: "1", phase: "response" },
-      { id: "narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
-      { id: "verify", type: "verify.continuity", typeVersion: "1", phase: "post_response" },
-      { id: "commit", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
-    ],
-    edges: [
-      { id: "e_history_director", kind: "data", from: { nodeId: "history", port: "messages" }, to: { nodeId: "director", port: "messages" } },
-      { id: "e_history_compose", kind: "data", from: { nodeId: "history", port: "messages" }, to: { nodeId: "compose", port: "messages" } },
-      { id: "e_compose_narrator", kind: "data", from: { nodeId: "compose", port: "messages" }, to: { nodeId: "narrator", port: "messages" } },
-      { id: "e_narrator_verify", kind: "data", from: { nodeId: "narrator", port: "text" }, to: { nodeId: "verify", port: "text" } },
-      { id: "e_narrator_commit", kind: "data", from: { nodeId: "narrator", port: "text" }, to: { nodeId: "commit", port: "text" } },
-      { id: "e_verify_commit", kind: "data", from: { nodeId: "verify", port: "result" }, to: { nodeId: "commit", port: "verifier" } },
-    ],
+    nodes: structure.nodes,
+    edges: structure.edges,
   };
 }
 

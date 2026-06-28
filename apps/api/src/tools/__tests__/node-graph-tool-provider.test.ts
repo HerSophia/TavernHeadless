@@ -85,7 +85,69 @@ describe("NodeGraphToolProvider", () => {
     database.close();
   });
 
-  it("patches drafts without applying a live version", async () => {
+  it("creates a brand-new graph via nodegraph.graph.create", async () => {
+    const tools = await provider.listTools();
+    expect(tools.map((tool) => tool.name)).toContain("nodegraph.graph.create");
+
+    const newDocument: NodeGraphDocument = {
+      schemaVersion: 1,
+      graphId: "ngraph_tool_created",
+      name: "Created By Assistant",
+      mode: "native_graph",
+      policies: {},
+      permissions: { required: [] },
+      nodes: [
+        { id: "input", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+      ],
+      edges: [],
+    };
+
+    const result = await provider.executeTool(
+      "nodegraph.graph.create",
+      { name: "Created By Assistant", document: newDocument },
+      makeContext(),
+    );
+
+    const data = result.data as {
+      definition: { id: string; name: string };
+      version: { versionNo: number};
+      validation: { isExecutable: boolean };
+    };
+    expect(data.definition.id).toBeTruthy();
+    expect(data.definition.name).toBe("Created By Assistant");
+    expect(data.version.versionNo).toBe(1);
+    expect(data.validation.isExecutable).toBe(true);
+
+    // 新建图真实持久化：可被定义服务读回。
+    const created = service.get({ actor, projectId: PROJECT_ID, graphId: data.definition.id });
+    expect(created.name).toBe("Created By Assistant");
+  });
+
+  it("surfaces an error when nodegraph.graph.create receives an invalid document", async () => {
+    const invalidDocument = {
+      schemaVersion: 1,
+      graphId: "ngraph_tool_invalid",
+      name: "Invalid",
+      mode: "native_graph",
+      policies: {},
+      permissions: { required: [] },
+      // 缺少必须的 source 节点 + 含有未连边的 agent 节点，触发校验失败。
+      nodes: [
+        { id: "bad-agent", type: "agent.director_plan", typeVersion: "1", phase: "pre_response" },
+      ],
+      edges: [],
+    } as unknown as NodeGraphDocument;
+
+  const result = await provider.executeTool(
+      "nodegraph.graph.create",
+      { document: invalidDocument },
+      makeContext(),
+    );
+    expect(result.executionStatus).toBe("error");
+   expect(result.executionReasonCode).toBe("nodegraph_tool_failed");
+  });
+
+  it("patches drafts without applying a live version", async ()=> {
     const tools = await provider.listTools();
     expect(tools.map((tool) => tool.name)).not.toContain("nodegraph.version.apply_live");
     expect(tools.map((tool) => tool.name)).toContain("nodegraph.node.add");

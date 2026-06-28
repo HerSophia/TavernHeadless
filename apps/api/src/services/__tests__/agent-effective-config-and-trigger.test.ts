@@ -6,7 +6,13 @@ import {
   createTestSessionWithScope,
   ensureTestAccount,
 } from "../../__tests__/helpers/workspace-project.js";
-import { projectEvents } from "../../db/schema.js";
+import {
+  llmProfileBindings,
+  llmProfiles,
+  mcpServerConfigs,
+  projectEvents,
+} from "../../db/schema.js";
+import type { TestDb } from "../../__tests__/helpers/workspace-project.js";
 import { AgentTypeService } from "../agent-type-service.js";
 import { EffectiveConfigService } from "../effective-config-service.js";
 import { ProjectAgentBindingService } from "../project-agent-binding-service.js";
@@ -16,6 +22,84 @@ import { ProjectToolPolicyOverrideService } from "../project-tool-policy-overrid
 import { ProjectEventService } from "../project-event-service.js";
 
 const ACCOUNT_ID = "effective-owner";
+
+function seedLlmProfile(
+  db: TestDb,
+  input: { id: string; accountId: string; workspaceId: string },
+  now = Date.now(),
+): void {
+  db.insert(llmProfiles)
+    .values({
+      id: input.id,
+      presetName: input.id,
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      provider: "openai",
+      modelId: "gpt-test",
+      apiKeyEncrypted: "enc",
+      apiKeyMasked: "sk-***",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+}
+
+function seedLlmBinding(
+  db: TestDb,
+  input: {
+    id: string;
+    accountId: string;
+    workspaceId: string;
+    scope: "global" | "session";
+    scopeId: string;
+    profileId: string;
+    params?: Record<string, unknown>;
+  },
+  now = Date.now(),
+): void {
+  db.insert(llmProfileBindings)
+    .values({
+      id: input.id,
+      scope: input.scope,
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      scopeId: input.scopeId,
+      instanceSlot: "*",
+      paramsJson: input.params ? JSON.stringify(input.params) : null,
+      profileId: input.profileId,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+}
+
+function seedMcpServer(
+  db: TestDb,
+  input: {
+    id: string;
+    name: string;
+    accountId: string;
+    workspaceId: string;
+    enabled: 0 | 1;
+    transport?: "stdio" | "http";
+  },
+  now = Date.now(),
+): void {
+  db.insert(mcpServerConfigs)
+    .values({
+      id: input.id,
+      name: input.name,
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      transport: input.transport ?? "stdio",
+      configJson: "{}",
+      enabled: input.enabled,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+}
 
 describe("EffectiveConfigService", () => {
   let database: DatabaseConnection;
@@ -167,6 +251,106 @@ describe("EffectiveConfigService", () => {
         supportsToolChoice: false,
         supportsStreamingToolCall: false,
       },
+    });
+  });
+
+  it("resolves the workspace default llm profile from the global binding when no project override", () => {
+    const project = createTestProject(database.db, { accountId: ACCOUNT_ID, id: "proj-effective-ws-llm" });
+    seedLlmProfile(database.db, { id: "llm_ws_default", accountId: ACCOUNT_ID, workspaceId: project.workspaceId });
+    seedLlmBinding(database.db, {
+      id: "bind_global_default",
+      accountId: ACCOUNT_ID,
+      workspaceId: project.workspaceId,
+      scope: "global",
+      scopeId: "global",
+      profileId: "llm_ws_default",
+      params: { temperature: 0.3 },
+    });
+
+    const view = effectiveConfigService.forProject({ projectId: project.projectId, accountId: ACCOUNT_ID });
+    expect(view.llmProfile).toEqual({
+      source: "workspace",
+      profileId: "llm_ws_default",
+      override: { temperature: 0.3 },
+    });
+  });
+
+  it("prefers the project override over the workspace default binding", () => {
+    const project = createTestProject(database.db, { accountId: ACCOUNT_ID, id: "proj-effective-precedence" });
+    seedLlmProfile(database.db, { id: "llm_ws_default_2", accountId: ACCOUNT_ID, workspaceId: project.workspaceId });
+    seedLlmBinding(database.db, {
+      id: "bind_global_default_2",
+      accountId: ACCOUNT_ID,
+      workspaceId: project.workspaceId,
+      scope: "global",
+      scopeId: "global",
+      profileId: "llm_ws_default_2",
+    });
+    llmOverrideService.upsert({
+      workspaceId: project.workspaceId,
+      projectId: project.projectId,
+      accountId: ACCOUNT_ID,
+      baseProfileId: "llm_project_override",
+      overrideJson: { temperature: 0.1 },
+    });
+
+    const view = effectiveConfigService.forProject({ projectId: project.projectId, accountId: ACCOUNT_ID });
+    expect(view.llmProfile.source).toBe("project");
+    expect(view.llmProfile.profileId).toBe("llm_project_override");
+  });
+
+  it("surfaces the session-level llm override from the session binding", async () => {
+    const session = createTestSessionWithScope(database.db, {
+      accountId: ACCOUNT_ID,
+      id: "sess-effective-llm",
+      values: {
+        metadataJson: JSON.stringify({ tool_permissions: { enabled: false } }),
+      },
+    });
+    seedLlmProfile(database.db, { id: "llm_session_override", accountId: ACCOUNT_ID, workspaceId: session.workspaceId });
+    seedLlmBinding(database.db, {
+      id: "bind_session_override",
+      accountId: ACCOUNT_ID,
+      workspaceId: session.workspaceId,
+      scope: "session",
+      scopeId: session.sessionId,
+      profileId: "llm_session_override",
+      params: { top_p: 0.9 },
+    });
+
+    const view = await effectiveConfigService.forSession({ sessionId: session.sessionId, accountId: ACCOUNT_ID });
+    expect(view.sessionOverrides.llmProfile).toEqual({
+      source: "session",
+      profileId: "llm_session_override",
+      override: { top_p: 0.9 },
+    });
+  });
+
+  it("lists only enabled workspace mcp servers as the workspace default source", () => {
+    const project = createTestProject(database.db, { accountId: ACCOUNT_ID, id: "proj-effective-mcp-ws" });
+    seedMcpServer(database.db, {
+      id: "mcp_enabled",
+      name: "Enabled Server",
+      accountId: ACCOUNT_ID,
+      workspaceId: project.workspaceId,
+      enabled: 1,
+    });
+    seedMcpServer(database.db, {
+      id: "mcp_disabled",
+      name: "Disabled Server",
+      accountId: ACCOUNT_ID,
+      workspaceId: project.workspaceId,
+      enabled: 0,
+    });
+
+    const view = effectiveConfigService.forProject({ projectId: project.projectId, accountId: ACCOUNT_ID });
+    expect(view.mcp.source).toBe("workspace");
+    expect(view.mcp.workspaceServers.map((server) => server.mcpServerId)).toEqual(["mcp_enabled"]);
+    expect(view.mcp.workspaceServers[0]).toMatchObject({
+      name: "Enabled Server",
+      transport: "stdio",
+      enabled: true,
+      toolPrefix: null,
     });
   });
 });

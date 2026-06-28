@@ -9,7 +9,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
-import { nodeGraphDefinitions, nodeGraphVersions } from "../db/schema.js";
+import { nodeGraphDefinitions, nodeGraphRuns, nodeGraphVersions } from "../db/schema.js";
 import { GOVERNANCE_OPERATION_ACTIONS } from "./governance/operation-log-names.js";
 import { OperationLogService } from "./operation-log-service.js";
 import {
@@ -52,6 +52,7 @@ export type NodeGraphDefinitionServiceErrorCode =
   | "node_graph_not_found"
   | "node_graph_version_not_found"
   | "node_graph_archived"
+  | "node_graph_has_runs"
   | "node_graph_document_invalid"
   | "node_graph_project_mismatch";
 
@@ -472,6 +473,56 @@ export class NodeGraphDefinitionService {
   /** R6-3（缺口 6）：取消归档。需要 `project.nodegraph.manage`。写 `node_graph.unarchive` 审计。 */
   unarchive(input: ManageNodeGraphInput): NodeGraphDefinitionRecord {
     return this.setStatus(input, "active", GOVERNANCE_OPERATION_ACTIONS.nodeGraph.unarchive);
+  }
+
+  /**
+   * 硬删除图定义本身：连同其所有版本、检查点（外键级联）一并移除。需要 `project.nodegraph.manage`。
+   *
+   * 与归档不同，这是删除「数据存在本身」。若存在引用该图的运行记录（node_graph_run 对定义为
+   * RESTRICT，刻意保留运行历史），则拒绝删除并抛 409 `node_graph_has_runs`，提示改用归档。
+   * 写 `node_graph.delete` 审计。
+   */
+  delete(input: ManageNodeGraphInput): void {
+   const access = this.accessService.requireProjectActionForActor(input.actor, input.projectId, "project.nodegraph.manage");
+    const now = input.now ?? Date.now();
+    const row = this.requireDefinitionRow(access.project.accountId, access.project.id, input.graphId);
+
+    const runRef = this.db
+      .select({ id: nodeGraphRuns.id })
+      .from(nodeGraphRuns)
+      .where(eq(nodeGraphRuns.graphId, row.id))
+      .limit(1)
+      .get();
+    if (runRef) {
+      throw new NodeGraphDefinitionServiceError(
+        409,
+        "node_graph_has_runs",
+        `NodeGraph has run history and cannot be hard-deleted: ${input.graphId}`,
+      );
+    }
+
+    this.db.transaction((tx) => {
+      new OperationLogService(tx).append({
+        accountId: access.project.accountId,
+        actorType: input.actor.actorType,
+        actorId: input.actor.actorAccountId,
+        actorAccountId: input.actor.actorAccountId,
+        actorClientId: input.actor.actorClientId ?? null,
+        requestId: input.requestId,
+        sourceType: "api",
+        action: GOVERNANCE_OPERATION_ACTIONS.nodeGraph.delete,
+        status: "succeeded",
+        workspaceId: access.project.workspaceId,
+        projectId: access.project.id,
+        targetType: "node_graph",
+        targetId: row.id,
+        beforeRef: { status: row.status, currentVersionId: row.currentVersionId },
+        afterRef: { deleted: true },
+        metadata: { name: row.name },
+        createdAt: now,
+      });
+      tx.delete(nodeGraphDefinitions).where(eq(nodeGraphDefinitions.id, row.id)).run();
+    });
   }
 
   /**

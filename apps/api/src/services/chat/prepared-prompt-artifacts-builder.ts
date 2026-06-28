@@ -24,6 +24,10 @@ import {
   resolveNativePromptBridgeDecision,
 } from "../agent-runtime/native-prompt-bridge.js";
 import {
+  readCompatPromptBridgeWorkspaceDefault,
+  resolveCompatPromptBridgeDecision,
+} from "../agent-runtime/compat-prompt-bridge.js";
+import {
   buildPromptRuntimeExecutionResult,
   type PromptRuntimeResolvedContext,
 } from "../prompt-runtime-execution.js";
@@ -385,6 +389,10 @@ export class PreparedPromptArtifactsBuilder {
         // NG2-BRIDGE：native 主链承载灰度（Workspace 默认经 env）。缺省 composite + shadow off，零回归。
         nativePromptBridge: resolveNativePromptBridgeDecision({
           workspace: readNativePromptBridgeWorkspaceDefault(),
+        }),
+        // CG11：compat 主链承载灰度（Workspace 默认经 env）。缺省 prompt_mode + shadow off，零回归。
+        compatPromptBridge: resolveCompatPromptBridgeDecision({
+          workspace: readCompatPromptBridgeWorkspaceDefault(),
         }),
       },
     );

@@ -4,7 +4,16 @@ import { nanoid } from "nanoid";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
 import { accounts, clientApiKeys, clients } from "../db/schema.js";
-import { ClientServiceError } from "./client-service.js";
+import {
+  ClientCapabilityError,
+  normalizeKeyScopes,
+  parseCapabilityJson,
+  resolveClientCapabilities,
+  resolveEffectiveKeyCapabilities,
+  stringifyCapabilityJson,
+  type ClientCapability,
+} from "./client-capability.js";
+import { ClientServiceError, type ClientKind } from "./client-service.js";
 
 export type ClientApiKeyStatus = "active" | "revoked";
 
@@ -15,6 +24,10 @@ export type ClientApiKeyRecord = {
   name: string | null;
   keyPrefix: string;
   status: ClientApiKeyStatus;
+  /** Declared scope (subset of the owning client capabilities), or null to inherit all client capabilities. */
+  scopes: ClientCapability[] | null;
+  rotatedFromId: string | null;
+  rotatedAt: number | null;
   lastUsedAt: number | null;
   expiresAt: number | null;
   createdAt: number;
@@ -37,6 +50,8 @@ export type ClientApiKeyAuthResult = {
   apiKeyId: string;
   clientKind: string;
   isDefaultClient: boolean;
+  /** Effective capabilities = client capabilities ∩ key scope. */
+  capabilities: ClientCapability[];
 };
 
 export type ClientApiKeyServiceErrorCode =
@@ -44,6 +59,8 @@ export type ClientApiKeyServiceErrorCode =
   | "client_api_key_not_found"
   | "client_api_key_expires_at_invalid"
   | "client_api_key_name_too_long"
+  | "client_api_key_scope_invalid"
+  | "client_api_key_revoked"
   | "client_not_found"
   | "client_disabled"
   | "client_api_key_cursor_invalid";
@@ -64,7 +81,21 @@ export type CreateClientApiKeyInput = {
   clientId: string;
   name?: string | null;
   expiresAt?: number | null;
+  /** Optional scope (must be a subset of the owning client capabilities). null/undefined inherits all. */
+  scopes?: readonly string[] | null;
   now?: number;
+};
+
+export type RotateClientApiKeyInput = {
+  accountId: string;
+  clientId: string;
+  apiKeyId: string;
+  now?: number;
+};
+
+export type RotatedClientApiKey = {
+  previous: ClientApiKeyRecord;
+  created: CreatedClientApiKey;
 };
 
 export type ListClientApiKeysInput = {
@@ -108,7 +139,13 @@ export class ClientApiKeyService {
     const name = normalizeOptionalName(input.name ?? null);
     const expiresAt = normalizeExpiration(input.expiresAt ?? null, now);
 
-    this.ensureActiveClient(accountId, clientId);
+    const client = this.ensureActiveClient(accountId, clientId);
+    const clientCapabilities = resolveClientCapabilities({
+      kind: client.kind as ClientKind,
+      isDefault: client.isDefault,
+      explicit: parseCapabilityJson(client.capabilitiesJson),
+    });
+    const scopes = this.normalizeScopes(input.scopes, clientCapabilities);
 
     const { secret, prefix, hash } = generateSecretBundle();
 
@@ -122,6 +159,9 @@ export class ClientApiKeyService {
         keyPrefix: prefix,
         keyHash: hash,
         status: "active",
+        scopesJson: stringifyCapabilityJson(scopes),
+        rotatedFromId: null,
+        rotatedAt: null,
         lastUsedAt: null,
         expiresAt,
         createdAt: now,
@@ -131,6 +171,95 @@ export class ClientApiKeyService {
       .get();
 
     return{ apiKey: mapApiKeyRow(inserted), secret };
+  }
+
+  /**
+   * Rotates an active API key: revokes the existing key and issues a new one that
+   * inherits its name, expiration and scope. The new key records `rotated_from_id`
+   * and `rotated_at` for audit traceability. The plaintext secret is only returned here.
+   */
+  rotate(input: RotateClientApiKeyInput): RotatedClientApiKey {
+    const accountId = requireNonEmpty(input.accountId);
+    const clientId = requireNonEmpty(input.clientId);
+    const apiKeyId = requireNonEmpty(input.apiKeyId);
+    const now = input.now ?? Date.now();
+
+    this.ensureClientOwnership(accountId, clientId);
+
+    const existing = this.db
+      .select()
+      .from(clientApiKeys)
+      .where(and(
+        eq(clientApiKeys.id, apiKeyId),
+        eq(clientApiKeys.accountId, accountId),
+        eq(clientApiKeys.clientId, clientId),
+      ))
+      .limit(1)
+      .get();
+
+    if (!existing) {
+      throw new ClientApiKeyServiceError(404, "client_api_key_not_found", "Client API key not found");
+    }
+
+    if (existing.status === "revoked") {
+      throw new ClientApiKeyServiceError(
+        409,
+        "client_api_key_revoked",
+        "Revoked client API key cannot be rotated",
+      );
+    }
+
+    const { secret, prefix, hash } = generateSecretBundle();
+
+    const created = this.db
+      .insert(clientApiKeys)
+      .values({
+        id: `cak_${nanoid()}`,
+        accountId,
+        clientId,
+        name: existing.name,
+        keyPrefix: prefix,
+        keyHash: hash,
+        status: "active",
+        scopesJson: existing.scopesJson,
+        rotatedFromId: existing.id,
+        rotatedAt: now,
+        lastUsedAt: null,
+        expiresAt: existing.expiresAt,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+      .get();
+
+    const revoked = this.db
+      .update(clientApiKeys)
+      .set({ status: "revoked", updatedAt: now })
+      .where(eq(clientApiKeys.id, existing.id))
+      .returning()
+      .get();
+
+    return {
+      previous: mapApiKeyRow(revoked),
+      created: { apiKey: mapApiKeyRow(created), secret },
+    };
+  }
+
+  private normalizeScopes(
+    scopes: readonly string[] | null | undefined,
+    clientCapabilities: readonly ClientCapability[],
+  ): ClientCapability[] | null {
+    if (scopes === null || scopes === undefined) {
+      return null;
+    }
+    try {
+      return normalizeKeyScopes(scopes, clientCapabilities);
+    } catch (error) {
+      if (error instanceof ClientCapabilityError) {
+        throw new ClientApiKeyServiceError(400, "client_api_key_scope_invalid", error.message);
+      }
+      throw error;
+    }
   }
 
   list(input: ListClientApiKeysInput): ClientApiKeyListResult {
@@ -226,6 +355,7 @@ export class ClientApiKeyService {
         clientId: clientApiKeys.clientId,
         keyHash: clientApiKeys.keyHash,
         status: clientApiKeys.status,
+        scopesJson: clientApiKeys.scopesJson,
         lastUsedAt: clientApiKeys.lastUsedAt,
         expiresAt: clientApiKeys.expiresAt,
       })
@@ -257,6 +387,7 @@ export class ClientApiKeyService {
         status: clients.status,
         kind: clients.kind,
         isDefault: clients.isDefault,
+        capabilitiesJson: clients.capabilitiesJson,
       })
       .from(clients)
       .where(eq(clients.id, row.clientId))
@@ -290,18 +421,35 @@ export class ClientApiKeyService {
         .run();
     }
 
+    const clientCapabilities = resolveClientCapabilities({
+      kind: clientRow.kind as ClientKind,
+      isDefault: clientRow.isDefault,
+      explicit: parseCapabilityJson(clientRow.capabilitiesJson),
+    });
+
     return {
       accountId: row.accountId,
     clientId: row.clientId,
       apiKeyId: row.id,
       clientKind: clientRow.kind,
       isDefaultClient: clientRow.isDefault,
+      capabilities: resolveEffectiveKeyCapabilities(clientCapabilities, parseCapabilityJson(row.scopesJson)),
     };
   }
 
-  private ensureActiveClient(accountId: string, clientId: string): void {
+  private ensureActiveClient(
+    accountId: string,
+    clientId: string,
+  ): { kind: string; isDefault: boolean; capabilitiesJson: string | null } {
     const row = this.db
-      .select({ id: clients.id, accountId: clients.accountId, status: clients.status })
+      .select({
+        id: clients.id,
+        accountId: clients.accountId,
+        status: clients.status,
+        kind: clients.kind,
+        isDefault: clients.isDefault,
+        capabilitiesJson: clients.capabilitiesJson,
+      })
       .from(clients)
       .where(eq(clients.id, clientId))
       .limit(1)
@@ -314,6 +462,8 @@ export class ClientApiKeyService {
     if (row.status !== "active") {
       throw new ClientApiKeyServiceError(409, "client_disabled", `Client is disabled: ${clientId}`);
     }
+
+    return { kind: row.kind, isDefault: row.isDefault, capabilitiesJson: row.capabilitiesJson };
   }
 
   private ensureClientOwnership(accountId: string, clientId: string): void{
@@ -350,6 +500,9 @@ function mapApiKeyRow(row: typeof clientApiKeys.$inferSelect): ClientApiKeyRecor
     name: row.name,
     keyPrefix: row.keyPrefix,
     status: row.status as ClientApiKeyStatus,
+    scopes: parseCapabilityJson(row.scopesJson),
+    rotatedFromId: row.rotatedFromId,
+    rotatedAt: row.rotatedAt,
     lastUsedAt: row.lastUsedAt,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
