@@ -48,6 +48,10 @@ export const GOVERNANCE_OPERATION_ACTIONS = {
     checkpointCleanup: buildOperationLogAction("node_graph_run", "checkpoint_cleanup"),
     inspect: buildOperationLogAction("node_graph_run", "inspect"),
   },
+  floorGraphBinding: {
+    setActive: buildOperationLogAction("floor_graph_binding", "set_active"),
+    clearActive: buildOperationLogAction("floor_graph_binding", "clear_active"),
+  },
   // WP-B3：权限审计统一 action。recordAllowed / recordDenied 复用这两个常量，
   // 避免高风险允许路径与拒绝路径各自发明 action 名。
   permission: {

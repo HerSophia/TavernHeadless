@@ -359,7 +359,9 @@ function toApiParams(params: LlmBindingGenerationParams | null): RuntimeParamsRe
     stream: params.stream,
     timeout_ms: params.timeoutMs,
     max_retries: params.maxRetries,
-    reasoning_effort: params.reasoningEffort,
+    // profile/instance 的输入 schema仍限制 reasoning_effort 为 low/medium/high 三档，
+    // 故持久化值不会出现 core 放宽后的自定义字符串，这里收窄回枚举是安全的。
+    reasoning_effort: params.reasoningEffort as "low" | "medium" | "high" | null | undefined,
   };
 
   const compacted = Object.fromEntries(

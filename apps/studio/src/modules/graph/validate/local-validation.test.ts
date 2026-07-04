@@ -6,6 +6,7 @@ import {
   diagnosticTarget,
   sortDiagnostics,
   validateGraphDocument,
+  withDiagnosticSource,
 } from "./local-validation";
 
 function doc(partial: Partial<NodeGraphDocument>): NodeGraphDocument {
@@ -29,6 +30,7 @@ describe("validateGraphDocument", () => {
     expect(result.isExecutable).toBe(true);
     expect(result.counts.error).toBe(0);
     expect(result.diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
+    expect(result.diagnostics.every((d) => d.source === "local")).toBe(true);
   });
 
   it("flags unknown node types as errors and marks not executable", () => {
@@ -75,6 +77,19 @@ describe("validateGraphDocument", () => {
     );
     expect(result.diagnostics.some((d) => Boolean(d.nodeId))).toBe(true);
     expect(result.isExecutable).toBe(false);
+  });
+});
+
+describe("withDiagnosticSource", () => {
+  it("marks diagnostics with their source", () => {
+    const diagnostics = withDiagnosticSource(
+      [{ severity: "warning", code: "server_warning", message: "server" }],
+      "server",
+    );
+
+    expect(diagnostics).toEqual([
+      { severity: "warning", code: "server_warning", message: "server", source: "server" },
+    ]);
   });
 });
 

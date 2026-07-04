@@ -57,6 +57,21 @@ export interface FloorRunServiceOptions {
   staleRunGracePeriodMs?: number;
 }
 
+/**
+ * 重试 run 在被 executeTurn 显式 reopen 到 generating 之前所处的准备阶段集合。
+ *
+ * 楼层级 / step 级重试会先在「已提交楼层」上初始化一条新的 running run，之后才由 executeTurn
+ * 走 reopenForRetry 把楼层从 committed 打开到 generating。在 reopen 之前存在一个短暂但真实的
+ * 「committed + running」窗口（step 重试还要重建前缀往返、拉取会话窗口、组装 prompt，可能持续数秒）。
+ * 这个集合用于在 stale 收尾里识别「正处于该准备窗口的重试 run」，从而不把它误当作 stale 收尾。
+ */
+const PRE_REOPEN_RETRY_PHASES: ReadonlySet<FloorRunPhase> = new Set<FloorRunPhase>([
+  "input_recorded",
+  "semantic_resolved",
+  "prechecked",
+  "prompt_assembled",
+]);
+
 function toPublicPhase(phase: FloorRunPhase): FloorRunPublicPhase {
   switch (phase) {
     case "input_recorded":
@@ -177,9 +192,10 @@ export class FloorRunService {
       })
       .run();
 
-    const snapshot = await this.getSnapshot(input.floorId);
+    // 刚写入的 run 不可能是 stale；且重试会在旧的已提交楼层上初始化新 run，此时不能触发 stale 收尾。
+    const snapshot = await this.getSnapshot(input.floorId, { reconcile: false });
     if (snapshot) {
-      this.emitSnapshot(snapshot);
+            this.emitSnapshot(snapshot);
     }
     return snapshot;
   }
@@ -210,7 +226,9 @@ export class FloorRunService {
       .where(eq(floorRunStates.floorId, floorId))
       .run();
 
-    const snapshot = await this.getSnapshot(floorId);
+    // 阶段推进只是刷新当前 run 的 phase，自身不是 stale；重试在 reopen 前楼层仍为 committed，
+    // 不能因阶段推进而误触发 stale 收尾。
+    const snapshot = await this.getSnapshot(floorId, { reconcile: false });
     if (snapshot) {
       this.emitSnapshot(snapshot);
     }
@@ -495,6 +513,34 @@ export class FloorRunService {
     };
   }
 
+  /**
+   * 按 `runId` 取最终态记录（RT3 缺口补发的 DB 兜底来源）。
+   *
+   * `floor_run_state` 以 `floorId` 为主键、每个 floor 仅保留「当前/最新」一条 run，
+   * `runId` 列在 `initializeRun` 时被覆盖。因此只有当传入的 `runId` 仍是该 floor 当前的 run
+   * 时才能命中；若该 run 已被新的 run 取代，则视为已不可回放，返回 null。
+   *
+   * 只读：复用既有 `getFloorRunRecord`（含 `getSnapshot` 的 stale 校正），不改写库结构；
+   * `floor_run_state.runId` 已有索引（`floor_run_state_run_id_idx`），无需新增迁移。
+   */
+  async getFloorRunRecordByRunId(runId: string): Promise<FloorRunRecord | null> {
+    const [row] = await this.db
+      .select({ floorId: floorRunStates.floorId })
+      .from(floorRunStates)
+      .where(eq(floorRunStates.runId, runId))
+      .limit(1);
+
+    if (!row) {
+      return null;
+    }
+
+    const record = await this.getFloorRunRecord(row.floorId);
+    if (!record || !record.run || record.run.runId !== runId) {
+      return null;
+    }
+    return record;
+  }
+
   async getActiveRunForFloor(floorId: string): Promise<FloorRunSnapshot | null> {
     const snapshot = await this.getSnapshot(floorId);
     return snapshot?.status === "running" ? snapshot : null;
@@ -566,7 +612,19 @@ export class FloorRunService {
     return null;
   }
 
-  async getSnapshot(floorId: string): Promise<FloorRunSnapshot | null> {
+  /**
+   * 读取楼层的 run 快照。
+   *
+   * reconcile 默认开启：对「楼层已终态但 run 快照仍 running」的滞后情形做 stale 自愈收尾，
+   * 适用于外部只读查询。写操作（initializeRun / advancePhase）结尾为发事件而读快照时应传
+   * reconcile: false —— 刚写入的 run 不可能是 stale；且重试会先在旧的已提交楼层上创建 / 推进
+   * 新 run（reopen 到 generating 发生在 executeTurn 内、更晚），此时若误触发 stale 收尾会把本次
+   * 回合的 run 提前标为 completed，导致统一提交边界把本次回合误判为 attempt_not_current。
+   */
+  async getSnapshot(
+    floorId: string,
+    options: { reconcile?: boolean } = {},
+  ): Promise<FloorRunSnapshot | null> {
     const runRow = await this.getRunRow(floorId);
     if (!runRow) {
       return null;
@@ -577,7 +635,9 @@ export class FloorRunService {
       return null;
     }
 
-    const reconciledRunRow = await this.reconcileStaleRunRow(floorRow, runRow);
+    const reconciledRunRow = options.reconcile === false
+      ? runRow
+      : await this.reconcileStaleRunRow(floorRow, runRow);
     return {
       sessionId: floorRow.sessionId,
       floorId: reconciledRunRow.floorId,
@@ -607,8 +667,25 @@ export class FloorRunService {
 
     const updatedAt = Math.max(Date.now(), floorRow.updatedAt, runRow.updatedAt);
     if (floorRow.state === "committed") {
-      await this.markCompleted(floorRow.id, { updatedAt });
-      return (await this.getRunRow(floorRow.id)) ?? runRow;
+      // 重试会在「已提交楼层」上先建 run、再由 executeTurn 显式 reopen 到 generating。
+      // 在 reopen 之前存在一个短暂但真实的「committed + running」窗口。这期间任何走 reconcile
+      // 的读取（内部发事件回读、或外部轮询 GET /sessions/:id/active-run 等）都会把这条刚建好的
+      // 重试 run 误判为 stale 并收尾成 completed；随后 commit 的 attempt 并发校验读到非 running
+      // 状态，就会抛出 attempt_not_current。
+      //
+      // 因此仅当 run 是「重试类型且仍处于 reopen 前的准备阶段、且最近仍有活动」时，视为进行中的
+      // 重试而不收尾；其余情形（正常回合已提交但 markCompleted 漏标、被取代的旧 attempt、已进入
+      // 生成阶段却仍显示 committed 等）仍按 stale 收尾。若准备阶段的重试 run 长时间无活动（进程崩溃
+      // 等极端情况），超过 stale 窗口后仍会被收尾，避免会话永久卡在 busy。
+      const isRetryPreparingForReopen =
+        (runRow.runType === "retry_turn" || runRow.runType === "retry_step") &&
+        PRE_REOPEN_RETRY_PHASES.has(runRow.phase as FloorRunPhase) &&
+        Date.now() - runRow.updatedAt <= this.staleRunMaxAgeMs;
+      if (!isRetryPreparingForReopen) {
+        await this.markCompleted(floorRow.id, { updatedAt });
+        return (await this.getRunRow(floorRow.id)) ?? runRow;
+      }
+      return runRow;
     }
 
     if (floorRow.state === "failed") {

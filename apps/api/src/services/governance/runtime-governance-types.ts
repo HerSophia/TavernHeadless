@@ -27,6 +27,7 @@ export const RUNTIME_GOVERNANCE_OPERATION_DOMAINS = [
   "agent_runtime",
   "node_graph",
   "node_graph_run",
+  "floor_graph_binding",
   // WP-B（Workspace 与平台基础批次 B）：身份 / 成员 / 权限审计接线复用同一治理契约，
   // 不再另起一套审计与限流 domain。
   "permission",

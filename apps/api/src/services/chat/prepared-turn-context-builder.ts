@@ -5,6 +5,7 @@ import type {
   GraphAssistantAgentLoopConfig,
   ToolCallTransportKind,
   TurnConfig,
+  TurnRunObserver,
   PromptRunIntent,
 } from "@tavern/core";
 
@@ -18,6 +19,7 @@ import { TurnToolingService } from "./turn-tooling-service.js";
 import { TurnMemoryService } from "./turn-memory-service.js";
 import { TurnRunTracker } from "./turn-run-tracker.js";
 import { buildPromptRuntimeGovernanceView } from "../prompt-runtime/governance-view-builder.js";
+import type { ResolvedFloorGraphBinding } from "../project-floor-graph-binding-service.js";
 
 export class PreparedTurnContextBuilder {
   constructor(
@@ -55,6 +57,7 @@ export class PreparedTurnContextBuilder {
       generationParams?: GenerationParamsInput;
       promptIntent?: PromptRunIntent;
       debugOptions?: PromptLiveDebugOptions;
+      promptRuntimeInjections?: import("./contracts.js").RespondRequest["promptRuntimeInjections"];
     };
     executionContext: import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
     conversationWindow?: PromptRuntimeConversationWindow;
@@ -62,6 +65,8 @@ export class PreparedTurnContextBuilder {
     firstPartyStateContext?: FirstPartyStateContext;
     abortSignal?: AbortSignal;
     onChunk?: (chunk: string) => void;
+      onReasoning?: (delta: string) => void;
+      onStepNarration?: (narration: { stepIndex: number; text: string; createdAt: number }) => void;
     stream?: boolean;
     agentContributors?: PromptRuntimeContributorOutput[];
     /**
@@ -69,11 +74,21 @@ export class PreparedTurnContextBuilder {
      * 仅图助手路径传入；其他会话不传，保持默认解析。
      */
     toolTransportOverride?: ToolCallTransportKind;
+    floorGraphBinding?: ResolvedFloorGraphBinding | null;
     /**
-     * 图助手 text_protocol 多轮 agent 循环配置（含确认决策回调）。
+     * 图助手多轮 agent 循环配置（含确认决策回调），适用于 text_protocol 与 native_function_call 两条 transport。
      * 仅图助手路径传入；与 toolTransportOverride 成对出现。
      */
     graphAssistantAgentLoop?: GraphAssistantAgentLoopConfig;
+    /** 本回合生成尝试号，透传给 TurnInput，避免多步循环用步号污染 attemptNo。 */
+    runAttemptNo?: number;
+    /**
+     * step 重试：已完成的前缀工具往返（按 stepIndex 升序）。
+     *
+     * 仅 native_function_call 路径的 step 重试传入：透传给 TurnInput.priorRoundtrips，
+     * 让 agent loop 在生成前重建前 N-1 步工具上下文，从第 N 步重启。
+     */
+    priorRoundtrips?: import("@tavern/core").AgentLoopPriorRoundtrip[];
   }): Promise<PreparedTurnContext> {
     const artifacts = await this.preparedPromptArtifactsBuilder.prepare({
       mode: args.mode,
@@ -97,6 +112,7 @@ export class PreparedTurnContextBuilder {
       includeRuntimeTrace: args.request.debugOptions?.includeRuntimeTrace === true,
       baseRuntimeTrace: args.baseRuntimeTrace,
       stream: args.stream,
+      floorGraphBinding: args.floorGraphBinding ?? null,
       ...(args.toolTransportOverride ? { toolTransportOverride: args.toolTransportOverride } : {}),
       ...(args.agentContributors ? { agentContributors: args.agentContributors } : {}),
     });
@@ -149,8 +165,12 @@ export class PreparedTurnContextBuilder {
       toolRegistry: toolRuntime.toolRegistry,
       toolPermissions: toolRuntime.toolPermissions,
       ...(artifacts.toolTransport ? { toolTransport: artifacts.toolTransport } : {}),
-      ...(args.graphAssistantAgentLoop ? { graphAssistantAgentLoop: args.graphAssistantAgentLoop } : {}),
-      runObserver: this.turnRunTracker.createTurnRunObserver(args.floorId),
+      ...(args.graphAssistantAgentLoop ? { graphAssistantAgentLoop: args.graphAssistantAgentLoop }: {}),
+      ...(args.runAttemptNo !== undefined ? { runAttemptNo: args.runAttemptNo } : {}),
+      ...(args.priorRoundtrips && args.priorRoundtrips.length > 0
+        ? { priorRoundtrips: args.priorRoundtrips }
+        : {}),
+      runObserver: this.buildTurnRunObserver(args.floorId, args.onReasoning, args.onStepNarration),
       ...(args.onChunk ? { onChunk: args.onChunk } : {}),
       ...(args.abortSignal ? { abortSignal: args.abortSignal } : {}),
     };
@@ -189,8 +209,43 @@ export class PreparedTurnContextBuilder {
       generationParams,
       requestedTurnConfig,
       turnConfig,
-      memoryConsolidationRequested,
+ memoryConsolidationRequested,
       turnInput,
+    };
+  }
+
+  /**
+   * 构造本回合的运行观察器。
+   *
+   * 默认由 turnRunTracker 生产（负责楼层运行快照）。当上层传入 onReasoning 时，
+   * 额外叠加一层 onReasoningUpdate 转发，把推理增量下发给流式回调（不影响运行快照）。
+   */
+  private buildTurnRunObserver(
+    floorId: string,
+    onReasoning?: (delta: string) => void,
+    onStepNarration?: (narration: { stepIndex: number; text: string; createdAt: number }) => void,
+  ): TurnRunObserver {
+    const baseObserver = this.turnRunTracker.createTurnRunObserver(floorId);
+    if (!onReasoning && !onStepNarration) {
+      return baseObserver;
+    }
+
+    return {
+       ...baseObserver,
+       ...(onReasoning
+         ? {
+            onReasoningUpdate: (input) => {
+              onReasoning(input.delta);
+            },
+          }
+        : {}),
+...(onStepNarration
+        ? {
+            onStepNarration: (input) => {
+              onStepNarration(input);
+            },
+          }
+        : {}),
     };
   }
 }

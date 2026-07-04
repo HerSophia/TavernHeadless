@@ -292,6 +292,43 @@ describe("createDatabase", () => {
     ).toEqual({ snapshot_version: 1, provenance_json: null });
   });
 
+  it("repairs the floor_result_snapshot reasoning_text additive column even when migration history is already up to date", () => {
+    tempDir = mkdtempSync(join(tmpdir(), "tavern-db-"));
+    tempMigrationsDir = createMigrationsDirBeforeIndex(79);
+
+    const databasePath = join(tempDir, "tavern.db");
+
+    seedSqlite = new Database(databasePath);
+    seedSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(seedSqlite, { schema }), { migrationsFolder: tempMigrationsDir });
+
+    expect(getTableColumns(seedSqlite, "floor_result_snapshot").map((column) => column.name)).not.toEqual(
+      expect.arrayContaining(["reasoning_text"]),
+    );
+
+    migrationSourceSqlite = new Database(":memory:");
+    migrationSourceSqlite.pragma("foreign_keys = ON");
+    migrate(drizzle(migrationSourceSqlite, { schema }), { migrationsFolder: MIGRATIONS_PATH });
+
+    replaceMigrationHistory(seedSqlite, migrationSourceSqlite);
+
+    seedSqlite.close();
+    seedSqlite = undefined;
+
+    connection = createDatabase(databasePath);
+    connection.close();
+    connection = undefined;
+
+    verifySqlite = new Database(databasePath);
+
+    const repairedColumns = getTableColumns(verifySqlite, "floor_result_snapshot");
+    expect(repairedColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["reasoning_text"]),
+    );
+    expect(repairedColumns.find((column) => column.name === "reasoning_text")?.dflt_value).toBeNull();
+  });
+
+
   it("repairs additive client-data, session-state, and session-branch structures even when migration history is already up to date", () => {
     tempDir = mkdtempSync(join(tmpdir(), "tavern-db-"));
     tempMigrationsDir = createMigrationsDirBeforeIndex(38);

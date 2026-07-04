@@ -55,6 +55,8 @@ export type PromptRuntimePreparePhase =
   | "source_resolve"
   | "injection"
   | "pre_response"
+  // LI11-3（3b）：提示词配方解析与来源标注（node_preset_ref / session_fallback）。
+  | "prompt_recipe"
   | "assemble"
   | "materialize"
   | "inspect";

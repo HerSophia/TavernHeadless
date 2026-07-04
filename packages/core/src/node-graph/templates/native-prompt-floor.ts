@@ -43,7 +43,9 @@ export interface NativePromptFloorStructure {
  * - source：`source.user_input` / `source.chat_history`（pre_response，floor_stable）。
  * - agent decision：`agent.director_plan`（pre_response，pre_response_stochastic，需 `project.agent.run`）。
  * - compose：`compose.final_messages`（response）。
- * - narrator：`narration.narrator`（response，唯一正文）。
+ * - narrator：`narration.narrator`（response，唯一正文）。默认**不带** `config.presetRef`：
+ *   提示词配方回退到 `session.presetId`，PromptIR 与现状逐字节一致（LI11-3灰度安全基线）。
+ *   用户可在 studio 为该节点填入 `presetRef` 以让本楼层叙述者改用指定预设主体。
  * - postprocess / verify：`verify.continuity`（post_response）。
  * - commit：`output.commit_gate`（commit，唯一正史写入边界）。
  */
@@ -63,8 +65,10 @@ export function buildNativePromptFloorStructure(): NativePromptFloorStructure {
     ],
     edges: [
       { id: 'e_history_director', kind: 'data', from: { nodeId: 'history', port: 'messages' }, to: { nodeId: 'director', port: 'messages' } },
+      { id: 'e_user_input_director', kind: 'data', from: { nodeId: 'user_input', port: 'text' }, to: { nodeId: 'director', port: 'user_input' } },
       { id: 'e_history_compose', kind: 'data', from: { nodeId: 'history', port: 'messages' }, to: { nodeId: 'compose', port: 'messages' } },
       { id: 'e_compose_narrator', kind: 'data', from: { nodeId: 'compose', port: 'messages' }, to: { nodeId: 'narrator', port: 'messages' } },
+      { id: 'e_user_input_narrator', kind: 'data', from: { nodeId: 'user_input', port: 'text' }, to: { nodeId: 'narrator', port: 'user_input' } },
       { id: 'e_narrator_verify', kind: 'data', from: { nodeId: 'narrator', port: 'text' }, to: { nodeId: 'verify', port: 'text' } },
       { id: 'e_narrator_commit', kind: 'data', from: { nodeId: 'narrator', port: 'text' }, to: { nodeId: 'commit', port: 'text' } },
       { id: 'e_verify_commit', kind: 'data', from: { nodeId: 'verify', port: 'result' }, to: { nodeId: 'commit', port: 'verifier' } },

@@ -10,6 +10,7 @@ import { validateGraphDocument } from "../validate/local-validation";
 import {
   importSillyTavernPreset,
   type PresetClusterMode,
+  type PresetImportPurpose,
   type PresetImportResult,
 } from "./silly-tavern-preset";
 
@@ -23,6 +24,8 @@ const phase = ref<"idle" | "parsing">("idle");
 const error = ref<string | null>(null);
 const result = ref<PresetImportResult | null>(null);
 const clusterMode = ref<PresetClusterMode>("loose");
+const importPurpose = ref<PresetImportPurpose>("narrator_graph");
+const importPurposeOptions = ["narrator_graph", "compat_floor_graph"] as const;
 /** 缓存已解析的原始 JSON 与回退名，供切换聚类模式时重新导入。 */
 const parsedPreset = ref<unknown>(null);
 const fallbackName = ref("");
@@ -63,11 +66,42 @@ const counts = computed(() => {
 
 const loadable = computed(() => Boolean(result.value) && (counts.value?.error ?? 1) === 0);
 
+function purposeLabel(purpose: PresetImportPurpose): string {
+  return t(purpose === "compat_floor_graph" ? "graph.preset.purposeCompat" : "graph.preset.purposeNarrator");
+}
+
+function purposeHint(purpose: PresetImportPurpose): string {
+  return t(
+    purpose === "compat_floor_graph"
+      ? "graph.preset.purposeCompatHint"
+      : "graph.preset.purposeNarratorHint",
+  );
+}
+
+function reimportPreset(options: { name?: string; syncName?: boolean } = {}): void {
+  if (parsedPreset.value === null) {
+    return;
+  }
+  const imported = importSillyTavernPreset(parsedPreset.value, {
+    name: options.name ?? (name.value.trim() || fallbackName.value),
+    clusterMode: clusterMode.value,
+    presetHash: presetHash.value || undefined,
+    purpose: importPurpose.value,
+  });
+  result.value = imported;
+  if (options.syncName === true) {
+    name.value = imported.document.name;
+  }
+}
+
 async function onFileChange(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   result.value = null;
   error.value = null;
+  parsedPreset.value = null;
+  presetHash.value = "";
+  fallbackName.value = "";
   if (!file) {
     fileName.value = "";
     return;
@@ -76,17 +110,10 @@ async function onFileChange(event: Event): Promise<void> {
   phase.value = "parsing";
   try {
     const text = await file.text();
-    const parsed = JSON.parse(text) as unknown;
-    parsedPreset.value = parsed;
+    parsedPreset.value = JSON.parse(text) as unknown;
     presetHash.value = hashText(text);
     fallbackName.value = file.name.replace(/\.json$/i, "");
-    const imported = importSillyTavernPreset(parsed, {
-      name: fallbackName.value,
-      clusterMode: clusterMode.value,
-      presetHash: presetHash.value,
-    });
-    result.value = imported;
-    name.value = imported.document.name;
+    reimportPreset({ name: fallbackName.value, syncName: true });
   } catch (cause) {
     if (cause instanceof Error && cause.message === "not_a_sillytavern_preset") {
       error.value = t("graph.preset.invalid");
@@ -111,12 +138,24 @@ function onClusterModeChange(mode: PresetClusterMode): void {
   }
   error.value = null;
   try {
-    const imported = importSillyTavernPreset(parsedPreset.value, {
-      name: name.value.trim() || fallbackName.value,
-      clusterMode: mode,
-      presetHash: presetHash.value || undefined,
-    });
-    result.value = imported;
+    reimportPreset();
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}
+
+/** 切换导入用途：用缓存的原始 JSON 重新导入（不需重新选文件）。 */
+function onImportPurposeChange(purpose: PresetImportPurpose): void {
+  if (importPurpose.value === purpose) {
+    return;
+  }
+  importPurpose.value = purpose;
+  if (parsedPreset.value === null) {
+    return;
+  }
+  error.value = null;
+  try {
+    reimportPreset();
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause);
   }
@@ -152,6 +191,27 @@ function onLoad(): void {
             @change="onFileChange"
           />
         </label>
+
+        <div class="space-y-1">
+          <span class="text-xs text-text-secondary">{{ t("graph.preset.purpose") }}</span>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <button
+              v-for="purpose in importPurposeOptions"
+              :key="purpose"
+              type="button"
+              class="rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors duration-150"
+              :class="importPurpose === purpose
+                ? 'border-signal-accent bg-float text-text-primary'
+                : 'border-line-subtle text-text-secondary hover:border-line-active'"
+              @click="onImportPurposeChange(purpose)"
+            >
+              <span class="block font-medium">{{ purposeLabel(purpose) }}</span>
+              <span class="mt-0.5 block text-[10px] leading-snug text-text-muted">
+                {{ purposeHint(purpose) }}
+              </span>
+            </button>
+          </div>
+        </div>
 
         <div class="space-y-1">
           <span class="text-xs text-text-secondary">{{ t("graph.preset.clusterMode") }}</span>
@@ -203,6 +263,10 @@ function onLoad(): void {
                 }}<span v-if="result.summary.disabledCount > 0" class="text-text-muted">
                   · {{ result.summary.disabledCount }} {{ t("graph.preset.disabled") }}</span>
               </dd>
+            </div>
+            <div class="flex justify-between gap-2 rounded-md border border-line-subtle px-2.5 py-1.5 text-xs">
+              <dt class="text-text-muted">{{ t("graph.preset.slots") }}</dt>
+              <dd class="font-mono text-text-secondary">{{ result.summary.slotNodeCount }}</dd>
             </div>
             <div class="flex justify-between gap-2 rounded-md border border-line-subtle px-2.5 py-1.5 text-xs">
               <dt class="text-text-muted">{{ t("graph.groups") }}</dt>

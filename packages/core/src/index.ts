@@ -1,6 +1,6 @@
 // ── Events ────────────────────────────────────────────
-export { createEventBus } from './events/index.js';
-export type { CoreEventBus } from './events/index.js';
+export { createEventBus } from "./events/index.js";
+export type { CoreEventBus } from "./events/index.js";
 export type {
   CoreEventMap,
   FloorStateChangedEvent,
@@ -70,24 +70,52 @@ export type {
   McpServerConnectedEvent,
   McpServerDisconnectedEvent,
   McpServerErrorEvent,
-} from './events/index.js';
+} from "./events/index.js";
+
+// ── Realtime Protocol (experimental, RT0) ─────────────
+export type {
+  RealtimeProtocolVersion,
+  RealtimeEventEnvelope,
+  RealtimeResumeControl,
+  RealtimeAckControl,
+  RealtimeClientControl,
+  RealtimeActiveRunHint,
+  RealtimeSessionControl,
+  RealtimeErrorCode,
+  RealtimeErrorControl,
+  RealtimeServerControl,
+  RealtimeEventFrame,
+  RealtimeServerFrame,
+  RealtimeClientFrame,
+} from "./realtime/index.js";
 
 // ── Floor ─────────────────────────────────────────────
-export { FloorStateMachine } from './floor/index.js';
-export { FloorLifecycle } from './floor/index.js';
-export { FloorNotFoundError, FloorStateConflictError, InvalidStateTransitionError } from './errors.js';
-export type { FloorEntity } from './types.js';
-export type { FloorRepository } from './ports/floor-repository.js';
+export { FloorStateMachine } from "./floor/index.js";
+export { FloorLifecycle } from "./floor/index.js";
+export {
+  FloorNotFoundError,
+  FloorStateConflictError,
+  InvalidStateTransitionError,
+} from "./errors.js";
+export type { FloorEntity } from "./types.js";
+export type { FloorRepository } from "./ports/floor-repository.js";
 
 // ── Variables ─────────────────────────────────────────
-export { VariableResolver } from './variables/index.js';
-export { VariableStore } from './variables/index.js';
-export type { VariableWriteIntent, VariableWriteSourceMetadata, VariableWriteTargetSurface } from './variables/index.js';
-export type { VariableContext } from './types.js';
-export type { VariableRepository, VariableRepositoryOptions } from './ports/variable-repository.js';
+export { VariableResolver } from "./variables/index.js";
+export { VariableStore } from "./variables/index.js";
+export type {
+  VariableWriteIntent,
+  VariableWriteSourceMetadata,
+  VariableWriteTargetSurface,
+} from "./variables/index.js";
+export type { VariableContext } from "./types.js";
+export type {
+  VariableRepository,
+  VariableRepositoryOptions,
+} from "./ports/variable-repository.js";
 
 // ── Repository Ports ──────────────────────────────────
-export type { MemoryRepository } from './ports/memory-repository.js';
+export type { MemoryRepository } from "./ports/memory-repository.js";
 
 // ── Prompt ────────────────────────────────────────────
 export type {
@@ -160,10 +188,10 @@ export type {
   PromptRuntimeBudgetGroupDescriptor,
   TemplateOptions,
   MessageBuilderOptions,
-} from './prompt/index.js';
-export type { PromptRuntimeSourceGovernanceLevel } from './prompt/index.js';
-export { TemplateEngine, TemplateVariableError } from './prompt/index.js';
-export { TokenBudget, SimpleTokenCounter } from './prompt/index.js';
+} from "./prompt/index.js";
+export type { PromptRuntimeSourceGovernanceLevel } from "./prompt/index.js";
+export { TemplateEngine, TemplateVariableError } from "./prompt/index.js";
+export { TokenBudget, SimpleTokenCounter } from "./prompt/index.js";
 export {
   buildPromptRuntimeSectionBudgetGroup,
   resolvePromptRuntimeSourceDescriptor,
@@ -177,7 +205,7 @@ export {
   buildPromptRuntimeGovernanceSeed,
   inferPromptRuntimeGovernanceSourceKind,
   resolvePromptRuntimeGovernancePolicy,
-} from './prompt/index.js';
+} from "./prompt/index.js";
 export type {
   NativePromptMode,
   NativePipelinePhase,
@@ -193,7 +221,7 @@ export type {
   ConditionNodeOptions,
   TransformRule,
   TransformNodeOptions,
-} from './prompt/index.js';
+} from "./prompt/index.js";
 export {
   assembleNativePrompt,
   runNativePipeline,
@@ -205,8 +233,8 @@ export {
   TokenBudgetNode,
   PackMessagesNode,
   NativePipelineError,
-} from './prompt/index.js';
-export { MessageBuilder } from './prompt/index.js';
+} from "./prompt/index.js";
+export { MessageBuilder } from "./prompt/index.js";
 
 // ── Prompt Assets ─────────────────────────────────────
 export type {
@@ -216,7 +244,7 @@ export type {
   PromptAssetDeclarationPart,
   PromptAssetDeclaration,
   PromptAssetManifest,
-} from './prompt-assets/index.js';
+} from "./prompt-assets/index.js";
 export {
   createPromptAssetDeclaration,
   createPromptAssetManifest,
@@ -225,7 +253,7 @@ export {
   createPromptAssetRef,
   PROMPT_ASSET_CHARACTER_BUDGET_GROUP,
   PROMPT_ASSET_CHARACTER_SOURCE_KIND,
-} from './prompt-assets/index.js';
+} from "./prompt-assets/index.js";
 
 // ── Prompt Graph ──────────────────────────────────────
 export type {
@@ -256,12 +284,17 @@ export type {
   PromptGraphWorldbookEntry,
   PromptGraphCompilerInput,
   PromptGraphCompiler,
-} from './prompt-graph/index.js';
-export { compilePromptGraph, PromptGraphCompileError } from './prompt-graph/index.js';
+} from "./prompt-graph/index.js";
+export {
+  compilePromptGraph,
+  PromptGraphCompileError,
+} from "./prompt-graph/index.js";
 
 // ── Node Graph Runtime ─────────────────────────────────
 export type {
   CompiledNodeGraph,
+  NodeGraphBudgetOverrides,
+  NodeGraphRuntimeBudget,
   NodeGraphCheckpointPolicy,
   NodeGraphCompilerOptions,
   NodeGraphDiagnostic,
@@ -273,10 +306,19 @@ export type {
   NodeGraphFailurePolicy,
   NodeGraphGroup,
   NodeGraphNode,
+  NodeGraphNodeCategory,
+  NodeGraphNodeConfigFieldKnowledge,
+  NodeGraphNodeConfigFieldType,
+  NodeGraphNodeConfigKnowledge,
+  NodeGraphNodeExample,
   NodeGraphNodeRunOutput,
   NodeGraphNodeRunRecord,
   NodeGraphNodeRunStatus,
   NodeGraphNodeScope,
+  NodeGraphNodeTypeKnowledge,
+  NodeGraphNodeTypeKnowledgeDetail,
+  NodeGraphNodeTypeKnowledgeListItem,
+  NodeGraphNodeTypePortSummary,
   NodeGraphPermissionManifest,
   NodeGraphPhase,
   NodeGraphPolicies,
@@ -333,7 +375,17 @@ export type {
   ToolPermissionRequirement,
   NativePromptFloorStructure,
   CompatPromptFloorStructure,
-} from './node-graph/index.js';
+} from "./node-graph/index.js";
+export {
+  DEFAULT_NODE_GRAPH_RUNTIME_BUDGET,
+  DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET,
+  countNodeGraphNestedAgentJobs,
+  countNodeGraphTemporaryConversations,
+  countRuntimeNodes,
+  resolveNodeGraphBudget,
+  summarizeNodeGraphBudgetUsage,
+  type NodeGraphBudgetUsageSummary,
+} from "./node-graph/index.js";
 export {
   buildNativePromptFloorStructure,
   buildNativePromptFloorTemplate,
@@ -353,10 +405,17 @@ export {
   buildPlayerAgencyVerifierSubgraph,
   buildMemoryRetrieveSubgraph,
   listBuiltinAdvisorSubgraphs,
+  BUILTIN_ADVISOR_SUBGRAPH_IDS,
+  isBuiltinAdvisorSubgraphId,
+  getBuiltinAdvisorSubgraphById,
+  NATIVE_PROMPT_FLOOR_SUBGRAPH_REF_TEMPLATE_ID,
+  buildNativePromptFloorTemplateWithAdvisorRefs,
   NODE_GRAPH_BUILTIN_NODE_TYPES,
   NODE_GRAPH_CHECKPOINT_POLICIES,
   NODE_GRAPH_CONTROL_NODE_TYPES,
   NODE_GRAPH_CONTROL_OUTPUT_PORTS,
+  NODE_GRAPH_NODE_CATEGORIES,
+  NODE_GRAPH_NODE_CATEGORY_LABELS,
   NODE_GRAPH_NODE_SCOPES,
   NODE_GRAPH_ON_SKIP_BEHAVIORS,
   NODE_GRAPH_PHASES,
@@ -374,6 +433,8 @@ export {
   computeNodeGraphControlSignal,
   createDefaultNodeTypeRegistry,
   createNodeGraphDiagnostic,
+  describeNodeTypeKnowledge,
+  describeNodeTypeKnowledgeFromEntry,
   detectNodeGraphSchemaMigration,
   evaluateNodeGraphCondition,
   evaluateNodeGraphConditionWithTrace,
@@ -383,6 +444,8 @@ export {
   isNodeGraphControlEdge,
   isNodeGraphControlNodeType,
   isNodeGraphPreResponsePhase,
+  listNodeTypeKnowledge,
+  getNodeTypeCategoryLabel,
   migrateNodeGraphDocumentToV2,
   nodeGraphControlOutputPorts,
   nodeGraphDocumentSchemaVersion,
@@ -413,7 +476,7 @@ export {
   NodeGraphPackageParseError,
   parseNodeGraphPackage,
   preflightNodeGraphPackage,
-} from './node-graph/index.js';
+} from "./node-graph/index.js";
 
 // ── LLM ───────────────────────────────────────────────
 export type {
@@ -432,11 +495,31 @@ export type {
   LLMPort,
   ProviderFactory,
   LLMToolDefinition,
+  LLMToolSchemaDefinition,
   LLMToolCall,
   LLMStepResult,
-} from './llm/index.js';
-export { ProviderRegistry, ProviderNotFoundError, ProviderInitError } from './llm/index.js';
-export { LLMService, LLMServiceError, LLMTimeoutError, LLMAbortError } from './llm/index.js';
+  LLMMessage,
+  PlainTextModelMessage,
+  StructuredModelMessage,
+  AssistantToolCallMessage,
+  ToolResultModelMessage,
+  ModelTextPart,
+  ModelToolCallPart,
+  ModelToolResultPart,
+  ModelToolResultOutput,
+} from "./llm/index.js";
+export { isPlainTextModelMessage } from"./llm/index.js";
+export {
+  ProviderRegistry,
+  ProviderNotFoundError,
+  ProviderInitError,
+} from "./llm/index.js";
+export {
+  LLMService,
+  LLMServiceError,
+  LLMTimeoutError,
+  LLMAbortError,
+} from "./llm/index.js";
 
 // ── Generation ────────────────────────────────────────
 export type {
@@ -446,9 +529,12 @@ export type {
   PipelineCallbacks,
   SummaryExtractionResult,
   SummaryExtractorOptions,
-} from './generation/index.js';
-export { extractSummaries } from './generation/index.js';
-export { GenerationPipeline, GenerationPipelineError } from './generation/index.js';
+} from "./generation/index.js";
+export { extractSummaries } from "./generation/index.js";
+export {
+  GenerationPipeline,
+  GenerationPipelineError,
+} from "./generation/index.js";
 
 // ── Memory ────────────────────────────────────────────
 export type {
@@ -472,19 +558,22 @@ export type {
   MemoryScopeRef,
   MemoryRuntimeMode,
   MemoryProposalBatch,
-} from './memory/index.js';
-export { MemoryStore } from './memory/index.js';
-export { MemoryConsolidator } from './memory/index.js';
-export { MemoryInjectionSelector } from './memory/index.js';
-export { MemoryIngestProcessor } from './memory/index.js';
-export { MemoryCompactionPlanner, MemoryCompactionProcessor } from './memory/index.js';
+} from "./memory/index.js";
+export { MemoryStore } from "./memory/index.js";
+export { MemoryConsolidator } from "./memory/index.js";
+export { MemoryInjectionSelector } from "./memory/index.js";
+export { MemoryIngestProcessor } from "./memory/index.js";
+export {
+  MemoryCompactionPlanner,
+  MemoryCompactionProcessor,
+} from "./memory/index.js";
 export {
   MemoryScopeResolver,
   MemoryScopeResolutionError,
   MemoryMutationApplier,
   MemoryRevisionGuard,
   MemoryRevisionConflictError,
-} from './memory/index.js';
+} from "./memory/index.js";
 export type {
   MemoryInjectionStrategy,
   MemoryScopeResolutionContext,
@@ -495,12 +584,17 @@ export type {
   MemorySummaryMutationResult,
   MemoryRevisionRef,
   MemoryRevisionSnapshot,
-} from './memory/index.js';
+} from "./memory/index.js";
 
 // ── Orchestration ─────────────────────────────────────
-export { TurnOrchestrator, TurnError, ToolReplayBlockedError, UnsupportedToolModeError } from './orchestration/turn-orchestrator.js';
-export { Director } from './orchestration/director.js';
-export { Verifier } from './orchestration/verifier.js';
+export {
+  TurnOrchestrator,
+  TurnError,
+  ToolReplayBlockedError,
+  UnsupportedToolModeError,
+} from "./orchestration/turn-orchestrator.js";
+export { Director } from "./orchestration/director.js";
+export { Verifier } from "./orchestration/verifier.js";
 export type {
   TurnConfig,
   VerifierFailStrategy,
@@ -511,12 +605,23 @@ export type {
   TurnRunObserver,
   GraphAssistantAgentLoopConfig,
   TurnPendingToolConfirmation,
-} from './orchestration/types.js';
-export { TextProtocolAgentLoop } from './orchestration/text-protocol-agent-loop.js';
+} from "./orchestration/types.js";
+export { TextProtocolAgentLoop, TextProtocolTransport } from "./orchestration/text-protocol-agent-loop.js";
 export type {
   GraphToolConfirmationDecision,
   GraphToolConfirmationContext,
   GraphToolConfirmationDecider,
+} from "./orchestration/text-protocol-agent-loop.js";
+export {
+  runAgentLoop,
+  projectAgentLoopMessagesToChat,
+  MAX_CONSECUTIVE_INVALID_STEPS,
+} from "./orchestration/agent-loop.js";
+export type {
+  ToolConfirmationDecision,
+  ToolConfirmationContext,
+  ToolConfirmationDecider,
+  NormalizedToolCall,
   AgentLoopStepInput,
   AgentLoopStepOutput,
   AgentLoopGenerate,
@@ -524,21 +629,47 @@ export type {
   AgentLoopPendingConfirmation,
   AgentLoopResult,
   AgentLoopRunInput,
-} from './orchestration/text-protocol-agent-loop.js';
-export type { DirectorInput, DirectorResult } from './orchestration/director.js';
-export type { VerifierInput, VerifierResult } from './orchestration/verifier.js';
+  AgentLoopTransport,
+  AgentLoopExecutedCall,
+  AgentLoopPriorRoundtrip,
+  AgentLoopPriorRoundtripCall,
+} from "./orchestration/agent-loop.js";
+export {
+  NativeFunctionCallAgentLoop,
+  NativeFunctionCallTransport,
+} from "./orchestration/native-function-call-agent-loop.js";
+export type {
+  DirectorInput,
+  DirectorResult,
+} from "./orchestration/director.js";
+export type {
+  VerifierInput,
+  VerifierResult,
+} from "./orchestration/verifier.js";
 
 // ── Tools ─────────────────────────────────────────────
-export { ToolRegistry } from './tools/tool-registry.js';
-export { ToolExecutor } from './tools/tool-executor.js';
-export { BuiltinToolProvider } from './tools/builtin-provider.js';
-export { PresetToolProvider } from './tools/preset-provider.js';
-export { ToolMutationBuffer } from './tools/tool-mutation-buffer.js';
+export { ToolRegistry } from "./tools/tool-registry.js";
+export { ToolExecutor } from "./tools/tool-executor.js";
+export { BuiltinToolProvider } from "./tools/builtin-provider.js";
+export { PresetToolProvider } from "./tools/preset-provider.js";
+export { ToolMutationBuffer } from "./tools/tool-mutation-buffer.js";
 export {
   TextProtocolToolCallParser,
   TextProtocolToolListRenderer,
   TextProtocolToolResultFormatter,
-} from './tools/transport/index.js';
+  TEXT_PROTOCOL_TOOL_CALL_INSTRUCTIONS,
+  NATIVE_FUNCTION_CALL_TOOL_CALL_INSTRUCTIONS,
+  buildNativeToolNameMapping,
+  isValidNativeToolName,
+} from "./tools/transport/index.js";
+export type { NativeToolNameMapping } from "./tools/transport/index.js";
+export { applyStructuredTextHunks } from "./tools/text-edit/index.js";
+export type {
+  StructuredTextHunk,
+  TextHunkMatchKind,
+  TextHunkOutcome,
+  TextHunkApplyResult,
+} from "./tools/text-edit/index.js";
 export type {
   ToolDefinition,
   ToolSideEffectLevel,
@@ -586,15 +717,29 @@ export type {
   ToolListRenderOutput,
   ToolResultFormatInput,
   ToolResultFormatOutput,
-} from './tools/index.js';
-export type { PresetToolInput } from './tools/preset-provider.js';
+} from "./tools/index.js";
+export type { PresetToolInput } from "./tools/preset-provider.js";
 export {
   evaluateToolReplaySafety,
   evaluateExecutedToolCallReplaySafety,
   isAutoReplaySafe,
   resolveToolProviderCompensationMode,
-} from './tools/replay-safety.js';
+} from "./tools/replay-safety.js";
 
 // ── Ports ─────────────────────────────────────────────
-export type { PromptSnapshotRepository } from './ports/prompt-snapshot-repository.js';
-export type { ToolExecutionRepository } from './ports/tool-execution-repository.js';
+export type { PromptSnapshotRepository } from "./ports/prompt-snapshot-repository.js";
+export type { ToolExecutionRepository } from "./ports/tool-execution-repository.js";
+
+// ── Debug (Debug Sink) ─────────────────────────────────
+export type {
+  DebugDomain,
+  DebugLevel,
+  DebugRecord,
+  DebugSink,
+} from "./debug/index.js";
+export {
+  configureDebugSink,
+  getDebugSink,
+  isDebugEnabled,
+  emitDebug,
+} from "./debug/index.js";

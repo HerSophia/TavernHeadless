@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import {
   groupSwitchState,
+  isNodeGraphAnnotationNodeType,
   NODE_GRAPH_PHASES,
+  type NodeGraphDiagnostic,
   type NodeGraphPhase,
   type NodeGraphPortType,
 } from "@tavern/core/node-graph";
@@ -12,6 +14,10 @@ import { useI18n } from "vue-i18n";
 import UiButton from "../../../ui/UiButton.vue";
 import { useContextStore } from "../../../stores/context";
 import { useGraphEditorStore } from "../../../stores/graph-editor";
+import AgentCallConfigForm from "../config/AgentCallConfigForm.vue";
+import ConditionConfigForm from "../config/ConditionConfigForm.vue";
+import GateConfigForm from "../config/GateConfigForm.vue";
+import NodeTypeHelp from "../node-types/NodeTypeHelp.vue";
 import { previewPolicyOf, useNodePreview } from "../preview/use-node-preview";
 import { deriveGroupBoundaryHandles } from "../subgraph/group-channels";
 import {
@@ -25,6 +31,10 @@ import {
   type PortDirection,
 } from "../subgraph/interface-edit";
 
+const emit = defineEmits<{
+  (event: "open-node-type", type: string): void;
+}>();
+
 const { t, te } = useI18n();
 const store = useGraphEditorStore();
 const ctx = useContextStore();
@@ -33,6 +43,7 @@ const { previewing, error: previewError, result: previewResult, runPreview, rese
 
 const node = computed(() => store.selectedNode);
 const entry = computed(() => store.selectedNodeEntry);
+const nodeKnowledge = computed(() => store.selectedNodeKnowledge);
 const edge = computed(() => store.selectedEdge);
 const group = computed(() => store.selectedGroup);
 
@@ -107,10 +118,19 @@ function onRetypePort(dir: PortDirection, index: number, event: Event): void {
 const configText = ref("");
 const contentText = ref("");
 const configError = ref<string | null>(null);
+const jsonConfigOpen = ref(false);
 
-/** 节点 config 是否含字符串 `content`（提示词正文）字段。 */
+const isAnnotationNode = computed(() => Boolean(node.value && isNodeGraphAnnotationNodeType(node.value.type)));
+/** 节点 config 是否含字符串 `content` 字段。注释节点也使用 content，但不进入运行。 */
 const hasContentField = computed(
-  () => typeof (node.value?.config as { content?: unknown } | undefined)?.content === "string",
+  () => isAnnotationNode.value
+    || typeof (node.value?.config as { content?: unknown } | undefined)?.content === "string",
+);
+const contentFieldLabel = computed(() =>
+  isAnnotationNode.value ? t("graph.inspector.annotationContent") : t("graph.inspector.content"),
+);
+const contentFieldHint = computed(() =>
+  isAnnotationNode.value ? t("graph.inspector.annotationContentHint") : t("graph.inspector.contentHint"),
 );
 
 /** 从 config 读出字符串 content，非对象或缺省时回退空串。 */
@@ -121,6 +141,67 @@ function readContent(config: unknown): string {
   }
   return "";
 }
+/** LI11-3（3b）：narrator 节点的叙述者预设引用（config.presetRef）专用编辑。 */
+const isNarratorNode = computed(() => node.value?.type === "narration.narrator");
+const isAgentCallNode = computed(() => node.value?.type === "agent.call");
+const isControlConditionNode = computed(() => node.value?.type === "control.condition");
+const isControlBranchNode = computed(() => node.value?.type === "control.branch");
+const isControlGateNode = computed(() => node.value?.type === "control.gate");
+const hasStructuredConfigForm = computed(
+  () => isAgentCallNode.value || isControlConditionNode.value || isControlBranchNode.value || isControlGateNode.value,
+);
+const selectedNodeDiagnostics = computed<NodeGraphDiagnostic[]>(() => {
+  const current = node.value;
+  if (!current) {
+    return [];
+  }
+  return store.diagnostics.filter((diagnostic) => diagnostic.nodeId === current.id);
+});
+const presetIdText = ref("");
+const presetVersionText = ref("");
+
+/** 从 config 读出 narrator presetRef（presetId / presetVersionId），缺省回退空串。 */
+function readPresetRef(config: unknown): { presetId: string; presetVersionId: string } {
+  if (config && typeof config === "object" && !Array.isArray(config)) {
+    const presetRef = (config as { presetRef?: unknown }).presetRef;
+    if (presetRef && typeof presetRef === "object" && !Array.isArray(presetRef)) {
+      const pid = (presetRef as { presetId?: unknown }).presetId;
+      const vid = (presetRef as { presetVersionId?: unknown }).presetVersionId;
+      return {
+        presetId: typeof pid === "string" ? pid : "",
+        presetVersionId: typeof vid === "string" ? vid : "",
+      };
+    }
+  }
+  return { presetId: "", presetVersionId: "" };
+}
+
+/**
+ * 把 presetId / presetVersionId 输入写回 config.presetRef。
+ * presetId为空时删除 presetRef（回退会话预设）；presetVersionId 为空时写 null。
+ */
+function applyPresetRef(): void {
+  if (!node.value) {
+    return;
+  }
+  const base = node.value.config;
+  const config =
+    base && typeof base === "object" && !Array.isArray(base)
+      ? { ...(base as Record<string, unknown>) }
+      : {};
+  const pid = presetIdText.value.trim();
+  if (pid.length === 0) {
+    delete config.presetRef;
+  } else {
+    const vid = presetVersionText.value.trim();
+  config.presetRef = vid.length === 0 ? { presetId: pid, presetVersionId: null } : { presetId: pid, presetVersionId: vid };
+  }
+  const next = Object.keys(config).length > 0 ? config : undefined;
+  store.updateNodeConfig(node.value.id, next);
+  configText.value = next === undefined ? "" : JSON.stringify(next, null, 2);
+  configError.value = null;
+}
+
 const userInput = ref("");
 const confirmDeleteNode = ref(false);
 const confirmDeleteEdge = ref(false);
@@ -128,6 +209,12 @@ const confirmDeleteEdge = ref(false);
 function phaseLabel(phase: string): string {
   const key = `graphNode.phase.${phase}`;
   return te(key) ? t(key) : phase;
+}
+
+function openNodeTypeDetail(): void {
+  if (node.value) {
+    emit("open-node-type", node.value.type);
+  }
 }
 
 function nodeTitle(): string {
@@ -138,6 +225,14 @@ function nodeTitle(): string {
   return te(key) ? t(key) : entry.value?.title ?? node.value.name ?? node.value.type;
 }
 
+function syncSelectedConfigEditors(config: unknown): void {
+  configText.value = config === undefined ? "" : JSON.stringify(config, null, 2);
+  contentText.value = readContent(config);
+  const presetRef = readPresetRef(config);
+  presetIdText.value = presetRef.presetId;
+  presetVersionText.value = presetRef.presetVersionId;
+}
+
 watch(
   () => store.selectedNodeId,
   () => {
@@ -145,10 +240,18 @@ watch(
     confirmDeleteNode.value = false;
     resetPreview();
     const current = node.value;
-    configText.value = current?.config === undefined ? "" : JSON.stringify(current.config, null, 2);
-    contentText.value = readContent(current?.config);
+    syncSelectedConfigEditors(current?.config);
+    jsonConfigOpen.value = !hasStructuredConfigForm.value;
   },
   { immediate: true },
+);
+
+watch(
+  () => (node.value?.config === undefined ? "" : JSON.stringify(node.value.config)),
+  () => {
+    syncSelectedConfigEditors(node.value?.config);
+    configError.value = null;
+  },
 );
 
 watch(
@@ -157,6 +260,19 @@ watch(
     confirmDeleteEdge.value = false;
   },
 );
+
+function syncConfigText(config: unknown): void {
+  configText.value = config === undefined ? "" : JSON.stringify(config, null, 2);
+}
+
+function applyStructuredConfig(next: Record<string, unknown>): void {
+  if (!node.value) {
+    return;
+  }
+  store.updateNodeConfig(node.value.id, next);
+  syncConfigText(next);
+  configError.value = null;
+}
 
 function applyConfig(): void {
   if (!node.value) {
@@ -229,6 +345,13 @@ function deleteSelectedNode(): void {
   confirmDeleteNode.value = false;
 }
 
+function onEdgeKindChange(event: Event): void {
+  if (!edge.value) {
+    return;
+  }
+  store.updateEdgeKind(edge.value.id, (event.target as HTMLSelectElement).value as "data" | "control");
+}
+
 function deleteSelectedEdge(): void {
   if (!edge.value) {
     return;
@@ -299,6 +422,12 @@ const previewValueText = computed(() => {
       </div>
 
       <div class="space-y-3 px-3 py-3">
+        <NodeTypeHelp
+          :detail="nodeKnowledge"
+          :unknown-type="node.type"
+          @open-detail="openNodeTypeDetail"
+        />
+
         <label class="block">
           <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.name") }}</span>
           <input
@@ -333,7 +462,7 @@ const previewValueText = computed(() => {
         </label>
 
         <div v-if="hasContentField">
-          <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.content") }}</span>
+          <span class="mb-1 block text-[11px] text-text-muted">{{ contentFieldLabel }}</span>
           <textarea
             v-model="contentText"
             rows="6"
@@ -341,25 +470,89 @@ const previewValueText = computed(() => {
             class="w-full resize-y whitespace-pre-wrap rounded-md border border-line-subtle bg-float px-2 py-1 text-xs leading-relaxed text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
             @blur="applyContent"
           />
-          <p class="mt-1 text-[10px] text-text-muted">{{ t("graph.inspector.contentHint") }}</p>
+          <p class="mt-1 text-[10px] text-text-muted">{{ contentFieldHint }}</p>
+        </div>
+
+        <div v-if="isNarratorNode">
+          <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.presetRef") }}</span>
+          <input
+            v-model="presetIdText"
+            :placeholder="t('graph.inspector.presetRefId')"
+            class="w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+            @blur="applyPresetRef"
+          />
+          <input
+            v-model="presetVersionText"
+            :placeholder="t('graph.inspector.presetRefVersion')"
+            class="mt-1.5 w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+            @blur="applyPresetRef"
+          />
+          <p class="mt-1 text-[10px] text-text-muted">{{ t("graph.inspector.presetRefHint") }}</p>
+        </div>
+
+        <div v-if="hasStructuredConfigForm" class="space-y-2">
+          <div class="text-[11px] font-medium text-text-secondary">{{ t("graph.inspector.structuredConfig") }}</div>
+          <AgentCallConfigForm
+            v-if="isAgentCallNode"
+            :config="node.config"
+            :policies="store.document?.policies ?? null"
+            @update:config="applyStructuredConfig"
+          />
+          <ConditionConfigForm
+            v-else-if="isControlConditionNode"
+            node-type="control.condition"
+            :config="node.config"
+            :diagnostics="selectedNodeDiagnostics"
+            @update:config="applyStructuredConfig"
+          />
+          <ConditionConfigForm
+            v-else-if="isControlBranchNode"
+            node-type="control.branch"
+            :config="node.config"
+            :diagnostics="selectedNodeDiagnostics"
+            @update:config="applyStructuredConfig"
+          />
+          <GateConfigForm
+            v-else-if="isControlGateNode"
+            :config="node.config"
+            :diagnostics="selectedNodeDiagnostics"
+            @update:config="applyStructuredConfig"
+          />
         </div>
 
         <div>
-          <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.config") }}</span>
-          <textarea
-            v-model="configText"
-            rows="6"
-            spellcheck="false"
-            class="w-full resize-y rounded-md border border-line-subtle bg-float px-2 py-1 font-mono text-[11px] leading-relaxed text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
-            :placeholder="'{ }'"
-            @blur="applyConfig"
-          />
-          <div class="mt-1 flex items-center gap-2">
-            <UiButton variant="ghost" class="!h-7 !px-2 text-xs" @click="applyConfig">
-              {{ t("graph.inspector.applyConfig") }}
-            </UiButton>
-            <span v-if="configError" class="text-[11px] text-signal-error">{{ configError }}</span>
+          <div class="mb-1 flex items-center gap-2">
+            <span class="block text-[11px] text-text-muted">
+              {{ hasStructuredConfigForm ? t("graph.inspector.jsonAdvanced") : t("graph.inspector.config") }}
+            </span>
+            <button
+              v-if="hasStructuredConfigForm"
+              type="button"
+              class="ml-auto rounded border border-line-subtle px-1.5 py-0.5 text-[10px] text-text-muted transition-colors duration-150 hover:border-line-active hover:text-text-secondary focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+              @click="jsonConfigOpen = !jsonConfigOpen"
+            >
+              {{ jsonConfigOpen ? t("graph.inspector.hideJson") : t("graph.inspector.showJson") }}
+            </button>
           </div>
+          <template v-if="jsonConfigOpen">
+            <textarea
+              v-model="configText"
+              rows="6"
+              spellcheck="false"
+              class="w-full resize-y rounded-md border border-line-subtle bg-float px-2 py-1 font-mono text-[11px] leading-relaxed text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+              :placeholder="'{ }'"
+              @blur="applyConfig"
+            />
+            <div class="mt-1 flex items-center gap-2">
+              <UiButton variant="ghost" class="!h-7 !px-2 text-xs" @click="applyConfig">
+                {{ t("graph.inspector.applyConfig") }}
+              </UiButton>
+              <span v-if="configError" class="text-[11px] text-signal-error">{{ configError }}</span>
+            </div>
+          </template>
+          <p v-else class="text-[10px] leading-relaxed text-text-muted">
+            {{ t("graph.inspector.jsonAdvancedHint") }}
+          </p>
         </div>
       </div>
 
@@ -485,10 +678,17 @@ const previewValueText = computed(() => {
         <div class="mt-0.5 font-mono text-[10px] text-text-muted">{{ edge.id }}</div>
       </div>
       <div class="space-y-2 px-3 py-3 font-mono text-[11px] text-text-secondary">
-        <div class="flex items-center gap-1">
-          <span class="text-text-muted">kind</span>
-          <span class="ml-auto rounded border border-line-subtle px-1">{{ edge.kind ?? "data" }}</span>
-        </div>
+        <label class="block font-sans">
+          <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.edgeKind") }}</span>
+          <select
+            class="w-full rounded-md border border-line-subtle bg-float px-2 py-1 font-mono text-xs text-text-secondary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+            :value="edge.kind ?? 'data'"
+            @change="onEdgeKindChange"
+          >
+            <option value="data">data</option>
+            <option value="control">control</option>
+          </select>
+        </label>
         <div><span class="text-text-muted">from</span> {{ edge.from.nodeId }}:{{ edge.from.port }}</div>
         <div><span class="text-text-muted">to</span> {{ edge.to.nodeId }}:{{ edge.to.port }}</div>
       </div>

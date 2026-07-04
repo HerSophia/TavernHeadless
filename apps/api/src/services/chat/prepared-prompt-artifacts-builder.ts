@@ -14,11 +14,20 @@ import type {
   TurnConfig,
 } from "@tavern/core";
 
+import { emitDebug, isDebugEnabled } from "@tavern/core";
 import {
   assemblePrompt,
   type PromptRuntimeTrace,
   type SessionPromptInfo,
 } from "../prompt-assembler.js";
+import {
+  resolvePromptRecipe,
+  assertNarratorPresetRefResolvable,
+  PromptRecipePresetRefError,
+} from "../prompt-recipe-resolver.js";
+import { ChatServiceError } from "./errors.js";
+import { and, eq } from "drizzle-orm";
+import { presets} from "../../db/schema.js";
 import {
   readNativePromptBridgeWorkspaceDefault,
   resolveNativePromptBridgeDecision,
@@ -41,6 +50,7 @@ import type { GenerationParamsInput } from "../../lib/llm-params.js";
 import type { PromptRuntimeDiagnostic } from "../prompt-runtime-control-service.js";
 import { PromptRuntimeInjectionService } from "../prompt-runtime/injection-service.js";
 import { buildPromptRuntimeMemoryTrace } from "../memory/shared/index.js";
+import type { ResolvedFloorGraphBinding } from "../project-floor-graph-binding-service.js";
 
 import type { PromptLiveDebugOptions, ResolvedTurnModels } from "./contracts.js";
 import type {
@@ -131,6 +141,7 @@ export interface PreparePromptArtifactsArgs {
   stream?: boolean;
   toolTransportOverride?: ToolCallTransportKind;
   llmInstanceCapabilities?: LlmInstanceCapabilities;
+  floorGraphBinding?: ResolvedFloorGraphBinding | null;
   /**
    * R1 Agent Runtime aggregator 产出的额外 contributor。默认 undefined。
    * 仅在 inline_mvp 打开时由上层传入；compat_strict 不会渲染它们。
@@ -248,6 +259,21 @@ export class PreparedPromptArtifactsBuilder {
         && toolRuntime.toolPermissions?.enabled === true,
       capabilities: args.llmInstanceCapabilities,
     });
+    // 调试：记录工具启用三条件与transport 选择结果，定位为何 transport 被评为 none（tools_disabled）。
+    if (isDebugEnabled("native-tool")) {
+      emitDebug("native-tool", "info", "tooling-resolve", {
+        sessionId: args.sessionId,
+        promptMode,
+        enableTools: turnConfig?.enableTools === true,
+        hasToolRegistry: toolRuntime.toolRegistry !== undefined,
+        toolPermissionsEnabled: toolRuntime.toolPermissions?.enabled === true,
+        hasToolPermissions: toolRuntime.toolPermissions !== undefined,
+        explicitTransport: args.toolTransportOverride ?? null,
+        resolvedTransport: toolTransportSelection.transport,
+        reasonCode: toolTransportSelection.reasonCode,
+        narratorToolCount: narratorTools.length,
+      });
+    }
     const toolChoiceApplied = toolTransportSelection.transport === "native_function_call"
       && narratorTools.length > 0
       ? args.llmInstanceCapabilities?.supportsToolChoice === true
@@ -356,6 +382,51 @@ export class PreparedPromptArtifactsBuilder {
       narratorParams,
     );
 
+    const promptRecipe = resolvePromptRecipe({
+      floorGraph: args.floorGraphBinding?.document ?? null,
+    });
+    // LI11-3（3b）：引用有效性校验。narratorPresetRef为 null 时直接返回；有图级覆盖但预设不存在
+    // 时抛 PromptRecipePresetRefError 一步到位阻断（设计 §6.6）。
+    try {
+      await assertNarratorPresetRefResolvable(promptRecipe, async (presetId) => {
+        const row = this.db
+          .select({ id: presets.id })
+          .from(presets)
+          .where(and(eq(presets.id, presetId), eq(presets.accountId, args.accountId)))
+          .get();
+        return Boolean(row);
+      });
+    } catch (error) {
+      if (error instanceof PromptRecipePresetRefError) {
+        throw new ChatServiceError(error.code, error.message, error, { presetId: error.presetId });
+      }
+      throw error;
+    }
+    const floorGraphBindingTrace = args.floorGraphBinding
+      ? {
+          source: args.floorGraphBinding.source,
+          kind: args.floorGraphBinding.kind,
+          graphId: args.floorGraphBinding.graphId,
+          graphVersionId: args.floorGraphBinding.graphVersionId,
+          fallbackReason: null,
+        }
+      : {
+          source: "none",
+          kind: null,
+          graphId: null,
+          graphVersionId: null,
+          fallbackReason: "not_bound",
+        };
+    // LI11-3（3b）：治理诊断——标注本次配方来源（node_preset_ref / session_fallback）。
+    preparePhaseTrace.push({
+      phase: "prompt_recipe",
+      detail: {
+        source: promptRecipe.source,
+        hasNodePresetRef: promptRecipe.narratorPresetRef !== null,
+        floorGraphBinding: floorGraphBindingTrace,
+      },
+    });
+
     const assembled = await assemblePrompt(
       this.db,
       args.accountId,
@@ -394,6 +465,8 @@ export class PreparedPromptArtifactsBuilder {
         compatPromptBridge: resolveCompatPromptBridgeDecision({
           workspace: readCompatPromptBridgeWorkspaceDefault(),
         }),
+        // LI11-3（3a）：Narrator 预设主体引用覆盖（缺省时 assemblePrompt 回退 session.presetId）。
+        presetRefOverride: promptRecipe.narratorPresetRef,
       },
     );
     preparePhaseTrace.push({

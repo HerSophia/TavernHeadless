@@ -164,7 +164,7 @@ const floorRunJsonSchema = {
   required: ["run_id", "run_type", "status", "phase", "public_phase", "phase_seq", "attempt_no", "started_at", "updated_at"],
   properties: {
     run_id: { type: "string" },
-    run_type: { type: "string", enum: ["respond", "regenerate_page", "retry_turn", "edit_and_regenerate"] },
+    run_type: { type: "string", enum: ["respond", "regenerate_page", "retry_turn", "retry_step", "edit_and_regenerate"] },
     status: { type: "string", enum: ["running", "completed", "failed", "cancelled"] },
     phase: { type: "string", enum: ["input_recorded", "semantic_resolved", "prechecked", "prompt_assembled", "page_generating", "candidate_generated", "verifier_checked", "transaction_prepared", "transaction_committed", "post_commit_scheduled"] },
     public_phase: { type: "string", enum: ["preparing", "generating", "verifying", "committing", "post_processing"] },

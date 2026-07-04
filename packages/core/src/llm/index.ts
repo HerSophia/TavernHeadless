@@ -15,9 +15,20 @@ export type {
   LLMPort,
   ProviderFactory,
   LLMToolDefinition,
+  LLMToolSchemaDefinition,
   LLMToolCall,
   LLMStepResult,
+  LLMMessage,
+  PlainTextModelMessage,
+  StructuredModelMessage,
+  AssistantToolCallMessage,
+  ToolResultModelMessage,
+  ModelTextPart,
+  ModelToolCallPart,
+  ModelToolResultPart,
+  ModelToolResultOutput,
 } from './types.js';
+export { isPlainTextModelMessage } from './types.js';
 
 // ── Provider Registry ─────────────────────────────────
 export { ProviderRegistry, ProviderNotFoundError, ProviderInitError } from './provider-registry.js';

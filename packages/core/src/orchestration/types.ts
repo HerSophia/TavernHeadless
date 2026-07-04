@@ -24,6 +24,7 @@ import type {
   AgentLoopStopReason,
   GraphToolConfirmationDecider,
 } from './text-protocol-agent-loop.js';
+import type { AgentLoopPriorRoundtrip, AgentLoopStepRecord } from './agent-loop.js';
 
 // ── Turn Config ───────────────────────────────────────
 
@@ -69,6 +70,31 @@ export interface TurnRunObserver {
     status: FloorRunVerifierStatus;
     suggestion?: string;
     issues?: FloorRunVerifierIssue[];
+  }): Promise<void> | void;
+  /**
+   * 流式推理（思维链）更新。
+   *
+   * 仅当模型在生成过程中产出 reasoning delta 时触发，
+   * 供上层（如临时对话 SSE）实时下发 reasoning。
+   * `delta` 为本次增量，`text` 为累计推理文本。
+   */
+  onReasoningUpdate?(input: {
+    delta: string;
+    text: string;
+    attemptNo: number;
+  }): Promise<void> | void;
+  /**
+   * 流式中间叙述更新。
+   *
+   * native多步循环中，仅当某步触发了工具调用且产出可见文本时触发，
+   * 供上层（如临时对话 SSE）实时下发该步的中间叙述。末步纯结论步不触发，
+   * 它走正文 streaming 通道与最终 message 正文。
+   * `stepIndex` 为本步在循环中的步号，`createdAt` 为该步生成完成时刻。
+   */
+  onStepNarration?(input: {
+    stepIndex: number;
+    text: string;
+    createdAt: number;
   }): Promise<void> | void;
 }
 
@@ -148,6 +174,23 @@ export interface TurnInput {
   runObserver?: TurnRunObserver;
 
   /**
+   * 本回合的生成尝试号（attemptNo）。
+   *
+   * 用于把多步 agent 循环内的进度通知（pending 输出、reasoning、阶段）统一归到
+   * 同一次回合尝试，避免用循环步号污染 floor_run_state.attemptNo，进而导致
+   * 统一提交边界把该回合误判为 attempt_not_current。默认按首次尝试（1）处理。
+   */
+  runAttemptNo?: number;
+
+  /**
+   * step 重试：已完成的前缀工具往返（按 stepIndex 升序）。
+   *
+   * 仅 native_function_call 路径的 step 重试使用：透传给 agent loop，让其在进入生成循环前
+   * 重建前 N-1 步的工具往返上下文，从第 N 步重新生成。首次 respond 不传。
+   */
+  priorRoundtrips?: AgentLoopPriorRoundtrip[];
+
+  /**
    * 图助手 text_protocol 多轮 agent 循环配置（可选）。
    *
  * 仅当本字段存在且 `toolTransport.selection.transport === 'text_protocol'`
@@ -213,8 +256,14 @@ export interface TurnExecutionResult {
   finalState: 'generating';
   /** Narrator 最终输出文本（后处理后） */
   generatedText: string;
-  /** 原始 LLM 输出文本 */
+    /**原始 LLM 输出文本 */
   rawText: string;
+  /**
+   * Narrator 推理（思维链）文本。
+   *
+   * 来自生成阶段；模型未返回 reasoning 时缺省，按「无 reasoning」处理。
+   */
+  reasoningText?: string;
   /** 提取的摘要 */
   summaries: string[];
   /** 需要在主回复之后追加到最终 assistant 输出中的工具结果文本块。 */
@@ -269,6 +318,14 @@ export interface TurnExecutionResult {
    * apps/api据此登记待确认记录、持久化续跑上下文、推送 SSE。
    */
   pendingToolConfirmation?: TurnPendingToolConfirmation;
+
+  /**
+   * 图助手 native 多步循环的按步结构化记录（仅 native_function_call 路径产出）。
+   *
+   * 每步保留可见文本与是否触发工具调用。message 正文取末步结论；阶段二据此旁路
+   * 落库「中间叙述」（触发工具且可见文本非空的步）。
+   */
+  agentStepRecords?: AgentLoopStepRecord[];
 }
 
 /** @deprecated 使用 TurnExecutionResult。 */

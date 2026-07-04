@@ -25,6 +25,22 @@ function readString(value: unknown): string {
   return typeof value === "string" ? value : value === undefined || value === null ? "" : JSON.stringify(value);
 }
 
+function readDialogueExamples(character: Record<string, unknown> | undefined): unknown {
+  if (!character) {
+    return "";
+  }
+  for (const key of ["exampleDialogue", "mes_example", "dialogueExamples", "examples"] as const) {
+    const value = character[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+    if (Array.isArray(value) && value.length > 0) {
+      return value;
+    }
+  }
+  return "";
+}
+
 function firstInput(inputs: NodeGraphNodeInputs, keys: readonly string[]): unknown {
   for (const key of keys) {
     if (inputs[key] !== undefined) {
@@ -83,6 +99,19 @@ function buildBlock(value: unknown): string {
     return value.map(readString).filter(Boolean).join("\n");
   }
   return readString(value);
+}
+
+function readCurrentInputValue(context: NodeGraphRuntimeContext): unknown {
+  if (context.userInput !== undefined) {
+    return context.userInput;
+  }
+  if (context.input && "user_input" in context.input) {
+    return context.input.user_input;
+  }
+  if (context.input && "value" in context.input) {
+    return context.input.value;
+  }
+  return context.input ?? "";
 }
 
 function makeHandler(
@@ -211,6 +240,14 @@ export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerR
   registry.register(makeHandler("source.user_input", ({ context }) =>
     textOutput("User Input", context.userInput ?? readString(context.input?.user_input ?? ""))));
 
+  registry.register(makeHandler("source.global_input", ({ context }) => {
+    const value = readCurrentInputValue(context);
+    if (typeof value === "string") {
+      return textOutput("Global Input", value, "live", { value });
+    }
+    return jsonOutput("Global Input", value, "live", { value });
+  }));
+
   registry.register(makeHandler("source.chat_history", ({ context }) => ({
     value: context.chatHistory ?? [],
     outputs: {
@@ -234,6 +271,13 @@ export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerR
     jsonOutput("Persona", context.persona ?? {}, "live", {
       text: readString(context.persona ?? {}),
     })));
+
+  registry.register(makeHandler("source.dialogue_examples", ({ context }) => {
+    const examples = readDialogueExamples(context.character);
+    return jsonOutput("Dialogue Examples", examples, "live", {
+      text: readString(examples),
+    });
+  }));
 
   registry.register(makeHandler("source.session_state", ({ context }) =>
     jsonOutput("Session State", context.sessionState ?? {}, "live", {
@@ -269,6 +313,11 @@ export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerR
     // `template` 为通用模板字段；导入的酒馆预设块把正文放在 `content`，二者择一作为提示词正文。
     const rendered = renderTemplate(readString(config.template ?? config.content ?? ""), variables);
     return textOutput("Template", rendered, "live", { block: rendered });
+  }));
+
+  registry.register(makeHandler("compose.text_to_block", ({ inputs }) => {
+    const text = readString(firstInput(inputs, ["text", "value"]));
+    return textOutput("Text to Block", text, "live", { block: text });
   }));
 
   registry.register(makeHandler("select.token_budget_allocator", ({ inputs }) => {

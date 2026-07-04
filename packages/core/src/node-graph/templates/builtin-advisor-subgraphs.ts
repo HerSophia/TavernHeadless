@@ -24,8 +24,14 @@ import type {
 import { NODE_GRAPH_SCHEMA_VERSION_V2 } from '../types.js';
 import {
   NODE_GRAPH_GROUP_INPUT_TYPE,
+  NODE_GRAPH_GROUP_NODE_TYPE,
   NODE_GRAPH_GROUP_OUTPUT_TYPE,
+  deriveSubgraphInterface,
 } from '../subgraph.js';
+import {
+  NATIVE_PROMPT_FLOOR_TEMPLATE_VERSION,
+  buildNativePromptFloorStructure,
+} from './native-prompt-floor.js';
 
 /** 内置顾问子图版本号（结构 / 接口语义升级时递增，写入 metadata）。 */
 export const BUILTIN_ADVISOR_SUBGRAPH_VERSION = 'sg11.v1' as const;
@@ -112,7 +118,10 @@ export function buildDirectorAdvisorSubgraph(): NodeGraphDocument {
     builtin: 'advisor.director',
     phase: 'pre_response',
     advisor: { id: 'director', type: 'agent.director_plan' },
-    inputs: [{ name: 'messages', type: 'messages' }],
+    inputs: [
+      { name: 'messages', type: 'messages' },
+      { name: 'user_input', type: 'text' },
+    ],
     outputs: [{ name: 'brief', type: 'agent_brief' }],
     permissions: ['project.agent.run'],
   });
@@ -148,6 +157,7 @@ export function buildPlayerAgencyVerifierSubgraph(): NodeGraphDocument {
     inputs: [
       { name: 'text', type: 'text' },
       { name: 'context', type: 'json' },
+      { name: 'user_input', type: 'text' },
     ],
     outputs: [{ name: 'result', type: 'verifier_result' }],
     permissions: [],
@@ -178,3 +188,103 @@ export function listBuiltinAdvisorSubgraphs(): NodeGraphDocument[] {
     buildMemoryRetrieveSubgraph(),
   ];
 }
+
+/** 全部内置顾问子图稳定 id（供运行时内置引用解析判定）。 */
+export const BUILTIN_ADVISOR_SUBGRAPH_IDS = [
+  DIRECTOR_ADVISOR_SUBGRAPH_ID,
+  CONTINUITY_VERIFIER_SUBGRAPH_ID,
+  PLAYER_AGENCY_VERIFIER_SUBGRAPH_ID,
+  MEMORY_RETRIEVE_SUBGRAPH_ID,
+] as const;
+
+/** 判断一个 graphId 是否指向内置顾问子图（`system.subgraph.*`）。 */
+export function isBuiltinAdvisorSubgraphId(graphId: string): boolean {
+  return (BUILTIN_ADVISOR_SUBGRAPH_IDS as readonly string[]).includes(graphId);
+}
+
+/**
+ * 按 id 解析内置顾问子图定义；未命中返回 null。
+ *
+ * SG11-3 运行时的内置引用解析入口：`group.node` 的 `ref.graphId` 命中内置 id 时，
+* 由此返回子图文档（无需 fork 进项目、不查 DB）。返回的是全新对象（构造器每次新建）。
+ */
+export function getBuiltinAdvisorSubgraphById(graphId: string): NodeGraphDocument | null {
+  switch (graphId) {
+    case DIRECTOR_ADVISOR_SUBGRAPH_ID:
+      return buildDirectorAdvisorSubgraph();
+    case CONTINUITY_VERIFIER_SUBGRAPH_ID:
+      return buildContinuityVerifierSubgraph();
+ case PLAYER_AGENCY_VERIFIER_SUBGRAPH_ID:
+      return buildPlayerAgencyVerifierSubgraph();
+  case MEMORY_RETRIEVE_SUBGRAPH_ID:
+      return buildMemoryRetrieveSubgraph();
+    default:
+      return null;
+  }
+}
+
+/** 引用版默认楼层模板（可 fork 副本）的稳定 graphId。 */
+export const NATIVE_PROMPT_FLOOR_SUBGRAPH_REF_TEMPLATE_ID =
+  'template.native_prompt_floor_subgraph_refs' as const;
+
+/**
+ * 构造**引用版默认楼层运行模板图**：与默认楼层模板（DG11）同主链结构，但把 `director` /
+ * `verify` 两个**单节点顾问**替换为 `group.node`，分别引用内置 `system.subgraph.director` /
+ * `system.subgraph.continuity_verifier`子图（SG11-3）。
+ *
+ * 它是默认楼层模板的进阶变体：演示「楼层图用 group.node 引用内置顾问子图」的复用方式。
+ * 顾问执行天然成为嵌套 graph run（与父图共享 parent_run_id /root_run_id 血缘）。
+ * 结构其余部分（source / compose / narrator / commit）与边逐项沿用 DG11 骨架，
+ * 权限沿用骨架声明（`project.agent.run`，由 director 子图上卷），`systemGraph = false` 可 fork。
+ */
+export function buildNativePromptFloorTemplateWithAdvisorRefs(): NodeGraphDocument {
+  const structure = buildNativePromptFloorStructure();
+  const directorInterface =deriveSubgraphInterface(buildDirectorAdvisorSubgraph());
+  const continuityInterface = deriveSubgraphInterface(buildContinuityVerifierSubgraph());
+  const nodes: NodeGraphNode[] = structure.nodes.map((node): NodeGraphNode => {
+    if (node.id === 'director') {
+      return {
+        id: 'director',
+        type: NODE_GRAPH_GROUP_NODE_TYPE,
+        typeVersion: '1',
+        phase: node.phase,
+        ...(node.scope ? { scope: node.scope } : {}),
+        config: {
+          ref: { graphId: DIRECTOR_ADVISOR_SUBGRAPH_ID },
+          interface: directorInterface,
+        },
+      };
+    }
+    if (node.id === 'verify') {
+      return {
+        id: 'verify',
+        type: NODE_GRAPH_GROUP_NODE_TYPE,
+        typeVersion: '1',
+        phase: node.phase,
+        config: {
+          ref: { graphId: CONTINUITY_VERIFIER_SUBGRAPH_ID },
+          interface: continuityInterface,
+        },
+      };
+    }
+    return node;
+  });
+  return {
+    schemaVersion: NODE_GRAPH_SCHEMA_VERSION_V2,
+    graphId: NATIVE_PROMPT_FLOOR_SUBGRAPH_REF_TEMPLATE_ID,
+    name: 'Default Floor Run Template (Subgraph Refs)',
+    description:
+      'Forkable native prompt floor run that references built-in advisor subgraphs (director / continuity verifier) via group.node instead of single nodes.',
+    mode: structure.mode,
+    nodes,
+    edges: structure.edges,
+    policies: structure.policies,
+    permissions: structure.permissions,
+    metadata: {
+      systemGraph: false,
+      template: 'native_prompt_floor_subgraph_refs',
+      templateVersion: NATIVE_PROMPT_FLOOR_TEMPLATE_VERSION,
+    },
+  };
+}
+

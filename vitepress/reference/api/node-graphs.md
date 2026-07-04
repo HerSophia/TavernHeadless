@@ -716,6 +716,30 @@ CG11 把 `compat_strict` / `compat_plus` 两种 SillyTavern 兼容编排，**与
 - compat 仍**零 Agentic**（compat 描述符只接受 `compat_strict` / `compat_plus`，图无 agent / verify 节点，无 inline 子 Agent）；
   Narrator 单一持笔 / CommitGate 单一正史不破坏；不扩展公共 OpenAPI / SDK，不触发 `sdk:generate`。
 
+## SG11：内置可复用顾问子图（批次 11）
+
+SG11 把楼层编排里的**顾问型子 Agent**（director / verifier / memory）从「父图里的单节点」抽成**独立、内置、
+可复用的子图单元**，复用批次 10 已落地的 `group.node` 子图基建。设计见
+`.limcode/design/agentic-batch11-sg11-builtin-advisor-subgraphs-design.md`。
+
+- **四个内置顾问子图**（`metadata.subgraph = true` 的 v2 定义，结构 `group.input → 顾问节点 → group.output`）：
+  `system.subgraph.director`（`messages → brief`，需 `project.agent.run`）、
+  `system.subgraph.continuity_verifier`（`text` / `context → result`）、
+  `system.subgraph.player_agency_verifier`（`text` / `context → result`）、
+  `system.subgraph.memory_retrieve`（`query → selection`，需 `project.memory.read`）。
+- **只产顾问输出、不写正史**：顾问子图内部**不含** `narration.narrator` / `output.commit_gate` / 持久 `output.*`；
+  Narrator 唯一持笔 / CommitGate 单一正史不受影响。
+- **内置引用解析（SG11-3）**：运行时 `subgraphRunner` 在加载被引用子图时，若 `group.node` 的 `config.ref.graphId`
+  命中内置 id（`system.subgraph.*`），则从内置注册表加载（**无需 fork 进项目、不查 DB**）；其余 graphId 仍按租户范围查
+  数据库。顾问执行复用现有嵌套 graph run 语义（与父图共享 `parent_run_id` / `root_run_id` 血缘，含环检测与深度上限）。
+- **权限上卷校验**：内置子图所需权限必须被父图 `permissions.required` 声明，否则运行被拒绝
+  （`node_graph_subgraph_permission_not_granted`，不形成隐藏副作用）。
+- **引用版默认楼层模板**：`buildNativePromptFloorTemplateWithAdvisorRefs()`（`graphId =
+  "template.native_prompt_floor_subgraph_refs"`）与 DG11 默认模板同主链结构，但把 director / verify 两个单节点顾问
+  换为 `group.node` 分别引用内置 director / continuity verifier 子图；作为默认模板的进阶变体，其余骨架与权限沿用 DG11。
+- 不子图化 Narrator、不改 executor；不扩展公共 OpenAPI / SDK，NodeGraph 不在生成面，不触发 `sdk:generate`。
+
+
 ## Agent 自修改边界
 
 R5 提供 `NodeGraphToolProvider` 给 Agent 使用，但只暴露 draft / patch / validate / proposal 类工具，不提供：

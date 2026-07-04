@@ -13,6 +13,8 @@ import {
   respondSuccessResponseJsonSchema,
   regenerateSuccessResponseJsonSchema,
   retryFloorBodyJsonSchema,
+retryStepBodyJsonSchema,
+  retryStepSuccessResponseJsonSchema,
   editAndRegenerateSuccessResponseJsonSchema,
   dryRunSuccessResponseJsonSchema,
   dryRunBodyJsonSchema,
@@ -292,6 +294,13 @@ export const editAndRegenerateBodySchema: z.ZodType<EditAndRegenerateBody> = (re
 
 export const retryFloorBodySchema: z.ZodType<RetryFloorBody> = regenerateBodySchema;
 
+// step 级重试：复用 retryFloor 请求体，额外必传 from_step_index。
+export type RetryStepBody = RetryFloorBody & { from_step_index: number };
+
+export const retryStepBodySchema: z.ZodType<RetryStepBody> = (regenerateBodySchema as z.AnyZodObject).extend({
+  from_step_index: z.number().int().min(1),
+}) as z.ZodType<RetryStepBody>;
+
 export const chatMutationErrorResponses = {
   400: errorResponseJsonSchema,
   404: errorResponseJsonSchema,
@@ -322,6 +331,8 @@ export {
   respondBodyJsonSchema,
   respondSuccessResponseJsonSchema,
   retryFloorBodyJsonSchema,
+  retryStepBodyJsonSchema,
+  retryStepSuccessResponseJsonSchema,
   sessionIdParamsJsonSchema,
   streamResponseExample,
 };

@@ -9,12 +9,17 @@ import type { GraphFlowNodeData, GraphGroupNodeData } from "../map-document";
 
 const props = defineProps<NodeProps<GraphFlowNodeData>>();
 
-const { t } = useI18n();
+const { t, te }= useI18n();
 const editable = inject(GRAPH_EDITABLE_KEY, undefined);
 const toggle = inject(GRAPH_GROUP_TOGGLE_KEY, undefined);
 const collapse = inject(GRAPH_GROUP_COLLAPSE_KEY, undefined);
 
 const g = computed(() => props.data as GraphGroupNodeData);
+/** 组类型本地化（visual / subgraph），缺省回退原始标识。 */
+const kindLabel = computed(() => {
+  const key = `graph.group.kindLabel.${g.value.group.kind}`;
+  return te(key) ? t(key) : g.value.group.kind;
+});
 const switchOn = computed(() => g.value.switchState === "on");
 const switchMixed = computed(() => g.value.switchState === "mixed");
 const showSwitch = computed(() => Boolean(editable?.value && toggle));
@@ -48,7 +53,7 @@ function onCollapse(): void {
         <span class="gg__knob" />
       </button>
       <span class="gg__name">{{ g.group.name }}</span>
-      <span class="gg__kind">{{ g.group.kind }} · {{ g.memberCount }}</span>
+      <span class="gg__kind">{{ kindLabel }} · {{ g.memberCount }}</span>
       <button
         v-if="showCollapse"
         type="button"

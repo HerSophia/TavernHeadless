@@ -215,6 +215,11 @@ export const SAMPLE_NODE_GRAPH_DOCUMENT: NodeGraphDocument = {
   edges: [
     // 上下文 / 检索
     { id: "e_user_wb", from: { nodeId: "n_user", port: "text" }, to: { nodeId: "n_wb", port: "query" } },
+    // 当前用户输入 → 各必填 user_input 端口（导演 / 自主性预检 / Narrator / 自主性后检）
+    { id: "e_user_director", from: { nodeId: "n_user", port: "text" }, to: { nodeId: "n_director", port: "user_input" } },
+    { id: "e_user_agency_pre", from: { nodeId: "n_user", port: "text" }, to: { nodeId: "n_agency_pre", port: "user_input" } },
+        { id: "e_user_narrator", from: { nodeId: "n_user", port: "text" }, to: { nodeId: "n_narrator", port: "user_input" } },
+    { id: "e_user_agency_post", from: { nodeId: "n_user", port: "text" }, to: { nodeId: "n_agency_post", port: "user_input" } },
     // 历史消息扇出到两个顾问子 Agent 与最终装配
     { id: "e_hist_director", from: { nodeId: "n_history", port: "messages" }, to: { nodeId: "n_director", port: "messages" } },
     { id: "e_hist_agency", from: { nodeId: "n_history", port: "messages" }, to: { nodeId: "n_agency_pre", port: "messages" } },

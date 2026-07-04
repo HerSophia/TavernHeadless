@@ -8,7 +8,10 @@
  *      `config.sampling`。
  *   2. **Prompt 装配**（`prompts[]` + `prompt_order`）→ 一串有序的 prompt block：
  *        - `chatHistory` marker → `source.chat_history`（messages → compose）；
- *        - 其余（authored 文本与其他 marker）→ `compose.template_render` block，按 `prompt_order` 顺序
+ *        - 固定 marker slot（世界书 before/after、角色 description/personality/scenario、人设、示例对话）→
+ *          对应语义源节点（`select.worldbook_match` / `source.character` / `source.persona` /
+ *          `source.dialogue_examples`）+ `compose.text_to_block` 转换节点，汇入 `compose.final_messages`；
+ *        - 其余（authored 文本与未知 marker）→ `compose.template_render` block，按 `prompt_order` 顺序
  *          汇入 `compose.final_messages`。
  *   3. **输出后处理**（`extensions.regex_scripts`）→ 暂无对应节点 type，作为 `config.outputRegex`
  *      元数据挂在 narrator 上（未来可由 `compose.regex_postprocess` 之类消费）。
@@ -74,9 +77,19 @@ export interface SillyTavernPreset {
 /** 聚类模式：strict 严格保序分段；loose 宽松聚合（默认）。 */
 export type PresetClusterMode = "strict" | "loose";
 
+/** 导入用途：普通 Narrator 图草稿，或用于显式绑定的 compat 默认楼层图草稿。 */
+export type PresetImportPurpose = "narrator_graph" | "compat_floor_graph";
+
+/** 当导入的预设包含 output regex 时显示的运行语义提示。 */
+export const SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING =
+  "已读取预设中的输出正则并保存到 narrator config.outputRegex；当前它不会自动作为运行时后处理执行。";
+
 export interface PresetImportSummary {
   presetName: string;
+  /** authored 文本 / 未知 marker → `compose.template_render` 提示块数。 */
   blockCount: number;
+  /** 固定 marker → 语义源节点（worldbook / character / persona / dialogue_examples）数（不含其 text_to_block 转换节点）。 */
+  slotNodeCount: number;
   /** 其中处于禁用态（`enabled:false`，保留可开关）的块数。 */
   disabledCount: number;
   hasHistory: boolean;
@@ -102,6 +115,8 @@ export interface PresetImportOptions {
   clusterMode?: PresetClusterMode;
   /** 源预设内容哈希（由调用方对原始文件计算）；写入 metadata 供重复导入检测同名 / 同内容。 */
   presetHash?: string;
+  /** 导入用途；默认保持既有普通 Narrator 图草稿行为。 */
+  purpose?: PresetImportPurpose;
 }
 
 /**
@@ -142,6 +157,33 @@ const CLUSTER_NAMES: Readonly<Record<string, string>> = {
 
 /** 固定语义聚类 key 集合（这些用稳定 ascii id `g_<key>`）。 */
 const KNOWN_CLUSTER_KEYS = new Set<string>([...Object.values(CLUSTER_BY_IDENTIFIER), "custom"]);
+
+/** 固定 marker slot → 语义源节点规格（语义源类型 + 取文本的输出端口 + 附加 config）。 */
+interface MarkerSlotSpec {
+  sourceType: string;
+  /** 语义源上取「文本」的输出端口名（接入 `compose.text_to_block` 的 `text` 输入）。 */
+  textPort: string;
+/** 附加到语义源节点 config 的固定字段（如世界书 position、角色 part）。 */
+  config?: Record<string, unknown>;
+}
+
+/**
+ * 酒馆固定 marker（占位插槽）→ NodeGraph 语义源节点分流表。
+ *
+ * 世界书前/后各成一个 `select.worldbook_match`（`config.position` 区分）；角色三 slot 各成一个
+ * `source.character`（`config.part` 区分）；人设 → `source.persona`；示例对话 → `source.dialogue_examples`。
+ * 每个语义源再接一个 `compose.text_to_block` 转换节点汇入 `compose.final_messages`。
+ * `chatHistory` 单独处理为 `source.chat_history`；未列于此表的 marker 退回 `compose.template_render`。
+ */
+const MARKER_SLOTS: Readonly<Record<string, MarkerSlotSpec>> = {
+  worldInfoBefore: { sourceType: "select.worldbook_match", textPort: "text", config: { position:"before" } },
+  worldInfoAfter: { sourceType: "select.worldbook_match", textPort: "text", config: { position: "after" } },
+  charDescription: { sourceType: "source.character", textPort: "text", config: { part: "description" } },
+  charPersonality: { sourceType: "source.character", textPort: "text", config: { part: "personality" } },
+  scenario: { sourceType: "source.character", textPort: "text", config: { part: "scenario" } },
+  personaDescription: { sourceType: "source.persona", textPort: "text" },
+  dialogueExamples: { sourceType: "source.dialogue_examples", textPort: "text" },
+};
 
 /** 「图标︱文字」竖线族分隔符（社区约定的图标分隔位）。 */
 const ICON_SEPARATOR = /[|｜︱丨│┃￨]/;
@@ -455,6 +497,8 @@ export function importSillyTavernPreset(
   const preset = value;
   const warnings: string[] = [];
   const clusterMode: PresetClusterMode = options.clusterMode === "strict" ? "strict" : "loose";
+  const purpose: PresetImportPurpose =
+    options.purpose === "compat_floor_graph" ? "compat_floor_graph" : "narrator_graph";
 
   const prompts = preset.prompts ?? [];
   const promptsById = new Map<string, SillyTavernPromptDef>();
@@ -479,6 +523,7 @@ export function importSillyTavernPreset(
 
   let hasHistory = false;
   let blockCount = 0;
+  let slotNodeCount = 0;
   let disabledCount = 0;
   let skippedCount = 0;
   let blockIndex = 0;
@@ -520,7 +565,55 @@ export function importSillyTavernPreset(
       }
       continue;
     }
-    // 其余（authored 文本 / 其他 marker / XML 标签块）→ 一个有序的提示块。
+    // 固定 marker slot → 语义源节点 + `compose.text_to_block` 转换节点（转换节点再接入 compose.blocks）。
+    //   世界书 before/after → select.worldbook_match（config.position）；角色三 slot → source.character（config.part）；
+    //   人设 → source.persona；示例对话 → source.dialogue_examples。
+    const slotSpec = def.marker ? MARKER_SLOTS[def.identifier] : undefined;
+    if (slotSpec) {
+      const sourceId = `n_slot_${def.identifier}`;
+      const converterId = `${sourceId}_block`;
+      slotNodeCount += 1;
+      const sourceNode: NodeGraphNode = pruneUndefined({
+        id: sourceId,
+        type: slotSpec.sourceType,
+        typeVersion: "1",
+        name: def.name || def.identifier,
+        phase: "pre_response",
+        // 固定语义字段（世界书 position / 角色part）+ 导入溯源 identifier。
+        config: slotSpec.config
+          ? { ...slotSpec.config, identifier: def.identifier }
+          : { identifier: def.identifier },
+      }) as NodeGraphNode;
+      const converterNode: NodeGraphNode = {
+        id: converterId,
+        type: "compose.text_to_block",
+        typeVersion: "1",
+        name: `${parseSlotLabel(def.name).label || def.name || def.identifier} → 块`,
+        phase: "pre_response",
+        config: pruneUndefined({ role: def.role, identifier: def.identifier }),
+      };
+      // 禁用态传播：语义源与其转换节点同时置 enabled:false（仍连入 compose，开启即生效）。
+      if (!enabled) {
+        sourceNode.enabled = false;
+        converterNode.enabled = false;
+      }
+      nodes.push(sourceNode, converterNode);
+      // 语义源与转换节点跟随同一 def 归入同一功能组（沿用固定 identifier 聚类）。
+      blockEntries.push({ def, blockId: sourceId });
+      blockEntries.push({ def, blockId: converterId });
+      edges.push({
+        id: `e_${sourceId}_t2b`,
+        from: { nodeId: sourceId, port: slotSpec.textPort },
+        to: { nodeId: converterId, port: "text" },
+      });
+      edges.push({
+        id: `e_${converterId}_compose`,
+        from: { nodeId: converterId, port: "block" },
+        to: { nodeId: "n_compose", port: "blocks" },
+      });
+      continue;
+    }
+    // 其余（authored 文本 / 其他 marker / XML 标签块）→一个有序的提示块。
     blockIndex += 1;
     const blockId = `n_block_${blockIndex}`;
     blockCount += 1;
@@ -574,6 +667,19 @@ export function importSillyTavernPreset(
 
   const { sampling, keys: samplerKeys } = extractSampling(preset);
   const regexScripts = extractRegexScripts(preset);
+  if (regexScripts.length > 0) {
+    warnings.push(SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING);
+  }
+
+  // 用户输入源：叙述者新增必填 `user_input` 端口，导入时自动接一个 source.user_input 供其取当前用户消息。
+  nodes.push({
+    id: "n_user_input",
+    type: "source.user_input",
+    typeVersion: "1",
+    name: "当前用户输入",
+    phase: "pre_response",
+    scope: "floor_stable",
+  });
 
   nodes.push({
     id: "n_narrator",
@@ -602,13 +708,19 @@ export function importSillyTavernPreset(
     from: { nodeId: "n_compose", port: "messages" },
     to: { nodeId: "n_narrator", port: "messages" },
   });
+  // 用户输入 → 叙述者必填 user_input 端口（缺此连线会触发 node_graph_required_input_missing）。
+  edges.push({
+    id: "e_user_input_narrator",
+    from: { nodeId: "n_user_input", port: "text" },
+    to: { nodeId: "n_narrator", port: "user_input" },
+  });
   edges.push({
     id: "e_narrator_commit",
     from: { nodeId: "n_narrator", port: "text" },
     to: { nodeId: "n_commit", port: "text" },
   });
 
-  if (blockCount === 0 && !hasHistory) {
+  if (blockCount === 0 && slotNodeCount === 0 && !hasHistory) {
     warnings.push("预设未解析出任何启用的提示块（prompt_order 为空或全部禁用）。");
   }
 
@@ -636,7 +748,10 @@ export function importSillyTavernPreset(
   }
   if (hasHistory) {
     setPosition("n_history", 0, preColumnY);
+    preColumnY += ROW_GAP;
   }
+  // 用户输入源与历史同列（x=0），排在其后，避免与其他节点坐标重叠。
+  setPosition("n_user_input", 0, preColumnY + BAND_GAP);
   setPosition("n_compose", COLUMN_GAP, 0);
   setPosition("n_narrator", COLUMN_GAP, ROW_GAP * 2);
   setPosition("n_commit", COLUMN_GAP * 2, ROW_GAP);
@@ -684,6 +799,7 @@ export function importSillyTavernPreset(
     metadata: pruneUndefined({
       systemGraph: false,
       importedFrom: "sillytavern_openai_preset",
+      importPurpose: purpose,
       presetName,
       presetHash: options.presetHash,
       // 本次采用的聚类方式：供后续 Agent 知道当前组织是严格保序还是宽松聚合。
@@ -701,6 +817,7 @@ export function importSillyTavernPreset(
     summary: {
       presetName,
       blockCount,
+      slotNodeCount,
       disabledCount,
       hasHistory,
       groupCount: groupedBlocks.length,

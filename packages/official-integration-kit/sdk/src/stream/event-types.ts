@@ -12,6 +12,22 @@ export type TavernRespondChunkPayload = {
   chunk: string;
 };
 
+export type TavernRespondReasoningPayload = {
+  delta: string;
+};
+
+/**
+ * 中间叙述流式事件载荷。
+ *
+ * native 多步循环中，某步触发工具调用且产出可见文本时下发（目前仅图助手临时对话）。
+ * `stepIndex` 为本步在循环中的步号，`createdAt` 为该步生成完成时刻。
+ */
+export type TavernRespondStepNarrationPayload = {
+  stepIndex: number;
+   text: string;
+  createdAt: number;
+};
+
 export type TavernRespondSummaryPayload = {
   summaries: string[];
 };
@@ -89,6 +105,19 @@ export type TavernRespondErrorPayload = {
   message?: string;
 };
 
+/**
+ * 起点之前已产生、不会回滚的写类副作用条目（脱敏后只暴露摘要字段）。
+ *
+ * 仅在 step 级重试（retry-step）的 done 事件中出现；普通 respond / retry 不携带。
+ */
+export type TavernRespondIrreversibleSideEffect = {
+  executionId: string;
+  generationStepNo?: number | null;
+  sideEffectLevel: string;
+  startedAt: number;
+  toolName: string;
+};
+
 export type TavernRespondDonePayload = {
   branchId?: string;
   conversationId?: string;
@@ -102,15 +131,25 @@ export type TavernRespondDonePayload = {
   runtimeTrace?: PromptRuntimeTrace;
   summaries: string[];
   totalUsage: ApiUsage;
+  /**
+   * 实际被丢弃的起始步号（1-based）。仅 step 级重试的 done 事件携带。
+   */
+  discardedFromStepIndex?:number;
+  /**
+   * 起点之前已产生、不会回滚的写类副作用清单（脱敏摘要）。仅 step 级重试的 done 事件携带。
+   */
+  irreversibleSideEffects?: TavernRespondIrreversibleSideEffect[];
 };
 
 export type TavernRespondStreamEvent =
   | { payload: TavernRespondStartPayload; type: "start" }
   | { payload: TavernRespondChunkPayload; type: "chunk" }
+  | { payload: TavernRespondReasoningPayload; type: "reasoning" }
+  | { payload: TavernRespondStepNarrationPayload; type: "step_narration" }
   | { payload: TavernRespondRunPayload; type: "run" }
   | { payload: TavernRespondSummaryPayload; type: "summary" }
   | { payload: TavernRespondToolPayload; type: "tool" }
-  | { payload: TavernRespondErrorPayload; type: "error" }
+  | { payload: TavernRespondErrorPayload; type: "error"}
   | { payload: TavernRespondDonePayload; type: "done" };
 
 export type TavernStreamEvent = TavernRespondStreamEvent;
@@ -119,6 +158,19 @@ export type RespondStreamCallbacks = {
   onChunk?: (payload: TavernRespondChunkPayload) => void;
   onError?: (payload: TavernRespondErrorPayload) => void;
   onEvent?: (event: TavernRespondStreamEvent) => void;
+  /**
+   * 推理（思维链）增量回调。
+   *
+   * 仅当服务端在生成过程中下发 reasoning 事件时触发（目前仅图助手临时对话）。
+   * 模型未返回 reasoning 时不会触发。
+   */
+  onReasoning?: (payload: TavernRespondReasoningPayload) => void;
+  /**
+   * 中间叙述增量回调。
+   *
+   * 仅当服务端在生成过程中下发 step_narration 事件时触发（目前仅图助手临时对话的 native 多步循环）。
+   */
+  onStepNarration?: (payload: TavernRespondStepNarrationPayload) => void;
   onRun?: (payload: TavernRespondRunPayload) => void;
   onStart?: (payload: TavernRespondStartPayload) => void;
   onSummary?: (payload: TavernRespondSummaryPayload) => void;

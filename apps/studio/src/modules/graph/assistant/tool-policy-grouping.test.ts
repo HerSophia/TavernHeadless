@@ -28,6 +28,8 @@ describe("categorizeTool", () => {
 
   it("把只读工具归为 read", () => {
     expect(categorizeTool("nodegraph.graph.get")).toBe("read");
+    expect(categorizeTool("nodegraph.graph.list")).toBe("read");
+    expect(categorizeTool("nodegraph.graph.find_by_name")).toBe("read");
     expect(categorizeTool("nodegraph.graph.list_versions")).toBe("read");
     expect(categorizeTool("nodegraph.node_type.list")).toBe("read");
     expect(categorizeTool("nodegraph.patch.validate")).toBe("read");
