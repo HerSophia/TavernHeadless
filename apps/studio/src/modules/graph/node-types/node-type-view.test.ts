@@ -14,7 +14,7 @@ describe("node type view model", () => {
     const agentCall = items.find((item) => item.type === "agent.call");
     expect(agentCall).toMatchObject({
       category: "agent",
-      inputCount: 1,
+      inputCount: 2,
       outputCount: 3,
       permissionCount: 1,
     });
