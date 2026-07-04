@@ -33,10 +33,17 @@ import {
 import {
   DEFAULT_NODE_GRAPH_RUNTIME_BUDGET,
   checkNodeGraphStaticBudget,
+  resolveNodeGraphRuntimeBudget,
   exceedsNodeGraphDurationBudget,
   nodeGraphDurationViolation,
   type NodeGraphBudgetViolation,
 } from "./budget.js";
+
+const NODE_GRAPH_ANNOTATION_COMMENT_TYPE = "annotation.comment";
+
+function isNodeGraphAnnotationNodeType(type: string): boolean {
+  return type === NODE_GRAPH_ANNOTATION_COMMENT_TYPE;
+}
 
 export class NodeGraphNodeExecutionError extends Error {
   constructor(
@@ -131,7 +138,9 @@ export class NodeGraphExecutor {
     const baseTrace = {
       graphId: input.document.graphId,
       intent: input.context.intent,
-      topologicalLevels: compiled.topologicalLevels.map((level) => level.map((node) => node.id)),
+      topologicalLevels: compiled.topologicalLevels
+        .map((level) => level.filter((node) => !isNodeGraphAnnotationNodeType(node.type)).map((node) => node.id))
+        .filter((level) => level.length > 0),
       compileDiagnostics: compiled.diagnostics,
     };
     if (!compiled.isExecutable) {
@@ -155,11 +164,16 @@ export class NodeGraphExecutor {
       };
     }
 
+    const runtimeTopologicalLevels = compiled.topologicalLevels
+      .map((level) => level.filter((node) => !isNodeGraphAnnotationNodeType(node.type)))
+      .filter((level) => level.length > 0);
+
     // R6-2（缺口 4）：执行前的静态预算检查（节点数 / 深度 / fan-out / 嵌套作业 / 临时对话）。
-    const budget = input.context.budget ?? DEFAULT_NODE_GRAPH_RUNTIME_BUDGET;
+    const budget = input.context.budget
+      ?? resolveNodeGraphRuntimeBudget(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET, input.document.budgets);
     const staticViolation = checkNodeGraphStaticBudget({
       document: input.document,
-      topologicalLevels: compiled.topologicalLevels,
+      topologicalLevels: runtimeTopologicalLevels,
       dryRun: input.context.dryRun,
       budget,
     });
@@ -183,8 +197,11 @@ export class NodeGraphExecutor {
       missed: [],
     };
 
-    for (const level of compiled.topologicalLevels) {
+    for (const level of runtimeTopologicalLevels) {
       for (const node of level) {
+        if (isNodeGraphAnnotationNodeType(node.type)) {
+          continue;
+        }
         const incomingEdges = compiled.incomingEdgesByNodeId.get(node.id) ?? [];
         const incomingControlEdges = incomingEdges.filter((edge) => nodeGraphEdgeKind(edge) === "control");
         const activation = resolveNodeGraphControlActivation({

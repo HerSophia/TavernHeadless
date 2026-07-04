@@ -90,12 +90,18 @@ function backgroundAgentGraph(graphId = "ng_bg"): NodeGraphDocument {
 
 describe("NodeGraph runtime budget", () => {
   it("resolves budget overrides while keeping base defaults", () => {
-    const resolved = resolveNodeGraphRuntimeBudget({ maxNodesExecuted: 5, maxNestedAgentJobs: 0 });
+    const resolved = resolveNodeGraphRuntimeBudget(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET, {
+      maxNodesExecuted: 5,
+      maxNestedAgentJobs: 0,
+    });
     expect(resolved.maxNodesExecuted).toBe(5);
     expect(resolved.maxNestedAgentJobs).toBe(0);
     expect(resolved.maxDepth).toBe(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET.maxDepth);
     // 非法 override 回退到 base。
-    expect(resolveNodeGraphRuntimeBudget({ maxNodesExecuted: -1 }).maxNodesExecuted)
+    expect(resolveNodeGraphRuntimeBudget(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET, { maxNodesExecuted: -1 }).maxNodesExecuted)
+      .toBe(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET.maxNodesExecuted);
+    // 高于平台默认值不会提高有效上限。
+    expect(resolveNodeGraphRuntimeBudget(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET, { maxNodesExecuted: 999 }).maxNodesExecuted)
       .toBe(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET.maxNodesExecuted);
   });
 

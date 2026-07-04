@@ -102,7 +102,7 @@ describe("loadConfig", () => {
       defaultMaxItemSizeBytes: 1_048_576,
       defaultQuotaMaxEntries: 10_000,
       defaultQuotaMaxBytes: 10_485_760,
-      maxDomainsPerAccount: 64,
+      maxDomainsPerAccount: 1024,
       maxTotalEntriesPerAccount: 100_000,
       maxTotalBytesPerAccount: 104_857_600,
     });

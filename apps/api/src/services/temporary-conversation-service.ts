@@ -11,13 +11,15 @@ import {
 
 import type { AppDb } from "../db/client.js";
 import {
+  floorResultSnapshots,
   floors,
   messagePages,
   messages,
   pageStagedWrites,
-  projects,
+    projects,
   sessions,
-} from "../db/schema.js";
+  toolExecutionRecords,
+} from"../db/schema.js";
 import { ChatMessagePersistence } from "./chat-message-persistence.js";
 import { DraftFloorService } from "./chat/draft-floor-service.js";
 import type {
@@ -31,6 +33,7 @@ import type {
 import { buildLivePromptRuntimeRequestPolicy } from "./chat/shared/request-policy.js";
 import { normalizeBranchId } from "./chat/shared/branch.js";
 import type { ChatService } from "./chat/chat-service.js";
+import { ChatServiceError } from "./chat/errors.js";
 import { resolvePromptRuntimeExecutionContext } from "./prompt-runtime-execution.js";
 import {
   SessionBranchRegistryService,
@@ -43,6 +46,8 @@ import {
   GraphAssistantToolConfirmationService,
   type GraphAssistantPendingToolCallRecord,
 } from "./graph-assistant-tool-confirmation-service.js";
+import { GraphAssistantPromptConfigService } from "./graph-assistant-prompt-config-service.js";
+import type { PromptRuntimeClientInjectionInput } from "./prompt-runtime-injection-types.js";
 import {
   GRAPH_ASSISTANT_PURPOSE,
   TEMPORARY_CONVERSATION_BRANCH_ID,
@@ -64,6 +69,10 @@ import {
   type TemporaryConversationResource,
   type TemporaryConversationRespondInput,
   type TemporaryConversationResult,
+  type TemporaryConversationRetryInput,
+  type TemporaryConversationRetryStepInput,
+  type TemporaryConversationRetryStreamInput,
+  type TemporaryConversationRetryStepStreamInput,
   type TemporaryConversationRetentionPolicy,
   type TemporaryConversationVisibility,
   type TemporaryConversationStreamChunk,
@@ -72,6 +81,8 @@ import {
   type TemporaryConversationTranscriptFloor,
   type TemporaryConversationTranscriptMessage,
   type TemporaryConversationTranscriptPage,
+  type TemporaryConversationTranscriptStepNarration,
+  type TemporaryConversationTranscriptToolExecution,
   isTemporaryConversationSessionLike,
 } from "./temporary-conversation-types.js";
 
@@ -82,15 +93,34 @@ interface TemporaryConversationServiceOptions {
 /** 图助手一次性引导消息的专用 source 标记，用于幂等识别。 */
 const GRAPH_ASSISTANT_GUIDANCE_SOURCE = "graph_assistant_guidance";
 
-/** 图助手首次 respond 时注入的 system 引导文案。 */
-const GRAPH_ASSISTANT_GUIDANCE_TEXT = [
-  "你是 NodeGraph 图编辑助手，可以调用一组 NodeGraph 工具来读取与编辑图。",
-  "典型工作流：先用 nodegraph.graph.get / list_versions 读取现状；需要改图时用 nodegraph.draft.create_from_version 建草稿，",
-  "再用 nodegraph.node.* / nodegraph.edge.* / nodegraph.group.* 修改草稿，用 nodegraph.patch.validate 校验，",
-  "最后用 nodegraph.patch.submit_proposal 提交提案。",
-  "重要边界：除 nodegraph.graph.create（从零新建一张图）外，工具不会直接改线上图；",
-  "对既有图的改动只能经 submit_proposal 进入 Project Inbox，再由有权限的人创建正式版本。",
-].join("");
+/** 图助手动态上下文注入的标题（仅参与 prompt 组装，不写入 transcript）。 */
+const GRAPH_ASSISTANT_DYNAMIC_CONTEXT_TITLE = "Graph context";
+
+/**
+ * 把前端按回合求值的动态上下文文本包装成一条 request-scope client injection。
+ *
+ * 空串 / 纯空白视为未提供，返回空对象（不注入）。注入 placement 取
+ * `before_current_user_input`：放在历史之后、当前用户输入之前，贴近「本回合上下文」语义。
+ */
+function buildDynamicContextInjection(
+  dynamicContext: string | undefined,
+): { promptRuntimeInjections?: PromptRuntimeClientInjectionInput[] } {
+  const content = dynamicContext?.trim();
+  if (!content) {
+    return {};
+  }
+  return {
+    promptRuntimeInjections: [
+      {
+        sourceKind: "client_injection",
+        title: GRAPH_ASSISTANT_DYNAMIC_CONTEXT_TITLE,
+        content,
+        placement: "before_current_user_input",
+        scope: "request",
+      },
+    ],
+  };
+}
 
 interface PreparedDraftConversationState {
   branchId: string;
@@ -153,7 +183,7 @@ export class TemporaryConversationService {
       ttlSeconds: input.ttlSeconds,
       now,
     });
-    const metadataJson = sanitizeTemporaryConversationMetadataJson(sourceSession.metadataJson);
+    const metadataJson = sanitizeTemporaryConversationMetadataJson(sourceSession.metadataJson, purpose);
     const snapshotDigest = buildTemporaryConversationSnapshotDigest({
       title,
       metadataJson,
@@ -250,7 +280,7 @@ export class TemporaryConversationService {
       ttlSeconds: input.ttlSeconds,
       now,
     });
-    const metadataJson = buildTemporaryConversationMetadataJson(null);
+    const metadataJson = buildTemporaryConversationMetadataJson(null, purpose);
     const snapshotDigest = buildTemporaryConversationProjectSnapshotDigest({
             title,
       metadataJson,
@@ -441,10 +471,13 @@ export class TemporaryConversationService {
   if (existing.length > 0) {
       return;
     }
+    const content = new GraphAssistantPromptConfigService(this.db).resolveStaticPrompt({
+      projectId: session.projectId,
+    });
     await this.insertConversationMessage(session, {
       branchId,
       role: "system",
-      content: GRAPH_ASSISTANT_GUIDANCE_TEXT,
+      content,
       source: GRAPH_ASSISTANT_GUIDANCE_SOURCE,
     });
   }
@@ -480,13 +513,17 @@ export class TemporaryConversationService {
       pageId: prepared.pageId,
       pageMessageId: prepared.pageMessageId,
       sourceFloorId: prepared.sourceFloorId,
-      request: {
+request: {
         config: this.withGraphAssistantToolConfig(session, input.config),
         generationParams: input.generationParams,
         promptIntent: input.promptIntent,
         debugOptions: input.debugOptions,
         structure: input.structure,
         delivery: input.delivery,
+        ...(input.toolTransportPreference
+          ? { toolTransportPreference: input.toolTransportPreference }
+          : {}),
+        ...buildDynamicContextInjection(input.dynamicContext),
       },
       rawUserMessage: prepared.rawUserMessage,
       executionContext: resolvePromptRuntimeExecutionContext({
@@ -495,7 +532,7 @@ export class TemporaryConversationService {
         branchId: prepared.branchId,
         branchExists: true,
         historySourceBranchId: prepared.branchId,
-        historySourceMode: "existing_branch",
+        historySourceMode:"existing_branch",
         sourceFloorId: prepared.sourceFloorId,
         request: buildLivePromptRuntimeRequestPolicy({
           structure: input.structure,
@@ -504,7 +541,7 @@ export class TemporaryConversationService {
       }),
       conversationWindow: prepared.conversationWindow,
       runtimeOptions: {
-        ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+             ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       },
     });
     await this.touchConversation(session.id);
@@ -612,6 +649,91 @@ export class TemporaryConversationService {
       onChunk: (chunk) => {
         queue.push({ type: "delta", text: chunk });
       },
+      onReasoning: (delta) => {
+        queue.push({ type: "reasoning", text: delta });
+      },
+      onStepNarration: (narration) => {
+        queue.push({
+          type: "narration",
+          stepIndex: narration.stepIndex,
+          text: narration.text,
+          createdAt: narration.createdAt,
+        });
+      },
+      onTool: (event) => {
+        queue.push({ type: "tool", event});
+      },
+      onRun: (event) => {
+        queue.push({ type: "run", event });
+      },
+    }).then((result) => {
+      queue.push({ type: "result", result });
+      queue.close();
+    }).catch((error) => {
+      queue.fail(error);
+    });
+
+    for await (const chunk of queue.stream()) {
+      yield chunk;
+    }
+  }
+  /**
+   * 图助手 floor级重试：在目标已提交楼层上重生成，产生新 output page version（开新消息页）。
+   *
+   * 委托主会话 chatService.retryFloor（allowTemporary），复用其「同楼层新 page version」语义；
+   * 旧页历史保留，仅多占少量数据空间。
+   */
+  async retryFloor(input: TemporaryConversationRetryInput): Promise<TemporaryConversationResult> {
+    return this.runRetry(input, {});
+  }
+
+  /**
+   * 图助手 step 级重试：保留前 N-1 步成功工具往返，从第 fromStepIndex 步重生成。
+   *
+   * 委托chatService.retryStep；前缀往返由后端从 tool_execution_record 重建，起点带写副作用时拒绝。
+   */
+  async retryStep(input: TemporaryConversationRetryStepInput): Promise<TemporaryConversationResult> {
+    return this.runRetry(input, {});
+  }
+
+  /** floor 级重试的流式版本（与 respond stream 一致的 chunk 联合）。 */
+  async *retryStream(input: TemporaryConversationRetryStreamInput): AsyncIterable<TemporaryConversationStreamChunk> {
+    yield* this.runRetryStream(input);
+  }
+
+  /** step 级重试的流式版本。 */
+  async *retryStepStream(input: TemporaryConversationRetryStepStreamInput): AsyncIterable<TemporaryConversationStreamChunk> {
+    yield* this.runRetryStream(input);
+  }
+
+  private async *runRetryStream(
+    input: TemporaryConversationRetryInput & { fromStepIndex?: number },
+  ): AsyncIterable<TemporaryConversationStreamChunk> {
+    const queue= createAsyncQueue<TemporaryConversationStreamChunk>();
+
+    void this.runRetry(input, {
+      onStart: (context) => {
+        queue.push({
+          type:"start",
+          floorId: context.floorId,
+          floorNo: context.floorNo,
+          branchId: context.branchId,
+        });
+      },
+      onChunk: (chunk) => {
+        queue.push({ type: "delta", text: chunk });
+      },
+      onReasoning: (delta) => {
+        queue.push({ type: "reasoning", text: delta });
+      },
+      onStepNarration: (narration) => {
+        queue.push({
+          type: "narration",
+          stepIndex: narration.stepIndex,
+          text: narration.text,
+          createdAt: narration.createdAt,
+        });
+      },
       onTool: (event) => {
         queue.push({ type: "tool", event });
       },
@@ -629,6 +751,107 @@ export class TemporaryConversationService {
       yield chunk;
     }
   }
+
+  /**
+   * 重试核心：校验目标楼层归属本会话后，构造请求并委托 chatService.retryFloor / retryStep。
+   *
+   * fromStepIndex 存在走 step 重试（携 priorRoundtrips），否则走整轮重试。并发保护与副作用
+   * 校验由 chatService 内部承担；ChatServiceError 映射为 TemporaryConversationError 供路由统一处理。
+   */
+  private async runRetry(
+    input: TemporaryConversationRetryInput & { fromStepIndex?: number },
+    runtimeOptions: Pick<
+      RespondRuntimeOptions,
+      "onStart" | "onChunk" | "onReasoning" | "onStepNarration" | "onTool" | "onRun"
+    >,
+  ): Promise<TemporaryConversationResult> {
+    const session = await this.requireActiveTemporaryConversation(input.accountId, input.conversationId);
+    const branchId = normalizeTemporaryConversationBranchId(input.branchId);
+
+    // 跨会话防护：重试目标楼层必须属于本临时对话。
+    const targetFloorRows = await this.db
+      .select({ sessionId: floors.sessionId })
+      .from(floors)
+      .where(eq(floors.id, input.floorId))
+      .limit(1);
+    if (!targetFloorRows[0] || targetFloorRows[0].sessionId !== session.id) {
+      throw new TemporaryConversationError(
+        "retry_target_not_found",
+        `Retry target floor '${input.floorId}' not found in this conversation.`,
+      );
+    }
+
+    await this.maybeInjectGraphAssistantGuidance(session, branchId);
+
+    const dynamicInjection = buildDynamicContextInjection(input.dynamicContext);
+    const promptRuntimeInjections = [
+      ...(input.promptRuntimeInjections ?? []),
+      ...(dynamicInjection.promptRuntimeInjections ?? []),
+    ];
+    const request = {
+      config: this.withGraphAssistantToolConfig(session, input.config),
+      ...(input.generationParams ? { generationParams: input.generationParams } : {}),
+      ...(input.debugOptions ? { debugOptions: input.debugOptions } : {}),
+      ...(input.structure ? { structure: input.structure } : {}),
+      ...(input.delivery ? { delivery: input.delivery } : {}),
+      ...(promptRuntimeInjections.length > 0 ? { promptRuntimeInjections } : {}),
+      ...(input.confirmedExecutionIds ? { confirmedExecutionIds: input.confirmedExecutionIds } : {}),
+      ...(input.confirmedSessionStateMutationIds
+        ? { confirmedSessionStateMutationIds: input.confirmedSessionStateMutationIds }
+        : {}),
+    };
+    const callOptions = {
+      allowTemporary: true as const,
+      runtimeOptions: {
+        ...runtimeOptions,
+        ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      },
+    };
+
+    try {
+      if (input.fromStepIndex !== undefined) {
+        const result = await this.chatService.retryStep(
+          input.floorId,
+          { ...request, fromStepIndex: input.fromStepIndex },
+          input.accountId,
+          callOptions,
+        );
+        await this.touchConversation(session.id);
+        return {
+          conversationId: session.id,
+          branchId: result.branchId,
+          floorId: result.floorId,
+          floorNo: result.floorNo,
+          pageId: result.outputPageId ?? "",
+          text: result.generatedText,
+          usage: result.totalUsage,
+          finalState: result.finalState,
+          finishReason: resolveTemporaryConversationFinishReason(result.runtimeTrace),
+          warnings: resolveTemporaryConversationWarnings(result.runtimeTrace),
+          discardedFromStepIndex: result.discardedFromStepIndex,
+          irreversibleSideEffects: result.irreversibleSideEffects,
+        };
+      }
+
+      const result = await this.chatService.retryFloor(input.floorId, request, input.accountId, callOptions);
+      await this.touchConversation(session.id);
+      return {
+        conversationId: session.id,
+        branchId: result.branchId,
+        floorId: result.floorId,
+        floorNo: result.floorNo,
+        pageId: result.outputPageId ?? "",
+        text: result.generatedText,
+        usage: result.totalUsage,
+        finalState: result.finalState,
+        finishReason: resolveTemporaryConversationFinishReason(result.runtimeTrace),
+        warnings: resolveTemporaryConversationWarnings(result.runtimeTrace),
+      };
+    } catch (error) {
+      throw mapChatServiceErrorToTemporaryConversationError(error);
+    }
+  }
+
 
   async readTranscript(input: {
     accountId: string;
@@ -796,11 +1019,102 @@ export class TemporaryConversationService {
             contentFormat: messages.contentFormat,
             isHidden: messages.isHidden,
             source: messages.source,
-            createdAt: messages.createdAt,
+             createdAt: messages.createdAt,
           })
           .from(messages)
           .where(inArray(messages.pageId, pageRows.map((row) => row.id)))
           .orderBy(asc(messages.pageId), asc(messages.seq));
+
+  // 思维链与中间叙述：关联 floor_result_snapshot 读取已提交楼层的 reasoning_text 与 step_narrations_json。
+    const reasoningByFloor = new Map<string, string | null>();
+    const stepNarrationsByFloor = new Map<string, TemporaryConversationTranscriptStepNarration[]>();
+    if (floorRows.length > 0) {
+      const snapshotRows = await this.db
+        .select({
+          floorId: floorResultSnapshots.floorId,
+          reasoningText: floorResultSnapshots.reasoningText,
+          stepNarrationsJson: floorResultSnapshots.stepNarrationsJson,
+        })
+        .from(floorResultSnapshots)
+        .where(inArray(floorResultSnapshots.floorId, floorRows.map((row) => row.id)));
+      for (const snapshotRow of snapshotRows) {
+        reasoningByFloor.set(snapshotRow.floorId, snapshotRow.reasoningText ?? null);
+        stepNarrationsByFloor.set(snapshotRow.floorId, parseStepNarrations(snapshotRow.stepNarrationsJson));
+      }
+    }
+
+    // 工具执行：按 floorId 关联tool_execution_record（工具执行主审计真相），startedAt 升序。
+    // 与 message 并列挂在 floor 上的旁路数组，不进 floor→page→message 层级、不参与 prompt 投影。
+    // 版本对齐：楼层可能留有多次生成（respond / 楼层重试 / step 重试，各是一次独立 run）的执行记录。
+    // 「开新消息页」后旧输出页版本仍保留在库里，但当前 step 视图只应反映「当前这次生成」，否则旧版本页的
+    // 工具步会与新生成的工具步按 started_at 混排，让用户误以为重试是在原步之后追加/替换。这里沿用 step
+    // 重试前缀重建（step-retry-prefix）的口径：按 started_at 取该层最后一条（优先已提交）执行的 run_id 作为
+    // 「当前生成」，只带出该 run 的执行记录。
+    const toolExecutionsByFloor = new Map<string, TemporaryConversationTranscriptToolExecution[]>();
+    if (floorRows.length > 0) {
+      const execRows = await this.db
+        .select({
+          id: toolExecutionRecords.id,
+          runId: toolExecutionRecords.runId,
+          floorId: toolExecutionRecords.floorId,
+          toolName: toolExecutionRecords.toolName,
+          argsJson: toolExecutionRecords.argsJson,
+          resultJson: toolExecutionRecords.resultJson,
+     status: toolExecutionRecords.status,
+          commitOutcome: toolExecutionRecords.commitOutcome,
+          sideEffectLevel: toolExecutionRecords.sideEffectLevel,
+          errorMessage: toolExecutionRecords.errorMessage,
+          durationMs: toolExecutionRecords.durationMs,
+          startedAt: toolExecutionRecords.startedAt,
+          finishedAt: toolExecutionRecords.finishedAt,
+          attemptNo: toolExecutionRecords.attemptNo,
+          replayParentExecutionId: toolExecutionRecords.replayParentExecutionId,
+          generationStepNo: toolExecutionRecords.generationStepNo,
+        })
+        .from(toolExecutionRecords)
+        .where(inArray(toolExecutionRecords.floorId, floorRows.map((row) => row.id)))
+        .orderBy(asc(toolExecutionRecords.floorId), asc(toolExecutionRecords.startedAt));
+
+      //先按 started_at 升序定位每层「当前生成」的 run_id：已提交优先（最后一条已提交），
+      // 无已提交时退化为最后一条执行的 run_id（best-effort，兼容仍在生成或历史缺失场景）。
+      const lastCommittedRunIdByFloor = new Map<string, string>();
+      const lastAnyRunIdByFloor = new Map<string, string>();
+      for (const execRow of execRows) {
+        lastAnyRunIdByFloor.set(execRow.floorId, execRow.runId);
+        if (execRow.commitOutcome === "committed") {
+          lastCommittedRunIdByFloor.set(execRow.floorId, execRow.runId);
+        }
+      }
+      const currentRunIdByFloor = new Map<string, string>();
+      for (const [floorId, lastAnyRunId] of lastAnyRunIdByFloor) {
+        currentRunIdByFloor.set(floorId, lastCommittedRunIdByFloor.get(floorId) ?? lastAnyRunId);
+      }
+
+      for (const execRow of execRows) {
+        // 只保留「当前生成」这一 run 的执行：旧输出页版本的执行不进当前 step 视图。
+        if (currentRunIdByFloor.get(execRow.floorId) !== execRow.runId) {
+          continue;
+        }
+        const list = toolExecutionsByFloor.get(execRow.floorId) ?? [];
+        list.push({
+          id: execRow.id,
+          toolName: execRow.toolName,
+          status: execRow.status,
+          args: parseTranscriptToolJson(execRow.argsJson),
+          result: parseTranscriptToolJson(execRow.resultJson),
+          sideEffectLevel: execRow.sideEffectLevel,
+          commitOutcome: execRow.commitOutcome,
+     errorMessage: execRow.errorMessage,
+          durationMs: execRow.durationMs,
+          startedAt: execRow.startedAt,
+          finishedAt: execRow.finishedAt,
+          attemptNo: execRow.attemptNo,
+          replayParentExecutionId: execRow.replayParentExecutionId,
+          generationStepNo: execRow.generationStepNo?? null,
+        });
+        toolExecutionsByFloor.set(execRow.floorId, list);
+      }
+    }
 
     for (const row of messageRows) {
       const pageMessages = messagesByPage.get(row.pageId) ?? [];
@@ -829,6 +1143,9 @@ export class TemporaryConversationService {
         tokenOut: floorRow.tokenOut,
         createdAt: floorRow.createdAt,
         updatedAt: floorRow.updatedAt,
+        reasoningText: reasoningByFloor.get(floorRow.id) ?? null,
+        stepNarrations: stepNarrationsByFloor.get(floorRow.id) ?? [],
+        toolExecutions: toolExecutionsByFloor.get(floorRow.id) ?? [],
         pages: pages.map((page) => ({
           ...page,
           messages: messagesByPage.get(page.id) ?? [],
@@ -945,7 +1262,7 @@ export class TemporaryConversationService {
 
   private async respondWithRuntimeEvents(
     input: TemporaryConversationStreamInput,
-    runtimeOptions: Pick<RespondRuntimeOptions, "onStart" | "onChunk" | "onTool" | "onRun">,
+    runtimeOptions: Pick<RespondRuntimeOptions, "onStart" | "onChunk" | "onReasoning" | "onStepNarration" | "onTool" | "onRun">,
   ): Promise<TemporaryConversationResult> {
     const session = await this.requireActiveTemporaryConversation(input.accountId, input.conversationId);
     const branchId = normalizeTemporaryConversationBranchId(input.branchId);
@@ -985,15 +1302,19 @@ export class TemporaryConversationService {
         debugOptions: input.debugOptions,
         structure: input.structure,
         delivery: input.delivery,
+        ...(input.toolTransportPreference
+          ? { toolTransportPreference: input.toolTransportPreference }
+          : {}),
+        ...buildDynamicContextInjection(input.dynamicContext),
       },
       rawUserMessage: prepared.rawUserMessage,
       executionContext: resolvePromptRuntimeExecutionContext({
         sessionId: session.id,
-        metadataJson: session.metadataJson,
-        branchId: prepared.branchId,
-        branchExists: true,
+         metadataJson: session.metadataJson,
+          branchId: prepared.branchId,
+       branchExists: true,
         historySourceBranchId: prepared.branchId,
-        historySourceMode: "existing_branch",
+   historySourceMode: "existing_branch",
         sourceFloorId: prepared.sourceFloorId,
         request: buildLivePromptRuntimeRequestPolicy({
           structure: input.structure,
@@ -1609,6 +1930,36 @@ export class TemporaryConversationService {
     };
   }
 }
+/**
+ * 将 chatService 招出的 ChatServiceError 映射为 TemporaryConversationError，以便路由统一错误处理。
+ *
+ * 仅转换重试路径有意义的错误码；generation_cancelled 等原样抛出（SSE 层按客户端断开处理）。
+ * 未识别的错误原样返回（最终落到 500）。
+ */
+function mapChatServiceErrorToTemporaryConversationError(error: unknown): unknown {
+  if (!(error instanceof ChatServiceError)) {
+    return error;
+  }
+  switch (error.code) {
+    case "invalid_from_step_index":
+      return new TemporaryConversationError("invalid_from_step_index", error.message, { cause: error });
+    case "step_retry_blocked_side_effect":
+      return new TemporaryConversationError("step_retry_blocked_side_effect", error.message, { cause: error });
+    case "generation_conflict":
+    case "generation_queue_timeout":
+      return new TemporaryConversationError("conversation_busy", error.message, { cause: error });
+    case "session_not_found":
+      return new TemporaryConversationError("conversation_not_found", error.message, { cause: error });
+    case "session_archived":
+      return new TemporaryConversationError("conversation_not_active", error.message, { cause: error });
+    case "no_user_message":
+      return new TemporaryConversationError("no_pending_input", error.message, { cause: error });
+    default:
+      return error;
+  }
+}
+
+
 
 function normalizeTemporaryConversationBranchId(branchId?: string): string {
   const normalized = normalizeBranchId(branchId);
@@ -1652,7 +2003,10 @@ function buildTemporaryConversationTitle(
   return `${titleBase}${purposeSuffix}`.slice(0, 200);
 }
 
-function sanitizeTemporaryConversationMetadataJson(metadataJson: string | null): string | null {
+function sanitizeTemporaryConversationMetadataJson(
+  metadataJson: string | null,
+  purpose?: string | null,
+): string | null {
   if (!metadataJson) {
     return metadataJson;
   }
@@ -1664,12 +2018,18 @@ function sanitizeTemporaryConversationMetadataJson(metadataJson: string | null):
     }
 
     const record = parsed as Record<string, unknown>;
+    // 图助手会话强制启用工具：默认工具权限补 enabled:true，避免 transport 因 tools_disabled 退化为 none。
+    // 详见 temporary-conversation-types 中 GRAPH_ASSISTANT_PURPOSE 的注释。
+    const isGraphAssistant = purpose === GRAPH_ASSISTANT_PURPOSE;
     const toolPermissions = record.tool_permissions;
     if (toolPermissions && typeof toolPermissions === "object" && !Array.isArray(toolPermissions)) {
       record.tool_permissions = {
         ...(toolPermissions as Record<string, unknown>),
         allow_irreversible: false,
+        ...(isGraphAssistant ? { enabled: true } : {}),
       };
+    } else if (isGraphAssistant) {
+      record.tool_permissions = { enabled: true, allow_irreversible: false };
     }
 
     return JSON.stringify(record);
@@ -1729,21 +2089,21 @@ function buildTemporaryConversationProjectSnapshotDigest(args: {
   return `sha256:${createHash("sha256").update(payload).digest("hex")}`;
 }
 
-function buildTemporaryConversationMetadataJson(metadataJson: string | null): string {
+function buildTemporaryConversationMetadataJson(
+  metadataJson: string | null,
+  purpose?: string | null,
+): string {
+  // 图助手会话强制启用工具：默认工具权限带 enabled:true，避免 transport 因 tools_disabled 退化为 none。
+  const defaultToolPermissions: Record<string, unknown> = purpose === GRAPH_ASSISTANT_PURPOSE
+    ? { enabled: true, allow_irreversible: false }
+    : { allow_irreversible: false };
+
   if (!metadataJson) {
-    return JSON.stringify({
-      tool_permissions: {
-        allow_irreversible: false,
-      },
-    });
+    return JSON.stringify({ tool_permissions: defaultToolPermissions });
   }
 
-  const sanitized = sanitizeTemporaryConversationMetadataJson(metadataJson);
-  return sanitized ?? JSON.stringify({
-    tool_permissions: {
-      allow_irreversible: false,
-    },
-  });
+  const sanitized = sanitizeTemporaryConversationMetadataJson(metadataJson, purpose);
+  return sanitized ?? JSON.stringify({ tool_permissions: defaultToolPermissions });
 }
 function mergeAgentOriginIntoMetadataJson(
   metadataJson: string | null,
@@ -2019,6 +2379,47 @@ function mapDbMessageRole(role: typeof messages.$inferSelect["role"]): ChatMessa
   return "user";
 }
 
+/** 解析工具执行记录里的 args / result JSON 字符串；空串视为 null，解析失败时回退为原始字符串。 */
+function parseTranscriptToolJson(raw: string): unknown {
+  if (raw === "") {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * 解析 floor_result_snapshot.step_narrations_json 为中间叙述数组。
+ *
+ * 解析失败或结构不合时退化为空数组；按 createdAt（次级 stepIndex）升序稳定排列。
+ */
+function parseStepNarrations(value: string | null): TemporaryConversationTranscriptStepNarration[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter(
+        (item): item is TemporaryConversationTranscriptStepNarration =>
+          item !== null &&
+          typeof item === "object" &&
+          typeof (item as { stepIndex?: unknown }).stepIndex === "number" &&
+          typeof (item as { text?: unknown }).text === "string" &&
+          typeof (item as { createdAt?: unknown }).createdAt === "number",
+      )
+      .sort((a, b) => a.createdAt - b.createdAt || a.stepIndex - b.stepIndex);
+  } catch {
+    return [];
+  }
+}
+
 function toInspectTranscriptFloor(
   floor: TemporaryConversationTranscriptFloor,
   restricted: boolean,
@@ -2033,6 +2434,19 @@ function toInspectTranscriptFloor(
     tokenOut: floor.tokenOut,
     createdAt: floor.createdAt,
     updatedAt: floor.updatedAt,
+    reasoningText: restricted ? null : floor.reasoningText,
+    // 中间叙述旁路数组：agent-private 受限时擦除 text，保留 stepIndex / createdAt 结构。
+    stepNarrations: floor.stepNarrations.map((narration) => ({
+      ...narration,
+      text: restricted ? "" : narration.text,
+    })),
+    // 工具执行旁路数组：agent-private 受限时擦除 args / result / errorMessage，结构字段保留。
+    toolExecutions: floor.toolExecutions.map((exec) => ({
+      ...exec,
+      args: restricted ? null : exec.args,
+      result: restricted ? null : exec.result,
+      errorMessage: restricted ? null : exec.errorMessage,
+    })),
     pages: floor.pages.map((page) => ({
       id: page.id,
       pageNo: page.pageNo,
@@ -2040,7 +2454,7 @@ function toInspectTranscriptFloor(
       isActive: page.isActive,
       version: page.version,
       checksum: page.checksum,
-      createdAt: page.createdAt,
+           createdAt: page.createdAt,
       updatedAt: page.updatedAt,
       messages: page.messages.map((message) => ({
         id: message.id,

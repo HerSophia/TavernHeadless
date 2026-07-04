@@ -106,6 +106,7 @@ POST /sessions/:id/respond
 - `POST /sessions/:id/respond/dry-run`
 - `POST /sessions/:id/regenerate`
 - `POST /floors/:id/retry`
+- `POST /floors/:id/retry-step`
 - `POST /messages/:id/edit-and-regenerate`
 
 它用于在本次请求的 Prompt Runtime 组装阶段，临时加入一组客户端提示。
@@ -821,6 +822,87 @@ POST /floors/:id/retry
 如果服务端启用了 queue 模式，而目标 floor 在等待期间的结构化上下文已经变化（例如 `branch_id` 或 `floor_no` 被修改），接口会返回 `409 generation_target_stale`。
 
 除楼层自身不存在或状态不允许外，其余生成期错误语义与 `/sessions/:id/respond` 一致，包括 `commit_busy`（`503`）和 `generation_timeout`（`504`）。
+
+## 楼层 Step 级重试
+
+```http
+POST /floors/:id/retry-step
+```
+
+对一个**已 commit** 的楼层，从指定的某个 LLM 生成步（step）开始重试。与「楼层重试」整轮重跑不同，它会保留起点步之前已成功的工具往返结果并原样回放，只把起点步及其之后的内容在同一 floor id 上以新 attempt 重新生成。
+
+用途：一轮回复里模型做了多步工具调用，只有靠后的某一步开始出问题时，不必从头重跑，可以从那一步继续。
+
+目标楼层的 state 必须为 `committed`，attempt 语义与 `/floors/:id/retry` 一致。
+
+起点约束：`from_step_index` 指向的那一步，其工具必须没有写类副作用（`side_effect_level` 为 `none`）。否则返回 `409 step_retry_blocked_side_effect`。
+
+起点之前已经产生的写类副作用**不会回滚**，只会在响应的 `irreversible_side_effects` 中列出，供调用方提示用户。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `from_step_index` | integer | **是** | 从哪一步开始重生成，1-based，≥ 1 |
+| `config` | TurnConfig | 否 | 回合配置覆盖 |
+| `generation_params` | GenerationParams | 否 | 生成参数覆盖 |
+| `prompt_runtime_injections` | object[] | 否| 当前请求级 Prompt Runtime Injection 列表。字段见上面的“Prompt Runtime Injection 请求字段” |
+| `confirmed_execution_ids` | string[] | 否 | 确认允许 replay 的工具执行 ID 列表 |
+| `confirmed_session_state_mutation_ids` | string[] | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
+| `session_state_writes` | object[] | 否 | 与 `/sessions/:id/respond` 相同的 turn-embedded commit-bound Session State 写入声明 |
+| `debug_options` | object | 否 | live 最小观测开关，默认关闭 |
+| `debug_options.include_prompt_snapshot` | boolean | 否 | 成功响应 `data` 中返回 `prompt_snapshot` |
+| `debug_options.include_runtime_trace` | boolean | 否 | 成功响应 `data` 中返回 `runtime_trace` |
+| `debug_options.include_worldbook_matches` | boolean | 否 | 只有在 `include_runtime_trace=true` 时才会展开世界书命中详情 |
+
+replay 确认字段（`confirmed_execution_ids` / `confirmed_session_state_mutation_ids`）的语义与 `/floors/:id/retry` 一致。
+
+### 响应 `200`
+
+```json
+{
+  "data": {
+    "floor_id": "floor_05",
+    "floor_no": 5,
+    "branch_id": "main",
+    "generated_text": "...",
+    "summaries": [],
+    "total_usage": { "prompt_tokens": 200, "completion_tokens": 80, "total_tokens": 280 },
+    "memory": { "mode": "sync", "status":"applied", "job_id": null },
+    "final_state": "committed",
+    "discarded_from_step_index": 3,
+    "irreversible_side_effects": [
+      {
+        "execution_id": "exec_01",
+        "tool_name": "write_file",
+        "side_effect_level": "external",
+        "started_at": 1735689600000,
+        "generation_step_no": 2
+      }
+    ]
+  }
+}
+```
+
+在 `/floors/:id/retry` 响应的基础上，额外返回：
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `discarded_from_step_index` | number | 实际被丢弃并重生成的起点步号 |
+| `irreversible_side_effects` | object[] | 起点之前已产生、不会回滚的写类副作用摘要 |
+| `irreversible_side_effects[].execution_id`| string | 工具执行 ID |
+| `irreversible_side_effects[].tool_name` | string | 工具名 |
+| `irreversible_side_effects[].side_effect_level` | string | 副作用级别 |
+| `irreversible_side_effects[].started_at` |number | 执行开始时间戳（ms） |
+| `irreversible_side_effects[].generation_step_no` | number \| null |该执行所属的生成步号，旧数据可能为 `null` |
+
+### 错误
+
+|状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `409` | `step_retry_blocked_side_effect` | 起点步的工具带写类副作用，不能作为重试起点 |
+
+其余错误语义（楼层不存在、状态不允许、`tool_replay_confirmation_required`、`generation_target_stale`、`commit_busy`、`generation_timeout` 等）与 `/floors/:id/retry`一致。
 
 ## 编辑并重新生成
 

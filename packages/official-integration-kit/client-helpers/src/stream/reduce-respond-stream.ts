@@ -74,6 +74,19 @@ export function reduceRespondStream(
     };
   }
 
+  if (event.type === "reasoning") {
+    // reasoning 流事件：当前 RespondStreamState 不累积思维链文本（留待 reasoning 全链路在
+    //client-helpers 落地时扩展）。此处提前返回，避免 reasoning 事件落入下方 done 处理分支。
+    return state;
+  }
+
+  if (event.type === "step_narration") {
+    // 中间叙述流事件：当前 RespondStreamState 不累积中间叙述（图助手由 SDK 回调直接消费）。
+    // 此处提前返回，避免 step_narration 事件落入下方 done 处理分支。
+    return state;
+  }
+
+
   const usage = resolveUsage(event.payload.totalUsage);
   const branchId = event.payload.branchId ?? state.branchId;
   const summaries = event.payload.summaries.length > 0 ? event.payload.summaries : state.summaries;

@@ -35,6 +35,14 @@ export interface ModelConfig {
   modelId: string;
   /** 可选：turn 级冻结的 LanguageModel 句柄。提供后优先于 providerId 动态查找。 */
   languageModel?: LanguageModel;
+  /**
+   * 可选：provider 类型。
+   *
+   * turn 级用 `languageModel` 冻结句柄时，providerId 通常是临时 id、未注册进 registry，
+   * 此时无法从 registry 反查 type。上层应显式注入该字段，以便按provider 分流生成参数
+   * （例如推理强度在 OpenAI 与 Anthropic 下的开启方式完全不同）。
+   */
+  providerType?: ProviderType;
   /** 显示名称 */
   displayName?: string;
 }
@@ -83,8 +91,14 @@ export interface GenerationParams {
   timeoutMs?: number;
   /** 最大重试次数 */
   maxRetries?: number;
-  /** 推理强度（适用于支持 reasoning 的模型） */
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  /**
+   *推理强度（适用于支持 reasoning 的模型）。
+   *
+   * 预设三档 'low' | 'medium' | 'high' 提供字面量补全；同时允许传入任意
+   * 非空字符串，以兼容部分模型提供更强档位（例如 'xhigh'、'minimal'）。
+   *该值会原样透传给 provider，由模型自行解释。
+   */
+  reasoningEffort?: 'low' | 'medium' | 'high' | (string & {});
 }
 
 // ── LLM Instance ──────────────────────────────────────
@@ -117,33 +131,125 @@ export interface LLMInstance {
 
 import type { ToolParameterSchema } from '../tools/types.js';
 
+// ── 结构化模型消息 ────────────────────────────────────
+//
+// native function calling 的多轮续跑需要把「上一轮 assistant 的工具调用」与
+// 「工具结果」结构化回填给模型。这些类型贴合 Vercel AI SDK 的 ModelMessage：
+// assistant 角色携带 tool-call parts，tool 角色携带 tool-result parts。
+//
+// 约束：结构化消息只存在于 agent loop 内部与 LLM 请求，不进 prompt 组装、不落
+// transcript。普通纯文本消息仍是 ChatMessage（{ role; content: string }），不变。
+
+/** assistant 文本片段。 */
+export interface ModelTextPart {
+  type: 'text';
+  text: string;
+}
+
+/** assistant发起的一次工具调用片段。 */
+export interface ModelToolCallPart {
+  type: 'tool-call';
+  toolCallId: string;
+  toolName: string;
+  /** 工具调用参数（已按 schema 还原的对象）。 */
+  input: unknown;
+}
+
+/** 工具结果输出（贴合 SDK ToolResultOutput 的常用子集）。 */
+export type ModelToolResultOutput =
+  | { type: 'json'; value: unknown }
+  | { type: 'text'; value: string }
+  | { type: 'error-text'; value: string };
+
+/** tool 角色携带的单个工具结果片段。 */
+export interface ModelToolResultPart {
+  type: 'tool-result';
+  toolCallId: string;
+  toolName: string;
+  output: ModelToolResultOutput;
+}
+
+/** assistant 工具调用消息（含可选文本片段 + 工具调用片段）。 */
+export interface AssistantToolCallMessage {
+  role: 'assistant';
+  content: Array<ModelTextPart |ModelToolCallPart>;
+}
+
+/** tool 角色的工具结果消息。 */
+export interface ToolResultModelMessage {
+  role: 'tool';
+  content: ModelToolResultPart[];
+}
+
+/** 结构化模型消息（assistant tool-call / tool result）。 */
+export type StructuredModelMessage = AssistantToolCallMessage | ToolResultModelMessage;
+
+/** 纯文本模型消息（与 ChatMessage 同构）。 */
+export interface PlainTextModelMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+/**
+ * 发给 LLM 的消息：纯文本消息或结构化模型消息。
+ *
+ * 初始 messages 仍是纯文本；只有 native agent loop 内部续跑追加的工具往返消息
+ * 使用结构化形态。
+ */
+export type LLMMessage = PlainTextModelMessage | StructuredModelMessage;
+
+/** 判断一条 LLM 消息是否为纯文本消息（content 为字符串）。 */
+export function isPlainTextModelMessage(message: LLMMessage): message is PlainTextModelMessage {
+  return typeof (message as PlainTextModelMessage).content === 'string';
+}
+
 /** LLM 调用请求 */
 export interface LLMRequest {
-  /** 消息数组 */
-  messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
+  /** 消息数组（纯文本或结构化模型消息） */
+  messages: LLMMessage[];
   /** 生成参数 */
   params: GenerationParams;
   /** 使用的模型配置（可选，覆盖默认） */
   model?: ModelConfig;
   /** 中止信号 */
   abortSignal?: AbortSignal;
-  /** 可用工具列表（inline 模式使用，Vercel AI SDK 兼容格式） */
-  tools?: Record<string, LLMToolDefinition>;
+  /**
+   * 可用工具列表（Vercel AI SDK 兼容格式）。
+   *
+   * 主链 inline 模式传带 `execute` 的工具，由 SDK 自动执行；
+   * native agent loop 传 schema-only 工具（不带 execute），SDK 只返回 toolCalls 不执行。
+   */
+  tools?: Record<string, LLMToolDefinition | LLMToolSchemaDefinition>;
   /** 工具选择策略（当前仅在支持时显式设置 auto） */
   toolChoice?: 'auto';
   /** 最大自动工具调用步数（对应 Vercel AI SDK maxSteps） */
   maxSteps?: number;
 }
 
-/** Vercel AI SDK 兼容的工具定义 */
-export interface LLMToolDefinition {
+/**
+ * Vercel AI SDK 兼容的工具 schema 定义（不带 execute）。
+ *
+ * 传给 SDK 时，工具不带 execute，SDK 在该步只返回 toolCalls 并停止，不自动执行。
+ * native agent loop 用它让模型「说要调哪些工具」，再由仓库自驱动执行。
+ */
+export interface LLMToolSchemaDefinition {
   description: string;
   inputSchema: Schema<unknown>;
+}
+
+/** Vercel AI SDK 兼容的工具定义（带 execute，主链 inline 模式由 SDK 自动执行）。 */
+export interface LLMToolDefinition extends LLMToolSchemaDefinition {
   execute: (args: Record<string, unknown>) => Promise<unknown>;
 }
 
 /** 单次工具调用信息 */
 export interface LLMToolCall {
+  /**
+* 工具调用 ID（SDK 返回的 toolCallId）。
+   *
+   * native agent loop 用它匹配 tool-call 与 tool-result；部分提取路径可能缺失。
+   */
+  callId?: string;
   toolName: string;
   args: Record<string, unknown>;
 }
@@ -174,12 +280,25 @@ export interface LLMResponse {
   toolCalls?: LLMToolCall[];
   /** 各步结果（多步时有多条） */
   steps?: LLMStepResult[];
+  /**
+   * 推理（思维链）文本。
+   *
+   * 仅当模型/Provider 返回 reasoning 时存在；不支持 reasoning 的模型为空（缺省），
+   * 全链路按「无 reasoning」处理，不臆造内容。
+   */
+  reasoningText?: string;
 }
 
 /** LLM 流式回调 */
 export interface StreamCallbacks {
   /** 收到文本片段 */
   onChunk?: (chunk: string) => void;
+  /**
+   * 收到推理（思维链）片段。
+   *
+   * 仅当模型/Provider 在流式过程中产出 reasoning delta 时触发。
+   */
+  onReasoning?: (delta: string) => void;
   /** 生成完成 */
   onFinish?: (response: LLMResponse) => void;
   /** 生成出错 */

@@ -46,6 +46,7 @@ export const FIRST_PARTY_WORLD_STATE_MIN_SUPPORTED_SCHEMA_VERSION = 1;
 const VALID_FIRST_PARTY_GAME_STATE_RUN_TYPES: ReadonlySet<NormalizedFirstPartySceneState["runType"]> = new Set([
   "respond",
   "retry_turn",
+  "retry_step",
   "regenerate_page",
   "edit_and_regenerate",
 ]);

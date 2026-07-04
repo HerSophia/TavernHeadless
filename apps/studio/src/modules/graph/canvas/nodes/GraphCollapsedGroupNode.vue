@@ -162,16 +162,21 @@ function onEnter(): void {
   position: relative;
   width: 100%;
   border: 1px solid var(--color-line-active);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--color-panel);
   color: var(--color-text-primary);
   overflow: hidden;
   font-family: var(--font-sans);
-  transition: border-color 150ms cubic-bezier(0.2, 0, 0, 1);
+  transition: border-color 150ms cubic-bezier(0.2, 0, 0,1);
 }
 
-.cg--selected {
-  border-color: var(--color-line-active);
+.cg:hover {
+  border-color: color-mix(in srgb, var(--color-line-active) 60%, var(--color-signal-accent) 40%);
+}
+
+.cg--selected,
+.cg--selected:hover {
+  border-color: var(--color-signal-accent);
   box-shadow: 0 0 0 1px var(--color-signal-accent);
 }
 

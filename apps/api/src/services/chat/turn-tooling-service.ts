@@ -16,6 +16,7 @@ import {
   SessionToolRegistryService,
   SessionToolRegistryServiceError,
 } from "../session-tool-registry-service.js";
+import { GRAPH_ASSISTANT_PURPOSE } from "../temporary-conversation-types.js";
 
 import type { ChatServiceErrorFactory } from "./types.js";
 
@@ -105,15 +106,18 @@ export class TurnToolingService {
       return effectivePolicy.effectivePermissions;
     }
 
+    let sessionPurpose: string | null = null;
     try {
       const [session] = await this.db
-        .select({ metadataJson: sessions.metadataJson })
+        .select({ purpose: sessions.purpose, metadataJson:sessions.metadataJson })
         .from(sessions)
         .where(and(
           eq(sessions.id, sessionId),
           eq(sessions.accountId, accountId),
         ))
         .limit(1);
+
+      sessionPurpose = session?.purpose?? null;
 
       if (session?.metadataJson) {
         const metadata = JSON.parse(session.metadataJson) as Record<string, unknown>;
@@ -125,7 +129,13 @@ export class TurnToolingService {
         }
       }
     } catch {
-      // JSON 解析失败时返回 undefined
+      // JSON 解析失败时忽略，继续走后续兜底
+    }
+
+    // 图助手会话兜底：即使会话 metadata 未显式启用工具（例如旧会话缺 enabled 字段），
+    // 也默认启用工具权限，避免 transport 因 tools_disabled 退化为 none 导致工具调用文本汏露与幻觉。
+    if (sessionPurpose === GRAPH_ASSISTANT_PURPOSE) {
+      return { enabled: true, allowIrreversible: false };
     }
 
     return undefined;

@@ -2222,6 +2222,51 @@ export const respondSuccessResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
+// step 级重试：复用 retryFloor 的请求体，额外必传 from_step_index（1-based，从哪一步重生成）。
+export const retryStepBodyJsonSchema = {
+  type: "object",
+  required: ["from_step_index"],
+  properties: {
+    ...retryFloorBodyJsonSchema.properties,
+    from_step_index: { type: "integer", minimum: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+// 起点之前已产生、不会回滚的写类副作用条目（脱敏后只暴露摘要字段）。
+export const irreversibleSideEffectJsonSchema = {
+  type: "object",
+  required: ["execution_id", "tool_name", "side_effect_level", "started_at"],
+  properties: {
+    execution_id: { type: "string" },
+    tool_name: { type: "string" },
+side_effect_level: { type: "string" },
+    started_at: { type: "integer" },
+    generation_step_no: { anyOf:[{ type: "integer" }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
+export const retryStepDataJsonSchema = {
+  ...respondDataJsonSchema,
+  required: [...respondDataJsonSchema.required, "discarded_from_step_index", "irreversible_side_effects"],
+  properties: {
+    ...respondDataJsonSchema.properties,
+    discarded_from_step_index: { type: "integer", minimum: 1 },
+    irreversible_side_effects: { type: "array", items: irreversibleSideEffectJsonSchema },
+  },
+} as const;
+
+export const retryStepSuccessResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: retryStepDataJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+
 export const regenerateSuccessResponseJsonSchema = {
   type: "object",
   required: ["data"],

@@ -415,4 +415,366 @@ describe("sdk temporary conversation resources", () => {
       "http://localhost:3000/temporary-conversations/tmp-1/inspect?include_agent_private=true",
     );
   });
+
+  it("streams reasoning deltas, forwards reasoning_effort, and maps reasoning_text on floors", async () => {
+    const stream = [
+      "event: start\n",
+      'data: {"branch_id":"main","floor_id":"floor-1","floor_no":2}\n\n',
+      "event: reasoning\n",
+      'data: {"delta":"think:"}\n\n',
+      "event: reasoning\n",
+      'data: {"delta":"hello"}\n\n',
+      "event: chunk\n",
+      'data: {"chunk":"reply:hello"}\n\n',
+      "event: done\n",
+      'data: {"conversation_id":"tmp-1","branch_id":"main","floor_id":"floor-1","floor_no":2,"page_id":"page-out-1","generated_text":"reply:hello","summaries":[],"total_usage":{"prompt_tokens":12,"completion_tokens":8,"total_tokens":20},"final_state":"committed"}\n\n',
+    ].join("");
+
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(stream, {
+        headers: { "content-type": "text/event-stream" },
+        status: 200,
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          conversation_id: "tmp-1",
+          branch_id: "main",
+          floors: [
+            {
+              id: "floor-1",
+              floor_no: 2,
+              branch_id: "main",
+              parent_floor_id: null,
+              state: "committed",
+              token_in: 12,
+              token_out: 8,
+              created_at: 10,
+              updated_at: 20,
+              reasoning_text: "think:hello",
+              pages: [],
+            },
+          ],
+        },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: {
+          conversation: { ...temporaryConversationPayload, status: "finalized", finalized_at: 50, cleaned_at: null },
+          agent_private: true,
+          transcript_restricted: true,
+          source_snapshot: { digest: null, source_session_id: "sess-1" },
+          agent_origin: null,
+          cleanup: { cleaned: false, cleaned_at: null, retention_policy: "delete_on_finalize" },
+          transcript: {
+            conversation_id: "tmp-1",
+            branch_id: "main",
+            floors: [
+              {
+                id: "floor-1",
+                floor_no: 2,
+                branch_id: "main",
+                parent_floor_id: null,
+                state: "committed",
+                token_in: 12,
+                token_out: 8,
+                created_at: 10,
+                updated_at: 20,
+                reasoning_text: null,
+                pages: [],
+              },
+            ],
+          },
+          exports: [],
+        },
+      }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    const reasoningDeltas: string[] = [];
+    await expect(client.temporaryConversations.respondStream({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      inputMessage: { role: "user", content: "hello" },
+      generationParams: { reasoningEffort: "high" },
+      onReasoning: (payload) => reasoningDeltas.push(payload.delta),
+    })).resolves.toMatchObject({ conversationId: "tmp-1", generatedText: "reply:hello" });
+    expect(reasoningDeltas).toEqual(["think:", "hello"]);
+    expect(fetchImpl.mock.calls[0]![1]?.body).toBe(JSON.stringify({
+      input_message: { role: "user", content: "hello" },
+      generation_params: { reasoning_effort: "high" },
+    }));
+
+    const transcript = await client.temporaryConversations.getTranscript({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+    });
+    expect(transcript.floors[0]?.reasoningText).toBe("think:hello");
+
+    const inspect = await client.temporaryConversations.inspect({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+    });
+    expect(inspect.transcript.floors[0]?.reasoningText).toBeNull();
+  });
+  it("streams step_narration events and maps them to camelCase onStepNarration payloads", async () => {
+    const stream = [
+      "event: start\n",
+      'data: {"branch_id":"main","floor_id":"floor-1","floor_no":2}\n\n',
+      "event: step_narration\n",
+      'data: {"step_index":0,"text":"first step narration","created_at":111}\n\n',
+      "event: step_narration\n",
+      'data: {"step_index":1,"text":"second step narration","created_at":222}\n\n',
+   "event: chunk\n",
+      'data: {"chunk":"reply:hello"}\n\n',
+      "event: done\n",
+      'data: {"conversation_id":"tmp-1","branch_id":"main","floor_id":"floor-1","floor_no":2,"page_id":"page-out-1","generated_text":"reply:hello","summaries":[],"total_usage":{"prompt_tokens":12,"completion_tokens":8,"total_tokens":20},"final_state":"committed"}\n\n',
+    ].join("");
+
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      new Response(stream, {
+        headers: { "content-type": "text/event-stream" },
+        status: 200,
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    const narrations: { stepIndex: number; text: string; createdAt: number }[] = [];
+    await expect(
+      client.temporaryConversations.respondStream({
+        accountId: "acc-1",
+        conversationId: "tmp-1",
+        inputMessage: { role: "user", content: "hello" },
+        onStepNarration: (payload) => narrations.push(payload),
+      }),
+    ).resolves.toMatchObject({ conversationId: "tmp-1", generatedText: "reply:hello" });
+    expect(narrations).toEqual([
+      { stepIndex: 0, text: "first step narration", createdAt: 111 },
+      { stepIndex: 1, text: "second step narration", createdAt: 222 },
+    ]);
+  });
+
+
+  it("forwards the full generation params set as snake_case generation_params", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      data: {
+        conversation_id: "tmp-1",
+        branch_id: "main",
+        floor_id: "floor-1",
+        floor_no: 2,
+        page_id: "page-out-1",
+        generated_text: "reply:hello",
+        summaries: [],
+        total_usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+        final_state: "committed",
+      },
+    }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await client.temporaryConversations.respond({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      inputMessage: { role: "user", content: "hello" },
+      generationParams: {
+        reasoningEffort: "xhigh",
+        temperature: 1,
+        topP: 0.5,
+        maxOutputTokens: 8192,
+        maxContextTokens: 300000,
+      },
+    });
+
+    expect(fetchImpl.mock.calls[0]![1]?.body).toBe(JSON.stringify({
+      input_message: { role: "user", content: "hello" },
+      generation_params: {
+   reasoning_effort: "xhigh",
+        temperature: 1,
+        top_p:0.5,
+        max_output_tokens: 8192,
+               max_context_tokens: 300000,
+      },
+    }));
+  });
+
+  it("forwards tool_transport_preference as snake_case when provided", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      data: {
+        conversation_id: "tmp-1",
+        branch_id: "main",
+        floor_id: "floor-1",
+        floor_no: 2,
+        page_id: "page-out-1",
+        generated_text: "reply:hello",
+        summaries: [],
+        total_usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+        final_state: "committed",
+      },
+    }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await client.temporaryConversations.respond({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      inputMessage: { role: "user", content: "hello" },
+      toolTransportPreference: "native",
+    });
+
+    expect(fetchImpl.mock.calls[0]![1]?.body).toBe(JSON.stringify({
+      input_message: { role: "user", content: "hello" },
+      tool_transport_preference: "native",
+    }));
+  });
+
+  it("omits tool_transport_preference when not provided", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      data: {
+        conversation_id: "tmp-1",
+   branch_id: "main",
+        floor_id: "floor-1",
+        floor_no: 2,
+        page_id: "page-out-1",
+        generated_text: "reply:hello",
+        summaries: [],
+        total_usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
+        final_state: "committed",
+      },
+    }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await client.temporaryConversations.respond({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      inputMessage: {role: "user", content: "hello" },
+    });
+
+    expect(fetchImpl.mock.calls[0]![1]?.body).toBe(JSON.stringify({
+      input_message: { role: "user", content: "hello" },
+    }));
+  });
+  it("retries a temporary conversation floor (open a new output page version)", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      data: {
+        conversation_id: "tmp-1",
+        branch_id: "main",
+        floor_id: "floor-1",
+        floor_no: 2,
+        page_id: "page-out-2",
+        generated_text: "reply:retry",
+        total_usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+        final_state: "committed",
+      },
+    }));
+    const client = createTavernClient({baseUrl, fetchImpl });
+
+    await expect(client.temporaryConversations.retry({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      floorId: "floor-1",
+      dynamicContext: "ctx",
+      generationParams: { temperature: 0.4 },
+    })).resolves.toMatchObject({
+      conversationId: "tmp-1",
+      pageId: "page-out-2",
+      generatedText: "reply:retry",
+      totalTokens: 8,
+    });
+
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/temporary-conversations/tmp-1/retry");
+    expect(fetchImpl.mock.calls[0]![1]?.body).toBe(JSON.stringify({
+      floor_id: "floor-1",
+      dynamic_context: "ctx",
+      generation_params: { temperature: 0.4 },
+    }));
+  });
+
+  it("retries from a step and maps discarded index plus irreversible side effects", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      data: {
+        conversation_id: "tmp-1",
+        branch_id: "main",
+        floor_id: "floor-1",
+        floor_no: 2,
+        page_id: "page-out-3",
+        generated_text: "reply:step",
+        total_usage: { prompt_tokens: 6, completion_tokens: 4, total_tokens: 10 },
+        final_state: "committed",
+        discarded_from_step_index: 3,
+        irreversible_side_effects: [
+          {
+            execution_id: "exec-1",
+            tool_name: "write_file",
+            side_effect_level: "irreversible",
+            started_at: 100,
+            generation_step_no: 2,
+          },
+        ],
+      },
+    }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(client.temporaryConversations.retryStep({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      floorId: "floor-1",
+      fromStepIndex: 3,
+      confirmedExecutionIds: ["exec-9"],
+    })).resolves.toMatchObject({
+      conversationId: "tmp-1",
+      pageId: "page-out-3",
+      discardedFromStepIndex: 3,
+      irreversibleSideEffects: [
+        {
+          executionId: "exec-1",
+          toolName: "write_file",
+          sideEffectLevel: "irreversible",
+          startedAt: 100,
+          generationStepNo: 2,
+        },
+      ],
+    });
+
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe("http://localhost:3000/temporary-conversations/tmp-1/retry-step");
+    expect(fetchImpl.mock.calls[0]![1]?.body).toBe(JSON.stringify({
+      floor_id: "floor-1",
+      from_step_index: 3,
+      confirmed_execution_ids: ["exec-9"],
+    }));
+  });
+
+  it("streams a step retry and surfaces retry-step fields from the done event", async () => {
+    const stream = [
+      "event: start\n",
+      'data: {"branch_id":"main","floor_id":"floor-1","floor_no":2}\n\n',
+      "event: chunk\n",
+      'data: {"chunk":"reply:step"}\n\n',
+      "event: done\n",
+      'data: {"conversation_id":"tmp-1","branch_id":"main","floor_id":"floor-1","floor_no":2,"page_id":"page-out-3","generated_text":"reply:step","summaries":[],"total_usage":{"prompt_tokens":6,"completion_tokens":4,"total_tokens":10},"final_state":"committed","discarded_from_step_index":3,"irreversible_side_effects":[{"execution_id":"exec-1","tool_name":"write_file","side_effect_level":"irreversible","started_at":100,"generation_step_no":2}]}\n\n',
+    ].join("");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(stream, {
+      headers: { "content-type": "text/event-stream" },
+      status: 200,
+    }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    const chunks: string[]= [];
+    await expect(client.temporaryConversations.retryStepStream({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+      floorId: "floor-1",
+      fromStepIndex: 3,
+      onChunk: (payload) => chunks.push(payload.chunk),
+    })).resolves.toMatchObject({
+      conversationId: "tmp-1",
+      pageId: "page-out-3",
+      discardedFromStepIndex: 3,
+      irreversibleSideEffects: [
+        {
+          executionId: "exec-1",
+          toolName: "write_file",
+          generationStepNo: 2,
+        },
+      ],
+    });
+    expect(chunks).toEqual(["reply:step"]);
+  });
+
+
+
 });

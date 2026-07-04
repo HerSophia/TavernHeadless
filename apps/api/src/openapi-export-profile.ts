@@ -6,7 +6,7 @@ export const OPENAPI_EXPORT_CLIENT_DATA_CONFIG = {
   defaultMaxItemSizeBytes: 1_048_576,
   defaultQuotaMaxEntries: 10_000,
   defaultQuotaMaxBytes: 10_485_760,
-  maxDomainsPerAccount: 64,
+  maxDomainsPerAccount: 1024,
   maxTotalEntriesPerAccount: 100_000,
   maxTotalBytesPerAccount: 104_857_600,
 } as const;

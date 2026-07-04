@@ -5,6 +5,7 @@ import type { DatabaseConnection } from "../db/client.js";
 import { errorResponseJsonSchema } from "./schemas/common.js";
 import { ensureOptionalObjectBody, parseWithSchema, sendError } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
+import type { GenerationParamsInput } from "../lib/llm-params.js";
 import { applyCorsHeaders, type CorsConfig } from "../plugins/cors.js";
 import {
   OperationLogService,
@@ -20,6 +21,7 @@ import {
 import { TemporaryConversationError } from "../services/temporary-conversation-errors.js";
 import { TemporaryConversationService } from "../services/temporary-conversation-service.js";
 import type { GraphAssistantPendingToolCallRecord } from "../services/graph-assistant-tool-confirmation-service.js";
+import type { RetryStepIrreversibleSideEffect } from "../services/chat/contracts.js";
 import {
   TEMPORARY_CONVERSATION_BRANCH_ID,
   type TemporaryConversationAgentOrigin,
@@ -27,6 +29,8 @@ import {
   type TemporaryConversationInspect,
   type TemporaryConversationInspectTranscriptFloor,
   type TemporaryConversationResource,
+  type TemporaryConversationResult,
+  type TemporaryConversationStreamChunk,
   type TemporaryConversationTranscript,
 } from "../services/temporary-conversation-types.js";
 import { GOVERNANCE_OPERATION_ACTIONS } from "../services/governance/operation-log-names.js";
@@ -76,6 +80,33 @@ const appendMessageBodySchema = z.object({
 
 const respondBodySchema = z.object({
   input_message: appendMessageBodySchema.optional(),
+ dynamic_context: z.string().max(200000).optional(),
+  generation_params: z.object({
+    reasoning_effort: z.string().min(1).max(64).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    top_p: z.number().min(0).max(1).optional(),
+    max_output_tokens: z.number().int().min(1).optional(),
+    max_context_tokens: z.number().int().min(1).optional(),
+  }).strict().optional(),
+  tool_transport_preference: z.enum(["auto", "native", "text_protocol"]).optional(),
+}).strict();
+
+const retryBodySchema = z.object({
+  floor_id: z.string().min(1),
+  dynamic_context: z.string().max(200000).optional(),
+  generation_params: z.object({
+    reasoning_effort: z.string().min(1).max(64).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    top_p: z.number().min(0).max(1).optional(),
+    max_output_tokens: z.number().int().min(1).optional(),
+    max_context_tokens: z.number().int().min(1).optional(),
+  }).strict().optional(),
+  confirmed_execution_ids: z.array(z.string().min(1)).optional(),
+  confirmed_session_state_mutation_ids: z.array(z.string().min(1)).optional(),
+}).strict();
+
+const retryStepBodySchema = retryBodySchema.extend({
+  from_step_index: z.number().int().min(1),
 }).strict();
 
 const exportBodySchema = z.object({
@@ -117,9 +148,61 @@ const appendMessageBodyJsonSchema = {
 } as const;
 
 const respondBodyJsonSchema = {
-  type: "object",
+   type: "object",
   properties: {
     input_message: appendMessageBodyJsonSchema,
+    dynamic_context: { type: "string", maxLength: 200000 },
+    generation_params: {
+      type: "object",
+      properties: {
+        reasoning_effort: {type: "string", minLength: 1, maxLength: 64 },
+        temperature: { type: "number", minimum: 0, maximum: 2 },
+        top_p: { type: "number", minimum: 0, maximum: 1 },
+        max_output_tokens: { type: "integer", minimum: 1 },
+        max_context_tokens: { type: "integer", minimum: 1 },
+      },
+      additionalProperties: false,
+    },
+    tool_transport_preference: { type: "string", enum: ["auto", "native", "text_protocol"] },
+  },
+  additionalProperties: false,
+} as const;
+
+const retryGenerationParamsJsonSchema = {
+  type: "object",
+  properties: {
+    reasoning_effort: { type: "string", minLength: 1, maxLength: 64 },
+    temperature: { type: "number", minimum: 0, maximum: 2 },
+    top_p: { type: "number", minimum: 0, maximum: 1 },
+    max_output_tokens: { type: "integer", minimum: 1 },
+    max_context_tokens: { type: "integer", minimum: 1 },
+  },
+  additionalProperties: false,
+} as const;
+
+const retryBodyJsonSchema = {
+  type: "object",
+  required: ["floor_id"],
+  properties: {
+    floor_id: { type: "string", minLength: 1 },
+    dynamic_context: { type: "string", maxLength: 200000 },
+    generation_params: retryGenerationParamsJsonSchema,
+    confirmed_execution_ids: { type: "array", items: { type: "string", minLength: 1 } },
+    confirmed_session_state_mutation_ids: { type: "array", items: { type: "string", minLength: 1 } },
+  },
+  additionalProperties: false,
+} as const;
+
+const retryStepBodyJsonSchema = {
+  type: "object",
+  required: ["floor_id", "from_step_index"],
+  properties: {
+    floor_id: { type: "string", minLength: 1 },
+    from_step_index: { type: "integer", minimum: 1 },
+    dynamic_context: { type: "string", maxLength: 200000 },
+    generation_params: retryGenerationParamsJsonSchema,
+    confirmed_execution_ids: { type: "array", items: { type: "string", minLength: 1} },
+    confirmed_session_state_mutation_ids: { type: "array", items: { type: "string", minLength: 1 } },
   },
   additionalProperties: false,
 } as const;
@@ -252,7 +335,70 @@ const temporaryConversationRespondResponseJsonSchema = {
   additionalProperties: false,
 } as const;
 
-const temporaryConversationTranscriptResponseJsonSchema = {
+const temporaryConversationRetryResponseJsonSchema = temporaryConversationRespondResponseJsonSchema;
+
+const temporaryConversationIrreversibleSideEffectJsonSchema = {
+  type: "object",
+  required: ["execution_id","tool_name", "side_effect_level", "started_at"],
+  properties: {
+    execution_id: { type: "string" },
+    tool_name: { type: "string" },
+    side_effect_level: { type: "string" },
+    started_at: { type: "integer", minimum: 0 },
+    generation_step_no: {anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
+const temporaryConversationRetryStepResponseJsonSchema = {
+  type: "object",
+  required: ["data"],
+  properties: {
+    data: {
+      type: "object",
+      required: [
+        "conversation_id",
+        "branch_id",
+        "floor_id",
+        "floor_no",
+        "page_id",
+        "generated_text",
+        "total_usage",
+        "final_state",
+        "discarded_from_step_index",
+        "irreversible_side_effects",
+      ],
+      properties: {
+        conversation_id: { type: "string" },
+        branch_id: { type: "string" },
+        floor_id: { type: "string" },
+        floor_no: { type: "integer", minimum: 0 },
+        page_id: { type: "string" },
+        generated_text: { type: "string" },
+        total_usage: {
+          type: "object",
+  required: ["prompt_tokens", "completion_tokens", "total_tokens"],
+          properties: {
+            prompt_tokens: { type: "integer", minimum: 0 },
+            completion_tokens: { type: "integer", minimum: 0 },
+            total_tokens: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        final_state: { anyOf: [{ type: "string" }, { type: "null" }] },
+        discarded_from_step_index: { type: "integer", minimum: 1 },
+        irreversible_side_effects: {
+        type: "array",
+          items: temporaryConversationIrreversibleSideEffectJsonSchema,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+}as const;
+
+const temporaryConversationTranscriptResponseJsonSchema= {
   type: "object",
   required: ["data"],
   properties: {
@@ -862,6 +1008,11 @@ export async function registerTemporaryConversationRoutes(
                 content: parsedBody.data.input_message.content,
               }
             : undefined,
+          dynamicContext: parsedBody.data.dynamic_context,
+          ...buildTemporaryConversationGenerationParams(parsedBody.data.generation_params),
+          ...(parsedBody.data.tool_transport_preference
+            ? { toolTransportPreference: parsedBody.data.tool_transport_preference }
+            : {}),
           abortSignal: abortController.signal,
         })) {
           if (clientClosed || reply.raw.destroyed || reply.raw.writableEnded) {
@@ -879,7 +1030,12 @@ export async function registerTemporaryConversationRoutes(
           }
 
           if (chunk.type === "delta") {
-            writeSse(reply.raw, "chunk", { chunk: chunk.text });
+            writeSse(reply.raw, "chunk",{ chunk: chunk.text });
+            continue;
+          }
+
+          if (chunk.type === "reasoning") {
+            writeSse(reply.raw, "reasoning", { delta: chunk.text });
             continue;
           }
 
@@ -900,9 +1056,18 @@ export async function registerTemporaryConversationRoutes(
             continue;
           }
 
+          if (chunk.type === "narration") {
+            writeSse(reply.raw, "step_narration", {
+              step_index: chunk.stepIndex,
+              text: chunk.text,
+              created_at: chunk.createdAt,
+            });
+            continue;
+          }
+
           if (chunk.type === "run") {
             writeSse(reply.raw, "run", mapRunToSnakeCase(chunk.event));
-            continue;
+           continue;
           }
 
           writeSse(reply.raw, "done", {
@@ -963,7 +1128,12 @@ export async function registerTemporaryConversationRoutes(
               content: parsedBody.data.input_message.content,
             }
           : undefined,
-      });
+     dynamicContext: parsedBody.data.dynamic_context,
+        ...buildTemporaryConversationGenerationParams(parsedBody.data.generation_params),
+        ...(parsedBody.data.tool_transport_preference
+          ?{ toolTransportPreference: parsedBody.data.tool_transport_preference }
+          : {}),
+});
       appendOperationLog(
         request,
         detail,
@@ -1001,6 +1171,244 @@ export async function registerTemporaryConversationRoutes(
       throw error;
     }
   });
+
+  // 图助手 floor 级 / step 级重试（开新消息页：目标已提交楼层上新 output page version）。
+  // 与 respond 一致，同时支持 JSON 与 SSE。
+  app.post("/temporary-conversations/:id/retry", {
+    schema: {
+      tags: ["temporary-conversations"],
+      summary: "Retry a floor inside a temporary conversation",
+      params: idParamsJsonSchema,
+      body: retryBodyJsonSchema,
+      response: {
+        200: temporaryConversationRetryResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+    if (!authorizeConversationAction(reply, request, parsedParams.data.id, "project.write")) {
+      return;
+    }
+    const detail = await loadPublicConversationDetail(reply, getRequestAuthContext(request).accountId, parsedParams.data.id);
+    if (!detail) return;
+
+    const parsedBody = parseWithSchema(retryBodySchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const accountId = getRequestAuthContext(request).accountId;
+    const baseInput = {
+      accountId,
+      conversationId: parsedParams.data.id,
+      floorId: parsedBody.data.floor_id,
+      ...(parsedBody.data.dynamic_context !== undefined ? { dynamicContext: parsedBody.data.dynamic_context } : {}),
+      ...buildTemporaryConversationGenerationParams(parsedBody.data.generation_params),
+      ...(parsedBody.data.confirmed_execution_ids ? { confirmedExecutionIds: parsedBody.data.confirmed_execution_ids } : {}),
+      ...(parsedBody.data.confirmed_session_state_mutation_ids
+        ? { confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids }
+        : {}),
+    };
+
+    if (acceptsEventStream(request)) {
+      reply.hijack();
+      reply.raw.statusCode = 200;
+      applyCorsHeaders(reply.raw, request.headers.origin, options.cors ?? { origins: true, credentials: false });
+      reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+      reply.raw.setHeader("Connection", "keep-alive");
+      reply.raw.setHeader("X-Accel-Buffering", "no");
+      reply.raw.flushHeaders?.();
+
+      const abortController = new AbortController();
+      let completed = false;
+      let clientClosed = false;
+      reply.raw.on("close", () => {
+        if (!completed) {
+          clientClosed = true;
+          abortController.abort();
+        }
+      });
+
+      try {
+        for await (const chunk of temporaryConversationService.retryStream({
+          ...baseInput,
+          abortSignal: abortController.signal,
+        })) {
+          if (clientClosed || reply.raw.destroyed || reply.raw.writableEnded) {
+            completed = true;
+            return;
+          }
+          if (writeTemporaryConversationNonResultChunk(reply.raw, chunk)) {
+            continue;
+          }
+          writeSse(reply.raw, "done", mapTemporaryConversationRetryResult(chunk.result));
+          appendOperationLog(
+            request,
+            detail,
+            "temporary_conversation.responded",
+            "temporary_conversation",
+            detail.id,
+            { route: "POST /temporary-conversations/:id/retry", response_mode: "sse", output_page_id: chunk.result.pageId },
+            { floorId: chunk.result.floorId, branchId: chunk.result.branchId },
+          );
+          completed = true;
+          reply.raw.end();
+          return;
+        }
+      } catch (error) {
+        if (clientClosed || abortController.signal.aborted || reply.raw.destroyed || reply.raw.writableEnded) {
+          completed = true;
+          return;
+        }
+        const mapped = mapTemporaryConversationRouteError(error);
+        writeSse(reply.raw, "error", { code: mapped.code, message: mapped.message });
+        completed = true;
+        reply.raw.end();
+      }
+      return;
+    }
+
+    try {
+      const result = await temporaryConversationService.retryFloor(baseInput);
+      appendOperationLog(
+        request,
+        detail,
+        "temporary_conversation.responded",
+        "temporary_conversation",
+        detail.id,
+        { route: "POST /temporary-conversations/:id/retry", response_mode: "json", output_page_id: result.pageId },
+        { floorId: result.floorId, branchId: result.branchId },
+      );
+      return reply.code(200).send({ data: mapTemporaryConversationRetryResult(result) });
+    } catch (error) {
+      if (handleTemporaryConversationRouteError(reply, error)) {
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.post("/temporary-conversations/:id/retry-step", {
+    schema: {
+      tags: ["temporary-conversations"],
+      summary: "Retry from a step inside a temporary conversation",
+      params: idParamsJsonSchema,
+      body: retryStepBodyJsonSchema,
+      response: {
+        200: temporaryConversationRetryStepResponseJsonSchema,
+        400: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(idParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+    if (!authorizeConversationAction(reply, request, parsedParams.data.id, "project.write")) {
+      return;
+    }
+    const detail = await loadPublicConversationDetail(reply, getRequestAuthContext(request).accountId, parsedParams.data.id);
+    if (!detail) return;
+
+    const parsedBody = parseWithSchema(retryStepBodySchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    const accountId = getRequestAuthContext(request).accountId;
+    const baseInput = {
+      accountId,
+      conversationId: parsedParams.data.id,
+      floorId: parsedBody.data.floor_id,
+      fromStepIndex: parsedBody.data.from_step_index,
+      ...(parsedBody.data.dynamic_context !== undefined ? { dynamicContext: parsedBody.data.dynamic_context } : {}),
+      ...buildTemporaryConversationGenerationParams(parsedBody.data.generation_params),
+      ...(parsedBody.data.confirmed_execution_ids ? { confirmedExecutionIds: parsedBody.data.confirmed_execution_ids } : {}),
+      ...(parsedBody.data.confirmed_session_state_mutation_ids
+        ? { confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids }
+        : {}),
+    };
+
+    if (acceptsEventStream(request)) {
+      reply.hijack();
+      reply.raw.statusCode = 200;
+      applyCorsHeaders(reply.raw, request.headers.origin, options.cors ?? { origins: true, credentials: false });
+      reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
+reply.raw.setHeader("Connection", "keep-alive");
+      reply.raw.setHeader("X-Accel-Buffering", "no");
+      reply.raw.flushHeaders?.();
+
+      const abortController = new AbortController();
+      let completed = false;
+      let clientClosed = false;
+      reply.raw.on("close", () => {
+        if (!completed) {
+          clientClosed = true;
+          abortController.abort();
+        }
+      });
+
+      try {
+        for await (const chunk of temporaryConversationService.retryStepStream({
+          ...baseInput,
+          abortSignal: abortController.signal,
+        })) {
+          if (clientClosed || reply.raw.destroyed || reply.raw.writableEnded) {
+            completed = true;
+            return;
+          }
+          if (writeTemporaryConversationNonResultChunk(reply.raw, chunk)) {
+            continue;
+          }
+          writeSse(reply.raw, "done", mapTemporaryConversationRetryResult(chunk.result));
+          appendOperationLog(
+            request,
+            detail,
+            "temporary_conversation.responded",
+            "temporary_conversation",
+            detail.id,
+            { route: "POST /temporary-conversations/:id/retry-step", response_mode: "sse", output_page_id: chunk.result.pageId },
+            { floorId: chunk.result.floorId, branchId: chunk.result.branchId },
+          );
+          completed = true;
+          reply.raw.end();
+          return;
+        }
+      } catch (error) {
+        if (clientClosed || abortController.signal.aborted || reply.raw.destroyed || reply.raw.writableEnded) {
+          completed = true;
+          return;
+        }
+        const mapped = mapTemporaryConversationRouteError(error);
+        writeSse(reply.raw, "error", { code: mapped.code, message: mapped.message });
+        completed = true;
+        reply.raw.end();
+      }
+      return;
+    }
+
+    try {
+      const result = await temporaryConversationService.retryStep(baseInput);
+      appendOperationLog(
+        request,
+        detail,
+        "temporary_conversation.responded",
+        "temporary_conversation",
+        detail.id,
+        { route: "POST /temporary-conversations/:id/retry-step", response_mode: "json", output_page_id: result.pageId },
+        { floorId: result.floorId, branchId: result.branchId },
+      );
+        return reply.code(200).send({ data: mapTemporaryConversationRetryResult(result) });
+    } catch (error) {
+      if (handleTemporaryConversationRouteError(reply, error)) {
+        return;
+      }
+      throw error;
+    }
+  });
+
   // 图助手「执行前确认闸」恢复接口（阶段 3）。
   // 这两个路由属于 NodeGraph 周边第一方接入面，不进入 OpenAPI / @tavern/sdk 生成面；
   // studio 经第一方薄客户端直连。读用 project.nodegraph.read，写用 project.nodegraph.write。
@@ -1392,6 +1800,83 @@ function appendTemporaryConversationExportLog(
   });
 }
 
+/**
+ * 把临时对话流式非-result chunk 写为 SSE 事件。result chunk 返回 false，交调用方收尾。
+ */
+function writeTemporaryConversationNonResultChunk(
+  raw: Parameters<typeof writeSse>[0],
+  chunk: TemporaryConversationStreamChunk,
+): chunk is Exclude<TemporaryConversationStreamChunk, { type: "result" }> {
+  switch (chunk.type) {
+    case "start":
+      writeSse(raw, "start", { floor_id: chunk.floorId, floor_no: chunk.floorNo, branch_id: chunk.branchId });
+      return true;
+    case "delta":
+      writeSse(raw, "chunk", { chunk: chunk.text });
+      return true;
+    case "reasoning":
+      writeSse(raw, "reasoning", { delta: chunk.text });
+      return true;
+    case "tool":
+      writeSse(raw, "tool", {
+        execution_id: chunk.event.executionId,
+        tool_name: chunk.event.toolName,
+        provider_id: chunk.event.providerId,
+        provider_type: chunk.event.providerType ?? null,
+        side_effect_level: chunk.event.sideEffectLevel ?? null,
+        phase: chunk.event.phase,
+        message: chunk.event.message ?? null,
+        duration_ms: chunk.event.durationMs ?? null,
+        replay_safety: chunk.event.replaySafety,
+        ...(chunk.event.callId ? { call_id: chunk.event.callId } : {}),
+        ...(chunk.event.args ? { args: chunk.event.args } : {}),
+      });
+      return true;
+    case "narration":
+      writeSse(raw, "step_narration", { step_index: chunk.stepIndex, text: chunk.text, created_at: chunk.createdAt });
+      return true;
+    case "run":
+      writeSse(raw, "run", mapRunToSnakeCase(chunk.event));
+      return true;
+    case "result":
+      return false;
+  }
+}
+
+/** 不可回滚副作用映射为snake_case。 */
+function mapIrreversibleSideEffectToSnake(item: RetryStepIrreversibleSideEffect) {
+  return {
+    execution_id: item.executionId,
+    tool_name: item.toolName,
+    side_effect_level: item.sideEffectLevel,
+    started_at: item.startedAt,
+    generation_step_no: item.generationStepNo,
+  };
+}
+
+/** 重试结果映射为 done 事件 / JSON data（retry-step 额外携 discarded / irreversible 字段）。 */
+function mapTemporaryConversationRetryResult(result: TemporaryConversationResult) {
+  return {
+    conversation_id: result.conversationId,
+    branch_id: result.branchId,
+    floor_id: result.floorId,
+    floor_no: result.floorNo,
+    page_id: result.pageId,
+    generated_text: result.text,
+    total_usage: result.usage
+      ? mapUsageToSnakeCase(result.usage)
+      : mapUsageToSnakeCase({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
+    final_state: result.finalState ?? result.finishReason ?? null,
+    ...(result.discardedFromStepIndex !== undefined
+      ? { discarded_from_step_index: result.discardedFromStepIndex }
+      : {}),
+    ...(result.irreversibleSideEffects !== undefined
+      ? { irreversible_side_effects: result.irreversibleSideEffects.map(mapIrreversibleSideEffectToSnake) }
+      : {}),
+  };
+}
+
+
 function handleTemporaryConversationRouteError(reply: FastifyReply, error: unknown): boolean {
   if (error instanceof TemporaryConversationError) {
     const mapped = mapTemporaryConversationRouteError(error);
@@ -1430,6 +1915,7 @@ function mapTemporaryConversationRouteError(error: unknown): {
     case "conversation_not_found":
     case "source_output_page_not_found":
     case "target_page_not_found":
+    case "retry_target_not_found":
       return { statusCode: 404, code: error.code, message: error.message };
     case "invalid_kind":
     case "unsupported_branch":
@@ -1440,6 +1926,7 @@ function mapTemporaryConversationRouteError(error: unknown): {
     case "invalid_visibility":
     case "unsupported_export_target":
     case "invalid_source_output_page":
+    case "invalid_from_step_index":
       return { statusCode: 400, code: error.code, message: error.message };
     case "pending_tool_call_not_found":
       return { statusCode: 404, code: error.code, message: error.message };
@@ -1451,6 +1938,7 @@ function mapTemporaryConversationRouteError(error: unknown): {
     case "conversation_busy":
     case "no_pending_input":
     case "missing_effective_user_tail":
+    case "step_retry_blocked_side_effect":
       return { statusCode: 409, code: error.code, message: error.message };
     default:
       return { statusCode: 500, code: "internal_error", message: error.message };
@@ -1497,6 +1985,49 @@ function toTemporaryConversationResourceResponse(detail: TemporaryConversationRe
   };
 }
 
+/**
+ * 将请求体的 generation_params 映射为服务层 generationParams。
+ *
+* 承载逐回合生成参数的可选覆盖：reasoning_effort、temperature、top_p、
+ * max_output_tokens、max_context_tokens。字段名从 snake_case 映射为 camelCase。
+ * 未提供任何字段时不产生 generationParams。
+ */
+function buildTemporaryConversationGenerationParams(
+  generationParams:
+    | {
+        reasoning_effort?: string;
+        temperature?: number;
+        top_p?: number;
+        max_output_tokens?: number;
+        max_context_tokens?: number;
+      }
+    | undefined,
+): { generationParams?: GenerationParamsInput } {
+  if (!generationParams) {
+    return {};
+  }
+  const mapped: GenerationParamsInput = {};
+  if (generationParams.reasoning_effort !== undefined) {
+    mapped.reasoningEffort = generationParams.reasoning_effort;
+  }
+  if (generationParams.temperature !== undefined) {
+    mapped.temperature = generationParams.temperature;
+  }
+  if (generationParams.top_p !== undefined) {
+    mapped.topP = generationParams.top_p;
+  }
+  if (generationParams.max_output_tokens !== undefined) {
+    mapped.maxOutputTokens = generationParams.max_output_tokens;
+  }
+  if (generationParams.max_context_tokens !== undefined) {
+    mapped.maxContextTokens = generationParams.max_context_tokens;
+  }
+  if (Object.keys(mapped).length === 0) {
+return {};
+  }
+  return { generationParams: mapped };
+}
+
 function toTemporaryConversationTranscriptResponse(transcript: TemporaryConversationTranscript) {
   return {
     conversation_id: transcript.conversationId,
@@ -1508,9 +2039,31 @@ function toTemporaryConversationTranscriptResponse(transcript: TemporaryConversa
       parent_floor_id: floor.parentFloorId,
       state: floor.state,
       token_in: floor.tokenIn,
-      token_out: floor.tokenOut,
+    token_out: floor.tokenOut,
       created_at: floor.createdAt,
       updated_at: floor.updatedAt,
+      reasoning_text: floor.reasoningText,
+      step_narrations: floor.stepNarrations.map((narration) => ({
+        step_index: narration.stepIndex,
+        text: narration.text,
+        created_at: narration.createdAt,
+      })),
+      tool_executions: floor.toolExecutions.map((exec) => ({
+        id: exec.id,
+        tool_name: exec.toolName,
+        status: exec.status,
+        args: exec.args,
+        result: exec.result,
+        side_effect_level: exec.sideEffectLevel,
+        commit_outcome: exec.commitOutcome,
+    error_message: exec.errorMessage,
+        duration_ms: exec.durationMs,
+        started_at: exec.startedAt,
+        finished_at: exec.finishedAt,
+        attempt_no: exec.attemptNo,
+        replay_parent_execution_id: exec.replayParentExecutionId,
+        generation_step_no: exec.generationStepNo,
+      })),
       pages: floor.pages.map((page) => ({
         id: page.id,
         page_no: page.pageNo,
@@ -1599,6 +2152,12 @@ function toInspectTranscriptFloorResponse(floor: TemporaryConversationInspectTra
     token_out: floor.tokenOut,
     created_at: floor.createdAt,
     updated_at: floor.updatedAt,
+    reasoning_text: floor.reasoningText,
+    step_narrations: floor.stepNarrations.map((narration) => ({
+      step_index: narration.stepIndex,
+      text: narration.text,
+      created_at: narration.createdAt,
+    })),
     pages: floor.pages.map((page) => ({
       id: page.id,
       page_no: page.pageNo,

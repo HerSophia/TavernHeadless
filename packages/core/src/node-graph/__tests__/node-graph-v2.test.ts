@@ -32,6 +32,7 @@ function v2ControlGraph(overrides: Partial<NodeGraphDocument> = {}): NodeGraphDo
     permissions: { required: [] },
     nodes: [
       { id: 'history', type: 'source.chat_history', typeVersion: '1', phase: 'pre_response' },
+      { id: 'userInput', type: 'source.user_input', typeVersion: '1', phase: 'pre_response' },
       {
         id: 'cond',
         type: 'control.condition',
@@ -49,6 +50,7 @@ function v2ControlGraph(overrides: Partial<NodeGraphDocument> = {}): NodeGraphDo
       { id: 'e_cond_branch', kind: 'data', from: { nodeId: 'cond', port: 'result' }, to: { nodeId: 'branch', port: 'condition' } },
       { id: 'e_messages_narrator', kind: 'data', from: { nodeId: 'messages', port: 'messages' }, to: { nodeId: 'narrator', port: 'messages' } },
       { id: 'e_branch_narrator', kind: 'control', from: { nodeId: 'branch', port: 'true' }, to: { nodeId: 'narrator', port: 'messages' } },
+      { id: 'e_userInput_narrator', kind: 'data', from: { nodeId: 'userInput', port: 'text' }, to: { nodeId: 'narrator', port: 'user_input' } },
       { id: 'e_narrator_commit', kind: 'data', from: { nodeId: 'narrator', port: 'text' }, to: { nodeId: 'commit', port: 'text' } },
     ],
     ...overrides,

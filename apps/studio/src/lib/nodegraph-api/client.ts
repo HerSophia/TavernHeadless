@@ -2,6 +2,11 @@ import type { NodeGraphDocument } from "@tavern/core/node-graph";
 
 import { getActiveAuthHeaders, getActiveBaseUrl } from "../backend/active";
 import type {
+  FloorGraphBindingClearResponse,
+  FloorGraphBindingKind,
+  FloorGraphBindingListResponse,
+  FloorGraphBindingMutationResponse,
+  FloorGraphBindingSetInput,
   NodeGraphArchiveResponse,
   NodeGraphExportResponse,
   NodeGraphGetResponse,
@@ -73,6 +78,14 @@ function graphPath(projectId: string, graphId: string): string {
   return `${graphsPath(projectId)}/${enc(graphId)}`;
 }
 
+function floorGraphBindingsPath(projectId: string): string {
+  return `/projects/${enc(projectId)}/settings/floor-graph-bindings`;
+}
+
+function floorGraphBindingPath(projectId: string, kind: FloorGraphBindingKind): string {
+  return `${floorGraphBindingsPath(projectId)}/${enc(kind)}`;
+}
+
 /**
  * 第一方 NodeGraph API 客户端：直连 apps/api `routes/node-graphs.ts`（project 作用域），
  * 用 `@tavern/core` 类型标注，不经公共 SDK。
@@ -118,6 +131,19 @@ export const nodeGraphApi = {
   },
   archive(projectId: string, graphId: string): Promise<NodeGraphArchiveResponse> {
     return request("POST", `${graphPath(projectId, graphId)}/archive`);
+  },
+  listFloorGraphBindings(projectId: string): Promise<FloorGraphBindingListResponse> {
+    return request("GET", floorGraphBindingsPath(projectId));
+  },
+  setFloorGraphBinding(
+    projectId: string,
+    kind: FloorGraphBindingKind,
+    input: FloorGraphBindingSetInput,
+  ): Promise<FloorGraphBindingMutationResponse> {
+    return request("PUT", floorGraphBindingPath(projectId, kind), input);
+  },
+  clearFloorGraphBinding(projectId: string, kind: FloorGraphBindingKind): Promise<FloorGraphBindingClearResponse> {
+    return request("DELETE", floorGraphBindingPath(projectId, kind));
   },
   /** 硬删除图定义本身（连同其所有版本）。后端 DELETE，成功返回 204。 */
   remove(projectId: string, graphId: string): Promise<void> {
