@@ -89,6 +89,9 @@ function readPortDefinition(value: unknown): NodeGraphPortDefinition | null {
   if (value.multiple === true) {
     port.multiple = true;
   }
+  if (value.variadic === true) {
+    port.variadic = true;
+  }
   return port;
 }
 

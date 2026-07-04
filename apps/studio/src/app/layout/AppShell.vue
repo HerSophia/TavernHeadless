@@ -90,7 +90,7 @@ function toggleTheme(): void {
       </nav>
 
       <!-- Main -->
-      <main class="min-w-0 flex-1 overflow-auto bg-app">
+      <main class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-app">
         <RouterView />
       </main>
     </div>

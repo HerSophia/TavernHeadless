@@ -60,6 +60,7 @@ function toRecord(row: ToolExecutionRow): ExecutedToolCallRecord {
     finishedAt: row.finishedAt ?? undefined,
     attemptNo: row.attemptNo,
     replayParentExecutionId: row.replayParentExecutionId ?? undefined,
+    generationStepNo: row.generationStepNo ?? undefined,
     runtimeJobId: row.runtimeJobId ?? undefined,
     createdAt: row.createdAt,
   };
@@ -88,6 +89,7 @@ function toFinishedRow(record: ExecutedToolCallRecord): typeof toolExecutionReco
     finishedAt: record.finishedAt ?? record.createdAt,
     attemptNo: record.attemptNo ?? 1,
     replayParentExecutionId: record.replayParentExecutionId ?? null,
+    generationStepNo: record.generationStepNo ?? null,
     createdAt: record.createdAt,
     runtimeJobId: record.runtimeJobId ?? null,
   };
@@ -117,6 +119,7 @@ function toOpenRow(record: ToolExecutionOpenRecord): typeof toolExecutionRecords
     finishedAt: null,
     attemptNo: record.attemptNo,
     replayParentExecutionId: record.replayParentExecutionId ?? null,
+    generationStepNo: record.generationStepNo ?? null,
     createdAt: record.createdAt,
   };
 }

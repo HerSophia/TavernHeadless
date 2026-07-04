@@ -62,6 +62,20 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairWorkspaceMembershipDrift(sqlite);
   repairGraphAssistantToolPolicyDrift(sqlite);
   repairGraphAssistantPendingToolCallDrift(sqlite);
+  repairGraphAssistantPromptConfigDrift(sqlite);
+  repairProjectFloorGraphBindingDrift(sqlite);
+  repairFloorResultSnapshotReasoningDrift(sqlite);
+  repairToolExecutionGenerationStepNoDrift(sqlite);
+}
+
+// 思维链全链路：floor_result_snapshot 新增 reasoning_text 列的 additive 漂移修复。
+function repairFloorResultSnapshotReasoningDrift(sqlite: Database.Database): void {
+  addColumnIfMissing(sqlite, "floor_result_snapshot", "reasoning_text", "`reasoning_text` text");
+}
+
+// step 级重试：tool_execution_record 新增 generation_step_no 列的 additive 漂移修复。
+function repairToolExecutionGenerationStepNoDrift(sqlite: Database.Database): void{
+  addColumnIfMissing(sqlite, "tool_execution_record", "generation_step_no", "`generation_step_no` integer");
 }
 
 function tableHasColumns(
@@ -1749,6 +1763,84 @@ function repairGraphAssistantPendingToolCallDrift(sqlite: Database.Database): vo
     ["floor_id"],
     "CREATE INDEX IF NOT EXISTS `graph_assistant_pending_tool_call_floor_idx` ON `graph_assistant_pending_tool_call` (`floor_id`);",
   );
+}
+
+// 图助手上下文与提示词项目级配置表（静态提示词阶段一）的 additive 漂移修复：历史库可能尚未创建该表。
+function repairProjectFloorGraphBindingDrift(sqlite: Database.Database): void {
+  if (
+    !tableExists(sqlite, "account")
+    || !tableExists(sqlite, "workspace")
+    || !tableExists(sqlite, "project")
+    || !tableExists(sqlite, "node_graph_definition")
+    || !tableExists(sqlite, "node_graph_version")
+  ) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "project_floor_graph_binding")) {
+    sqlite.exec(`CREATE TABLE \`project_floor_graph_binding\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`project_id\` text NOT NULL,
+  \`kind\` text NOT NULL,
+  \`graph_id\` text NOT NULL,
+  \`graph_version_id\` text NOT NULL,
+  \`status\` text DEFAULT 'active' NOT NULL,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON UPDATE no action ON DELETE restrict,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`graph_id\`) REFERENCES \`node_graph_definition\`(\`id\`) ON UPDATE no action ON DELETE restrict,
+  FOREIGN KEY (\`graph_version_id\`) REFERENCES \`node_graph_version\`(\`id\`) ON UPDATE no action ON DELETE restrict,
+  CHECK(\`kind\` IN ('native', 'compat')),
+  CHECK(\`status\` IN ('active', 'archived'))
+);`);
+  }
+
+  if (tableHasColumns(sqlite, "project_floor_graph_binding", ["account_id", "project_id", "kind", "status"])) {
+    sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `project_floor_graph_binding_active_kind_uq` ON `project_floor_graph_binding` (`account_id`, `project_id`, `kind`) WHERE `status` = 'active';");
+  }
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_floor_graph_binding",
+    ["project_id", "kind", "status"],
+    "CREATE INDEX IF NOT EXISTS `project_floor_graph_binding_project_kind_status_idx` ON `project_floor_graph_binding` (`project_id`, `kind`, `status`);",
+  );
+  createIndexIfColumnsExist(
+    sqlite,
+    "project_floor_graph_binding",
+    ["graph_id", "graph_version_id"],
+    "CREATE INDEX IF NOT EXISTS `project_floor_graph_binding_graph_idx` ON `project_floor_graph_binding` (`graph_id`, `graph_version_id`);",
+  );
+}
+
+function repairGraphAssistantPromptConfigDrift(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "account") || !tableExists(sqlite, "workspace") || !tableExists(sqlite, "project")) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "graph_assistant_prompt_config")) {
+    sqlite.exec(`CREATE TABLE \`graph_assistant_prompt_config\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`project_id\` text NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`static_mode\` text DEFAULT 'append' NOT NULL,
+  \`static_text\` text DEFAULT '' NOT NULL,
+  \`dynamic_template\` text DEFAULT '' NOT NULL,
+  \`context_config\` text,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON UPDATE no action ON DELETE restrict
+);`);
+  }
+
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `graph_assistant_prompt_config_project_uq` ON `graph_assistant_prompt_config` (`project_id`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `graph_assistant_prompt_config_workspace_idx` ON `graph_assistant_prompt_config` (`workspace_id`, `created_at`);");
 }
 
 export type AppDb = ReturnType<typeof drizzle<typeof schema>>;

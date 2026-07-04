@@ -23,6 +23,12 @@ function createValidGraph(overrides: Partial<NodeGraphDocument> = {}): NodeGraph
         phase: 'pre_response',
       },
       {
+        id: 'userInput',
+        type: 'source.user_input',
+        typeVersion: '1',
+        phase: 'pre_response',
+      },
+      {
         id: 'agent',
         type: 'agent.director_plan',
         typeVersion: '1',
@@ -55,10 +61,22 @@ function createValidGraph(overrides: Partial<NodeGraphDocument> = {}): NodeGraph
         to: { nodeId: 'agent', port: 'messages' },
       },
       {
+        id: 'e_userInput_agent',
+        kind: 'data',
+        from: { nodeId: 'userInput', port: 'text' },
+        to: { nodeId: 'agent', port: 'user_input' },
+      },
+      {
         id: 'e_messages_narrator',
         kind: 'data',
         from: { nodeId: 'messages', port: 'messages' },
         to: { nodeId: 'narrator', port: 'messages' },
+      },
+      {
+        id: 'e_userInput_narrator',
+        kind: 'data',
+        from: { nodeId: 'userInput', port: 'text' },
+        to: { nodeId: 'narrator', port: 'user_input' },
       },
       {
         id: 'e_narrator_commit',
@@ -75,6 +93,29 @@ describe('NodeGraph core', () => {
   it('registers built-in node types and rejects duplicate registrations', () => {
     const registry = createDefaultNodeTypeRegistry();
     expect(registry.get('compose.final_messages', '1').previewPolicy).toBe('auto');
+    expect(registry.get('source.dialogue_examples', '1')).toMatchObject({
+      inputPorts: [],
+      outputPorts: [
+        { name: 'text', type: 'text' },
+        { name: 'json', type: 'json' },
+      ],
+      supportedPhases: ['floor_prepare', 'pre_response'],
+      previewPolicy: 'auto',
+      sideEffects: 'none',
+    });
+    expect(registry.get('compose.text_to_block', '1')).toMatchObject({
+      inputPorts: [{ name: 'text', type: 'text', required: true }],
+      outputPorts: [{ name: 'block', type: 'prompt_block' }],
+      supportedPhases: ['pre_response', 'response'],
+      previewPolicy: 'auto',
+      sideEffects: 'none',
+    });
+    expect(registry.get('annotation.comment', '1')).toMatchObject({
+      inputPorts: [],
+      outputPorts: [],
+      previewPolicy: 'disabled',
+      sideEffects: 'none',
+    });
 
     const isolated = new NodeTypeRegistry();
     const entry = registry.get('source.user_input', '1');
@@ -88,7 +129,7 @@ describe('NodeGraph core', () => {
     expect(compiled.isExecutable).toBe(true);
     expect(compiled.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
     expect(compiled.topologicalLevels.map((level) => level.map((node) => node.id))).toEqual([
-      ['input', 'messages'],
+      ['input', 'messages', 'userInput'],
       ['agent', 'narrator'],
       ['commit'],
     ]);
@@ -273,6 +314,83 @@ describe('NodeGraph core', () => {
 
     expect(compiled.diagnostics.map((diagnostic) => diagnostic.code)).toContain('node_graph_group_node_missing');
     expect(compiled.diagnostics.map((diagnostic) => diagnostic.code)).toContain('node_graph_subgraph_input_boundary_missing');
+  });
+
+  it('broadcasts global input to same-name same-type unconnected required ports without persisting edges', () => {
+    const graph: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: 'graph_global_input_broadcast',
+      name: 'Global Input Broadcast',
+      mode: 'native_graph',
+      policies: {},
+      permissions: { required: ['project.agent.run'] },
+      nodes: [
+        { id: 'global', type: 'source.global_input', typeVersion: '1', phase: 'pre_response' },
+        { id: 'directorA', type: 'agent.director_plan', typeVersion: '1', phase: 'pre_response', config: { messages: [] } },
+        { id: 'directorB', type: 'agent.director_plan', typeVersion: '1', phase: 'pre_response', config: { messages: [] } },
+      ],
+      edges: [
+        { id: 'e_seed', kind: 'data', from: { nodeId: 'global', port: 'value' }, to: { nodeId: 'directorA', port: 'user_input' } },
+      ],
+    };
+
+    const compiled = compileNodeGraph(graph);
+
+    expect(compiled.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+    expect(compiled.isExecutable).toBe(true);
+    expect(graph.edges).toHaveLength(1);
+    expect(compiled.incomingEdgesByNodeId.get('directorB')).toEqual([
+      expect.objectContaining({
+        id: 'e_auto_global_directorB_user_input',
+        auto: true,
+        from: { nodeId: 'global', port: 'value' },
+        to: { nodeId: 'directorB', port: 'user_input' },
+      }),
+    ]);
+  });
+
+  it('skips subgraph-internal nodes when broadcasting global input', () => {
+    const graph: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: 'graph_global_input_subgraph_skip',
+      name: 'Global Input Subgraph Skip',
+      mode: 'native_graph',
+      policies: {},
+      permissions: { required: ['project.agent.run'] },
+      nodes: [
+        { id: 'global', type: 'source.global_input', typeVersion: '1', phase: 'pre_response' },
+        { id: 'callA', type: 'agent.call', typeVersion: '1', phase: 'pre_response' },
+        { id: 'callB', type: 'agent.call', typeVersion: '1', phase: 'pre_response' },
+        { id: 'inside', type: 'agent.call', typeVersion: '1', phase: 'pre_response' },
+      ],
+      edges: [
+        { id: 'e_seed', kind: 'data', from: { nodeId: 'global', port: 'value' }, to: { nodeId: 'callA', port: 'text' } },
+      ],
+      groups: [{ id: 'subgraph', name: 'Subgraph', kind: 'subgraph', nodeIds: ['inside'] }],
+    };
+
+    const compiled = compileNodeGraph(graph);
+
+    expect(compiled.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+    expect(compiled.incomingEdgesByNodeId.get('callB')).toEqual([
+      expect.objectContaining({ id: 'e_auto_global_callB_text', auto: true }),
+    ]);
+    expect(compiled.incomingEdgesByNodeId.get('inside')).toBeUndefined();
+  });
+
+  it('allows editor-only annotation nodes without ports or permissions', () => {
+    const compiled = compileNodeGraph(createValidGraph({
+      nodes: [
+        { id: 'note', type: 'annotation.comment', typeVersion: '1', phase: 'pre_response', config: { content: 'Explain this part.' } },
+        { id: 'input', type: 'source.user_input', typeVersion: '1', phase: 'pre_response' },
+      ],
+      edges: [],
+      permissions: { required: [] },
+    }));
+
+    expect(compiled.isExecutable).toBe(true);
+    expect(compiled.diagnostics.filter((diagnostic) => diagnostic.severity === 'error')).toEqual([]);
+    expect(compiled.topologicalLevels.flat().map((node) => node.id)).not.toContain('note');
   });
 
   it('evaluates structured conditions without executing code', () => {

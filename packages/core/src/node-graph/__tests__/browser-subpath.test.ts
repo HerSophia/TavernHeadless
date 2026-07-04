@@ -13,12 +13,19 @@ describe('node-graph browser subpath', () => {
   it('exposes the pure graph logic needed by the editor', () => {
     expect(typeof browser.validateNodeGraph).toBe('function');
     expect(typeof browser.createDefaultNodeTypeRegistry).toBe('function');
+    expect(typeof browser.listNodeTypeKnowledge).toBe('function');
+    expect(typeof browser.describeNodeTypeKnowledge).toBe('function');
     expect(typeof browser.compileNodeGraph).toBe('function');
     expect(typeof browser.migrateNodeGraphDocumentToV2).toBe('function');
     expect(typeof browser.evaluateNodeGraphCondition).toBe('function');
+    expect(typeof browser.resolveNodeGraphBudget).toBe('function');
+    expect(typeof browser.summarizeNodeGraphBudgetUsage).toBe('function');
     expect(Array.isArray(browser.NODE_GRAPH_BUILTIN_NODE_TYPES)).toBe(true);
     expect(browser.NODE_GRAPH_BUILTIN_NODE_TYPES.length).toBeGreaterThan(0);
+    expect(Array.isArray(browser.NODE_GRAPH_NODE_CATEGORIES)).toBe(true);
     expect(Array.isArray(browser.NODE_GRAPH_SUPPORTED_SCHEMA_VERSIONS)).toBe(true);
+    expect(browser.DEFAULT_NODE_GRAPH_RUNTIME_BUDGET.maxNodesExecuted).toBe(200);
+    expect(browser.DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET.maxRuntimeDurationMs).toBe(5_000);
   });
 
   it('does not expose package-export symbols that depend on node:crypto', () => {

@@ -12,6 +12,10 @@ export type LlmInstanceConfig = {
   scope: LlmInstanceScope;
   scopeId: string;
   instanceSlot: LlmInstanceSlot;
+  /**
+   * @deprecated LI11-3：提示词预设覆盖（指向 preset 表，**不是** LLM Profile id）。配方走图后废弃，
+   * 新写入请走楼层模板图 Narrator 节点 `config.presetRef`；选 Profile 走 `/llm-profiles` 绑定。
+   */
   presetId: string | null;
   modelIdOverride: string | null;
   enabled: boolean;
@@ -25,7 +29,11 @@ export type LlmResolvedInstanceSlot = {
   slot: LlmInstanceSlot;
   source: "session_config" | "global_config" | "default";
   scope: LlmInstanceScope | null;
-  configId: string | null;
+  configId:string | null;
+  /**
+   * @deprecated LI11-3：提示词预设覆盖（指向preset 表，**不是** LLM Profile id）。配方走图后废弃，
+   * 新写入请走楼层模板图 Narrator 节点 `config.presetRef`；选 Profile 走 `/llm-profiles` 绑定。
+   */
   presetId: string | null;
   modelIdOverride: string | null;
   enabled: boolean;
@@ -42,6 +50,10 @@ export type LlmInstancesResource = {
     accountId?: AccountIdHint;
     enabled?: boolean;
     params?: LlmGenerationParams | null;
+    /**
+     * @deprecated LI11-3：提示词预设覆盖（指向 preset 表，**不是** LLM Profile id）。配方走图后废弃，
+     * 新写入请走楼层模板图 Narrator 节点 `config.presetRef`；选 Profile 走 `/llm-profiles` 绑定。
+     */
     presetId?: string | null;
     modelIdOverride?: string | null;
     capabilities?: LlmInstanceCapabilities | null;

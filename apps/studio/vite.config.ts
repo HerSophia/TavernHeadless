@@ -39,6 +39,8 @@ export default defineConfig({
         "src/stores/graph-assistant-tool-policy.ts",
         "src/modules/graph/assistant/tool-policy-grouping.ts",
         "src/modules/graph/assistant/pending-tool-call-view.ts",
+        "src/modules/graph/assistant/floor-view-model.ts",
+        "src/modules/graph/assistant/assistant-markdown.ts",
         "src/stores/backend-connection.ts",
         "src/stores/models.ts",
         "src/stores/assets.ts",

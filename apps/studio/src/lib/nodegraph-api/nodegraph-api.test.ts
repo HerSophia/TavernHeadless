@@ -74,6 +74,53 @@ describe("nodeGraphApi (msw)", () => {
     expect((await nodeGraphApi.unarchive("p1", "g1")).definition.status).toBe("active");
   });
 
+  it("lists floor graph bindings", async () => {
+    const result = await nodeGraphApi.listFloorGraphBindings("p1");
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.kind).toBe("native");
+    expect(result.items[0]?.graph_id).toBe("g1");
+  });
+
+  it("sets a floor graph binding with the expected body", async () => {
+    let capturedBody: unknown = null;
+    server.use(
+      http.put(`${API_BASE}/projects/p1/settings/floor-graph-bindings/compat`, async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json({
+          item: {
+            id: "fgb2",
+            account_id: "a1",
+            workspace_id: "w1",
+            project_id: "p1",
+            kind: "compat",
+            graph_id: "g2",
+            graph_version_id: "v3",
+            graph_name: "G2",
+            graph_version_no: 3,
+            status: "active",
+            created_at: 0,
+            updated_at: 1,
+          },
+        });
+      }),
+    );
+
+    const result = await nodeGraphApi.setFloorGraphBinding("p1", "compat", {
+      graph_id: "g2",
+      graph_version_id: "v3",
+    });
+
+    expect(capturedBody).toEqual({ graph_id: "g2", graph_version_id: "v3" });
+    expect(result.item.kind).toBe("compat");
+    expect(result.item.graph_version_id).toBe("v3");
+  });
+
+  it("clears a floor graph binding", async () => {
+    const result = await nodeGraphApi.clearFloorGraphBinding("p1", "native");
+    expect(result.cleared).toBe(true);
+    expect(result.previous?.kind).toBe("native");
+  });
+
   it("throws a NodeGraphApiError with status on non-2xx", async () => {
     server.use(
       http.get(`${API_BASE}/projects/p1/node-graphs/missing`, () =>

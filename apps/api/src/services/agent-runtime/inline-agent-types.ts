@@ -34,7 +34,12 @@ export type InlineAgentFailurePolicy = "fail_open" | "fail_closed";
 
 export type AgentInvocationTurnMode = "respond" | "regenerate" | "retry_floor" | "edit_and_regenerate";
 
-export type AgentInvocationRunType = "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
+export type AgentInvocationRunType =
+  | "respond"
+  | "regenerate_page"
+  | "retry_turn"
+  | "retry_step"
+  | "edit_and_regenerate";
 
 export type TurnAgentInvocationSource =
   | {

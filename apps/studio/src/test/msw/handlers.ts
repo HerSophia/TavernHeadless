@@ -47,6 +47,21 @@ export const sampleVersion = {
   created_at: 0,
 };
 
+export const sampleFloorGraphBinding = {
+  id: "fgb1",
+  account_id: "a1",
+  workspace_id: "w1",
+  project_id: "p1",
+  kind: "native",
+  graph_id: "g1",
+  graph_version_id: "v1",
+  graph_name: "G1",
+  graph_version_no: 1,
+  status: "active",
+  created_at: 0,
+  updated_at: 0,
+};
+
 /** NodeGraph 第一方路由 handlers（project p1 / graph g1）。 */
 export const nodeGraphHandlers = [
   http.get(`${API_BASE}/projects/p1/node-graphs`, () =>
@@ -114,6 +129,26 @@ export const nodeGraphHandlers = [
     HttpResponse.json({
       definition: { ...sampleDefinition, current_version_id: "v2" },
       version: { ...sampleVersion, id: "v2", version_no: 2 },
+    }),
+  ),
+  http.get(`${API_BASE}/projects/p1/settings/floor-graph-bindings`, () =>
+    HttpResponse.json({ items: [sampleFloorGraphBinding] }),
+  ),
+  http.put(`${API_BASE}/projects/p1/settings/floor-graph-bindings/:kind`, async ({ params, request }) => {
+    const body = (await request.json()) as { graph_id: string; graph_version_id: string };
+    return HttpResponse.json({
+      item: {
+        ...sampleFloorGraphBinding,
+        kind: params.kind,
+        graph_id: body.graph_id,
+        graph_version_id: body.graph_version_id,
+      },
+    });
+  }),
+  http.delete(`${API_BASE}/projects/p1/settings/floor-graph-bindings/:kind`, ({ params }) =>
+    HttpResponse.json({
+      cleared: true,
+      previous: { ...sampleFloorGraphBinding, kind: params.kind },
     }),
   ),
 ];

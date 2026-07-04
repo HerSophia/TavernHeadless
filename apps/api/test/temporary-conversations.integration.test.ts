@@ -137,6 +137,67 @@ describe("temporary conversation routes", () => {
     expect(appendAfterFinalize.statusCode, appendAfterFinalize.body).toBe(409);
     expect(appendAfterFinalize.json<{ error: { code: string } }>().error.code).toBe("conversation_not_active");
   });
+  it("forwards full generation params from respond body to the service layer", async () => {
+    const sourceSessionId = await seedSession(database, { title: "Params Source" });
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: `/sessions/${sourceSessionId}/temporary-conversations`,
+      payload: { purpose: "draft" },
+    });
+    expect(createResponse.statusCode, createResponse.body).toBe(201);
+    const conversationId = String(createResponse.json<{ data: Record<string, unknown> }>().data.id);
+
+    const respondSpy = vi.spyOn(temporaryConversationService, "respond");
+
+    const respondResponse = await app.inject({
+      method: "POST",
+      url: `/temporary-conversations/${conversationId}/respond`,
+      payload: {
+        input_message: { role: "user", content: "hi" },
+        generation_params: {
+          reasoning_effort: "xhigh",
+          temperature: 1,
+          top_p: 0.5,
+          max_output_tokens: 8192,
+          max_context_tokens: 300000,
+        },
+      },
+    });
+    expect(respondResponse.statusCode, respondResponse.body).toBe(200);
+    expect(respondSpy).toHaveBeenCalledTimes(1);
+    expect(respondSpy.mock.calls[0]![0]?.generationParams).toEqual({
+      reasoningEffort: "xhigh",
+      temperature: 1,
+      topP: 0.5,
+      maxOutputTokens: 8192,
+      maxContextTokens: 300000,
+    });
+  });
+
+  it("rejects respond bodies with out-of-range generation params", async () => {
+    const sourceSessionId = await seedSession(database, { title: "Params Reject Source" });
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: `/sessions/${sourceSessionId}/temporary-conversations`,
+      payload: { purpose: "draft" },
+    });
+    expect(createResponse.statusCode, createResponse.body).toBe(201);
+    const conversationId= String(createResponse.json<{ data: Record<string, unknown> }>().data.id);
+
+    const respondResponse = await app.inject({
+      method: "POST",
+      url: `/temporary-conversations/${conversationId}/respond`,
+      payload: {
+        input_message: { role: "user", content: "hi" },
+        generation_params: { temperature: 3 },
+      },
+    });
+    expect(respondResponse.statusCode).toBe(400);
+  });
+
+
 
   it("streams respond events and exports the latest output to page_staged_write", async () => {
     const sourceSessionId = await seedSession(database, {

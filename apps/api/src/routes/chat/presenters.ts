@@ -754,6 +754,9 @@ export function mapChatServiceError(error: ChatServiceError): { statusCode: numb
     case "message_not_found":
     case "floor_not_found":
     case "source_floor_not_found":
+    case "floor_graph_binding_not_found":
+    case "floor_graph_binding_graph_not_found":
+    case "floor_graph_binding_version_not_found":
       return { statusCode: 404, code: error.code, message: error.message };
     case "no_floor_to_regenerate":
     case "no_user_message":
@@ -761,6 +764,10 @@ export function mapChatServiceError(error: ChatServiceError): { statusCode: numb
     case "invalid_message_role":
     case "invalid_message_scope":
     case "invalid_tool_mode":
+    case "invalid_from_step_index":
+    case "floor_graph_binding_invalid_kind":
+    case "floor_graph_binding_invalid_document":
+    case "prompt_recipe_preset_ref_invalid":
       return { statusCode: 400, code: error.code, message: error.message };
     case "invalid_state":
     case "generation_target_stale":
@@ -783,7 +790,9 @@ export function mapChatServiceError(error: ChatServiceError): { statusCode: numb
     case "adjacent_assistant_floors":
     case "missing_effective_user_tail":
     case "profile_disabled":
-      return { statusCode: 409, code: error.code, message: error.message };
+    case "step_retry_blocked_side_effect":
+    case "floor_graph_binding_graph_archived":
+      return { statusCode: 409, code:error.code, message: error.message };
     case "secret_unavailable":
     case "feature_unavailable":
     case "commit_busy":
@@ -795,6 +804,7 @@ export function mapChatServiceError(error: ChatServiceError): { statusCode: numb
     case "orchestration_failed":
     case "turn_commit_failed":
     case "session_state_stage_failed":
+    case "retry_step_failed":
       return { statusCode: 500, code: error.code, message: error.message };
     default:
       return { statusCode: 500, code: "internal_error", message: error.message };

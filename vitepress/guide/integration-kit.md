@@ -84,7 +84,7 @@ TavernHeadless 提供了一套官方维护的第一方接入层，用来统一�
 
 - `sessions.createTemporaryConversation(...)`
 - `projects.createTemporaryConversation(...)`
-- `temporaryConversations.getDetail / appendMessage / respond / respondStream / getTranscript / finalize / discard / cancel / exportToPageStagedWrite`
+- `temporaryConversations.getDetail / appendMessage / respond / respondStream / retry / retryStream / retryStep / retryStepStream / getTranscript/ finalize / discard / cancel / exportToPageStagedWrite`
 
 ### `@tavern/client-helpers`
 
@@ -152,8 +152,12 @@ console.log(result.generatedText);
 - 不进入普通 `sessions` 列表和详情
 - 生命周期固定为 `active / finalized / discarded / expired / cancelled`
 - 默认只返回 inline 结果
+- `respond(...)` / `respondStream(...)` 支持可选的 `generationParams` 覆盖本回合生成参数：`reasoningEffort`（预设 `low` / `medium` / `high`，也可传模型支持的更强档位如 `xhigh`）、`temperature`（`[0, 2]`）、`topP`（`[0, 1]`）、`maxOutputTokens`（正整数）、`maxContextTokens`（正整数，用于 prompt 组装阶段的 token 预算）；未设置的字段不下发。`respondStream(...)` 可用 `onReasoning` 接收推理增量，transcript 的每个 floor 带 `reasoningText`；模型不返回 reasoning 时按「无 reasoning」处理。`respondStream(...)` 还可用 `onStepNarration` 接收 native 多步循环的中间叙述（`{ stepIndex, text, createdAt }`），仅当某步触发工具调用且产出可见文本时下发，末步纯结论不触发（目前仅图助手 `purpose=graph-assistant` 会产出）
+- `respond(...)` / `respondStream(...)` 支持可选的 `toolTransportPreference`（仅图助手 `purpose=graph-assistant` 会话生效）：`auto`（默认，按模型能力选）/ `native`（强制原生 functioncalling，模型不支持时后端安全回退文本协议）/ `text_protocol`（强制文本协议）；不传或传 `auto` 时不下发该字段
+- `retry(...)` / `retryStream(...)` / `retryStep(...)` / `retryStepStream(...)` 在指定 `floorId` 的已提交临时楼层上重试，语义是「开新消息页」：在同一楼层上生成一个新的 output page版本，旧页历史保留。入参支持 `dynamicContext`、`generationParams`、`confirmedExecutionIds`、`confirmedSessionStateMutationIds`；流式变体复用与 `respondStream(...)` 相同的回调集合
+- `retryStep(...)` / `retryStepStream(...)` 额外需要 `fromStepIndex`（1-based），从该 LLM 生成步重生成：丢弃该步及其之后的工具往返，保留之前已成功的工具结果。结果额外带 `discardedFromStepIndex` 与 `irreversibleSideEffects`（起点之前已产生、不会回滚的写类副作用脱敏摘要）。起点工具带写副作用时后端拒绝（HTTP 409），`fromStepIndex` 越界返回 HTTP400
 - 如果要把结果送回正式页面，必须显式导出到 `page_staged_write`
-- 公共资源面只返回 `client_visible` 的临时对话
+-公共资源面只返回 `client_visible` 的临时对话
 
 ## committed floor 用户人工修订
 

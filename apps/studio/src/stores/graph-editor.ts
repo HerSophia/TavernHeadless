@@ -14,12 +14,22 @@ import {
   buildCompatPromptFloorTemplate,
   buildNativePromptFloorTemplate,
   createDefaultNodeTypeRegistry,
+  describeNodeTypeKnowledge,
   deriveSubgraphInterface,
+  listNodeTypeKnowledge,
+  nodeGraphControlOutputPorts,
+  nodeGraphDocumentSchemaVersion,
   NODE_GRAPH_GROUP_NODE_TYPE,
+  NODE_GRAPH_SCHEMA_VERSION_V2,
+  type NodeGraphBudgetOverrides,
   type NodeGraphDocument,
   type NodeGraphEdge,
   type NodeGraphEdgeKind,
   type NodeGraphNode,
+  type NodeGraphNodeTypeKnowledgeDetail,
+  type NodeGraphPermissionManifest,
+  type NodeGraphPolicies,
+  type NodeGraphNodeTypeKnowledgeListItem,
   type NodeGraphPhase,
   type NodeTypeRegistryEntry,
 } from "@tavern/core/node-graph";
@@ -29,13 +39,18 @@ import { computed, ref } from "vue";
 import {
   nodeGraphApi,
   NodeGraphApiError,
+  type FloorGraphBindingKind,
+  type FloorGraphBindingResponse,
   type NodeGraphVersionResponse,
 } from "../lib/nodegraph-api";
 import { SAMPLE_NODE_GRAPH_DOCUMENT } from "../modules/graph/canvas/sample-document";
+import { buildGraphSettingsDiagnostics } from "../modules/graph/settings/graph-settings-view";
 import { extractSubgraph } from "../modules/graph/subgraph/extract-subgraph";
 import {
   EMPTY_LOCAL_VALIDATION,
   validateGraphDocument,
+  withDiagnosticSource,
+  type SourcedNodeGraphDiagnostic,
 } from "../modules/graph/validate/local-validation";
 
 /** 列布局相邻列水平间距（新增节点在已布局图中的落点）。 */
@@ -94,6 +109,41 @@ function nextNodePosition(document: NodeGraphDocument): { x: number; y: number }
   return { x: maxX + NEW_NODE_COLUMN_GAP, y: 0 };
 }
 
+function isControlNodeType(type: string): boolean {
+  return nodeGraphControlOutputPorts(type).length > 0 || type === "control.condition";
+}
+
+function defaultConfigForNodeType(type: string, typeVersion = "1"): unknown {
+  const detail = describeNodeTypeKnowledge(type, typeVersion, registry);
+  const defaultConfig = detail?.config?.defaultConfig;
+  return defaultConfig === undefined ? undefined : JSON.parse(JSON.stringify(defaultConfig));
+}
+
+function ensureSchemaVersion2(document: NodeGraphDocument): boolean {
+  if (nodeGraphDocumentSchemaVersion(document) >= NODE_GRAPH_SCHEMA_VERSION_V2) {
+    return false;
+  }
+  document.schemaVersion = NODE_GRAPH_SCHEMA_VERSION_V2;
+  for (const edge of document.edges) {
+    if (edge.kind === undefined) {
+      edge.kind = "data";
+    }
+  }
+  return true;
+}
+
+function inferEdgeKind(
+  document: NodeGraphDocument,
+  from: { nodeId: string; port: string },
+  explicitKind?: NodeGraphEdgeKind,
+): NodeGraphEdgeKind {
+  if (explicitKind) {
+    return explicitKind;
+  }
+  const source = document.nodes.find((node) => node.id === from.nodeId);
+  return source && nodeGraphControlOutputPorts(source.type).includes(from.port) ? "control" : "data";
+}
+
 export const useGraphEditorStore = defineStore("graph-editor", () => {
   /** 服务端图定义 id；null = 未保存（示例图或全新草稿）。 */
   const graphId = ref<string | null>(null);
@@ -110,9 +160,15 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   /** 服务端当前版本 id（用于版本选择器高亮「当前」）。 */
   const serverCurrentVersionId = ref<string | null>(null);
   const versions = ref<NodeGraphVersionResponse[]>([]);
+  const floorGraphBindings = ref<FloorGraphBindingResponse[]>([]);
+  const floorGraphBindingLoading = ref<boolean>(false);
+  const floorGraphBindingSaving = ref<boolean>(false);
   const dirty = ref<boolean>(false);
   const loading = ref<boolean>(false);
   const saving = ref<boolean>(false);
+  const serverValidating = ref<boolean>(false);
+  const serverDiagnostics = ref<SourcedNodeGraphDiagnostic[]>([]);
+  const serverValidationCheckedAt = ref<number | null>(null);
   const error = ref<string | null>(null);
   const selectedNodeId = ref<string | null>(null);
   const selectedEdgeId = ref<string | null>(null);
@@ -130,14 +186,28 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   const validation = computed(() =>
     document.value ? validateGraphDocument(document.value) : EMPTY_LOCAL_VALIDATION,
   );
-  const diagnostics = computed(() => validation.value.diagnostics);
-  const isExecutable = computed(() => validation.value.isExecutable);
-  const errorCount = computed(() => validation.value.counts.error);
-  const warningCount = computed(() => validation.value.counts.warning);
+  const settingsDiagnostics = computed<SourcedNodeGraphDiagnostic[]>(() =>
+    document.value ? withDiagnosticSource(buildGraphSettingsDiagnostics(document.value), "local") : [],
+  );
+  const diagnostics = computed<SourcedNodeGraphDiagnostic[]>(() => [
+    ...validation.value.diagnostics,
+    ...settingsDiagnostics.value,
+    ...serverDiagnostics.value,
+  ]);
+  const errorCount = computed(() => diagnostics.value.filter((diagnostic) => diagnostic.severity === "error").length);
+  const warningCount = computed(() => diagnostics.value.filter((diagnostic) => diagnostic.severity === "warning").length);
+  const isExecutable = computed(() => errorCount.value === 0);
 
   const nodeCount = computed(() => document.value?.nodes.length ?? 0);
   const edgeCount = computed(() => document.value?.edges.length ?? 0);
   const groupCount = computed(() => document.value?.groups?.length ?? 0);
+  const documentMetadata = computed(() => document.value?.metadata ?? null);
+  const isImportedSillyTavernPreset = computed(
+    () => documentMetadata.value?.importedFrom === "sillytavern_openai_preset",
+  );
+  const isCompatFloorImportDraft = computed(
+    () => isImportedSillyTavernPreset.value && documentMetadata.value?.importPurpose === "compat_floor_graph",
+  );
 
   /** 当前钻入的分组（id 失效或不存在时为 null）。 */
   const activeGroup = computed(
@@ -153,18 +223,55 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   const selectedNodeEntry = computed<NodeTypeRegistryEntry | undefined>(() =>
     selectedNode.value ? registry.find(selectedNode.value.type, selectedNode.value.typeVersion) : undefined,
   );
+  const selectedNodeKnowledge = computed<NodeGraphNodeTypeKnowledgeDetail | undefined>(() =>
+    selectedNode.value ? describeNodeTypeKnowledge(selectedNode.value.type, selectedNode.value.typeVersion, registry) : undefined,
+  );
   /** 当前选中的节点组（id 失效或不存在时为 null）。 */
   const selectedGroup = computed(
     () => document.value?.groups?.find((group) => group.id === selectedGroupId.value) ?? null,
   );
 
   /** 可新增的内置节点类型（按 type / version 排序）。 */
-  const availableNodeTypes = computed(() => registry.list());
+  const availableNodeTypes = computed<NodeGraphNodeTypeKnowledgeListItem[]>(() => listNodeTypeKnowledge(registry));
 
   /** 仅当无 error、有改动、非保存中才允许保存为版本（项目上下文在调用时校验）。 */
   const canSaveVersion = computed(
     () => Boolean(document.value) && dirty.value && isExecutable.value && !saving.value,
   );
+  const canBindCurrentVersionAsFloorGraph = computed(
+    () => Boolean(graphId.value && baseVersionId.value && !isSample.value && !floorGraphBindingSaving.value),
+  );
+
+  function getFloorGraphBinding(kind: FloorGraphBindingKind): FloorGraphBindingResponse | null {
+    return floorGraphBindings.value.find((binding) => binding.kind === kind) ?? null;
+  }
+
+  function isCurrentGraphBoundAs(kind: FloorGraphBindingKind): boolean {
+    const binding = getFloorGraphBinding(kind);
+    return Boolean(binding && graphId.value && binding.graph_id === graphId.value);
+  }
+
+  function isCurrentVersionBoundAs(kind: FloorGraphBindingKind): boolean {
+    const binding = getFloorGraphBinding(kind);
+    return Boolean(
+      binding
+        && graphId.value
+        && baseVersionId.value
+        && binding.graph_id === graphId.value
+        && binding.graph_version_id === baseVersionId.value,
+    );
+  }
+
+  function hasCurrentGraphFloorBindingVersionMismatch(kind: FloorGraphBindingKind): boolean {
+    const binding = getFloorGraphBinding(kind);
+    return Boolean(
+      binding
+        && graphId.value
+        && baseVersionId.value
+        && binding.graph_id === graphId.value
+        && binding.graph_version_id !== baseVersionId.value,
+    );
+  }
 
   // —— 本地草稿（localStorage，浏览器环境才启用；测试 / SSR 环境静默跳过）——
 
@@ -214,7 +321,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
       const parsed = JSON.parse(raw) as { baseVersionId: string | null; document: NodeGraphDocument };
       // 仅当草稿基于当前同一版本时恢复，避免覆盖已演进的服务端版本。
       if (parsed.baseVersionId === baseVersionId.value && parsed.document) {
-        document.value = parsed.document;
+        setDocument(parsed.document, { clearServerValidation: false });
         dirty.value = true;
         draftRestored.value = true;
       }
@@ -223,16 +330,30 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     }
   }
 
+  /** 清除上一轮手动服务端校验结果。 */
+  function clearServerValidation(): void {
+    serverDiagnostics.value = [];
+    serverValidationCheckedAt.value = null;
+  }
+
+  function setDocument(next: NodeGraphDocument | null, options?: { clearServerValidation?: boolean }): void {
+    document.value = next;
+    if (options?.clearServerValidation !== false) {
+      clearServerValidation();
+    }
+  }
+
   /** 标记改动并持久化草稿（所有编辑动作统一出口）。 */
   function markDirty(): void {
     dirty.value = true;
+    clearServerValidation();
     persistDraft();
   }
 
   // —— 加载 / 版本 ——
 
   function loadSample(): void {
-    document.value = cloneGraphDocument(SAMPLE_NODE_GRAPH_DOCUMENT);
+    setDocument(cloneGraphDocument(SAMPLE_NODE_GRAPH_DOCUMENT));
     graphId.value = null;
     graphName.value = SAMPLE_NODE_GRAPH_DOCUMENT.name;
     isSample.value = true;
@@ -263,7 +384,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     if (name && name.trim().length > 0) {
       next.name = name.trim();
     }
-    document.value = next;
+    setDocument(next);
     graphId.value = null;
     graphName.value = next.name;
     isSample.value = false;
@@ -294,7 +415,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     if (name && name.trim().length > 0) {
       next.name = name.trim();
     }
-    document.value = next;
+    setDocument(next);
     graphId.value = target?.graphId ?? null;
     graphName.value = next.name;
    isSample.value = false;
@@ -326,13 +447,13 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
       templateKind.value = null;
       serverCurrentVersionId.value = result.definition.current_version_id;
       if (!result.current_version) {
-        document.value = null;
+        setDocument(null);
         baseVersionId.value = null;
         versions.value = [];
         return;
       }
       baseVersionId.value = result.current_version.id;
-      document.value = cloneGraphDocument(result.current_version.document);
+      setDocument(cloneGraphDocument(result.current_version.document));
       dirty.value = false;
       loadToken.value += 1;
       try {
@@ -342,7 +463,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
       }
       maybeRestoreDraft();
     } catch (cause) {
-      document.value = null;
+      setDocument(null);
       error.value = describeError(cause);
     } finally {
       loading.value = false;
@@ -355,7 +476,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     if (!version) {
       return;
     }
-    document.value = cloneGraphDocument(version.document);
+    setDocument(cloneGraphDocument(version.document));
     baseVersionId.value = version.id;
     dirty.value = false;
     draftRestored.value = false;
@@ -365,6 +486,61 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     error.value = null;
     loadToken.value += 1;
   }
+
+  async function loadFloorGraphBindings(projectId: string): Promise<void> {
+    floorGraphBindingLoading.value = true;
+    error.value = null;
+    try {
+      floorGraphBindings.value = (await nodeGraphApi.listFloorGraphBindings(projectId)).items;
+    } catch (cause) {
+      floorGraphBindings.value = [];
+      error.value = describeError(cause);
+    } finally {
+      floorGraphBindingLoading.value = false;
+    }
+  }
+
+  async function setCurrentGraphAsFloorBinding(projectId: string, kind: FloorGraphBindingKind): Promise<boolean> {
+    if (!graphId.value || !baseVersionId.value || isSample.value) {
+      return false;
+    }
+    floorGraphBindingSaving.value = true;
+    error.value = null;
+    try {
+      const result = await nodeGraphApi.setFloorGraphBinding(projectId, kind, {
+        graph_id: graphId.value,
+        graph_version_id: baseVersionId.value,
+      });
+      floorGraphBindings.value = [
+        ...floorGraphBindings.value.filter((binding) => binding.kind !== kind),
+        result.item,
+      ];
+      return true;
+    } catch (cause) {
+      error.value = describeError(cause);
+      return false;
+    } finally {
+      floorGraphBindingSaving.value = false;
+    }
+  }
+
+  async function clearFloorGraphBinding(projectId: string, kind: FloorGraphBindingKind): Promise<boolean> {
+    floorGraphBindingSaving.value = true;
+    error.value = null;
+    try {
+      const result = await nodeGraphApi.clearFloorGraphBinding(projectId, kind);
+      if (result.cleared) {
+        floorGraphBindings.value = floorGraphBindings.value.filter((binding) => binding.kind !== kind);
+      }
+      return result.cleared;
+    } catch (cause) {
+      error.value = describeError(cause);
+      return false;
+    } finally {
+      floorGraphBindingSaving.value = false;
+    }
+  }
+
 
   /** 将某版本设为服务端当前版本（治理动作，需 project.nodegraph.manage）。 */
   async function setAsCurrentVersion(projectId: string, versionId: string): Promise<boolean> {
@@ -385,6 +561,27 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     }
   }
 
+  /** 手动调用服务端 validate，并把诊断以 server 来源并入诊断面板。 */
+  async function validateOnServer(projectId: string): Promise<boolean> {
+    if (!document.value || !graphId.value || isSample.value) {
+      return false;
+    }
+    serverValidating.value = true;
+    error.value = null;
+    try {
+      const result = await nodeGraphApi.validate(projectId, graphId.value, document.value);
+      const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+      serverDiagnostics.value = withDiagnosticSource(diagnostics, "server");
+      serverValidationCheckedAt.value = Date.now();
+      return true;
+    } catch (cause) {
+      error.value = describeError(cause);
+      return false;
+    } finally {
+      serverValidating.value = false;
+    }
+  }
+
   /** 丢弃本地草稿，回到所基于版本的原始文档。 */
   function discardDraft(): void {
     clearDraft();
@@ -392,7 +589,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     if (baseVersionId.value) {
       const version = versions.value.find((candidate) => candidate.id === baseVersionId.value);
       if (version) {
-        document.value = cloneGraphDocument(version.document);
+        setDocument(cloneGraphDocument(version.document));
         dirty.value = false;
         selectedNodeId.value = null;
         selectedEdgeId.value = null;
@@ -429,7 +626,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
         templateKind.value = null;
         serverCurrentVersionId.value = result.definition.current_version_id;
         baseVersionId.value = result.version.id;
-        document.value = cloneGraphDocument(result.version.document);
+        setDocument(cloneGraphDocument(result.version.document));
       } else {
         const result = await nodeGraphApi.createVersion(
           projectId,
@@ -439,7 +636,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
         );
         serverCurrentVersionId.value = result.definition.current_version_id;
         baseVersionId.value = result.version.id;
-        document.value = cloneGraphDocument(result.version.document);
+        setDocument(cloneGraphDocument(result.version.document));
       }
       dirty.value = false;
       draftRestored.value = false;
@@ -506,6 +703,11 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
       typeVersion,
       phase,
     };
+    const defaultConfig = defaultConfigForNodeType(type, typeVersion);
+    if (defaultConfig !== undefined) {
+      node.config = defaultConfig;
+    }
+    const upgraded = isControlNodeType(type) ? ensureSchemaVersion2(doc) : false;
     const position = nextNodePosition(doc);
     if (position) {
       node.ui = { position };
@@ -513,6 +715,9 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     doc.nodes.push(node);
     selectedNodeId.value = node.id;
     selectedEdgeId.value = null;
+    if (upgraded) {
+      error.value = "schema_upgraded_to_v2";
+    }
     markDirty();
     return node;
   }
@@ -554,6 +759,51 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     updateNode(nodeId, { config });
   }
 
+  function updateGraphPolicies(policies: NodeGraphPolicies): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    doc.policies = { ...policies };
+    markDirty();
+  }
+
+  function patchGraphPolicies(patch: Partial<NodeGraphPolicies>): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    doc.policies = { ...doc.policies, ...patch };
+    markDirty();
+  }
+
+  function updateGraphPermissions(permissions: NodeGraphPermissionManifest | undefined): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    if (!permissions) {
+      delete doc.permissions;
+    } else {
+      doc.permissions = { ...permissions };
+    }
+    markDirty();
+  }
+
+  function updateGraphBudgets(budgets: NodeGraphBudgetOverrides | undefined): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    const next = cleanGraphBudgets(budgets);
+    if (!next) {
+      delete doc.budgets;
+    } else {
+      doc.budgets = next;
+    }
+    markDirty();
+  }
+
   function updateNodePosition(nodeId: string, position: { x: number; y: number }): void {
     const doc = document.value;
     if (!doc) {
@@ -589,12 +839,13 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
   function addEdge(
     from: { nodeId: string; port: string },
     to: { nodeId: string; port: string },
-    kind: NodeGraphEdgeKind = "data",
+    kind?: NodeGraphEdgeKind,
   ): NodeGraphEdge | null {
     const doc = document.value;
     if (!doc) {
       return null;
     }
+    const resolvedKind = inferEdgeKind(doc, from, kind);
     // 去重：同源同目标同端口的边只保留一条。
     const duplicate = doc.edges.some(
       (edge) =>
@@ -606,13 +857,41 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     if (duplicate) {
       return null;
     }
+    const upgraded = resolvedKind === "control" ? ensureSchemaVersion2(doc) : false;
     const edge: NodeGraphEdge = { id: generateEdgeId(doc), from, to };
-    if (kind === "control") {
+    if (resolvedKind === "control") {
       edge.kind = "control";
     }
     doc.edges.push(edge);
+    selectedEdgeId.value = edge.id;
+    selectedNodeId.value = null;
+    selectedGroupId.value = null;
+    if (upgraded) {
+      error.value = "schema_upgraded_to_v2";
+    }
     markDirty();
     return edge;
+  }
+
+  function updateEdgeKind(edgeId: string, kind: NodeGraphEdgeKind): void {
+    const doc = document.value;
+    if (!doc) {
+      return;
+    }
+    const edge = doc.edges.find((candidate) => candidate.id === edgeId);
+    if (!edge) {
+      return;
+    }
+    const upgraded = kind === "control" ? ensureSchemaVersion2(doc) : false;
+    if (kind === "control") {
+      edge.kind = "control";
+    } else {
+      edge.kind = "data";
+    }
+    if (upgraded) {
+      error.value = "schema_upgraded_to_v2";
+    }
+    markDirty();
   }
 
   function removeEdge(edgeId: string): void {
@@ -689,7 +968,7 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
           versionId: created.version.id,
         };
       }
-      document.value = parent;
+      setDocument(parent);
       activeGroupId.value = null;
       selectedNodeId.value = extracted.groupNodeId;
       selectedEdgeId.value = null;
@@ -900,11 +1179,17 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     baseVersionId,
     serverCurrentVersionId,
     versions,
+    floorGraphBindings,
+    floorGraphBindingLoading,
+    floorGraphBindingSaving,
     dirty,
     loading,
     saving,
+    serverValidating,
+    serverDiagnostics,
+    serverValidationCheckedAt,
     error,
-      selectedNodeId,
+    selectedNodeId,
     selectedEdgeId,
     selectedGroupId,
     activeGroupId,
@@ -919,20 +1204,33 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     nodeCount,
     edgeCount,
     groupCount,
+    isImportedSillyTavernPreset,
+    isCompatFloorImportDraft,
     activeGroup,
     selectedNode,
     selectedEdge,
     selectedGroup,
     selectedNodeEntry,
+    selectedNodeKnowledge,
     availableNodeTypes,
     canSaveVersion,
+    canBindCurrentVersionAsFloorGraph,
     // actions
     loadSample,
     loadTemplate,
     importPreset,
     loadGraph,
     loadVersion,
+    loadFloorGraphBindings,
+    getFloorGraphBinding,
+    isCurrentGraphBoundAs,
+    isCurrentVersionBoundAs,
+    hasCurrentGraphFloorBindingVersionMismatch,
+    setCurrentGraphAsFloorBinding,
+    clearFloorGraphBinding,
     setAsCurrentVersion,
+    validateOnServer,
+    clearServerValidation,
     discardDraft,
     saveAsNewVersion,
     deleteGraph,
@@ -941,9 +1239,14 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     removeNode,
     updateNode,
     updateNodeConfig,
+    updateGraphPolicies,
+    patchGraphPolicies,
+    updateGraphPermissions,
+    updateGraphBudgets,
     updateNodePosition,
     applyNodePositions,
     addEdge,
+    updateEdgeKind,
     removeEdge,
     selectNode,
     selectEdge,
@@ -959,6 +1262,27 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     insertBuiltinAdvisorSubgraph,
   };
 });
+
+function cleanGraphBudgets(budgets: NodeGraphBudgetOverrides | undefined): NodeGraphBudgetOverrides | undefined {
+  if (!budgets) {
+    return undefined;
+  }
+  const next: NodeGraphBudgetOverrides = {};
+  for (const key of [
+    "maxNodesExecuted",
+    "maxDepth",
+    "maxFanOut",
+    "maxNestedAgentJobs",
+    "maxTemporaryConversations",
+    "maxRuntimeDurationMs",
+  ] as const) {
+    const value = budgets[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      next[key] = Math.trunc(value);
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
 
 function describeError(cause: unknown): string {
   if (cause instanceof NodeGraphApiError) {

@@ -8,10 +8,11 @@
  * BuiltinToolProvider. Transparent to the existing pipeline.
  */
 
-import { createHash } from 'node:crypto';
-import { nanoid } from 'nanoid';
-import { eq, and, isNull, like, or, desc } from 'drizzle-orm';
+import { createHash } from "node:crypto";
+import { nanoid } from "nanoid";
+import { eq, and, isNull, like, or, desc } from "drizzle-orm";
 
+import { applyStructuredTextHunks } from "@tavern/core";
 import type {
   ToolProviderType,
   ToolProvider,
@@ -19,10 +20,15 @@ import type {
   ToolCallResult,
   ToolExecutionContext,
   InstanceSlot,
-} from '@tavern/core';
+  StructuredTextHunk,
+  TextHunkApplyResult,
+} from "@tavern/core";
 
-import type { AppDb, DbExecutor } from '../db/client.js';
-import type { MutationRuntime, RuntimeMutationEnvelope } from '../services/runtime-mutation-types.js';
+import type { AppDb, DbExecutor } from "../db/client.js";
+import type {
+  MutationRuntime,
+  RuntimeMutationEnvelope,
+} from "../services/runtime-mutation-types.js";
 import {
   characters,
   characterVersions,
@@ -30,8 +36,8 @@ import {
   worldbookEntries,
   regexProfiles,
   presets,
-} from '../db/schema.js';
-import { parseJsonField } from '../lib/http.js';
+} from "../db/schema.js";
+import { parseJsonField } from "../lib/http.js";
 import {
   CHARACTER_VERSION_CONSTRAINT_MAPPING,
   ResourceWriteRouteError,
@@ -39,9 +45,9 @@ import {
   executeResourceWrite,
   withResourceWriteCas,
   type ExecuteResourceWriteOptions,
-} from '../services/resource-write.js';
-import { createDefaultMutationRuntime } from '../services/default-mutation-runtime.js';
-import { parsePreset } from '@tavern/adapters-sillytavern';
+} from "../services/resource-write.js";
+import { createDefaultMutationRuntime } from "../services/default-mutation-runtime.js";
+import { parsePreset } from "@tavern/adapters-sillytavern";
 import {
   RESOURCE_MUTATION_KINDS,
   type CharacterMutationResult,
@@ -61,7 +67,7 @@ import {
   type UpdateRegexRuleMutationPayload,
   type UpdateWorldbookEntryMutationPayload,
   type UpdateWorldbookEntryMutationResult,
-} from '../services/resource-mutation-applier.js';
+} from "../services/resource-mutation-applier.js";
 import {
   type JsonRecord,
   normalizeStoredPreset,
@@ -70,598 +76,770 @@ import {
   updatePromptFieldsInRaw,
   getEditorEntryFromRaw,
   getAllEditorEntriesFromRaw,
-} from '../lib/preset-utils.js';
+} from "../lib/preset-utils.js";
 import {
   WorkspaceScopeService,
   WorkspaceScopeServiceError,
-} from '../services/workspace-scope-service.js';
+} from "../services/workspace-scope-service.js";
 
 // ── Tool Definitions ────────────────────────────────────────
 
 /** 资源工具公共属性 */
 const RESOURCE_COMMON = {
   allowedSlots: [] as InstanceSlot[], // 空数组 = 所有槽位均可使用
-  source: 'builtin' as const,
-} satisfies Pick<ToolDefinition, 'allowedSlots' | 'source'>;
+  source: "builtin" as const,
+} satisfies Pick<ToolDefinition, "allowedSlots" | "source">;
+
+/** 支持结构化局部编辑 / 搜索的资源类型 */
+type EditableResourceType = "character" | "worldbook_entry" | "preset_entry";
+
+/**
+ * 各资源类型可被 edit_resource_text / search_resource_text 操作的长文本字段。
+ *
+ * 注意：preset entry 的 system_prompt 是布尔标志而非长文本，故不在可编辑字段内，
+ * preset entry 真正的长文本字段只有 content。
+ */
+const EDITABLE_TEXT_FIELDS: Record<EditableResourceType, readonly string[]> = {
+  character: [
+    "description",
+    "personality",
+    "scenario",
+    "first_mes",
+    "mes_example",
+  ],
+  worldbook_entry: ["content"],
+  preset_entry: ["content"],
+};
 
 const RESOURCE_TOOLS: ToolDefinition[] = [
   // ── Character tools ──────────────────────���───────────
   {
-    name: 'create_character',
+    name: "create_character",
     description:
-      'Create a new character card. Returns the character ID and first version ID. The name field is required.',
+      "Create a new character card. Returns the character ID and first version ID. The name field is required.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
-        name: { type: 'string', description: 'Character name (required)' },
-        description: { type: 'string', description: 'Character description' },
+        name: { type: "string", description: "Character name (required)" },
+        description: { type: "string", description: "Character description" },
         personality: {
-          type: 'string',
-          description: 'Personality summary',
+          type: "string",
+          description: "Personality summary",
         },
-        scenario: { type: 'string', description: 'Scenario / setting' },
+        scenario: { type: "string", description: "Scenario / setting" },
         first_mes: {
-          type: 'string',
-          description: 'First (greeting) message',
+          type: "string",
+          description: "First (greeting) message",
         },
         mes_example: {
-          type: 'string',
-          description: 'Example dialogue',
+          type: "string",
+          description: "Example dialogue",
         },
       },
-      required: ['name'],
+      required: ["name"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'update_character',
+    name: "update_character",
     description:
-      'Create a new version snapshot for an existing character card. Only provided fields are updated; omitted fields keep their previous values.',
+      "Create a new version snapshot for an existing character card. Only provided fields are updated; omitted fields keep their previous values.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         character_id: {
-          type: 'string',
-          description: 'ID of the character to update (required)',
+          type: "string",
+          description: "ID of the character to update (required)",
         },
-        name: { type: 'string', description: 'New character name' },
-        description: { type: 'string', description: 'New description' },
-        personality: { type: 'string', description: 'New personality' },
-        scenario: { type: 'string', description: 'New scenario' },
-        first_mes: { type: 'string', description: 'New greeting message' },
+        name: { type: "string", description: "New character name" },
+        description: { type: "string", description: "New description" },
+        personality: { type: "string", description: "New personality" },
+        scenario: { type: "string", description: "New scenario" },
+        first_mes: { type: "string", description: "New greeting message" },
         mes_example: {
-          type: 'string',
-          description: 'New example dialogue',
+          type: "string",
+          description: "New example dialogue",
         },
       },
-      required: ['character_id'],
+      required: ["character_id"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'get_character',
-    description:
-      'Read a character card with its latest version snapshot.',
+    name: "get_character",
+    description: "Read a character card with its latest version snapshot.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         character_id: {
-          type: 'string',
-          description: 'ID of the character to read (required)',
+          type: "string",
+          description: "ID of the character to read (required)",
         },
       },
-      required: ['character_id'],
+      required: ["character_id"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'list_characters',
+    name: "list_characters",
     description:
-      'List all active character cards for the current account. Supports keyword search and pagination.',
+      "List all active character cards for the current account. Supports keyword search and pagination.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         keyword: {
-          type: 'string',
-          description: 'Filter by name (substring match)',
+          type: "string",
+          description: "Filter by name (substring match)",
         },
         limit: {
-          type: 'number',
-          description: 'Max results (default 20, max 50)',
+          type: "number",
+          description: "Max results (default 20, max 50)",
         },
       },
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
 
   // ── Worldbook tools ──────────────────────────────────
   {
-    name: 'create_worldbook',
-    description:
-      'Create a new empty worldbook. Returns the worldbook ID.',
+    name: "create_worldbook",
+    description: "Create a new empty worldbook. Returns the worldbook ID.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
-        name: { type: 'string', description: 'Worldbook name (required)' },
+        name: { type: "string", description: "Worldbook name (required)" },
       },
-      required: ['name'],
+      required: ["name"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'create_worldbook_entry',
+    name: "create_worldbook_entry",
     description:
-      'Create a new entry in a worldbook. Keys and content are required.',
+      "Create a new entry in a worldbook. Keys and content are required.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         worldbook_id: {
-          type: 'string',
-          description: 'ID of the worldbook (required)',
+          type: "string",
+          description: "ID of the worldbook (required)",
         },
         keys: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Trigger keywords (required)',
+          type: "array",
+          items: { type: "string" },
+          description: "Trigger keywords (required)",
         },
         content: {
-          type: 'string',
-          description: 'Entry content text (required)',
+          type: "string",
+          description: "Entry content text (required)",
         },
-        comment: { type: 'string', description: 'Entry comment / label' },
+        comment: { type: "string", description: "Entry comment / label" },
         keys_secondary: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Secondary keys (for selective mode)',
+          type: "array",
+          items: { type: "string" },
+          description: "Secondary keys (for selective mode)",
         },
         selective: {
-          type: 'boolean',
-          description: 'Enable selective mode (default true)',
+          type: "boolean",
+          description: "Enable selective mode (default true)",
         },
         constant: {
-          type: 'boolean',
-          description: 'Always active (default false)',
+          type: "boolean",
+          description: "Always active (default false)",
         },
         position: {
-          type: 'number',
-          description: 'Injection position 0-6 (default 0)',
+          type: "number",
+          description: "Injection position 0-6 (default 0)",
         },
         order: {
-          type: 'number',
-          description: 'Priority order (default 100)',
+          type: "number",
+          description: "Priority order (default 100)",
         },
         depth: {
-          type: 'number',
-          description: 'Injection depth (default 4)',
+          type: "number",
+          description: "Injection depth (default 4)",
         },
         disable: {
-          type: 'boolean',
-          description: 'Disable this entry (default false)',
+          type: "boolean",
+          description: "Disable this entry (default false)",
         },
       },
-      required: ['worldbook_id', 'keys', 'content'],
+      required: ["worldbook_id", "keys", "content"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'update_worldbook_entry',
+    name: "update_worldbook_entry",
     description:
-      'Update an existing worldbook entry. Only provided fields are updated.',
+      "Update an existing worldbook entry. Only provided fields are updated.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         worldbook_id: {
-          type: 'string',
-          description: 'ID of the worldbook (required)',
+          type: "string",
+          description: "ID of the worldbook (required)",
         },
         entry_id: {
-          type: 'string',
-          description: 'ID of the entry to update (required)',
+          type: "string",
+          description: "ID of the entry to update (required)",
         },
         keys: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'New trigger keywords',
+          type: "array",
+          items: { type: "string" },
+          description: "New trigger keywords",
         },
-        content: { type: 'string', description: 'New content text' },
-        comment: { type: 'string', description: 'New comment / label' },
+        content: { type: "string", description: "New content text" },
+        comment: { type: "string", description: "New comment / label" },
         keys_secondary: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'New secondary keys',
+          type: "array",
+          items: { type: "string" },
+          description: "New secondary keys",
         },
-        selective: { type: 'boolean', description: 'Enable selective mode' },
-        constant: { type: 'boolean', description: 'Always active' },
+        selective: { type: "boolean", description: "Enable selective mode" },
+        constant: { type: "boolean", description: "Always active" },
         position: {
-          type: 'number',
-          description: 'Injection position 0-6',
+          type: "number",
+          description: "Injection position 0-6",
         },
-        order: { type: 'number', description: 'Priority order' },
-        depth: { type: 'number', description: 'Injection depth' },
-        disable: { type: 'boolean', description: 'Disable this entry' },
+        order: { type: "number", description: "Priority order" },
+        depth: { type: "number", description: "Injection depth" },
+        disable: { type: "boolean", description: "Disable this entry" },
       },
-      required: ['worldbook_id', 'entry_id'],
+      required: ["worldbook_id", "entry_id"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'get_worldbook',
-    description:
-      'Read a worldbook with all its entries.',
+    name: "get_worldbook",
+    description: "Read a worldbook with all its entries.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         worldbook_id: {
-          type: 'string',
-          description: 'ID of the worldbook to read (required)',
+          type: "string",
+          description: "ID of the worldbook to read (required)",
         },
       },
-      required: ['worldbook_id'],
+      required: ["worldbook_id"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'list_worldbooks',
-    description:
-      'List all worldbooks for the current account.',
+    name: "list_worldbooks",
+    description: "List all worldbooks for the current account.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         limit: {
-          type: 'number',
-          description: 'Max results (default 20, max 50)',
+          type: "number",
+          description: "Max results (default 20, max 50)",
         },
       },
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
 
   // ── Regex profile tools ──────────────────────────────
   {
-    name: 'create_regex_rule',
+    name: "create_regex_rule",
     description:
-      'Add a new regex rule to an existing regex profile. Returns the rule index.',
+      "Add a new regex rule to an existing regex profile. Returns the rule index.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         profile_id: {
-          type: 'string',
-          description: 'ID of the regex profile (required)',
+          type: "string",
+          description: "ID of the regex profile (required)",
         },
         script_name: {
-          type: 'string',
-          description: 'Human-readable rule name',
+          type: "string",
+          description: "Human-readable rule name",
         },
         find_regex: {
-          type: 'string',
-          description: 'Regex pattern to find (required)',
+          type: "string",
+          description: "Regex pattern to find (required)",
         },
         replace_string: {
-          type: 'string',
-          description: 'Replacement string (required)',
+          type: "string",
+          description: "Replacement string (required)",
         },
         trim_strings: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Strings to trim from result',
+          type: "array",
+          items: { type: "string" },
+          description: "Strings to trim from result",
         },
         placement: {
-          type: 'array',
-          items: { type: 'number' },
+          type: "array",
+          items: { type: "number" },
           description:
-            'Where to apply: 1=user_input, 2=ai_output, 3=slash_command, 5=world_info (default [2])',
+            "Where to apply: 1=user_input, 2=ai_output, 3=slash_command, 5=world_info (default [2])",
         },
         disabled: {
-          type: 'boolean',
-          description: 'Disable this rule (default false)',
+          type: "boolean",
+          description: "Disable this rule (default false)",
         },
       },
-      required: ['profile_id', 'find_regex', 'replace_string'],
+      required: ["profile_id", "find_regex", "replace_string"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'update_regex_rule',
+    name: "update_regex_rule",
     description:
-      'Update an existing regex rule in a profile by its 0-based index.',
+      "Update an existing regex rule in a profile by its 0-based index.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         profile_id: {
-          type: 'string',
-          description: 'ID of the regex profile (required)',
+          type: "string",
+          description: "ID of the regex profile (required)",
         },
         rule_index: {
-          type: 'number',
-          description: '0-based index of the rule to update (required)',
+          type: "number",
+          description: "0-based index of the rule to update (required)",
         },
-        script_name: { type: 'string', description: 'New rule name' },
-        find_regex: { type: 'string', description: 'New regex pattern' },
+        script_name: { type: "string", description: "New rule name" },
+        find_regex: { type: "string", description: "New regex pattern" },
         replace_string: {
-          type: 'string',
-          description: 'New replacement string',
+          type: "string",
+          description: "New replacement string",
         },
         trim_strings: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'New trim strings',
+          type: "array",
+          items: { type: "string" },
+          description: "New trim strings",
         },
         placement: {
-          type: 'array',
-          items: { type: 'number' },
-          description: 'New placement array',
+          type: "array",
+          items: { type: "number" },
+          description: "New placement array",
         },
-        disabled: { type: 'boolean', description: 'Disable / enable rule' },
+        disabled: { type: "boolean", description: "Disable / enable rule" },
       },
-      required: ['profile_id', 'rule_index'],
+      required: ["profile_id", "rule_index"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'get_regex_profile',
-    description:
-      'Read a regex profile with all its rules.',
+    name: "get_regex_profile",
+    description: "Read a regex profile with all its rules.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         profile_id: {
-          type: 'string',
-          description: 'ID of the regex profile to read (required)',
+          type: "string",
+          description: "ID of the regex profile to read (required)",
         },
       },
-      required: ['profile_id'],
+      required: ["profile_id"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
 
   // ── Batch 3 — List tools ───────────────────────────────
   {
-    name: 'list_regex_profiles',
+    name: "list_regex_profiles",
     description:
-      'List all regex profiles for the current account. Returns id, name, source, and updated_at.',
+      "List all regex profiles for the current account. Returns id, name, source, and updated_at.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         limit: {
-          type: 'integer',
-          description: 'Max items to return (default 20, max 50)',
+          type: "integer",
+          description: "Max items to return (default 20, max 50)",
         },
       },
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'list_presets',
+    name: "list_presets",
     description:
-      'List all presets (prompt ordering templates) for the current account. Returns id, name, source, and updated_at.',
+      "List all presets (prompt ordering templates) for the current account. Returns id, name, source, and updated_at.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         limit: {
-          type: 'integer',
-          description: 'Max items to return (default 20, max 50)',
+          type: "integer",
+          description: "Max items to return (default 20, max 50)",
         },
       },
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'list_worldbook_entries',
+    name: "list_worldbook_entries",
     description:
-      'List worldbook entry summaries (comment, keys, uid, order, disable) WITHOUT content. ' +
-      'Use get_worldbook_entry to read a specific entry\'s full content afterward.',
+      "List worldbook entry summaries (comment, keys, uid, order, disable) WITHOUT content. " +
+      "Use get_worldbook_entry to read a specific entry's full content afterward.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         worldbook_id: {
-          type: 'string',
-          description: 'ID of the worldbook (required)',
+          type: "string",
+          description: "ID of the worldbook (required)",
         },
         limit: {
-          type: 'integer',
-          description: 'Max entries to return (default 50, max 200)',
+          type: "integer",
+          description: "Max entries to return (default 50, max 200)",
         },
       },
-      required: ['worldbook_id'],
+      required: ["worldbook_id"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'list_character_versions',
+    name: "list_character_versions",
     description:
-      'List version history for a character card. Returns version_id, version_no, snapshot_name, content_hash, and created_at.',
+      "List version history for a character card. Returns version_id, version_no, snapshot_name, content_hash, and created_at.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         character_id: {
-          type: 'string',
-          description: 'ID of the character card (required)',
+          type: "string",
+          description: "ID of the character card (required)",
         },
         limit: {
-          type: 'integer',
-          description: 'Max versions to return (default 10, max 50)',
+          type: "integer",
+          description: "Max versions to return (default 10, max 50)",
         },
       },
-      required: ['character_id'],
+      required: ["character_id"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
 
   // ── Batch 3 — Fine-grained read tools ──────────────────
   {
-    name: 'get_worldbook_entry',
+    name: "get_worldbook_entry",
     description:
-      'Read a single worldbook entry by ID, including full content. Use list_worldbook_entries first to find the entry_id.',
+      "Read a single worldbook entry by ID, including full content. Use list_worldbook_entries first to find the entry_id.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         worldbook_id: {
-          type: 'string',
-          description: 'ID of the worldbook (required)',
+          type: "string",
+          description: "ID of the worldbook (required)",
         },
         entry_id: {
-          type: 'string',
-          description: 'ID of the entry to read (required)',
+          type: "string",
+          description: "ID of the entry to read (required)",
         },
       },
-      required: ['worldbook_id', 'entry_id'],
+      required: ["worldbook_id", "entry_id"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'get_regex_rule',
+    name: "get_regex_rule",
     description:
-      'Read a single regex rule by profile ID and rule index (0-based).',
+      "Read a single regex rule by profile ID and rule index (0-based).",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         profile_id: {
-          type: 'string',
-          description: 'ID of the regex profile (required)',
+          type: "string",
+          description: "ID of the regex profile (required)",
         },
         rule_index: {
-          type: 'integer',
-          description: '0-based index of the rule within the profile (required)',
+          type: "integer",
+          description:
+            "0-based index of the rule within the profile (required)",
         },
       },
-      required: ['profile_id', 'rule_index'],
+      required: ["profile_id", "rule_index"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'get_preset',
+    name: "get_preset",
     description:
-      'Read a preset with all its prompt entries. Returns id, name, source, and the ordered list of entries.',
+      "Read a preset with all its prompt entries. Returns id, name, source, and the ordered list of entries.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         preset_id: {
-          type: 'string',
-          description: 'ID of the preset to read (required)',
+          type: "string",
+          description: "ID of the preset to read (required)",
         },
       },
-      required: ['preset_id'],
+      required: ["preset_id"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'get_preset_entry',
-    description:
-      'Read a single prompt entry from a preset by its identifier.',
+    name: "get_preset_entry",
+    description: "Read a single prompt entry from a preset by its identifier.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         preset_id: {
-          type: 'string',
-          description: 'ID of the preset (required)',
+          type: "string",
+          description: "ID of the preset (required)",
         },
         identifier: {
-          type: 'string',
-          description: 'Identifier of the prompt entry (required)',
+          type: "string",
+          description: "Identifier of the prompt entry (required)",
         },
       },
-      required: ['preset_id', 'identifier'],
+      required: ["preset_id", "identifier"],
     },
-    sideEffectLevel: 'none',
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
 
   // ── Batch 3 — Create / Write tools ─────────────────────
   {
-    name: 'create_regex_profile',
+    name: "create_regex_profile",
     description:
-      'Create a new empty regex profile. Use create_regex_rule afterward to add rules.',
+      "Create a new empty regex profile. Use create_regex_rule afterward to add rules.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
-        name: { type: 'string', description: 'Profile name (required)' },
+        name: { type: "string", description: "Profile name (required)" },
       },
-      required: ['name'],
+      required: ["name"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'create_preset_entry',
+    name: "create_preset_entry",
     description:
-      'Create a new prompt entry in a preset. The identifier must be unique within the preset.',
+      "Create a new prompt entry in a preset. The identifier must be unique within the preset.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         preset_id: {
-          type: 'string',
-          description: 'ID of the preset (required)',
+          type: "string",
+          description: "ID of the preset (required)",
         },
         identifier: {
-          type: 'string',
-          description: 'Unique identifier for the entry (required, alphanumeric/underscore/hyphen)',
+          type: "string",
+          description:
+            "Unique identifier for the entry (required, alphanumeric/underscore/hyphen)",
         },
-        name: { type: 'string', description: 'Display name of the prompt entry' },
+        name: {
+          type: "string",
+          description: "Display name of the prompt entry",
+        },
         role: {
-          type: 'string',
-          enum: ['assistant', 'system', 'user'],
-          description: 'Message role (default: system)',
+          type: "string",
+          enum: ["assistant", "system", "user"],
+          description: "Message role (default: system)",
         },
-        content: { type: 'string', description: 'Prompt text content' },
-        system_prompt: { type: 'boolean', description: 'Whether this is a system prompt (default: false)' },
-        marker: { type: 'boolean', description: 'Whether this is a marker entry (default: false)' },
-        injection_position: { type: 'integer', description: 'Injection position (default: 0)' },
-        enabled: { type: 'boolean', description: 'Whether the entry is enabled (default: true)' },
+        content: { type: "string", description: "Prompt text content" },
+        system_prompt: {
+          type: "boolean",
+          description: "Whether this is a system prompt (default: false)",
+        },
+        marker: {
+          type: "boolean",
+          description: "Whether this is a marker entry (default: false)",
+        },
+        injection_position: {
+          type: "integer",
+          description: "Injection position (default: 0)",
+        },
+        enabled: {
+          type: "boolean",
+          description: "Whether the entry is enabled (default: true)",
+        },
       },
-      required: ['preset_id', 'identifier'],
+      required: ["preset_id", "identifier"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
     ...RESOURCE_COMMON,
   },
   {
-    name: 'update_preset_entry',
+    name: "update_preset_entry",
     description:
-      'Update an existing prompt entry in a preset. Only provided fields are changed.',
+      "Update an existing prompt entry in a preset. Only provided fields are changed.",
     parameters: {
-      type: 'object',
+      type: "object",
       properties: {
         preset_id: {
-          type: 'string',
-          description: 'ID of the preset (required)',
+          type: "string",
+          description: "ID of the preset (required)",
         },
         identifier: {
-          type: 'string',
-          description: 'Identifier of the entry to update (required)',
+          type: "string",
+          description: "Identifier of the entry to update (required)",
         },
-        name: { type: 'string', description: 'Display name of the prompt entry' },
+        name: {
+          type: "string",
+          description: "Display name of the prompt entry",
+        },
         role: {
-          type: 'string',
-          enum: ['assistant', 'system', 'user'],
-          description: 'Message role',
+          type: "string",
+          enum: ["assistant", "system", "user"],
+          description: "Message role",
         },
-        content: { type: 'string', description: 'Prompt text content' },
-        system_prompt: { type: 'boolean', description: 'Whether this is a system prompt' },
-        marker: { type: 'boolean', description: 'Whether this is a marker entry' },
-        injection_position: { type: 'integer', description: 'Injection position' },
-        enabled: { type: 'boolean', description: 'Whether the entry is enabled' },
+        content: { type: "string", description: "Prompt text content" },
+        system_prompt: {
+          type: "boolean",
+          description: "Whether this is a system prompt",
+        },
+        marker: {
+          type: "boolean",
+          description: "Whether this is a marker entry",
+        },
+        injection_position: {
+          type: "integer",
+          description: "Injection position",
+        },
+        enabled: {
+          type: "boolean",
+          description: "Whether the entry is enabled",
+        },
       },
-      required: ['preset_id', 'identifier'],
+      required: ["preset_id", "identifier"],
     },
-    sideEffectLevel: 'irreversible',
+    sideEffectLevel: "irreversible",
+    ...RESOURCE_COMMON,
+  },
+
+  // ── Structured text edit / search tools ───────────────
+  {
+    name: "edit_resource_text",
+    description:
+      "Apply structured local edits (apply_diff style) to a long-text field of a resource, instead of rewritingthe whole field. Provide hunks describing which existing text to replace with what. Supported targets — character: description/personality/scenario/first_mes/mes_example; worldbook_entry: content; preset_entry: content. Always read the current content first (e.g. via get_character / get_worldbook_entry / get_preset_entry). If old_content cannot be matched, or matches multiple places without start_line, no changes are written and a readable diagnostic is returned.",
+    parameters: {
+      type: "object",
+      properties: {
+        resource_type: {
+          type: "string",
+          enum: ["character", "worldbook_entry", "preset_entry"],
+          description:
+            "Type of resource whose long-text field is edited (required)",
+        },
+        character_id: {
+          type: "string",
+          description: "Required when resource_type is character",
+        },
+        worldbook_id: {
+          type: "string",
+          description: "Required when resource_type is worldbook_entry",
+        },
+        entry_id: {
+          type: "string",
+          description: "Required when resource_type is worldbook_entry",
+        },
+        preset_id: {
+          type: "string",
+          description: "Required when resource_type is preset_entry",
+        },
+        identifier: {
+          type: "string",
+          description: "Required when resource_type is preset_entry",
+        },
+        field: {
+          type: "string",
+          description:
+            "The long-text field to edit. character: description/personality/scenario/first_mes/mes_example; worldbook_entry: content; preset_entry: content (required)",
+        },
+        hunks: {
+          type: "array",
+          description:
+            "Structured edit hunks, applied in order. Each hunk replaces one contiguous piece of existing text. All hunks must succeed or nothing is written.",
+          items: {
+            type: "object",
+            properties: {
+              old_content: {
+                type: "string",
+                description:
+                  "The exact existing text to replace; must match the current field content (required)",
+              },
+              new_content: {
+                type: "string",
+                description: "The replacement text (required)",
+              },
+              start_line: {
+                type: "number",
+                description:
+                  "Optional 1-based line number from the content you read; only usedto disambiguate when old_content appears multiple times",
+              },
+            },
+            required: ["old_content", "new_content"],
+          },
+        },
+      },
+      required: ["resource_type", "field", "hunks"],
+    },
+    sideEffectLevel: "irreversible",
+    ...RESOURCE_COMMON,
+  },
+  {
+    name: "search_resource_text",
+    description:
+      "Search within a resource's long-text field(s) and return matching line numbers with context. Read-only. For character you may omit character_id to search across all your characters; for worldbook_entry provide worldbook_id (entry_id optional, otherwise allentries); for preset_entry provide preset_id (identifier optional, otherwise all entries). Set is_regex to treat query as a regular expression.",
+    parameters: {
+      type: "object",
+      properties: {
+        resource_type: {
+          type: "string",
+          enum: ["character", "worldbook_entry", "preset_entry"],
+          description: "Type of resource to search (required)",
+        },
+        character_id: {
+          type: "string",
+          description:
+            "For character: limit search to this character; omit to search all your characters",
+        },
+        worldbook_id: {
+          type: "string",
+          description: "Required when resource_type is worldbook_entry",
+        },
+        entry_id: {
+          type: "string",
+          description:
+            "For worldbook_entry: limit search to this entry; omit to search all entries in the worldbook",
+        },
+        preset_id: {
+          type: "string",
+          description: "Required when resource_type is preset_entry",
+        },
+        identifier: {
+          type: "string",
+          description:
+            "For preset_entry: limit search to this entry; omit to search all entries in the preset",
+        },
+        field: {
+          type: "string",
+          description:
+            "Field to search. Omit to search all long-text fields of the resource type. character: description/personality/scenario/first_mes/mes_example; worldbook_entry: content; preset_entry: content",
+        },
+        query: {
+          type: "string",
+          description: "Search query (required)",
+        },
+        is_regex: {
+          type: "boolean",
+          description: "Treat query as a regularexpression (default false)",
+        },
+      },
+      required: ["resource_type", "query"],
+    },
+    sideEffectLevel: "none",
     ...RESOURCE_COMMON,
   },
 ];
@@ -693,50 +871,79 @@ interface RegexScript {
 
 function requireAccountId(context: ToolExecutionContext): string {
   if (!context.accountId) {
-    throw new Error('accountId is required for resource tools');
+    throw new Error("accountId is required for resource tools");
   }
   return context.accountId;
 }
 
 function clampLimit(input: unknown, defaultVal = 20, maxVal = 50): number {
-  const n = typeof input === 'number' ? input : defaultVal;
+  const n = typeof input === "number" ? input : defaultVal;
   return Math.min(Math.max(1, Math.floor(n)), maxVal);
 }
 
 function computeContentHash(json: string): string {
-  return createHash('sha256').update(json).digest('hex');
+  return createHash("sha256").update(json).digest("hex");
 }
 
 function characterWorkspaceClause(workspaceId: string) {
-  return or(eq(characters.workspaceId, workspaceId), isNull(characters.workspaceId))!;
+  return or(
+    eq(characters.workspaceId, workspaceId),
+    isNull(characters.workspaceId),
+  )!;
 }
 
 function worldbookWorkspaceClause(workspaceId: string) {
-  return or(eq(worldbooks.workspaceId, workspaceId), isNull(worldbooks.workspaceId))!;
+  return or(
+    eq(worldbooks.workspaceId, workspaceId),
+    isNull(worldbooks.workspaceId),
+  )!;
 }
 
 function regexProfileWorkspaceClause(workspaceId: string) {
-  return or(eq(regexProfiles.workspaceId, workspaceId), isNull(regexProfiles.workspaceId))!;
+  return or(
+    eq(regexProfiles.workspaceId, workspaceId),
+    isNull(regexProfiles.workspaceId),
+  )!;
 }
 
 function presetWorkspaceClause(workspaceId: string) {
   return or(eq(presets.workspaceId, workspaceId), isNull(presets.workspaceId))!;
 }
 
-function loadOwnedCharacter(tx: DbExecutor, characterId: string, accountId: string, workspaceId: string) {
+function loadOwnedCharacter(
+  tx: DbExecutor,
+  characterId: string,
+  accountId: string,
+  workspaceId: string,
+) {
   return tx
     .select()
     .from(characters)
-    .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId), characterWorkspaceClause(workspaceId)))
+    .where(
+      and(
+        eq(characters.id, characterId),
+        eq(characters.accountId, accountId),
+        characterWorkspaceClause(workspaceId),
+      ),
+    )
     .limit(1)
     .get();
 }
 
-function loadCharacterVersionByNo(tx: DbExecutor, characterId: string, versionNo: number) {
+function loadCharacterVersionByNo(
+  tx: DbExecutor,
+  characterId: string,
+  versionNo: number,
+) {
   return tx
     .select()
     .from(characterVersions)
-    .where(and(eq(characterVersions.characterId, characterId), eq(characterVersions.versionNo, versionNo)))
+    .where(
+      and(
+        eq(characterVersions.characterId, characterId),
+        eq(characterVersions.versionNo, versionNo),
+      ),
+    )
     .limit(1)
     .get();
 }
@@ -744,16 +951,16 @@ function loadCharacterVersionByNo(tx: DbExecutor, characterId: string, versionNo
 function createToolCharacterRevisionConflictError() {
   return new ResourceWriteRouteError(
     409,
-    'character_revision_conflict',
-    'Character has been modified by another operation',
+    "character_revision_conflict",
+    "Character has been modified by another operation",
   );
 }
 
 // ── ResourceToolProvider ────────────────────────────────
 
 export class ResourceToolProvider implements ToolProvider {
-  readonly id = 'resource';
-  readonly type = 'builtin' as const;
+  readonly id = "resource";
+  readonly type = "builtin" as const;
   private readonly mutationRuntime: MutationRuntime;
   private readonly now: () => number;
 
@@ -765,9 +972,11 @@ export class ResourceToolProvider implements ToolProvider {
     } = {},
   ) {
     this.now = options.now ?? Date.now;
-    this.mutationRuntime = options.mutationRuntime ?? createDefaultMutationRuntime(db, {
-      now: this.now,
-    });
+    this.mutationRuntime =
+      options.mutationRuntime ??
+      createDefaultMutationRuntime(db, {
+        now: this.now,
+      });
   }
 
   async listTools(): Promise<ToolDefinition[]> {
@@ -789,16 +998,16 @@ export class ResourceToolProvider implements ToolProvider {
     return {
       id: args.id,
       kind: args.kind,
-      source: 'tool',
+      source: "tool",
       accountId: requireAccountId(context),
       sessionId: context.sessionId,
       floorId: context.floorId,
       pageId: context.pageId,
       scopeType: args.scopeType,
       scopeKey: args.scopeKey,
-      applyPhase: 'inline',
-      durability: 'transactional',
-      replaySafety: args.replaySafety ?? 'never_auto_replay',
+      applyPhase: "inline",
+      durability: "transactional",
+      replaySafety: args.replaySafety ?? "never_auto_replay",
       ...(args.conflictPolicy ? { conflictPolicy: args.conflictPolicy } : {}),
       payload: args.payload,
       createdAt: this.now(),
@@ -810,7 +1019,8 @@ export class ResourceToolProvider implements ToolProvider {
     options: ExecuteResourceWriteOptions = {},
   ): Promise<TResult | undefined> {
     return await executeResourceWrite(
-      async () => await this.mutationRuntime.applyInline<TPayload, TResult>(envelope),
+      async () =>
+        await this.mutationRuntime.applyInline<TPayload, TResult>(envelope),
       options,
     );
   }
@@ -823,62 +1033,68 @@ export class ResourceToolProvider implements ToolProvider {
     try {
       switch (name) {
         // Character
-        case 'create_character':
+        case "create_character":
           return await this.handleCreateCharacter(args, context);
-        case 'update_character':
+        case "update_character":
           return await this.handleUpdateCharacter(args, context);
-        case 'get_character':
+        case "get_character":
           return await this.handleGetCharacter(args, context);
-        case 'list_characters':
+        case "list_characters":
           return await this.handleListCharacters(args, context);
 
         // Worldbook
-        case 'create_worldbook':
+        case "create_worldbook":
           return await this.handleCreateWorldbook(args, context);
-        case 'create_worldbook_entry':
+        case "create_worldbook_entry":
           return await this.handleCreateWorldbookEntry(args, context);
-        case 'update_worldbook_entry':
+        case "update_worldbook_entry":
           return await this.handleUpdateWorldbookEntry(args, context);
-        case 'get_worldbook':
+        case "get_worldbook":
           return await this.handleGetWorldbook(args, context);
-        case 'list_worldbooks':
+        case "list_worldbooks":
           return await this.handleListWorldbooks(args, context);
 
         // Regex
-        case 'create_regex_rule':
+        case "create_regex_rule":
           return await this.handleCreateRegexRule(args, context);
-        case 'update_regex_rule':
+        case "update_regex_rule":
           return await this.handleUpdateRegexRule(args, context);
-        case 'get_regex_profile':
+        case "get_regex_profile":
           return await this.handleGetRegexProfile(args, context);
 
         // Batch 3 — List tools
-        case 'list_regex_profiles':
+        case "list_regex_profiles":
           return await this.handleListRegexProfiles(args, context);
-        case 'list_presets':
+        case "list_presets":
           return await this.handleListPresets(args, context);
-        case 'list_worldbook_entries':
+        case "list_worldbook_entries":
           return await this.handleListWorldbookEntries(args, context);
-        case 'list_character_versions':
+        case "list_character_versions":
           return await this.handleListCharacterVersions(args, context);
 
         // Batch 3 — Fine-grained read
-        case 'get_worldbook_entry':
+        case "get_worldbook_entry":
           return await this.handleGetWorldbookEntry(args, context);
-        case 'get_regex_rule':
+        case "get_regex_rule":
           return await this.handleGetRegexRule(args, context);
-        case 'get_preset':
+        case "get_preset":
           return await this.handleGetPreset(args, context);
-        case 'get_preset_entry':
+        case "get_preset_entry":
           return await this.handleGetPresetEntry(args, context);
 
         // Batch 3 — Create / Write
-        case 'create_regex_profile':
+        case "create_regex_profile":
           return await this.handleCreateRegexProfile(args, context);
-        case 'create_preset_entry':
+        case "create_preset_entry":
           return await this.handleCreatePresetEntry(args, context);
-        case 'update_preset_entry':
+        case "update_preset_entry":
           return await this.handleUpdatePresetEntry(args, context);
+
+        // Structured text edit / search
+        case "edit_resource_text":
+          return await this.handleEditResourceText(args, context);
+        case "search_resource_text":
+          return await this.handleSearchResourceText(args, context);
 
         default:
           return { error: `Unknown resource tool: ${name}` };
@@ -891,9 +1107,12 @@ export class ResourceToolProvider implements ToolProvider {
 
   private resolveWorkspace(accountId: string): string {
     try {
-      return new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId).id;
+      return new WorkspaceScopeService(this.db).getDefaultWorkspace(accountId)
+        .id;
     } catch (err) {
-      throw new Error(`Failed to resolve workspace: ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(
+        `Failed to resolve workspace: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -905,24 +1124,30 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const name = args.name as string | undefined;
-    if (!name || typeof name !== 'string' || name.trim() === '') {
-      return { error: 'name is required and must be a non-empty string' };
+    if (!name || typeof name !== "string" || name.trim() === "") {
+      return { error: "name is required and must be a non-empty string" };
     }
 
     const snapshot: CharacterSnapshot = {
       name: name.trim(),
-      description: typeof args.description === 'string' ? args.description : undefined,
-      personality: typeof args.personality === 'string' ? args.personality : undefined,
-      scenario: typeof args.scenario === 'string' ? args.scenario : undefined,
-      greeting: typeof args.first_mes === 'string' ? args.first_mes : undefined,
-      exampleDialogue: typeof args.mes_example === 'string' ? args.mes_example : undefined,
+      description:
+        typeof args.description === "string" ? args.description : undefined,
+      personality:
+        typeof args.personality === "string" ? args.personality : undefined,
+      scenario: typeof args.scenario === "string" ? args.scenario : undefined,
+      greeting: typeof args.first_mes === "string" ? args.first_mes : undefined,
+      exampleDialogue:
+        typeof args.mes_example === "string" ? args.mes_example : undefined,
     };
 
-    const created = await this.applyResourceMutation<CreateCharacterMutationPayload, CharacterMutationResult>(
+    const created = await this.applyResourceMutation<
+      CreateCharacterMutationPayload,
+      CharacterMutationResult
+    >(
       this.createToolMutationEnvelope(context, {
         id: `resource-character-create:${nanoid()}`,
         kind: RESOURCE_MUTATION_KINDS.characterCreate,
-        scopeType: 'resource.character',
+        scopeType: "resource.character",
         scopeKey: `account:${accountId}`,
         payload: { snapshot },
       }),
@@ -944,26 +1169,39 @@ export class ResourceToolProvider implements ToolProvider {
     requireAccountId(context);
     const characterId = args.character_id as string | undefined;
     if (!characterId) {
-      return { error: 'character_id is required' };
+      return { error: "character_id is required" };
     }
 
-    const updated = await this.applyResourceMutation<UpdateCharacterMutationPayload, CharacterMutationResult>(
+    const updated = await this.applyResourceMutation<
+      UpdateCharacterMutationPayload,
+      CharacterMutationResult
+    >(
       this.createToolMutationEnvelope(context, {
         id: `resource-character-update:${characterId}:${this.now()}`,
         kind: RESOURCE_MUTATION_KINDS.characterUpdate,
-        scopeType: 'resource.character',
+        scopeType: "resource.character",
         scopeKey: `character:${characterId}`,
-        replaySafety: 'confirm_on_replay',
-        conflictPolicy: 'compare_and_swap',
+        replaySafety: "confirm_on_replay",
+        conflictPolicy: "compare_and_swap",
         payload: {
           characterId,
           patch: {
-            ...(typeof args.name === 'string' ? { name: args.name } : {}),
-            ...(typeof args.description === 'string' ? { description: args.description } : {}),
-            ...(typeof args.personality === 'string' ? { personality: args.personality } : {}),
-            ...(typeof args.scenario === 'string' ? { scenario: args.scenario } : {}),
-            ...(typeof args.first_mes === 'string' ? { greeting: args.first_mes } : {}),
-            ...(typeof args.mes_example === 'string' ? { exampleDialogue: args.mes_example } : {}),
+            ...(typeof args.name === "string" ? { name: args.name } : {}),
+            ...(typeof args.description === "string"
+              ? { description: args.description }
+              : {}),
+            ...(typeof args.personality === "string"
+              ? { personality: args.personality }
+              : {}),
+            ...(typeof args.scenario === "string"
+              ? { scenario: args.scenario }
+              : {}),
+            ...(typeof args.first_mes === "string"
+              ? { greeting: args.first_mes }
+              : {}),
+            ...(typeof args.mes_example === "string"
+              ? { exampleDialogue: args.mes_example }
+              : {}),
           },
         },
       }),
@@ -987,7 +1225,7 @@ export class ResourceToolProvider implements ToolProvider {
     const characterId = args.character_id as string | undefined;
     const workspaceId = this.resolveWorkspace(accountId);
     if (!characterId) {
-      return { error: 'character_id is required' };
+      return { error: "character_id is required" };
     }
 
     const [charRow] = await this.db
@@ -1027,11 +1265,11 @@ export class ResourceToolProvider implements ToolProvider {
         snapshot: snapshot
           ? {
               name: snapshot.name,
-              description: snapshot.description ?? '',
-              personality: snapshot.personality ?? '',
-              scenario: snapshot.scenario ?? '',
-              first_mes: snapshot.primaryGreeting ?? snapshot.greeting ?? '',
-              mes_example: snapshot.exampleDialogue ?? '',
+              description: snapshot.description ?? "",
+              personality: snapshot.personality ?? "",
+              scenario: snapshot.scenario ?? "",
+              first_mes: snapshot.primaryGreeting ?? snapshot.greeting ?? "",
+              mes_example: snapshot.exampleDialogue ?? "",
             }
           : null,
       },
@@ -1045,12 +1283,12 @@ export class ResourceToolProvider implements ToolProvider {
     const accountId = requireAccountId(context);
     const limit = clampLimit(args.limit);
     const workspaceId = this.resolveWorkspace(accountId);
-    const keyword = typeof args.keyword === 'string' ? args.keyword.trim() : '';
+    const keyword = typeof args.keyword === "string" ? args.keyword.trim() : "";
 
     const conditions = [
       eq(characters.accountId, accountId),
       characterWorkspaceClause(workspaceId),
-      eq(characters.status, 'active'),
+      eq(characters.status, "active"),
     ];
     if (keyword) {
       conditions.push(like(characters.name, `%${keyword}%`));
@@ -1086,15 +1324,18 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const name = args.name as string | undefined;
-    if (!name || typeof name !== 'string' || name.trim() === '') {
-      return { error: 'name is required and must be a non-empty string' };
+    if (!name || typeof name !== "string" || name.trim() === "") {
+      return { error: "name is required and must be a non-empty string" };
     }
 
-    const created = await this.applyResourceMutation<CreateWorldbookMutationPayload, CreateWorldbookMutationResult>(
+    const created = await this.applyResourceMutation<
+      CreateWorldbookMutationPayload,
+      CreateWorldbookMutationResult
+    >(
       this.createToolMutationEnvelope(context, {
         id: `resource-worldbook-create:${nanoid()}`,
         kind: RESOURCE_MUTATION_KINDS.worldbookCreate,
-        scopeType: 'resource.worldbook',
+        scopeType: "resource.worldbook",
         scopeKey: `account:${accountId}`,
         payload: { name: name.trim() },
       }),
@@ -1115,16 +1356,18 @@ export class ResourceToolProvider implements ToolProvider {
     requireAccountId(context);
     const worldbookId = args.worldbook_id as string | undefined;
     if (!worldbookId) {
-      return { error: 'worldbook_id is required' };
+      return { error: "worldbook_id is required" };
     }
 
     const keys = args.keys;
     if (!Array.isArray(keys) || keys.length === 0) {
-      return { error: 'keys is required and must be a non-empty array of strings' };
+      return {
+        error: "keys is required and must be a non-empty array of strings",
+      };
     }
     const content = args.content as string | undefined;
-    if (typeof content !== 'string') {
-      return { error: 'content is required and must be a string' };
+    if (typeof content !== "string") {
+      return { error: "content is required and must be a string" };
     }
 
     const created = await this.applyResourceMutation<
@@ -1134,20 +1377,32 @@ export class ResourceToolProvider implements ToolProvider {
       this.createToolMutationEnvelope(context, {
         id: `resource-worldbook-entry-create:${worldbookId}:${nanoid()}`,
         kind: RESOURCE_MUTATION_KINDS.worldbookEntryCreate,
-        scopeType: 'resource.worldbook',
+        scopeType: "resource.worldbook",
         scopeKey: `worldbook:${worldbookId}`,
         payload: {
           worldbookId,
           keys: keys as string[],
           content,
-          ...(typeof args.comment === 'string' ? { comment: args.comment } : {}),
-          ...(Array.isArray(args.keys_secondary) ? { keysSecondary: args.keys_secondary as string[] } : {}),
-          ...(typeof args.selective === 'boolean' ? { selective: args.selective } : {}),
-          ...(typeof args.constant === 'boolean' ? { constant: args.constant } : {}),
-          ...(typeof args.position === 'number' ? { position: args.position } : {}),
-          ...(typeof args.order === 'number' ? { order: args.order } : {}),
-          ...(typeof args.depth === 'number' ? { depth: args.depth } : {}),
-          ...(typeof args.disable === 'boolean' ? { disable: args.disable } : {}),
+          ...(typeof args.comment === "string"
+            ? { comment: args.comment }
+            : {}),
+          ...(Array.isArray(args.keys_secondary)
+            ? { keysSecondary: args.keys_secondary as string[] }
+            : {}),
+          ...(typeof args.selective === "boolean"
+            ? { selective: args.selective }
+            : {}),
+          ...(typeof args.constant === "boolean"
+            ? { constant: args.constant }
+            : {}),
+          ...(typeof args.position === "number"
+            ? { position: args.position }
+            : {}),
+          ...(typeof args.order === "number" ? { order: args.order } : {}),
+          ...(typeof args.depth === "number" ? { depth: args.depth } : {}),
+          ...(typeof args.disable === "boolean"
+            ? { disable: args.disable }
+            : {}),
         },
       }),
     );
@@ -1170,8 +1425,8 @@ export class ResourceToolProvider implements ToolProvider {
     requireAccountId(context);
     const worldbookId = args.worldbook_id as string | undefined;
     const entryId = args.entry_id as string | undefined;
-    if (!worldbookId) return { error: 'worldbook_id is required' };
-    if (!entryId) return { error: 'entry_id is required' };
+    if (!worldbookId) return { error: "worldbook_id is required" };
+    if (!entryId) return { error: "entry_id is required" };
 
     const updated = await this.applyResourceMutation<
       UpdateWorldbookEntryMutationPayload,
@@ -1180,23 +1435,39 @@ export class ResourceToolProvider implements ToolProvider {
       this.createToolMutationEnvelope(context, {
         id: `resource-worldbook-entry-update:${worldbookId}:${entryId}:${this.now()}`,
         kind: RESOURCE_MUTATION_KINDS.worldbookEntryUpdate,
-        scopeType: 'resource.worldbook',
+        scopeType: "resource.worldbook",
         scopeKey: `worldbook:${worldbookId}`,
-        replaySafety: 'confirm_on_replay',
+        replaySafety: "confirm_on_replay",
         payload: {
           worldbookId,
           entryId,
           updates: {
-            ...(Array.isArray(args.keys) ? { keys: args.keys as string[] } : {}),
-            ...(typeof args.content === 'string' ? { content: args.content } : {}),
-            ...(typeof args.comment === 'string' ? { comment: args.comment } : {}),
-            ...(Array.isArray(args.keys_secondary) ? { keysSecondary: args.keys_secondary as string[] } : {}),
-            ...(typeof args.selective === 'boolean' ? { selective: args.selective } : {}),
-            ...(typeof args.constant === 'boolean' ? { constant: args.constant } : {}),
-            ...(typeof args.position === 'number' ? { position: args.position } : {}),
-            ...(typeof args.order === 'number' ? { order: args.order } : {}),
-            ...(typeof args.depth === 'number' ? { depth: args.depth } : {}),
-            ...(typeof args.disable === 'boolean' ? { disable: args.disable } : {}),
+            ...(Array.isArray(args.keys)
+              ? { keys: args.keys as string[] }
+              : {}),
+            ...(typeof args.content === "string"
+              ? { content: args.content }
+              : {}),
+            ...(typeof args.comment === "string"
+              ? { comment: args.comment }
+              : {}),
+            ...(Array.isArray(args.keys_secondary)
+              ? { keysSecondary: args.keys_secondary as string[] }
+              : {}),
+            ...(typeof args.selective === "boolean"
+              ? { selective: args.selective }
+              : {}),
+            ...(typeof args.constant === "boolean"
+              ? { constant: args.constant }
+              : {}),
+            ...(typeof args.position === "number"
+              ? { position: args.position }
+              : {}),
+            ...(typeof args.order === "number" ? { order: args.order } : {}),
+            ...(typeof args.depth === "number" ? { depth: args.depth } : {}),
+            ...(typeof args.disable === "boolean"
+              ? { disable: args.disable }
+              : {}),
           },
         },
       }),
@@ -1221,7 +1492,7 @@ export class ResourceToolProvider implements ToolProvider {
     const accountId = requireAccountId(context);
     const worldbookId = args.worldbook_id as string | undefined;
     const workspaceId = this.resolveWorkspace(accountId);
-    if (!worldbookId) return { error: 'worldbook_id is required' };
+    if (!worldbookId) return { error: "worldbook_id is required" };
 
     const [wb] = await this.db
       .select()
@@ -1281,7 +1552,12 @@ export class ResourceToolProvider implements ToolProvider {
         updatedAt: worldbooks.updatedAt,
       })
       .from(worldbooks)
-      .where(and(eq(worldbooks.accountId, accountId), worldbookWorkspaceClause(workspaceId)))
+      .where(
+        and(
+          eq(worldbooks.accountId, accountId),
+          worldbookWorkspaceClause(workspaceId),
+        ),
+      )
       .orderBy(desc(worldbooks.updatedAt))
       .limit(limit);
 
@@ -1303,15 +1579,15 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     requireAccountId(context);
     const profileId = args.profile_id as string | undefined;
-    if (!profileId) return { error: 'profile_id is required' };
+    if (!profileId) return { error: "profile_id is required" };
 
     const findRegex = args.find_regex as string | undefined;
-    if (typeof findRegex !== 'string' || findRegex === '') {
-      return { error: 'find_regex is required and must be a non-empty string' };
+    if (typeof findRegex !== "string" || findRegex === "") {
+      return { error: "find_regex is required and must be a non-empty string" };
     }
     const replaceString = args.replace_string;
-    if (typeof replaceString !== 'string') {
-      return { error: 'replace_string is required and must be a string' };
+    if (typeof replaceString !== "string") {
+      return { error: "replace_string is required and must be a string" };
     }
 
     const created = await this.applyResourceMutation<
@@ -1321,16 +1597,24 @@ export class ResourceToolProvider implements ToolProvider {
       this.createToolMutationEnvelope(context, {
         id: `resource-regex-rule-create:${profileId}:${nanoid()}`,
         kind: RESOURCE_MUTATION_KINDS.regexRuleCreate,
-        scopeType: 'resource.regex_profile',
+        scopeType: "resource.regex_profile",
         scopeKey: `profile:${profileId}`,
         payload: {
           profileId,
-          ...(typeof args.script_name === 'string' ? { scriptName: args.script_name } : {}),
+          ...(typeof args.script_name === "string"
+            ? { scriptName: args.script_name }
+            : {}),
           findRegex,
           replaceString,
-          ...(Array.isArray(args.trim_strings) ? { trimStrings: args.trim_strings as string[] } : {}),
-          ...(Array.isArray(args.placement) ? { placement: args.placement as number[] } : {}),
-          ...(typeof args.disabled === 'boolean' ? { disabled: args.disabled } : {}),
+          ...(Array.isArray(args.trim_strings)
+            ? { trimStrings: args.trim_strings as string[] }
+            : {}),
+          ...(Array.isArray(args.placement)
+            ? { placement: args.placement as number[] }
+            : {}),
+          ...(typeof args.disabled === "boolean"
+            ? { disabled: args.disabled }
+            : {}),
         },
       }),
     );
@@ -1350,11 +1634,17 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     requireAccountId(context);
     const profileId = args.profile_id as string | undefined;
-    if (!profileId) return { error: 'profile_id is required' };
+    if (!profileId) return { error: "profile_id is required" };
 
     const ruleIndex = args.rule_index;
-    if (typeof ruleIndex !== 'number' || !Number.isInteger(ruleIndex) || ruleIndex < 0) {
-      return { error: 'rule_index is required and must be a non-negative integer' };
+    if (
+      typeof ruleIndex !== "number" ||
+      !Number.isInteger(ruleIndex) ||
+      ruleIndex < 0
+    ) {
+      return {
+        error: "rule_index is required and must be a non-negative integer",
+      };
     }
 
     const updated = await this.applyResourceMutation<
@@ -1364,19 +1654,31 @@ export class ResourceToolProvider implements ToolProvider {
       this.createToolMutationEnvelope(context, {
         id: `resource-regex-rule-update:${profileId}:${ruleIndex}:${this.now()}`,
         kind: RESOURCE_MUTATION_KINDS.regexRuleUpdate,
-        scopeType: 'resource.regex_profile',
+        scopeType: "resource.regex_profile",
         scopeKey: `profile:${profileId}`,
-        replaySafety: 'confirm_on_replay',
+        replaySafety: "confirm_on_replay",
         payload: {
           profileId,
           ruleIndex,
           updates: {
-            ...(typeof args.script_name === 'string' ? { scriptName: args.script_name } : {}),
-            ...(typeof args.find_regex === 'string' ? { findRegex: args.find_regex } : {}),
-            ...(typeof args.replace_string === 'string' ? { replaceString: args.replace_string } : {}),
-            ...(Array.isArray(args.trim_strings) ? { trimStrings: args.trim_strings as string[] } : {}),
-            ...(Array.isArray(args.placement) ? { placement: args.placement as number[] } : {}),
-            ...(typeof args.disabled === 'boolean' ? { disabled: args.disabled } : {}),
+            ...(typeof args.script_name === "string"
+              ? { scriptName: args.script_name }
+              : {}),
+            ...(typeof args.find_regex === "string"
+              ? { findRegex: args.find_regex }
+              : {}),
+            ...(typeof args.replace_string === "string"
+              ? { replaceString: args.replace_string }
+              : {}),
+            ...(Array.isArray(args.trim_strings)
+              ? { trimStrings: args.trim_strings as string[] }
+              : {}),
+            ...(Array.isArray(args.placement)
+              ? { placement: args.placement as number[] }
+              : {}),
+            ...(typeof args.disabled === "boolean"
+              ? { disabled: args.disabled }
+              : {}),
           },
         },
       }),
@@ -1398,7 +1700,7 @@ export class ResourceToolProvider implements ToolProvider {
     const accountId = requireAccountId(context);
     const workspaceId = this.resolveWorkspace(accountId);
     const profileId = args.profile_id as string | undefined;
-    if (!profileId) return { error: 'profile_id is required' };
+    if (!profileId) return { error: "profile_id is required" };
 
     const [profile] = await this.db
       .select()
@@ -1449,11 +1751,19 @@ export class ResourceToolProvider implements ToolProvider {
     const [row] = this.db
       .select()
       .from(presets)
-      .where(and(eq(presets.id, presetId), eq(presets.accountId, accountId), presetWorkspaceClause(workspaceId)))
+      .where(
+        and(
+          eq(presets.id, presetId),
+          eq(presets.accountId, accountId),
+          presetWorkspaceClause(workspaceId),
+        ),
+      )
       .limit(1)
       .all();
     if (!row) return null;
-    const normalized = normalizeStoredPreset(parseJsonField(row.dataJson) as JsonRecord);
+    const normalized = normalizeStoredPreset(
+      parseJsonField(row.dataJson) as JsonRecord,
+    );
     return { row, raw: normalized.raw };
   }
 
@@ -1497,7 +1807,12 @@ export class ResourceToolProvider implements ToolProvider {
         updatedAt: regexProfiles.updatedAt,
       })
       .from(regexProfiles)
-      .where(and(eq(regexProfiles.accountId, accountId), regexProfileWorkspaceClause(workspaceId)))
+      .where(
+        and(
+          eq(regexProfiles.accountId, accountId),
+          regexProfileWorkspaceClause(workspaceId),
+        ),
+      )
       .orderBy(desc(regexProfiles.updatedAt))
       .limit(limit);
 
@@ -1527,7 +1842,12 @@ export class ResourceToolProvider implements ToolProvider {
         updatedAt: presets.updatedAt,
       })
       .from(presets)
-      .where(and(eq(presets.accountId, accountId), presetWorkspaceClause(workspaceId)))
+      .where(
+        and(
+          eq(presets.accountId, accountId),
+          presetWorkspaceClause(workspaceId),
+        ),
+      )
       .orderBy(desc(presets.updatedAt))
       .limit(limit);
 
@@ -1548,13 +1868,19 @@ export class ResourceToolProvider implements ToolProvider {
     const accountId = requireAccountId(context);
     const workspaceId = this.resolveWorkspace(accountId);
     const worldbookId = args.worldbook_id as string | undefined;
-    if (!worldbookId) return { error: 'worldbook_id is required' };
+    if (!worldbookId) return { error: "worldbook_id is required" };
 
     // Verify worldbook belongs to current account
     const [wb] = await this.db
       .select()
       .from(worldbooks)
-      .where(and(eq(worldbooks.id, worldbookId), eq(worldbooks.accountId, accountId), worldbookWorkspaceClause(workspaceId)))
+      .where(
+        and(
+          eq(worldbooks.id, worldbookId),
+          eq(worldbooks.accountId, accountId),
+          worldbookWorkspaceClause(workspaceId),
+        ),
+      )
       .limit(1);
     if (!wb) return { error: `Worldbook not found: ${worldbookId}` };
 
@@ -1590,13 +1916,19 @@ export class ResourceToolProvider implements ToolProvider {
     const accountId = requireAccountId(context);
     const workspaceId = this.resolveWorkspace(accountId);
     const characterId = args.character_id as string | undefined;
-    if (!characterId) return { error: 'character_id is required' };
+    if (!characterId) return { error: "character_id is required" };
 
     // Verify character belongs to current account
     const [charRow] = await this.db
       .select()
       .from(characters)
-      .where(and(eq(characters.id, characterId), eq(characters.accountId, accountId), characterWorkspaceClause(workspaceId)))
+      .where(
+        and(
+          eq(characters.id, characterId),
+          eq(characters.accountId, accountId),
+          characterWorkspaceClause(workspaceId),
+        ),
+      )
       .limit(1);
     if (!charRow) return { error: `Character not found: ${characterId}` };
 
@@ -1613,11 +1945,13 @@ export class ResourceToolProvider implements ToolProvider {
         character_id: charRow.id,
         character_name: charRow.name,
         versions: rows.map((v) => {
-          let snapshotName = '';
+          let snapshotName = "";
           try {
             const snap = JSON.parse(v.dataJson) as CharacterSnapshot;
-            snapshotName = snap.name ?? '';
-          } catch { /* ignore */ }
+            snapshotName = snap.name ?? "";
+          } catch {
+            /* ignore */
+          }
           return {
             version_id: v.id,
             version_no: v.versionNo,
@@ -1640,14 +1974,20 @@ export class ResourceToolProvider implements ToolProvider {
     const workspaceId = this.resolveWorkspace(accountId);
     const worldbookId = args.worldbook_id as string | undefined;
     const entryId = args.entry_id as string | undefined;
-    if (!worldbookId) return { error: 'worldbook_id is required' };
-    if (!entryId) return { error: 'entry_id is required' };
+    if (!worldbookId) return { error: "worldbook_id is required" };
+    if (!entryId) return { error: "entry_id is required" };
 
     // Verify worldbook belongs to current account
     const [wb] = await this.db
       .select()
       .from(worldbooks)
-      .where(and(eq(worldbooks.id, worldbookId), eq(worldbooks.accountId, accountId), worldbookWorkspaceClause(workspaceId)))
+      .where(
+        and(
+          eq(worldbooks.id, worldbookId),
+          eq(worldbooks.accountId, accountId),
+          worldbookWorkspaceClause(workspaceId),
+        ),
+      )
       .limit(1);
     if (!wb) return { error: `Worldbook not found: ${worldbookId}` };
 
@@ -1689,11 +2029,17 @@ export class ResourceToolProvider implements ToolProvider {
     const accountId = requireAccountId(context);
     const workspaceId = this.resolveWorkspace(accountId);
     const profileId = args.profile_id as string | undefined;
-    if (!profileId) return { error: 'profile_id is required' };
+    if (!profileId) return { error: "profile_id is required" };
 
     const ruleIndex = args.rule_index;
-    if (typeof ruleIndex !== 'number' || !Number.isInteger(ruleIndex) || ruleIndex < 0) {
-      return { error: 'rule_index is required and must be a non-negative integer' };
+    if (
+      typeof ruleIndex !== "number" ||
+      !Number.isInteger(ruleIndex) ||
+      ruleIndex < 0
+    ) {
+      return {
+        error: "rule_index is required and must be a non-negative integer",
+      };
     }
 
     const [profile] = await this.db
@@ -1744,7 +2090,7 @@ export class ResourceToolProvider implements ToolProvider {
     const accountId = requireAccountId(context);
     const workspaceId = this.resolveWorkspace(accountId);
     const presetId = args.preset_id as string | undefined;
-    if (!presetId) return { error: 'preset_id is required' };
+    if (!presetId) return { error: "preset_id is required" };
 
     const loaded = this.loadPresetRawForTool(presetId, accountId, workspaceId);
     if (!loaded) return { error: `Preset not found: ${presetId}` };
@@ -1777,8 +2123,8 @@ export class ResourceToolProvider implements ToolProvider {
     const workspaceId = this.resolveWorkspace(accountId);
     const presetId = args.preset_id as string | undefined;
     const identifier = args.identifier as string | undefined;
-    if (!presetId) return { error: 'preset_id is required' };
-    if (!identifier) return { error: 'identifier is required' };
+    if (!presetId) return { error: "preset_id is required" };
+    if (!identifier) return { error: "identifier is required" };
 
     const loaded = this.loadPresetRawForTool(presetId, accountId, workspaceId);
     if (!loaded) return { error: `Preset not found: ${presetId}` };
@@ -1808,7 +2154,7 @@ export class ResourceToolProvider implements ToolProvider {
   ): Promise<ToolCallResult> {
     const accountId = requireAccountId(context);
     const name = args.name as string | undefined;
-    if (!name) return { error: 'name is required' };
+    if (!name) return { error: "name is required" };
 
     const created = await this.applyResourceMutation<
       CreateRegexProfileMutationPayload,
@@ -1817,7 +2163,7 @@ export class ResourceToolProvider implements ToolProvider {
       this.createToolMutationEnvelope(context, {
         id: `resource-regex-profile-create:${nanoid()}`,
         kind: RESOURCE_MUTATION_KINDS.regexProfileCreate,
-        scopeType: 'resource.regex_profile',
+        scopeType: "resource.regex_profile",
         scopeKey: `account:${accountId}`,
         payload: { name },
       }),
@@ -1839,10 +2185,10 @@ export class ResourceToolProvider implements ToolProvider {
     requireAccountId(context);
     const presetId = args.preset_id as string | undefined;
     const identifier = args.identifier as string | undefined;
-    if (!presetId) return { error: 'preset_id is required' };
-    if (!identifier) return { error: 'identifier is required' };
+    if (!presetId) return { error: "preset_id is required" };
+    if (!identifier) return { error: "identifier is required" };
 
-    const enabled = typeof args.enabled === 'boolean' ? args.enabled : true;
+    const enabled = typeof args.enabled === "boolean" ? args.enabled : true;
     const entry = await this.applyResourceMutation<
       CreatePresetEntryMutationPayload,
       PresetEntryMutationResult
@@ -1850,18 +2196,24 @@ export class ResourceToolProvider implements ToolProvider {
       this.createToolMutationEnvelope(context, {
         id: `resource-preset-entry-create:${presetId}:${identifier}:${this.now()}`,
         kind: RESOURCE_MUTATION_KINDS.presetEntryCreate,
-        scopeType: 'resource.preset',
+        scopeType: "resource.preset",
         scopeKey: `preset:${presetId}`,
         payload: {
           presetId,
           identifier,
           promptData: {
-            name: typeof args.name === 'string' ? args.name : '',
-            role: typeof args.role === 'string' ? args.role : 'system',
-            content: typeof args.content === 'string' ? args.content : '',
-            system_prompt: typeof args.system_prompt === 'boolean' ? args.system_prompt : false,
-            marker: typeof args.marker === 'boolean' ? args.marker : false,
-            injection_position: typeof args.injection_position === 'number' ? args.injection_position : 0,
+            name: typeof args.name === "string" ? args.name : "",
+            role: typeof args.role === "string" ? args.role : "system",
+            content: typeof args.content === "string" ? args.content : "",
+            system_prompt:
+              typeof args.system_prompt === "boolean"
+                ? args.system_prompt
+                : false,
+            marker: typeof args.marker === "boolean" ? args.marker : false,
+            injection_position:
+              typeof args.injection_position === "number"
+                ? args.injection_position
+                : 0,
             enabled,
           },
         },
@@ -1891,30 +2243,35 @@ export class ResourceToolProvider implements ToolProvider {
     requireAccountId(context);
     const presetId = args.preset_id as string | undefined;
     const identifier = args.identifier as string | undefined;
-    if (!presetId) return { error: 'preset_id is required' };
-    if (!identifier) return { error: 'identifier is required' };
+    if (!presetId) return { error: "preset_id is required" };
+    if (!identifier) return { error: "identifier is required" };
 
     // Build fields object with only provided values
     const fields: Record<string, unknown> = {};
-    if (typeof args.name === 'string') fields.name = args.name;
-    if (typeof args.role === 'string') fields.role = args.role;
-    if (typeof args.content === 'string') fields.content = args.content;
-    if (typeof args.system_prompt === 'boolean') fields.system_prompt = args.system_prompt;
-    if (typeof args.marker === 'boolean') fields.marker = args.marker;
-    if (typeof args.injection_position === 'number') fields.injection_position = args.injection_position;
-    if (typeof args.enabled === 'boolean') fields.enabled = args.enabled;
+    if (typeof args.name === "string") fields.name = args.name;
+    if (typeof args.role === "string") fields.role = args.role;
+    if (typeof args.content === "string") fields.content = args.content;
+    if (typeof args.system_prompt === "boolean")
+      fields.system_prompt = args.system_prompt;
+    if (typeof args.marker === "boolean") fields.marker = args.marker;
+    if (typeof args.injection_position === "number")
+      fields.injection_position = args.injection_position;
+    if (typeof args.enabled === "boolean") fields.enabled = args.enabled;
 
     if (Object.keys(fields).length === 0) {
-      return { error: 'At least one field to update is required' };
+      return { error: "At least one field to update is required" };
     }
 
-    const entry = await this.applyResourceMutation<UpdatePresetEntryMutationPayload, PresetEntryMutationResult>(
+    const entry = await this.applyResourceMutation<
+      UpdatePresetEntryMutationPayload,
+      PresetEntryMutationResult
+    >(
       this.createToolMutationEnvelope(context, {
         id: `resource-preset-entry-update:${presetId}:${identifier}:${this.now()}`,
         kind: RESOURCE_MUTATION_KINDS.presetEntryUpdate,
-        scopeType: 'resource.preset',
+        scopeType: "resource.preset",
         scopeKey: `preset:${presetId}`,
-        replaySafety: 'confirm_on_replay',
+        replaySafety: "confirm_on_replay",
         payload: { presetId, identifier, fields },
       }),
     );
@@ -1935,4 +2292,533 @@ export class ResourceToolProvider implements ToolProvider {
     };
   }
 
+  // ── Structured text edit / search handlers ─────────────
+
+  private parseHunksArg(
+    input: unknown,
+  ): StructuredTextHunk[] | { error: string } {
+    let raw: unknown = input;
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        return {
+          error:
+            "hunks must be an array of { old_content, new_content, start_line? } objects",
+        };
+      }
+    }
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return {
+        error:
+          "hunks is required and must be a non-empty array of { old_content, new_content, start_line? } objects",
+      };
+    }
+    const hunks: StructuredTextHunk[] = [];
+    for (let i = 0; i < raw.length; i += 1) {
+      const item = raw[i] as Record<string, unknown> | null;
+      if (!item || typeof item !== "object") {
+        return {
+          error: `hunks[${i}] must be anobject with old_content and new_content`,
+        };
+      }
+      const oldContent = item.old_content ?? item.oldContent;
+      const newContent = item.new_content ?? item.newContent;
+      const startLineRaw = item.start_line ?? item.startLine;
+      if (typeof oldContent !== "string") {
+        return {
+          error: `hunks[${i}].old_content is required and must be a string`,
+        };
+      }
+      if (typeof newContent !== "string") {
+        return {
+          error: `hunks[${i}].new_content is required and must be a string`,
+        };
+      }
+      hunks.push({
+        oldContent,
+        newContent,
+        ...(typeof startLineRaw === "number"
+          ? { startLine: startLineRaw }
+          : {}),
+      });
+    }
+    return hunks;
+  }
+
+  private readCharacterFieldValue(
+    snapshot: CharacterSnapshot | null,
+    field: string,
+  ): string {
+    if (!snapshot) return "";
+    switch (field) {
+      case "description":
+        return snapshot.description ?? "";
+      case "personality":
+        return snapshot.personality ?? "";
+      case "scenario":
+        return snapshot.scenario ?? "";
+      case "first_mes":
+        return snapshot.primaryGreeting ?? snapshot.greeting ?? "";
+      case "mes_example":
+        return snapshot.exampleDialogue ?? "";
+      default:
+        return "";
+    }
+  }
+
+  private async readResourceTextField(
+    resourceType: EditableResourceType,
+    field: string,
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<{ content: string } | { error: string }> {
+    const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
+
+    if (resourceType === "character") {
+      const characterId = args.character_id as string | undefined;
+      if (!characterId) {
+        return {
+          error: "character_id is required when resource_type is character",
+        };
+      }
+      const [charRow] = await this.db
+        .select()
+        .from(characters)
+        .where(
+          and(
+            eq(characters.id, characterId),
+            eq(characters.accountId, accountId),
+            characterWorkspaceClause(workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!charRow) return { error: `Character not found: ${characterId}` };
+      const [latestVersion] = await this.db
+        .select()
+        .from(characterVersions)
+        .where(eq(characterVersions.characterId, characterId))
+        .orderBy(desc(characterVersions.versionNo))
+        .limit(1);
+      const snapshot: CharacterSnapshot | null = latestVersion
+        ? JSON.parse(latestVersion.dataJson)
+        : null;
+      return { content: this.readCharacterFieldValue(snapshot, field) };
+    }
+
+    if (resourceType === "worldbook_entry") {
+      const worldbookId = args.worldbook_id as string | undefined;
+      const entryId = args.entry_id as string | undefined;
+      if (!worldbookId) {
+        return {
+          error:
+            "worldbook_id is required when resource_type is worldbook_entry",
+        };
+      }
+      if (!entryId) {
+        return {
+          error: "entry_id is required when resource_type is worldbook_entry",
+        };
+      }
+      const [wb] = await this.db
+        .select()
+        .from(worldbooks)
+        .where(
+          and(
+            eq(worldbooks.id, worldbookId),
+            eq(worldbooks.accountId, accountId),
+            worldbookWorkspaceClause(workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!wb) return { error: `Worldbook not found: ${worldbookId}` };
+      const [entry] = await this.db
+        .select()
+        .from(worldbookEntries)
+        .where(
+          and(
+            eq(worldbookEntries.id, entryId),
+            eq(worldbookEntries.worldbookId, worldbookId),
+          ),
+        )
+        .limit(1);
+      if (!entry) return { error: `Entry not found: ${entryId}` };
+      return { content: entry.content };
+    }
+
+    // preset_entry
+    const presetId = args.preset_id as string | undefined;
+    const identifier = args.identifier as string | undefined;
+    if (!presetId) {
+      return {
+        error: "preset_id is required when resource_type is preset_entry",
+      };
+    }
+    if (!identifier) {
+      return {
+        error: "identifier is required when resource_type is preset_entry",
+      };
+    }
+    const loaded = this.loadPresetRawForTool(presetId, accountId, workspaceId);
+    if (!loaded) return { error: `Preset not found: ${presetId}` };
+    const entry = getEditorEntryFromRaw(loaded.raw, identifier);
+    if (!entry) return { error: `Entry not found: ${identifier}` };
+    return { content: entry.content };
+  }
+
+  private async writeResourceTextField(
+    resourceType: EditableResourceType,
+    field: string,
+    newText: string,
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<ToolCallResult> {
+    if (resourceType === "character") {
+      return await this.handleUpdateCharacter(
+        { character_id: args.character_id, [field]: newText },
+        context,
+      );
+    }
+    if (resourceType === "worldbook_entry") {
+      return await this.handleUpdateWorldbookEntry(
+        {
+          worldbook_id: args.worldbook_id,
+          entry_id: args.entry_id,
+          content: newText,
+        },
+        context,
+      );
+    }
+    return await this.handleUpdatePresetEntry(
+      {
+        preset_id: args.preset_id,
+        identifier: args.identifier,
+        content: newText,
+      },
+      context,
+    );
+  }
+
+  private buildHunkFailureFeedback(result: TextHunkApplyResult): string {
+    const lines: string[] = ["Failed to apply hunks; no changes were written."];
+    for (const h of result.hunks) {
+      if (h.matched) {
+        lines.push(`- hunk[${h.index}]: matched`);
+        continue;
+      }
+      let msg = `- hunk[${h.index}]: ${h.reason ?? "no match"}`;
+      if (h.candidateLines && h.candidateLines.length > 0) {
+        msg += ` (candidate lines: ${h.candidateLines.join(", ")})`;
+      }
+      lines.push(msg);
+    }
+    return lines.join("\n");
+  }
+
+  private async handleEditResourceText(
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<ToolCallResult> {
+    const resourceType = args.resource_type as string | undefined;
+    if (
+      resourceType !== "character" &&
+      resourceType !== "worldbook_entry" &&
+      resourceType !== "preset_entry"
+    ) {
+      return {
+        error:
+          "resource_type is required and must be one of: character, worldbook_entry, preset_entry",
+      };
+    }
+
+    const field = args.field as string | undefined;
+    if (typeof field !== "string" || field.trim() === "") {
+      return { error: "field is required" };
+    }
+    const allowedFields = EDITABLE_TEXT_FIELDS[resourceType];
+    if (!allowedFields.includes(field)) {
+      return {
+        error: `field "${field}" is not editable for resource_type "${resourceType}". Allowed fields: ${allowedFields.join(", ")}`,
+      };
+    }
+
+    const parsedHunks = this.parseHunksArg(args.hunks);
+    if (!Array.isArray(parsedHunks)) {
+      return { error: parsedHunks.error };
+    }
+
+    const read = await this.readResourceTextField(
+      resourceType,
+      field,
+      args,
+      context,
+    );
+    if ("error" in read) {
+      return { error: read.error };
+    }
+
+    const applyResult = applyStructuredTextHunks(read.content, parsedHunks);
+    if (!applyResult.ok || applyResult.newText === undefined) {
+      return { error: this.buildHunkFailureFeedback(applyResult) };
+    }
+
+    const writeResult = await this.writeResourceTextField(
+      resourceType,
+      field,
+      applyResult.newText,
+      args,
+      context,
+    );
+    if (writeResult.error) {
+      return writeResult;
+    }
+
+    return {
+      data: {
+        ...(writeResult.data as Record<string, unknown> | undefined),
+        resource_type: resourceType,
+        field,
+        hunks: applyResult.hunks.map((h) => ({
+          index: h.index,
+          matched: h.matched,
+          ...(h.matchKind ? { match_kind: h.matchKind } : {}),
+        })),
+      },
+    };
+  }
+
+  private async collectSearchTargets(
+    resourceType: EditableResourceType,
+    fields: string[],
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<
+    | {
+        items: Array<{
+          locator: Record<string, unknown>;
+          field: string;
+          content: string;
+        }>;
+      }
+    | { error: string }
+  > {
+    const accountId = requireAccountId(context);
+    const workspaceId = this.resolveWorkspace(accountId);
+    const items: Array<{
+      locator: Record<string, unknown>;
+      field: string;
+      content: string;
+    }> = [];
+
+    if (resourceType === "character") {
+      const characterId = args.character_id as string | undefined;
+      let charIds: string[];
+      if (characterId) {
+        const [charRow] = await this.db
+          .select()
+          .from(characters)
+          .where(
+            and(
+              eq(characters.id, characterId),
+              eq(characters.accountId, accountId),
+              characterWorkspaceClause(workspaceId),
+            ),
+          )
+          .limit(1);
+        if (!charRow) return { error: `Character not found: ${characterId}` };
+        charIds = [characterId];
+      } else {
+        const rows = await this.db
+          .select({ id: characters.id })
+          .from(characters)
+          .where(
+            and(
+              eq(characters.accountId, accountId),
+              characterWorkspaceClause(workspaceId),
+            ),
+          );
+        charIds = rows.map((r) => r.id);
+      }
+      for (const id of charIds) {
+        const [latestVersion] = await this.db
+          .select()
+          .from(characterVersions)
+          .where(eq(characterVersions.characterId, id))
+          .orderBy(desc(characterVersions.versionNo))
+          .limit(1);
+        const snapshot: CharacterSnapshot | null = latestVersion
+          ? JSON.parse(latestVersion.dataJson)
+          : null;
+        for (const f of fields) {
+          items.push({
+            locator: { character_id: id },
+            field: f,
+            content: this.readCharacterFieldValue(snapshot, f),
+          });
+        }
+      }
+      return { items };
+    }
+
+    if (resourceType === "worldbook_entry") {
+      const worldbookId = args.worldbook_id as string | undefined;
+      if (!worldbookId) {
+        return {
+          error:
+            "worldbook_id is required when resource_type is worldbook_entry",
+        };
+      }
+      const [wb] = await this.db
+        .select()
+        .from(worldbooks)
+        .where(
+          and(
+            eq(worldbooks.id, worldbookId),
+            eq(worldbooks.accountId, accountId),
+            worldbookWorkspaceClause(workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!wb) return { error: `Worldbook not found: ${worldbookId}` };
+      const entryId = args.entry_id as string | undefined;
+      const rows = entryId
+        ? await this.db
+            .select()
+            .from(worldbookEntries)
+            .where(
+              and(
+                eq(worldbookEntries.id, entryId),
+                eq(worldbookEntries.worldbookId, worldbookId),
+              ),
+            )
+            .limit(1)
+        : await this.db
+            .select()
+            .from(worldbookEntries)
+            .where(eq(worldbookEntries.worldbookId, worldbookId));
+      if (entryId && rows.length === 0)
+        return { error: `Entry not found: ${entryId}` };
+      for (const entry of rows) {
+        items.push({
+          locator: { worldbook_id: worldbookId, entry_id: entry.id },
+          field: "content",
+          content: entry.content,
+        });
+      }
+      return { items };
+    }
+
+    // preset_entry
+    const presetId = args.preset_id as string | undefined;
+    if (!presetId) {
+      return {
+        error: "preset_id is required when resource_type is preset_entry",
+      };
+    }
+    const loaded = this.loadPresetRawForTool(presetId, accountId, workspaceId);
+    if (!loaded) return { error: `Preset not found: ${presetId}` };
+    const identifier = args.identifier as string | undefined;
+    if (identifier) {
+      const entry = getEditorEntryFromRaw(loaded.raw, identifier);
+      if (!entry) return { error: `Entry not found: ${identifier}` };
+      items.push({
+        locator: { preset_id: presetId, identifier },
+        field: "content",
+        content: entry.content,
+      });
+    } else {
+      const { entries } = getAllEditorEntriesFromRaw(loaded.raw);
+      for (const entry of entries) {
+        items.push({
+          locator: { preset_id: presetId, identifier: entry.identifier },
+          field: "content",
+          content: entry.content,
+        });
+      }
+    }
+    return { items };
+  }
+
+  private async handleSearchResourceText(
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<ToolCallResult> {
+    const resourceType = args.resource_type as string | undefined;
+    if (
+      resourceType !== "character" &&
+      resourceType !== "worldbook_entry" &&
+      resourceType !== "preset_entry"
+    ) {
+      return {
+        error:
+          "resource_type is required and must be one of: character, worldbook_entry, preset_entry",
+      };
+    }
+
+    const query = args.query as string | undefined;
+    if (typeof query !== "string" || query === "") {
+      return { error: "query is required and must be a non-empty string" };
+    }
+
+    const isRegex = args.is_regex === true;
+    let matcher: (line: string) => boolean;
+    if (isRegex) {
+      let re: RegExp;
+      try {
+        re = new RegExp(query);
+      } catch (err) {
+        return {
+          error: `Invalid regular expression: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+      matcher = (line) => re.test(line);
+    } else {
+      matcher = (line) => line.includes(query);
+    }
+
+    const field = typeof args.field === "string" ? args.field : undefined;
+    const allowedFields = EDITABLE_TEXT_FIELDS[resourceType];
+    if (field && !allowedFields.includes(field)) {
+      return {
+        error: `field "${field}" is not searchable for resource_type "${resourceType}". Allowed fields: ${allowedFields.join(", ")}`,
+      };
+    }
+    const fields = field ? [field] : [...allowedFields];
+
+    const targets = await this.collectSearchTargets(
+      resourceType,
+      fields,
+      args,
+      context,
+    );
+    if ("error" in targets) {
+      return { error: targets.error };
+    }
+
+    const matches: Array<Record<string, unknown>> = [];
+    for (const target of targets.items) {
+      const contentLines = target.content.split("\n");
+      for (let i = 0; i < contentLines.length; i += 1) {
+        const lineText = contentLines[i]!;
+        if (matcher(lineText)) {
+          matches.push({
+            ...target.locator,
+            field: target.field,
+            line: i + 1,
+            text:
+              lineText.length > 200 ? `${lineText.slice(0, 200)}…` : lineText,
+          });
+        }
+      }
+    }
+
+    return {
+      data: {
+        resource_type: resourceType,
+        match_count: matches.length,
+        matches,
+      },
+    };
+  }
 }
