@@ -10,10 +10,14 @@ import {
   Trash2,
   X,
 } from "lucide-vue-next";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import { collectIrreversibleSideEffectsFrom } from "@tavern/client-helpers";
+
 import { useGraphAssistantStore } from "../../../stores/graph-assistant";
+import type { MentionRef } from "./mention-types";
+import { useModelsStore } from "../../../stores/models";
 import UiIconButton from "../../../ui/UiIconButton.vue";
 import AssistantComposer from "./AssistantComposer.vue";
 import AssistantMessageList from "./AssistantMessageList.vue";
@@ -30,6 +34,26 @@ const emit = defineEmits<{ (event: "close"): void }>();
 
 const { t, te } = useI18n();
 const store = useGraphAssistantStore();
+const modelsStore = useModelsStore();
+
+// 楼层卡片头部展示的模型名：取当前全局默认 Profile 的展示名（当前值，非各楼层历史真值）。
+onMounted(() => {
+  if (modelsStore.profiles.length ===0) {
+    void modelsStore.loadProfiles();
+  }
+  if (modelsStore.runtime.length === 0) {
+    void modelsStore.loadRuntime();
+  }
+});
+
+/** 当前选中模型名；取不到时交由卡片用占位短横线兜底。 */
+const modelName = computed(() => {
+  const id = modelsStore.activeProfileId;
+  if (!id) {
+    return "";
+  }
+  return modelsStore.profiles.find((profile) => profile.id === id)?.presetName ?? "";
+});
 
 // 窗口化（停靠 / 浮动）与拖拽、缩放状态
 const { floating, x, y, width, height, toggleFloating, startDrag, startResize } = useFloatingWindow();
@@ -106,8 +130,8 @@ const errorMessage = computed(() => store.error);
 /** 窗口化按钮文案：浮动时提示「停靠回侧栏」，停靠时提示「窗口化」。 */
 const windowizeLabel = computed(() => (floating.value ? t("graphAssistant.dock") : t("graphAssistant.windowize")));
 
-function onSend(text: string): void {
-  void store.sendMessage(ctx.value, text);
+function onSend(payload: { text: string; mentions: MentionRef[] }): void {
+  void store.sendMessage(ctx.value, payload.text, payload.mentions);
 }
 
 function onStop(): void {
@@ -136,7 +160,34 @@ function onDiscard(): void {
 
 /** 新开一段：仅清本地态，下次发送重新懒创建。 */
 function onNew(): void {
-  store.reset();
+store.reset();
+}
+
+// 楼层重试：在已提交楼层上开新消息页版本，重跑整轮（store 串行化 + 流式回显）。
+function onRetryFloor(floorId: string): void {
+  void store.retryFloor(floorId);
+}
+// step 级重试：从指定步重新生成。
+// 关键约束：重试会丢弃起点及其之后的步重跑。若这个被丢弃范围里含写类副作用工具（已真实执行、
+// 不会回滚），先弹框告知用户并由其决定是否继续；判定用本地 transcript 数据，必须在发起请求前完成。
+function onRetryStep(payload: { floorId: string; stepIndex: number }): void {
+  const floor = store.floors.find((item) => item.id === payload.floorId);
+  if (floor) {
+    const sideEffects = collectIrreversibleSideEffectsFrom(floor.steps, payload.stepIndex);
+    if (sideEffects.length > 0) {
+  const toolNames = sideEffects.map((item) => item.toolName).join("\n");
+    if (!window.confirm(t("graphAssistant.floor.retryStepSideEffectConfirm", { tools: toolNames }))) {
+        return;
+      }
+    }
+  }
+  void store.retryStep(payload.floorId, payload.stepIndex);
+}
+
+
+// 楼层删除：本阶段只接事件出口，实际逻辑留待后续阶段。
+function onDeleteFloor(_floorId: string): void {
+  // TODO(楼层操作): 删除该楼层。
 }
 
 /** 仅浮动状态下，从标题区按下才触发拖拽。 */
@@ -237,9 +288,15 @@ function onHeaderPointerDown(event: PointerEvent): void {
       </p>
 
       <AssistantMessageList
-        :messages="store.messages"
+        :floors="store.floors"
         :stream="store.stream"
         :loading="store.loading"
+        :model-name="modelName"
+        :busy="store.sending || store.resolving || store.stream.active || store.hasPending"
+        :retrying-floor-id="store.retryingFloorId"
+        @retry="onRetryFloor"
+        @delete="onDeleteFloor"
+        @retry-step="onRetryStep"
       />
 
       <!-- 执行前确认闸：停在待确认时渲染卡片，批准（自动续跑）/ 拒绝（交回控制权） -->
@@ -278,6 +335,7 @@ function onHeaderPointerDown(event: PointerEvent): void {
       <AssistantComposer
         :disabled="composerDisabled"
         :busy="store.sending"
+        :project-id="props.projectId"
         @send="onSend"
         @stop="onStop"
       />

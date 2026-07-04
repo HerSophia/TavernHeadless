@@ -5,7 +5,9 @@ import {
   isToolCallTransportAllowedInPromptMode,
   listToolCallTransportsForPromptMode,
   normalizeToolCallTransportKind,
+  normalizeToolTransportPreference,
   readToolCallTransportOverride,
+  resolveGraphAssistantToolTransport,
 } from "../../chat/tool-call-transport-resolver.js";
 
 describe("ToolCallTransportResolver", () => {
@@ -132,7 +134,7 @@ describe("ToolCallTransportResolver", () => {
   it("keeps native_function_call as the default path", () => {
     const resolver = new ToolCallTransportResolver();
 
-    expect(resolver.resolve({
+       expect(resolver.resolve({
       sessionId: "session-1",
       promptMode: "compat_plus",
       toolsEnabled: true,
@@ -140,5 +142,65 @@ describe("ToolCallTransportResolver", () => {
       transport: "native_function_call",
       reasonCode: "default_native_function_call",
     }));
+  });
+});
+
+describe("normalizeToolTransportPreference", () => {
+  it("keeps the three valid preferences", () => {
+    expect(normalizeToolTransportPreference("auto")).toBe("auto");
+    expect(normalizeToolTransportPreference("native")).toBe("native");
+    expect(normalizeToolTransportPreference("text_protocol")).toBe("text_protocol");
+  });
+
+  it("falls back to auto for unknown or missing values", () => {
+    expect(normalizeToolTransportPreference(undefined)).toBe("auto");
+    expect(normalizeToolTransportPreference("bad")).toBe("auto");
+    expect(normalizeToolTransportPreference(null)).toBe("auto");
+  });
+});
+
+describe("resolveGraphAssistantToolTransport", () => {
+  it("auto picks native when capability is unknownor supported", () => {
+    expect(resolveGraphAssistantToolTransport("auto", undefined)).toEqual({
+      transport: "native_function_call",
+      nativeFellBack: false,
+    });
+    expect(resolveGraphAssistantToolTransport("auto", true)).toEqual({
+      transport: "native_function_call",
+      nativeFellBack: false,
+    });
+  });
+
+  it("auto falls back to text_protocol when capability is explicitly false", () => {
+    expect(resolveGraphAssistantToolTransport("auto", false)).toEqual({
+      transport: "text_protocol",
+      nativeFellBack: false,
+});
+  });
+
+  it("native forces native when supported and falls back safely when unsupported", () => {
+    expect(resolveGraphAssistantToolTransport("native", true)).toEqual({
+      transport: "native_function_call",
+      nativeFellBack: false,
+    });
+    expect(resolveGraphAssistantToolTransport("native", undefined)).toEqual({
+      transport: "native_function_call",
+      nativeFellBack: false,
+    });
+    expect(resolveGraphAssistantToolTransport("native", false)).toEqual({
+      transport: "text_protocol",
+      nativeFellBack: true,
+    });
+  });
+
+  it("text_protocol always forces the text protocol", () => {
+    expect(resolveGraphAssistantToolTransport("text_protocol", true)).toEqual({
+    transport: "text_protocol",
+      nativeFellBack: false,
+    });
+    expect(resolveGraphAssistantToolTransport("text_protocol", false)).toEqual({
+      transport: "text_protocol",
+      nativeFellBack: false,
+    });
   });
 });

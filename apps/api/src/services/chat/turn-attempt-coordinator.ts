@@ -57,6 +57,9 @@ export function resolveReplayModeForMode(mode: TurnAttemptMode): TurnReplayMode 
 export function resolveReplayModeForRunType(runType: FloorRunType): TurnReplayMode {
   switch (runType) {
     case "retry_turn":
+    // step 重试复用 retry_turn 的上下文刷新语义（从源楼层重建上下文，再从指定步重启）。
+    // eslint-disable-next-line no-fallthrough
+    case "retry_step":
       return "with_context_refresh";
     case "respond":
     case "regenerate_page":
@@ -72,6 +75,9 @@ export function modeFromRunType(runType: FloorRunType): TurnAttemptMode {
     case "regenerate_page":
       return "regenerate";
     case "retry_turn":
+    // step 重试复用 retry_floor 的 attempt 语义（新 attempt / 新 page version，不新建 floorNo）。
+    // eslint-disable-next-line no-fallthrough
+    case "retry_step":
       return "retry_floor";
     case "edit_and_regenerate":
       return "edit_and_regenerate";

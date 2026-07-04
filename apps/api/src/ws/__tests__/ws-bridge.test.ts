@@ -424,13 +424,32 @@ describe('WsBridge', () => {
     }));
   });
 
-  it('does not send events without sessionId to session-scoped clients, but still sends them to global clients', async () => {
+  it('routes generation.started carrying sessionId to the matching session client and to global clients', async () => {
     const sessionSocket = createMockSocket();
     const globalSocket = createMockSocket();
     bridge.addClient(sessionSocket, 'session-1');
     bridge.addClient(globalSocket);
 
-    // generation.started has floorId but no sessionId in data.
+    // RT1: generation.started now carries a top-level sessionId.
+    await eventBus.emit('generation.started', {
+      sessionId: 'session-1',
+      floorId: 'floor-1',
+    });
+
+    expect(parseSent(sessionSocket)).toHaveLength(1);
+    expect(parseSent(sessionSocket)[0]!.event).toBe('generation.started');
+    expect((parseSent(sessionSocket)[0]!.data as any).sessionId).toBe('session-1');
+    expect(parseSent(globalSocket)).toHaveLength(1);
+  });
+
+  it('still fails closed when a generation event has no sessionId (degradation path)', async () => {
+    const sessionSocket = createMockSocket();
+    const globalSocket = createMockSocket();
+    bridge.addClient(sessionSocket, 'session-1');
+    bridge.addClient(globalSocket);
+
+    // Edge case: input.sessionId missing → event without sessionId.
+    // Session client must drop it; global client still receives it.
     await eventBus.emit('generation.started', {
       floorId: 'floor-1',
     });
@@ -785,5 +804,99 @@ describe('WsBridge', () => {
 
     expect(parseSent(sessionSocket)).toHaveLength(0);
     expect(parseSent(globalSocket)).toHaveLength(1);
+  });
+
+  // ── 生成事件 session 路由（RT1） ──────────────────────
+  describe('generation event session routing (RT1)', () => {
+    it('isolates generation.started across sessions', async () => {
+      const socket1 = createMockSocket();
+      const socket2 = createMockSocket();
+      bridge.addClient(socket1, 'session-1');
+      bridge.addClient(socket2, 'session-2');
+
+      await eventBus.emit('generation.started', {
+        sessionId: 'session-1',
+        floorId: 'floor-1',
+      });
+
+      expect(parseSent(socket1)).toHaveLength(1);
+      // session-2 client must not receive session-1's generation event.
+      expect(parseSent(socket2)).toHaveLength(0);
+    });
+
+    it('delivers generation events to the admin global client regardless of sessionId', async () => {
+      const adminSocket = createMockSocket();
+      bridge.addClient(adminSocket); // no sessionId filter
+
+      await eventBus.emit('generation.started', {
+        sessionId: 'session-1',
+        floorId: 'floor-1',
+      });
+      await eventBus.emit('generation.started', {
+        floorId: 'floor-2',
+      });
+
+      expect(parseSent(adminSocket)).toHaveLength(2);
+    });
+
+    it('routes generation.chunk by sessionId', async () => {
+      const socket1 = createMockSocket();
+      const socket2 = createMockSocket();
+      bridge.addClient(socket1, 'session-1');
+      bridge.addClient(socket2, 'session-2');
+
+      await eventBus.emit('generation.chunk', {
+        sessionId: 'session-1',
+        floorId: 'floor-1',
+        chunk: 'Hello ',
+        accumulatedLength: 6,
+      });
+
+      const messages1 = parseSent(socket1);
+      expect(messages1).toHaveLength(1);
+      expect(messages1[0]!.event).toBe('generation.chunk');
+      expect((messages1[0]!.data as any).chunk).toBe('Hello ');
+      expect(parseSent(socket2)).toHaveLength(0);
+    });
+
+    it('routes generation.completed by sessionId', async () => {
+      const socket1 = createMockSocket();
+      const socket2 = createMockSocket();
+      bridge.addClient(socket1, 'session-1');
+      bridge.addClient(socket2, 'session-2');
+
+      await eventBus.emit('generation.completed', {
+        sessionId: 'session-1',
+        floorId: 'floor-1',
+        text: 'final answer',
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        finishReason: 'stop',
+        summaries: [],
+      });
+
+      const messages1 = parseSent(socket1);
+      expect(messages1).toHaveLength(1);
+      expect(messages1[0]!.event).toBe('generation.completed');
+      expect((messages1[0]!.data as any).text).toBe('final answer');
+      expect(parseSent(socket2)).toHaveLength(0);
+    });
+
+    it('routes generation.failed by sessionId', async () => {
+      const socket1 = createMockSocket();
+      const socket2 = createMockSocket();
+      bridge.addClient(socket1, 'session-1');
+      bridge.addClient(socket2, 'session-2');
+
+      await eventBus.emit('generation.failed', {
+        sessionId: 'session-1',
+        floorId: 'floor-1',
+        error: new Error('boom'),
+      });
+
+      const messages1 = parseSent(socket1);
+      expect(messages1).toHaveLength(1);
+      expect(messages1[0]!.event).toBe('generation.failed');
+      expect(parseSent(socket2)).toHaveLength(0);
+    });
   });
 });

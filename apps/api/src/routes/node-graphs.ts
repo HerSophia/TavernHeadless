@@ -28,6 +28,7 @@ import {
   DEFAULT_NODE_GRAPH_PROJECT_RUN_CONCURRENCY,
   DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET,
   checkNodeGraphSyncSizeBudget,
+  resolveNodeGraphRuntimeBudget,
 } from "../services/node-graph-runtime/budget.js";
 import { countActiveProjectGraphRunJobs } from "../services/node-graph-runtime/concurrency.js";
 import { RUNTIME_GOVERNANCE_BUDGET_REASON_CODES } from "../services/governance/runtime-governance-types.js";
@@ -502,7 +503,10 @@ export async function registerNodeGraphRoutes(
       const service = new NodeGraphDefinitionService(db);
       const document = body.data?.document
         ?? service.getCurrentVersion({ actor, projectId: params.data.id, graphId: params.data.graph_id }).document;
-      const validateSizeViolation = checkNodeGraphSyncSizeBudget(document, DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET);
+      const validateSizeViolation = checkNodeGraphSyncSizeBudget(
+        document,
+        resolveNodeGraphRuntimeBudget(DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET, document.budgets),
+      );
       if (validateSizeViolation) {
         return sendError(reply, 422, validateSizeViolation.reasonCode, validateSizeViolation.message);
       }
@@ -525,7 +529,10 @@ export async function registerNodeGraphRoutes(
       const version = body.data?.version_id
         ? service.getVersion({ actor, projectId: params.data.id, graphId: params.data.graph_id, versionId: body.data.version_id })
         : service.getCurrentVersion({ actor, projectId: params.data.id, graphId: params.data.graph_id });
-      const previewSizeViolation = checkNodeGraphSyncSizeBudget(version.document, DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET);
+      const previewSizeViolation = checkNodeGraphSyncSizeBudget(
+        version.document,
+        resolveNodeGraphRuntimeBudget(DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET, version.document.budgets),
+      );
       if (previewSizeViolation) {
         return sendError(reply, 422, previewSizeViolation.reasonCode, previewSizeViolation.message);
       }

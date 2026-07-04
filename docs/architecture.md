@@ -941,7 +941,7 @@ CREATE TABLE tool_execution_record (
 | 来源 | 说明 |
 | ---- | ---- |
 | **内置工具（builtin）** | 引擎自带的 7 个通用工具：`get_variable`、`set_variable`、`roll_dice`、`random_choice`、`get_time`、`query_memory`、`get_character_info` |
-| **资源管理工具（builtin）** | 23 个资源操作工具（`ResourceToolProvider`）：角色卡 CRUD + 版本列表（5 个）、世界书 CRUD + 条目摘要/单读（7 个）、正则配置读写 + 列表/创建（6 个）、预设读写（5 个）。允许 LLM 在对话中主动读写资源，创建的资源 `source = 'tool'`。写入工具 `sideEffectLevel = 'irreversible'`。 |
+| **资源管理工具（builtin）** | 25 个资源操作工具（`ResourceToolProvider`）：角色卡 CRUD + 版本列表（5 个）、世界书 CRUD + 条目摘要/单读（7 个）、正则配置读写 + 列表/创建（6 个）、预设读写（5 个）、长文本结构化局部编辑与搜索（2 个：`edit_resource_text` / `search_resource_text`）。允许 LLM 在对话中主动读写资源，创建的资源 `source = 'tool'`。写入工具 `sideEffectLevel = 'irreversible'`，其中只读的 `search_resource_text` 为 `none`。 |
 | **预设/角色卡工具（preset）** | 从数据库加载的自定义工具定义，支持脚本执行 |
 | **MCP 工具** | 通过 MCP（Model Context Protocol）连接外部工具服务器。支持 stdio 和 Streamable HTTP 两种传输方式。通过 `ENABLE_MCP=true` 启用，需通过 API 配置 MCP 服务器后才会注册工具。 |
 

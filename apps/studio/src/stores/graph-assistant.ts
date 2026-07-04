@@ -11,10 +11,17 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
+import { canRetryFromStep, collectIrreversibleSideEffectsBefore } from "@tavern/client-helpers";
+
 import {
   GRAPH_ASSISTANT_PURPOSE,
   streamTempRespond,
+  streamTempRetry,
+  streamTempRetryStep,
   tempConversationApi,
+  type TempStreamStepNarration,
+  type TempStreamToolEvent,
+  type TemporaryConversationIrreversibleSideEffect,
   type TemporaryConversationRecord,
   type TemporaryConversationTranscript,
 } from "../lib/temp-conversation";
@@ -22,6 +29,19 @@ import {
   graphAssistantConfirmationApi,
   type GraphAssistantPendingToolCall,
 } from "../lib/graph-assistant-confirmation-api";
+import { buildGraphContextSnapshot } from "../modules/graph/assistant/build-context-snapshot";
+import { buildMentionsBlock } from "../modules/graph/assistant/build-mentions-block";
+import type { MentionRef } from "../modules/graph/assistant/mention-types";
+import { collectContextBlocks } from "../modules/graph/assistant/collect-context-blocks";
+import { renderDynamicPrompt } from "../modules/graph/assistant/render-dynamic-prompt";
+import { applyTokenBudget } from "../modules/graph/assistant/estimate-tokens";
+import {
+  buildFloorViews,
+  type AssistantFloorView,
+} from "../modules/graph/assistant/floor-view-model";
+import { useGraphAssistantPromptStore } from "./graph-assistant-prompt";
+import { useGraphAssistantGenerationStore } from "./graph-assistant-generation";
+import { useGraphAssistantToolTransportStore } from "./graph-assistant-tool-transport";
 
 /** 扁平化后的助手消息（仅保留渲染所需字段）。 */
 export interface AssistantMessage {
@@ -31,13 +51,23 @@ export interface AssistantMessage {
   createdAt: number;
 }
 
-/** 流式发送的临时态（乐观回显 + 累加正文）。 */
+/** 流式发送的临时态（乐观回显 + 累加正文 + 累加思维链 + 本回合工具事件）。 */
 export interface AssistantStreamState {
   active: boolean;
   /** 乐观回显的用户输入。 */
   pendingUserText: string;
   /** 累加的助手正文。 */
   text: string;
+  /** 累加的推理（思维链）文本；模型不返回 reasoning 时恒为空串。 */
+  reasoningText: string;
+  /** 思考开始时间戳（首个 reasoning delta到达）；未开始为 null。 */
+  reasoningStartedAt: number | null;
+  /** 思考耗时（首个正文 chunk 到达时定格）；未定格为 null。 */
+  reasoningDurationMs: number | null;
+  /** 本回合流式期间收集的工具调用事件（按 executionId 合并），供进行中楼层卡片显示。 */
+  toolEvents: TempStreamToolEvent[];
+  /** 本回合流式期间收集的中间叙述（按 stepIndex 合并），供进行中楼层卡片在工具组前显示。 */
+  stepNarrations: TempStreamStepNarration[];
   error: string | null;
 }
 
@@ -50,8 +80,39 @@ export interface AssistantContext {
 /** 会话已非 active 时的本地兜底文案（UI 另以 i18n 按 status 呈现，见阶段 2/3）。 */
 const NOT_ACTIVE_MESSAGE = "This conversation is no longer active.";
 
+/** step 级重试起点为写类工具（不可作为起点）时的本地兜底文案。 */
+const RETRY_STEP_BLOCKED_MESSAGE = "这一步带有写类副作用，不能作为重试起点。";
+
+/** 起点工具拿不到生成步号（旧数据），无法定位重试起点时的本地兼底文案。 */
+const RETRY_STEP_UNLOCATABLE_MESSAGE = "这一步缺少生成步号（可能是早期数据），暂时无法从这一步重试。";
+
 function emptyStream(): AssistantStreamState {
-  return { active: false, pendingUserText: "", text: "", error: null };
+  return {
+    active: false,
+    pendingUserText: "",
+    text: "",
+    reasoningText: "",
+   reasoningStartedAt: null,
+    reasoningDurationMs: null,
+    toolEvents: [],
+    stepNarrations: [],
+    error: null,
+  };
+}
+
+/** 进入流式发送的初始态（乐观回显文本按调用方传入；重试无用户输入时传空串）。 */
+function activeStream(pendingUserText: string): AssistantStreamState {
+return {
+    active: true,
+    pendingUserText,
+    text: "",
+    reasoningText: "",
+    reasoningStartedAt: null,
+    reasoningDurationMs: null,
+    toolEvents: [],
+    stepNarrations: [],
+    error: null,
+  };
 }
 
 function readStatus(cause: unknown): number | undefined {
@@ -150,6 +211,8 @@ export function flattenTranscript(transcript: TemporaryConversationTranscript): 
 export const useGraphAssistantStore = defineStore("graph-assistant", () => {
   const conversation = ref<TemporaryConversationRecord | null>(null);
   const messages = ref<AssistantMessage[]>([]);
+  /** 最近一次拉取的落库 transcript（楼层视图模型的事实源）。 */
+  const transcript = ref<TemporaryConversationTranscript | null>(null);
   const stream = ref<AssistantStreamState>(emptyStream());
   const sending = ref(false);
   const loading = ref(false);
@@ -160,7 +223,26 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
   const pendingToolCalls = ref<GraphAssistantPendingToolCall[]>([]);
   /** 正在批准 / 拒绝某条待确认（含批准后的同步续跑）。 */
   const resolving = ref(false);
+  /**
+   * 最近一次 step 级重试起点之前已产生、不会回滚的写类副作用清单。
+   *
+   * 发起 retryStep 前先用本地 step 序列 best-effort 填充，流结束后用后端返回的权威值覆盖。
+   * 供将来 UI 提示用（本期不渲染）。
+   */
+  const lastRetryStepSideEffects = ref<TemporaryConversationIrreversibleSideEffect[]>([]);
+  /**
+   * 当前正在重试（floor / step 级）的目标楼层 id；非重试（respond 新楼层）为 null。
+   *
+   * 重试语义是「开新消息页」：在同一楼层就地产出新输出页版本，而非新建楼层。流式期间
+   * 前端据此把「进行中」卡片就地渲染在被重试楼层位置（而非追加到列表末尾）。
+   */
+  const retryingFloorId = ref<string | null>(null);
   let abortController: AbortController | null = null;
+
+  /** 按楼层分组的视图模型（取代扁平 messages 供新版楼层卡片渲染）。 */
+  const floors = computed<AssistantFloorView[]>(() =>
+    transcript.value ? buildFloorViews(transcript.value) : [],
+  );
 
   /** 会话处于 active（可发送 / 续写）。 */
   const isActive = computed(() => conversation.value?.status === "active");
@@ -224,8 +306,9 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     }
     loading.value = true;
     try {
-      const transcript = await tempConversationApi.getTranscript(id);
-      messages.value = flattenTranscript(transcript);
+      const loaded = await tempConversationApi.getTranscript(id);
+      transcript.value = loaded;
+      messages.value = flattenTranscript(loaded);
     } catch (cause) {
       error.value = classifyError(cause).message;
     } finally {
@@ -254,10 +337,120 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     }
   }
 
-  /** 发送一条用户消息：懒创建 → 乐观流式 → done 后回拉 transcript 覆盖乐观态。串行化（sending 守卫）。 */
-  async function sendMessage(ctx: AssistantContext, text: string): Promise<void> {
+  /**
+   * 求值本回合动态上下文文本（图助手 · 提示词阶段二）。
+   *
+   * 按项目级配置采集画布数据块并用动态模板渲染：
+   * 1. 确保 prompt 配置已加载到当前项目（未加载或换了项目时拉取）；
+   * 2. 从 graph-editor / context store装配画布快照；
+   * 3. 按 contextConfig 采集数据块，再用 dynamicTemplate（留空走内置默认模板）渲染。
+   *
+   * 任一步出错都降级为「不注入」（返回空串），不阻断发送。
+   */
+  async function resolveDynamicContext(projectId?: string | null): Promise<string> {
+    if (!projectId) {
+      return "";
+    }
+    try {
+      const promptStore = useGraphAssistantPromptStore();
+      if (promptStore.projectId !== projectId) {
+        await promptStore.load(projectId);
+      }
+      const snapshot = buildGraphContextSnapshot();
+      const blocks = collectContextBlocks(snapshot, promptStore.contextConfig);
+      const rendered = renderDynamicPrompt(blocks, promptStore.dynamicTemplate);
+      return applyTokenBudget(rendered, promptStore.contextConfig.maxTokens).text;
+    } catch {
+      // 上下文求值失败不致命：降级为不注入，照常发送。
+      return "";
+    }
+  }
+
+  /**
+   * 构造流式发送的回调集合（respond / retry / retryStep 共用）。
+   *
+   * 全部回调都写 `stream.value`（响应式）：正文按 delta 累加并定格思考耗时，推理按 delta
+   * 累加，中间叙述与工具事件按 id 合并（同 id 覆盖、新 id 追加）。
+   */
+  function buildStreamCallbacks() {
+    return {
+      onChunk: (delta: string) => {
+        // 首个正文到达即视为思考结束，定格思考耗时（仅当此前已开始思考）。
+        if (stream.value.reasoningStartedAt !== null && stream.value.reasoningDurationMs === null) {
+          stream.value.reasoningDurationMs = Date.now() - stream.value.reasoningStartedAt;
+        }
+        stream.value.text += delta;
+      },
+      onReasoning: (delta: string) => {
+        // 首个 reasoning delta 记录思考开始时间。
+        if (stream.value.reasoningStartedAt === null) {
+          stream.value.reasoningStartedAt = Date.now();
+        }
+        stream.value.reasoningText += delta;
+      },
+      onStepNarration: (narration: TempStreamStepNarration) => {
+        //同一 stepIndex 覆盖、新 stepIndex 追加；供进行中楼层卡片在工具组前显示。
+        const list = stream.value.stepNarrations;
+        const idx = list.findIndex((item) => item.stepIndex === narration.stepIndex);
+        if (idx >= 0) {
+          list[idx] = narration;
+        } else {
+          list.push(narration);
+    }
+      },
+      onTool: (event: TempStreamToolEvent) => {
+        // 同一 executionId 会先后报 start / success 等 phase，同 id 覆盖、新 id 追加。
+        const list = stream.value.toolEvents;
+        const idx = list.findIndex((item) => item.executionId === event.executionId);
+        if (idx >= 0) {
+          list[idx] = event;
+        } else {
+          list.push(event);
+        }
+      },
+      onError: (msg: string) => {
+        stream.value.error = msg;
+      },
+    };
+  }
+
+  /**
+   * 流式失败的统一收口（respond / retry / retryStep 共用）。
+   *
+   * 中断（abort）走重置 + 回拉 transcript；其余错误按终态 / 不存在 / 权限分类，
+   * 均作为软错误（UI 引导口吻、不弹红），并据分类刷新会话或清空本地会话。
+   */
+  async function handleStreamFailure(cause: unknown, controller: AbortController): Promise<void> {
+    if (controller.signal.aborted) {
+      resetStream();
+      await loadTranscript();
+      await refreshPendingToolCalls();
+      return;
+    }
+    const classified = classifyError(cause);
+    stream.value.error = classified.message;
+    error.value = classified.message;
+    errorSoft.value = classified.terminal || classified.notFound || classified.accessDenied;
+    if (classified.terminal) {
+      await refreshConversation();
+    } else if (classified.notFound) {
+      conversation.value =null;
+    }
+  }
+
+  /**
+   * 发送一条用户消息：懒创建 → 乐观流式 → done 后回拉 transcript 覆盖乐观态。串行化（sending 守卫）。
+   *
+   * `mentions` 为本回合解析出的「@提及」引用（缺省空数组，向后兼容）；它会被渲染成
+   * 「【用户提及】」块，附加在项目级动态上下文之前，一并经 dynamicContext 下发。
+   */
+  async function sendMessage(
+    ctx: AssistantContext,
+    text: string,
+    mentions: MentionRef[] = [],
+  ): Promise<void> {
     const message = text.trim();
-    if (!message || sending.value || resolving.value) {
+  if (!message || sending.value || resolving.value) {
       return;
     }
     const convo = await ensureConversation(ctx);
@@ -272,45 +465,31 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     error.value = null;
     errorSoft.value = false;
     sending.value = true;
-    stream.value = { active: true, pendingUserText: message, text: "", error: null };
+    stream.value = activeStream(message);
     const controller = new AbortController();
     abortController = controller;
+    const mentionsBlock = buildMentionsBlock(mentions);
+    const projectContext = await resolveDynamicContext(ctx.projectId);
+const dynamicContext = [mentionsBlock, projectContext].filter((part) => part.length > 0).join("\n\n");
+    const generationParams = useGraphAssistantGenerationStore().generationParamsForRequest;
+    const toolTransportPreference = useGraphAssistantToolTransportStore().preferenceForRequest;
     try {
       await streamTempRespond({
         conversationId: convo.id,
         message,
+        ...(dynamicContext ? { dynamicContext } : {}),
+        ...(generationParams ? { generationParams } : {}),
+        ...(toolTransportPreference ? { toolTransportPreference } : {}),
         signal: controller.signal,
-        callbacks: {
-          onChunk: (delta) => {
-            stream.value.text += delta;
-          },
-          onError: (msg) => {
-            stream.value.error = msg;
-          },
-        },
+        callbacks: buildStreamCallbacks(),
       });
       await loadTranscript();
       await refreshPendingToolCalls();
       resetStream();
     } catch (cause) {
-      if (controller.signal.aborted) {
-        resetStream();
-        await loadTranscript();
-        await refreshPendingToolCalls();
-      } else {
-        const classified = classifyError(cause);
-        stream.value.error = classified.message;
-        error.value = classified.message;
-        // 过期 / 终态 / 权限均为软错误：UI 以引导口吻呈现，不弹红。
-        errorSoft.value = classified.terminal || classified.notFound || classified.accessDenied;
-        if (classified.terminal) {
-          await refreshConversation();
-        } else if (classified.notFound) {
-          conversation.value = null;
-        }
-      }
+      await handleStreamFailure(cause, controller);
     } finally {
-      sending.value = false;
+     sending.value = false;
       abortController = null;
     }
   }
@@ -369,6 +548,131 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     return resolvePending(confirmationId, "reject");
   }
 
+  /**
+   * 重试整个楼层（开新消息页）：在已提交楼层上开一个新输出页版本，重跑整轮。
+   *
+   * 流式链路与 sendMessage 一致（复用 buildStreamCallbacks / handleStreamFailure）；本回合重新
+   * 求值当前画布的动态上下文。完成后回拉 transcript 并重置流式态。串行化（sending 守卫）。
+   */
+  async function retryFloor(floorId: string): Promise<void> {
+    const convo = conversation.value;
+    if (!convo || sending.value || resolving.value) {
+      return;
+  }
+    if (convo.status !== "active") {
+      error.value = NOT_ACTIVE_MESSAGE;
+      errorSoft.value = true;
+      return;
+    }
+    error.value = null;
+    errorSoft.value = false;
+    sending.value = true;
+    // 开新消息页：标记重试目标楼层，供流式卡片就地渲染（不新建楼层、不追加末尾）。
+    retryingFloorId.value = floorId;
+    stream.value = activeStream("");
+    const controller = new AbortController();
+    abortController = controller;
+    const dynamicContext = await resolveDynamicContext(convo.projectId);
+    const generationParams = useGraphAssistantGenerationStore().generationParamsForRequest;
+    try {
+      await streamTempRetry({
+    conversationId: convo.id,
+        floorId,
+        ...(dynamicContext ? { dynamicContext } : {}),
+        ...(generationParams ? { generationParams } : {}),
+        signal: controller.signal,
+        callbacks: buildStreamCallbacks(),
+});
+      await loadTranscript();
+      await refreshPendingToolCalls();
+      resetStream();
+    } catch (cause) {
+      await handleStreamFailure(cause, controller);
+    } finally {
+      sending.value = false;
+      retryingFloorId.value = null;
+      abortController = null;
+    }
+  }
+
+  /**
+   * 从指定步重试（开新消息页）：丢弃该步及其之后的工具往返，保留之前成功往返，从该步重生成。
+   *
+   *发起前先用 client-helpers `canRetryFromStep` 对本地 step 序列做 UX 预判：起点为写类工具或
+   * 非工具步时不发起（后端仍会做权威硬校验）。`fromStepIndex` 为后端按 generation_step_no 解释的
+   * 1-based 步号；本地预判以 FloorStep.index 匹配定位（视图序列与生成步号的映射待 UI 接入时收敛）。
+   * 起点之前的不可回滚副作用先用本地 best-effort 填充，流结束后用后端权威值覆盖。串行化（sending 守卫）。
+   */
+  async function retryStep(floorId: string, fromStepIndex: number): Promise<void> {
+    const convo = conversation.value;
+    if (!convo || sending.value || resolving.value) {
+     return;
+    }
+    if (convo.status !== "active") {
+      error.value = NOT_ACTIVE_MESSAGE;
+      errorSoft.value = true;
+      return;
+    }
+    const floorView = floors.value.find((item) => item.id === floorId);
+    const startStep = floorView?.steps.find((step) => step.index === fromStepIndex);
+    if (!startStep || startStep.kind !== "tool" || !canRetryFromStep(startStep)) {
+      // 客户端 UX 预判：起点带写副作用（或非工具步）时不发起，以引导口吻提示（后端仍会做权威硬校验）。
+ error.value = RETRY_STEP_BLOCKED_MESSAGE;
+      errorSoft.value = true;
+      return;
+    }
+    // 坐标系收敛：前端统一用视图 step 序列 index（fromStepIndex），后端要 1-based generation_step_no。
+    //把起点工具步的 generationStepNo 作为传给后端的真正重试起点；旧数据缺该值时无法定位，拦截。
+    const generationStepNo = startStep.generationStepNo;
+   if (generationStepNo == null) {
+      error.value = RETRY_STEP_UNLOCATABLE_MESSAGE;
+      errorSoft.value = true;
+      return;
+    }
+    // 起点之前的不可回滚副作用（本地 best-effort；权威值以后端返回为准）。
+    lastRetryStepSideEffects.value = floorView
+      ? collectIrreversibleSideEffectsBefore(floorView.steps, fromStepIndex).map((item) => ({
+          executionId: item.executionId,
+          toolName: item.toolName,
+      sideEffectLevel: item.sideEffectLevel,
+          startedAt: item.startedAt,
+          generationStepNo: null,
+        }))
+      : [];
+    error.value = null;
+    errorSoft.value = false;
+      sending.value = true;
+   // 开新消息页：标记重试目标楼层，供流式卡片就地渲染。
+    retryingFloorId.value = floorId;
+    stream.value = activeStream("");
+    const controller = new AbortController();
+    abortController = controller;
+    const dynamicContext = await resolveDynamicContext(convo.projectId);
+    const generationParams = useGraphAssistantGenerationStore().generationParamsForRequest;
+ try {
+      const result = await streamTempRetryStep({
+        conversationId: convo.id,
+        floorId,
+        fromStepIndex: generationStepNo,
+        ...(dynamicContext ? { dynamicContext } : {}),
+        ...(generationParams ? { generationParams } : {}),
+     signal: controller.signal,
+        callbacks: buildStreamCallbacks(),
+      });
+      // 后端返回的权威副作用清单覆盖本地 best-effort 值。
+      lastRetryStepSideEffects.value = result.irreversibleSideEffects;
+      await loadTranscript();
+      await refreshPendingToolCalls();
+      resetStream();
+    } catch (cause) {
+      await handleStreamFailure(cause, controller);
+       } finally {
+      sending.value = false;
+      retryingFloorId.value = null;
+      abortController = null;
+    }
+  }
+
   /** 中断进行中的流式生成。 */
   function abort(): void {
     abortController?.abort();
@@ -425,11 +729,14 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     abortController = null;
     conversation.value = null;
     messages.value = [];
+    transcript.value = null;
     error.value = null;
     errorSoft.value = false;
     sending.value = false;
     pendingToolCalls.value = [];
     resolving.value = false;
+    lastRetryStepSideEffects.value = [];
+    retryingFloorId.value = null;
     resetStream();
   }
 
@@ -437,6 +744,7 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     // state
     conversation,
     messages,
+    floors,
     stream,
     sending,
     loading,
@@ -444,6 +752,8 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     errorSoft,
     pendingToolCalls,
     resolving,
+    lastRetryStepSideEffects,
+    retryingFloorId,
     // derived
     isActive,
     expiresAt,
@@ -451,6 +761,8 @@ export const useGraphAssistantStore = defineStore("graph-assistant", () => {
     // actions
     ensureConversation,
     sendMessage,
+    retryFloor,
+    retryStep,
     loadTranscript,
     refreshPendingToolCalls,
     approveToolCall,

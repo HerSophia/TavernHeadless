@@ -3262,7 +3262,9 @@ export interface paths {
                         "application/json": {
                             items: {
                                 account_id: string;
+                                capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[];
                                 created_at: number;
+                                explicit_capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 id: string;
                                 is_default: boolean;
                                 /** @enum {string} */
@@ -3325,6 +3327,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        capabilities?: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                         /** @enum {string} */
                         kind?: "basic" | "advanced" | "deriver" | "worker" | "custom";
                         metadata?: unknown;
@@ -3342,7 +3345,9 @@ export interface paths {
                         "application/json": {
                             item: {
                                 account_id: string;
+                                capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[];
                                 created_at: number;
+                                explicit_capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 id: string;
                                 is_default: boolean;
                                 /** @enum {string} */
@@ -3443,7 +3448,9 @@ export interface paths {
                         "application/json": {
                             item: {
                                 account_id: string;
+                                capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[];
                                 created_at: number;
+                                explicit_capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 id: string;
                                 is_default: boolean;
                                 /** @enum {string} */
@@ -3511,11 +3518,12 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        capabilities?: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                         /** @enum {string} */
                         kind?: "basic" | "advanced" | "deriver" | "worker" | "custom";
                         metadata?: unknown;
                         name?: string;
-                    } | unknown | unknown | unknown;
+                    } | unknown | unknown | unknown | unknown;
                 };
             };
             responses: {
@@ -3528,7 +3536,9 @@ export interface paths {
                         "application/json": {
                             item: {
                                 account_id: string;
+                                capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[];
                                 created_at: number;
+                                explicit_capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 id: string;
                                 is_default: boolean;
                                 /** @enum {string} */
@@ -3653,6 +3663,9 @@ export interface paths {
                                 key_prefix: string;
                                 last_used_at: number | null;
                                 name: string | null;
+                                rotated_at: number | null;
+                                rotated_from_id: string | null;
+                                scopes: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 /** @enum {string} */
                                 status: "active" | "revoked";
                                 updated_at: number;
@@ -3730,6 +3743,7 @@ export interface paths {
                     "application/json": {
                         expires_at?: number | null;
                         name?: string | null;
+                        scopes?: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                     };
                 };
             };
@@ -3750,6 +3764,9 @@ export interface paths {
                                 key_prefix: string;
                                 last_used_at: number | null;
                                 name: string | null;
+                                rotated_at: number | null;
+                                rotated_from_id: string | null;
+                                scopes: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 /** @enum {string} */
                                 status: "active" | "revoked";
                                 updated_at: number;
@@ -3872,6 +3889,9 @@ export interface paths {
                                 key_prefix: string;
                                 last_used_at: number | null;
                                 name: string | null;
+                                rotated_at: number | null;
+                                rotated_from_id: string | null;
+                                scopes: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 /** @enum {string} */
                                 status: "active" | "revoked";
                                 updated_at: number;
@@ -3898,6 +3918,117 @@ export interface paths {
                 };
                 /** @description Default Response */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/clients/{id}/api-keys/{key_id}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate a client API key
+         * @description Revokes the existing key and issues a new key inheriting its name, expiration and scope.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    key_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            item: {
+                                account_id: string;
+                                client_id: string;
+                                created_at: number;
+                                expires_at: number | null;
+                                id: string;
+                                key_prefix: string;
+                                last_used_at: number | null;
+                                name: string | null;
+                                rotated_at: number | null;
+                                rotated_from_id: string | null;
+                                scopes: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
+                                /** @enum {string} */
+                                status: "active" | "revoked";
+                                updated_at: number;
+                            };
+                            secret: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -3951,7 +4082,9 @@ export interface paths {
                         "application/json": {
                             item: {
                                 account_id: string;
+                                capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[];
                                 created_at: number;
+                                explicit_capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 id: string;
                                 is_default: boolean;
                                 /** @enum {string} */
@@ -4054,7 +4187,9 @@ export interface paths {
                         "application/json": {
                             item: {
                                 account_id: string;
+                                capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[];
                                 created_at: number;
+                                explicit_capabilities: ("session.read" | "session.write" | "project.config.read" | "project.config.write" | "tool.catalog.read" | "tool.execution.read" | "tool.policy.write" | "mcp.binding.write" | "mcp.server.manage" | "tool.definition.write" | "client.manage" | "workspace.manage" | "project.manage" | "audit.read")[] | null;
                                 id: string;
                                 is_default: boolean;
                                 /** @enum {string} */
@@ -7022,6 +7157,1531 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/floors/{id}/retry-step": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a committed floor from a specific generation step
+         * @description Retry generation for an existing committed floor starting from a specificLLM generation step. Successful tool roundtrips before the start step are preserved and replayed; the start step and everything after it are regenerated under a new attempt on the same floor id. The start step tool must have no side effect; write-class side effects produced before the start step are not rolled back and are returned in irreversible_side_effects.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @example {
+                         *       "enableDirector": true,
+                         *       "enableMemoryConsolidation": true,
+                         *       "enableTools": true,
+                         *       "enableVerifier": true,
+                         *       "maxRetries": 1,
+                         *       "toolMode": "inline",
+                         *       "verifierFailStrategy": "warn"
+                         *     }
+                         */
+                        config?: {
+                            enableDirector?: boolean;
+                            enableMemoryConsolidation?: boolean;
+                            enableTools?: boolean;
+                            enableVerifier?: boolean;
+                            maxRetries?: number;
+                            /** @enum {string} */
+                            toolMode?: "inline" | "standalone" | "both";
+                            /** @enum {string} */
+                            verifierFailStrategy?: "warn" | "block" | "retry";
+                        };
+                        confirmed_execution_ids?: string[];
+                        confirmed_session_state_mutation_ids?: string[];
+                        /**
+                         * @example {
+                         *       "include_prompt_snapshot": true,
+                         *       "include_runtime_trace": true,
+                         *       "include_worldbook_matches": false
+                         *     }
+                         */
+                        debug_options?: {
+                            include_prompt_snapshot?: boolean;
+                            include_runtime_trace?: boolean;
+                            include_worldbook_matches?: boolean;
+                        };
+                        delivery?: {
+                            allow_assistant_prefill?: boolean;
+                            no_assistant?: boolean;
+                            require_last_user?: boolean;
+                        };
+                        from_step_index: number;
+                        /**
+                         * @example {
+                         *       "logit_bias": {
+                         *         "42": -5
+                         *       },
+                         *       "max_output_tokens": 256,
+                         *       "min_p": 0.05,
+                         *       "reasoning_effort": "low",
+                         *       "repetition_penalty": 1.1,
+                         *       "response_format": {
+                         *         "json_schema": {
+                         *           "type": "object"
+                         *         },
+                         *         "type": "json_schema"
+                         *       },
+                         *       "seed": 42,
+                         *       "temperature": 0.7,
+                         *       "top_p": 0.9
+                         *     }
+                         */
+                        generation_params?: {
+                            frequency_penalty?: null | number;
+                            logit_bias?: {
+                                [key: string]: number;
+                            } | null;
+                            max_output_tokens?: null | number;
+                            min_p?: null | number;
+                            presence_penalty?: null | number;
+                            /** @enum {null|string} */
+                            reasoning_effort?: "low" | "medium" | "high" | null;
+                            repetition_penalty?: null | number;
+                            response_format?: {
+                                json_schema?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @enum {string} */
+                                type: "text" | "json_object" | "json_schema";
+                            } | null;
+                            seed?: null | number;
+                            stop_sequences?: null | string[];
+                            stream?: null | boolean;
+                            temperature?: null | number;
+                            top_k?: null | number;
+                            top_p?: null | number;
+                        };
+                        prompt_runtime_injections?: {
+                            content: string;
+                            order?: number;
+                            placement: string;
+                            /** @enum {string} */
+                            scope?: "request";
+                            /** @enum {string} */
+                            source_kind: "client_injection";
+                            title: string;
+                        }[];
+                        /**
+                         * @example [
+                         *       {
+                         *         "namespace": "quest_flags",
+                         *         "slot": "companion",
+                         *         "value": {
+                         *           "mood": "ally"
+                         *         }
+                         *       },
+                         *       {
+                         *         "delete": true,
+                         *         "namespace": "quest_flags",
+                         *         "slot": "expired_hint"
+                         *       }
+                         *     ]
+                         */
+                        session_state_writes?: ({
+                            namespace: string;
+                            slot: string;
+                            value: unknown;
+                        } | {
+                            /** @enum {boolean} */
+                            delete: true;
+                            namespace: string;
+                            slot: string;
+                        })[];
+                        structure?: {
+                            /** @enum {string} */
+                            assistant_rewrite_strategy?: "to_system" | "to_user_transcript";
+                            merge_adjacent_same_role?: boolean;
+                            /** @enum {string} */
+                            mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                            preserve_system_messages?: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /**
+                             * @example {
+                             *       "branch_id": "main",
+                             *       "final_state": "committed",
+                             *       "floor_id": "floor_12",
+                             *       "floor_no": 12,
+                             *       "generated_text": "The firelight wavers as the next part of the story begins.",
+                             *       "memory": {
+                             *         "job_id": null,
+                             *         "mode": "sync",
+                             *         "status": "applied"
+                             *       },
+                             *       "prompt_snapshot": {
+                             *         "asset_manifest_digest": "2c015f48f52d19ce879f19eeebc67ad3e7470d3d1f95e2eb1f5f3c1d8d8fdc47",
+                             *         "character_content_hash": "9fe9ab675c6f2df7f9c9a96ef0c0f7797cf20cf8d88bbbd2361f6750e4b7dd1b",
+                             *         "character_id": "char-hero",
+                             *         "character_imported_format": "tavern_card_v2",
+                             *         "character_version_id": "char-hero-v3",
+                             *         "preset_content_hash": "sha256:preset-v3",
+                             *         "preset_id": "preset-1",
+                             *         "preset_updated_at": 1710000000000,
+                             *         "preset_version": 3,
+                             *         "preset_version_id": "preset-ver-3",
+                             *         "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                             *         "prompt_mode": "compat_strict",
+                             *         "regex_post_rule_names": [],
+                             *         "regex_pre_rule_names": [
+                             *           "trim_whitespace"
+                             *         ],
+                             *         "regex_profile_content_hash": "sha256:regex-v2",
+                             *         "regex_profile_id": "regex-1",
+                             *         "regex_profile_updated_at": 1710000002000,
+                             *         "regex_profile_version": 2,
+                             *         "regex_profile_version_id": "regex-ver-2",
+                             *         "token_estimate": 512,
+                             *         "worldbook_activated_entries": [
+                             *           {
+                             *             "activation_key": "worldbook:worldbook-1:5:entry:7",
+                             *             "insertion": {
+                             *               "position": "before"
+                             *             },
+                             *             "source": {
+                             *               "asset_scope_id": "worldbook:worldbook-1:5",
+                             *               "kind": "session_worldbook",
+                             *               "worldbook_id": "worldbook-1",
+                             *               "worldbook_name": "Campfire Worldbook"
+                             *             },
+                             *             "uid": 7
+                             *           },
+                             *           {
+                             *             "activation_key": "worldbook:character:char-hero:char-hero-v3:book:entry:7",
+                             *             "insertion": {
+                             *               "position": "after"
+                             *             },
+                             *             "source": {
+                             *               "asset_scope_id": "worldbook:character:char-hero:char-hero-v3:book",
+                             *               "kind": "character_book",
+                             *               "worldbook_id": null,
+                             *               "worldbook_name": "Hero Character Book"
+                             *             },
+                             *             "uid": 7
+                             *           }
+                             *         ],
+                             *         "worldbook_activated_entry_uids": [
+                             *           7,
+                             *           7
+                             *         ],
+                             *         "worldbook_content_hash": "sha256:worldbook-v5",
+                             *         "worldbook_id": "worldbook-1",
+                             *         "worldbook_updated_at": 1710000001000,
+                             *         "worldbook_version": 5,
+                             *         "worldbook_version_id": "worldbook-ver-5"
+                             *       },
+                             *       "runtime_trace": {
+                             *         "budgets": {
+                             *           "by_group": [
+                             *             {
+                             *               "allocated_token_count": 256,
+                             *               "estimated_token_count": 320,
+                             *               "group": "history",
+                             *               "pruned_token_count": 64,
+                             *               "token_count": 256
+                             *             },
+                             *             {
+                             *               "group": "worldbook",
+                             *               "token_count": 64
+                             *             }
+                             *           ]
+                             *         },
+                             *         "delivery": {
+                             *           "allow_assistant_prefill": true,
+                             *           "assistant_prefill_applied": false,
+                             *           "assistant_prefill_requested": true,
+                             *           "assistant_prefill_strategy": "assistant_message_fallback",
+                             *           "degrade_reasons": [
+                             *             "require_last_user"
+                             *           ],
+                             *           "degraded": true,
+                             *           "ends_with_user": true,
+                             *           "last_message_role": "user",
+                             *           "no_assistant": false,
+                             *           "require_last_user": true
+                             *         },
+                             *         "generation_params_resolution": [
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "temperature",
+                             *             "origin": "default",
+                             *             "value_from": "default"
+                             *           },
+                             *           {
+                             *             "final_state": "sent",
+                             *             "name": "maxOutputTokens",
+                             *             "origin": "request",
+                             *             "value_from": "request"
+                             *           },
+                             *           {
+                             *             "cancelled_at": "request",
+                             *             "final_state": "cancelled",
+                             *             "name": "topP",
+                             *             "origin": "request"
+                             *           },
+                             *           {
+                             *             "filter_reason": "field_not_supported_by_provider",
+                             *             "final_state": "filtered",
+                             *             "name": "responseFormat",
+                             *             "origin": "instance"
+                             *           }
+                             *         ],
+                             *         "history_normalization": {
+                             *           "effective_turn_count": 2,
+                             *           "merged_user_groups": [
+                             *             {
+                             *               "effective_role": "user",
+                             *               "includes_current_input": true,
+                             *               "source_floor_ids": [
+                             *                 "floor_11",
+                             *                 "floor_12"
+                             *               ],
+                             *               "source_message_ids": [
+                             *                 "msg_19",
+                             *                 "msg_21"
+                             *               ]
+                             *             }
+                             *           ],
+                             *           "raw_entry_count": 4,
+                             *           "selected_turn_count": 2,
+                             *           "trailing_user_source_floor_ids": [
+                             *             "floor_11",
+                             *             "floor_12"
+                             *           ],
+                             *           "violations": []
+                             *         },
+                             *         "macro": {
+                             *           "mutation_preview": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "staged_mutations": [
+                             *             {
+                             *               "key": "mood",
+                             *               "kind": "set",
+                             *               "scope": "branch",
+                             *               "source_macro": "setvar",
+                             *               "value": "steady"
+                             *             }
+                             *           ],
+                             *           "traces": [
+                             *             {
+                             *               "macro_name": "lastGenerationType",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{lastGenerationType}}",
+                             *               "resolved_text": "respond",
+                             *               "source_kind": "macro"
+                             *             },
+                             *             {
+                             *               "macro_name": "if",
+                             *               "phase": "assemble",
+                             *               "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                             *               "resolved_text": "YES",
+                             *               "selected_branch": "then",
+                             *               "source_kind": "if"
+                             *             }
+                             *           ],
+                             *           "used_names": [
+                             *             "if",
+                             *             "lastGenerationType",
+                             *             "setvar"
+                             *           ],
+                             *           "warnings": [
+                             *             {
+                             *               "code": "macro_preview_side_effect_suppressed",
+                             *               "macro_name": "setvar",
+                             *               "message": "Macro setvar side effect was previewed but not committed."
+                             *             }
+                             *           ]
+                             *         },
+                             *         "memory": {
+                             *           "effective_write": true,
+                             *           "requested_write": true,
+                             *           "runtime_mode": "async_primary",
+                             *           "scope_resolution": {
+                             *             "fallback_reason": null,
+                             *             "mode": "branch_aware",
+                             *             "requested_branch_id": "main",
+                             *             "requested_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ],
+                             *             "resolved_branch_id": "main",
+                             *             "resolved_scopes": [
+                             *               "global",
+                             *               "branch"
+                             *             ]
+                             *           },
+                             *           "selected_items": [
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "fact",
+                             *               "memory_id": "memory-branch-fact-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.82,
+                             *               "selected_reason": null,
+                             *               "source": "store",
+                             *               "token_count": 18
+                             *             },
+                             *             {
+                             *               "branch_id": "main",
+                             *               "kind": "micro_summary",
+                             *               "memory_id": "memory-branch-summary-1",
+                             *               "scope": "branch",
+                             *               "scope_id": "memscope:session-1:main",
+                             *               "score": 0.64,
+                             *               "source": "summary",
+                             *               "token_count": 14
+                             *             }
+                             *           ],
+                             *           "strategy": "dual_summary",
+                             *           "summary_injected": true,
+                             *           "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                             *           "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                             *           "token_stats": {
+                             *             "budget": 500,
+                             *             "direct_items": 50,
+                             *             "macro_summary": 0,
+                             *             "micro_summary": 14,
+                             *             "used": 64
+                             *           }
+                             *         },
+                             *         "preset": {
+                             *           "continue_nudge_applied": false,
+                             *           "continue_nudge_text": null,
+                             *           "ignored_fields": [],
+                             *           "ignored_prompt_order_character_ids": [],
+                             *           "in_chat_inserted_entry_ids": [],
+                             *           "names_behavior_applied": "off",
+                             *           "selected_prompt_order_character_id": 100000,
+                             *           "trigger_filtered_entry_ids": [],
+                             *           "unresolved_markers": [],
+                             *           "unsupported_fields": [],
+                             *           "warnings": []
+                             *         },
+                             *         "regex": {
+                             *           "ai_output_rules": [],
+                             *           "phases": [
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "changed": true,
+                             *               "channel": "prompt",
+                             *               "depth": 3,
+                             *               "input_text_hash": "sha256:regex-live-input-before",
+                             *               "matched_rule_names": [
+                             *                 "trim_whitespace"
+                             *               ],
+                             *               "output_text_hash": "sha256:regex-live-input-after",
+                             *               "phase_id": "prompt.user_input",
+                             *               "placement": 1,
+                             *               "skipped_rules": [],
+                             *               "status": "executed"
+                             *             },
+                             *             {
+                             *               "candidate_rule_names": [
+                             *                 "world_info_rule"
+                             *               ],
+                             *               "changed": false,
+                             *               "channel": "prompt",
+                             *               "depth": null,
+                             *               "input_text_hash": null,
+                             *               "matched_rule_names": [],
+                             *               "output_text_hash": null,
+                             *               "phase_id": "prompt.world_info.reserved",
+                             *               "placement": 5,
+                             *               "skipped_rules": [
+                             *                 {
+                             *                   "reason": "reserved_non_executable",
+                             *                   "rule_name": "world_info_rule"
+                             *                 }
+                             *               ],
+                             *               "status": "reserved"
+                             *             }
+                             *           ],
+                             *           "preprocessed_user_message": "Please continue the campfire scene.",
+                             *           "reserved_placements": [
+                             *             5
+                             *           ],
+                             *           "substitution_mode": "bare_variable_only",
+                             *           "user_input_rules": [
+                             *             "trim_whitespace"
+                             *           ]
+                             *         },
+                             *         "structure": {
+                             *           "assistant_rewrite_count": 1,
+                             *           "assistant_rewrite_strategy": "to_system",
+                             *           "merge_adjacent_same_role": false,
+                             *           "mode": "no_assistant",
+                             *           "tail_assistant_detected": false
+                             *         },
+                             *         "tool_transport": {
+                             *           "parsing": {
+                             *             "accepted_count": 1,
+                             *             "block_count": 1,
+                             *             "diagnostics": [],
+                             *             "diagnostics_by_reason": {},
+                             *             "rejected_count": 0
+                             *           },
+                             *           "selection": {
+                             *             "reason_code": "explicit_override",
+                             *             "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                             *             "transport": "text_protocol"
+                             *           },
+                             *           "tool_list": {
+                             *             "budget_group": "tool_list",
+                             *             "contributor_id": "builtin:tool_list",
+                             *             "injected": true,
+                             *             "placement_mode": "contributor_chain",
+                             *             "token_count": 96,
+                             *             "tool_count": 2
+                             *           },
+                             *           "tool_result": {
+                             *             "block_count": 1,
+                             *             "budget_group": "tool_result",
+                             *             "token_count": 128,
+                             *             "written_back": true
+                             *           }
+                             *         },
+                             *         "worldbook": {
+                             *           "hit_count": 1
+                             *         }
+                             *       },
+                             *       "summaries": [
+                             *         "The group resumes the campfire planning scene."
+                             *       ],
+                             *       "total_usage": {
+                             *         "completion_tokens": 128,
+                             *         "prompt_tokens": 320,
+                             *         "total_tokens": 448
+                             *       }
+                             *     }
+                             */
+                            data: {
+                                branch_id: string;
+                                discarded_from_step_index: number;
+                                final_state: string;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                irreversible_side_effects: {
+                                    execution_id: string;
+                                    generation_step_no?: number | null;
+                                    side_effect_level: string;
+                                    started_at: number;
+                                    tool_name: string;
+                                }[];
+                                /**
+                                 * @example {
+                                 *       "job_id": null,
+                                 *       "mode": "sync",
+                                 *       "status": "applied"
+                                 *     }
+                                 */
+                                memory?: {
+                                    job_id: string | null;
+                                    /** @enum {string} */
+                                    mode: "sync" | "async";
+                                    /** @enum {string} */
+                                    status: "applied" | "queued";
+                                };
+                                /**
+                                 * @example {
+                                 *       "asset_manifest_digest": "2c015f48f52d19ce879f19eeebc67ad3e7470d3d1f95e2eb1f5f3c1d8d8fdc47",
+                                 *       "character_content_hash": "9fe9ab675c6f2df7f9c9a96ef0c0f7797cf20cf8d88bbbd2361f6750e4b7dd1b",
+                                 *       "character_id": "char-hero",
+                                 *       "character_imported_format": "tavern_card_v2",
+                                 *       "character_version_id": "char-hero-v3",
+                                 *       "preset_content_hash": "sha256:preset-v3",
+                                 *       "preset_id": "preset-1",
+                                 *       "preset_updated_at": 1710000000000,
+                                 *       "preset_version": 3,
+                                 *       "preset_version_id": "preset-ver-3",
+                                 *       "prompt_digest": "0d9bc89c6130435ab870f63d0a4d45f95b9764a4b91c91f8d1c2c5a1f7d4f20c",
+                                 *       "prompt_mode": "compat_strict",
+                                 *       "regex_post_rule_names": [],
+                                 *       "regex_pre_rule_names": [
+                                 *         "trim_whitespace"
+                                 *       ],
+                                 *       "regex_profile_content_hash": "sha256:regex-v2",
+                                 *       "regex_profile_id": "regex-1",
+                                 *       "regex_profile_updated_at": 1710000002000,
+                                 *       "regex_profile_version": 2,
+                                 *       "regex_profile_version_id": "regex-ver-2",
+                                 *       "token_estimate": 512,
+                                 *       "worldbook_activated_entries": [
+                                 *         {
+                                 *           "activation_key": "worldbook:worldbook-1:5:entry:7",
+                                 *           "insertion": {
+                                 *             "position": "before"
+                                 *           },
+                                 *           "source": {
+                                 *             "asset_scope_id": "worldbook:worldbook-1:5",
+                                 *             "kind": "session_worldbook",
+                                 *             "worldbook_id": "worldbook-1",
+                                 *             "worldbook_name": "Campfire Worldbook"
+                                 *           },
+                                 *           "uid": 7
+                                 *         },
+                                 *         {
+                                 *           "activation_key": "worldbook:character:char-hero:char-hero-v3:book:entry:7",
+                                 *           "insertion": {
+                                 *             "position": "after"
+                                 *           },
+                                 *           "source": {
+                                 *             "asset_scope_id": "worldbook:character:char-hero:char-hero-v3:book",
+                                 *             "kind": "character_book",
+                                 *             "worldbook_id": null,
+                                 *             "worldbook_name": "Hero Character Book"
+                                 *           },
+                                 *           "uid": 7
+                                 *         }
+                                 *       ],
+                                 *       "worldbook_activated_entry_uids": [
+                                 *         7,
+                                 *         7
+                                 *       ],
+                                 *       "worldbook_content_hash": "sha256:worldbook-v5",
+                                 *       "worldbook_id": "worldbook-1",
+                                 *       "worldbook_updated_at": 1710000001000,
+                                 *       "worldbook_version": 5,
+                                 *       "worldbook_version_id": "worldbook-ver-5"
+                                 *     }
+                                 */
+                                prompt_snapshot?: {
+                                    asset_manifest_digest: string | null;
+                                    character_content_hash: string | null;
+                                    character_id: string | null;
+                                    character_imported_format: string | null;
+                                    character_version_id: string | null;
+                                    preset_content_hash: string | null;
+                                    preset_id: string | null;
+                                    preset_updated_at: number | null;
+                                    preset_version: number | null;
+                                    preset_version_id: string | null;
+                                    prompt_digest: string;
+                                    /** @enum {string} */
+                                    prompt_mode: "compat_strict" | "compat_plus" | "native";
+                                    regex_post_rule_names: string[];
+                                    regex_pre_rule_names: string[];
+                                    regex_profile_content_hash: string | null;
+                                    regex_profile_id: string | null;
+                                    regex_profile_updated_at: number | null;
+                                    regex_profile_version: number | null;
+                                    regex_profile_version_id: string | null;
+                                    token_estimate: number;
+                                    worldbook_activated_entries: {
+                                        activation_key: string;
+                                        insertion: {
+                                            depth?: number;
+                                            outlet_name?: string;
+                                            /** @enum {string} */
+                                            position: "before" | "after" | "an_top" | "an_bottom" | "em_top" | "em_bottom" | "at_depth" | "outlet";
+                                            /** @enum {string} */
+                                            role?: "system" | "user" | "assistant";
+                                        };
+                                        source: {
+                                            asset_scope_id: string;
+                                            /** @enum {string} */
+                                            kind: "session_worldbook" | "character_book";
+                                            worldbook_id: string | null;
+                                            worldbook_name: string;
+                                        };
+                                        uid: number;
+                                    }[];
+                                    worldbook_activated_entry_uids: number[];
+                                    worldbook_content_hash: string | null;
+                                    worldbook_id: string | null;
+                                    worldbook_updated_at: number | null;
+                                    worldbook_version: number | null;
+                                    worldbook_version_id: string | null;
+                                };
+                                /**
+                                 * @example {
+                                 *       "budgets": {
+                                 *         "by_group": [
+                                 *           {
+                                 *             "allocated_token_count": 256,
+                                 *             "estimated_token_count": 320,
+                                 *             "group": "history",
+                                 *             "pruned_token_count": 64,
+                                 *             "token_count": 256
+                                 *           },
+                                 *           {
+                                 *             "group": "worldbook",
+                                 *             "token_count": 64
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "delivery": {
+                                 *         "allow_assistant_prefill": true,
+                                 *         "assistant_prefill_applied": false,
+                                 *         "assistant_prefill_requested": true,
+                                 *         "assistant_prefill_strategy": "assistant_message_fallback",
+                                 *         "degrade_reasons": [
+                                 *           "require_last_user"
+                                 *         ],
+                                 *         "degraded": true,
+                                 *         "ends_with_user": true,
+                                 *         "last_message_role": "user",
+                                 *         "no_assistant": false,
+                                 *         "require_last_user": true
+                                 *       },
+                                 *       "generation_params_resolution": [
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "temperature",
+                                 *           "origin": "default",
+                                 *           "value_from": "default"
+                                 *         },
+                                 *         {
+                                 *           "final_state": "sent",
+                                 *           "name": "maxOutputTokens",
+                                 *           "origin": "request",
+                                 *           "value_from": "request"
+                                 *         },
+                                 *         {
+                                 *           "cancelled_at": "request",
+                                 *           "final_state": "cancelled",
+                                 *           "name": "topP",
+                                 *           "origin": "request"
+                                 *         },
+                                 *         {
+                                 *           "filter_reason": "field_not_supported_by_provider",
+                                 *           "final_state": "filtered",
+                                 *           "name": "responseFormat",
+                                 *           "origin": "instance"
+                                 *         }
+                                 *       ],
+                                 *       "history_normalization": {
+                                 *         "effective_turn_count": 2,
+                                 *         "merged_user_groups": [
+                                 *           {
+                                 *             "effective_role": "user",
+                                 *             "includes_current_input": true,
+                                 *             "source_floor_ids": [
+                                 *               "floor_11",
+                                 *               "floor_12"
+                                 *             ],
+                                 *             "source_message_ids": [
+                                 *               "msg_19",
+                                 *               "msg_21"
+                                 *             ]
+                                 *           }
+                                 *         ],
+                                 *         "raw_entry_count": 4,
+                                 *         "selected_turn_count": 2,
+                                 *         "trailing_user_source_floor_ids": [
+                                 *           "floor_11",
+                                 *           "floor_12"
+                                 *         ],
+                                 *         "violations": []
+                                 *       },
+                                 *       "macro": {
+                                 *         "mutation_preview": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "staged_mutations": [
+                                 *           {
+                                 *             "key": "mood",
+                                 *             "kind": "set",
+                                 *             "scope": "branch",
+                                 *             "source_macro": "setvar",
+                                 *             "value": "steady"
+                                 *           }
+                                 *         ],
+                                 *         "traces": [
+                                 *           {
+                                 *             "macro_name": "lastGenerationType",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{lastGenerationType}}",
+                                 *             "resolved_text": "respond",
+                                 *             "source_kind": "macro"
+                                 *           },
+                                 *           {
+                                 *             "macro_name": "if",
+                                 *             "phase": "assemble",
+                                 *             "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                 *             "resolved_text": "YES",
+                                 *             "selected_branch": "then",
+                                 *             "source_kind": "if"
+                                 *           }
+                                 *         ],
+                                 *         "used_names": [
+                                 *           "if",
+                                 *           "lastGenerationType",
+                                 *           "setvar"
+                                 *         ],
+                                 *         "warnings": [
+                                 *           {
+                                 *             "code": "macro_preview_side_effect_suppressed",
+                                 *             "macro_name": "setvar",
+                                 *             "message": "Macro setvar side effect was previewed but not committed."
+                                 *           }
+                                 *         ]
+                                 *       },
+                                 *       "memory": {
+                                 *         "effective_write": true,
+                                 *         "requested_write": true,
+                                 *         "runtime_mode": "async_primary",
+                                 *         "scope_resolution": {
+                                 *           "fallback_reason": null,
+                                 *           "mode": "branch_aware",
+                                 *           "requested_branch_id": "main",
+                                 *           "requested_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ],
+                                 *           "resolved_branch_id": "main",
+                                 *           "resolved_scopes": [
+                                 *             "global",
+                                 *             "branch"
+                                 *           ]
+                                 *         },
+                                 *         "selected_items": [
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "fact",
+                                 *             "memory_id": "memory-branch-fact-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.82,
+                                 *             "selected_reason": null,
+                                 *             "source": "store",
+                                 *             "token_count": 18
+                                 *           },
+                                 *           {
+                                 *             "branch_id": "main",
+                                 *             "kind": "micro_summary",
+                                 *             "memory_id": "memory-branch-summary-1",
+                                 *             "scope": "branch",
+                                 *             "scope_id": "memscope:session-1:main",
+                                 *             "score": 0.64,
+                                 *             "source": "summary",
+                                 *             "token_count": 14
+                                 *           }
+                                 *         ],
+                                 *         "strategy": "dual_summary",
+                                 *         "summary_injected": true,
+                                 *         "summary_text": "[Memory]\n- Bob still holds the vault key.\n- Alice had started to distrust Bob.",
+                                 *         "summary_text_hash": "sha256:8b210f3247804d17f0e22171db253f411f4ca9bb9da6c69b75837b086d11c2fa",
+                                 *         "token_stats": {
+                                 *           "budget": 500,
+                                 *           "direct_items": 50,
+                                 *           "macro_summary": 0,
+                                 *           "micro_summary": 14,
+                                 *           "used": 64
+                                 *         }
+                                 *       },
+                                 *       "preset": {
+                                 *         "continue_nudge_applied": false,
+                                 *         "continue_nudge_text": null,
+                                 *         "ignored_fields": [],
+                                 *         "ignored_prompt_order_character_ids": [],
+                                 *         "in_chat_inserted_entry_ids": [],
+                                 *         "names_behavior_applied": "off",
+                                 *         "selected_prompt_order_character_id": 100000,
+                                 *         "trigger_filtered_entry_ids": [],
+                                 *         "unresolved_markers": [],
+                                 *         "unsupported_fields": [],
+                                 *         "warnings": []
+                                 *       },
+                                 *       "regex": {
+                                 *         "ai_output_rules": [],
+                                 *         "phases": [
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "changed": true,
+                                 *             "channel": "prompt",
+                                 *             "depth": 3,
+                                 *             "input_text_hash": "sha256:regex-live-input-before",
+                                 *             "matched_rule_names": [
+                                 *               "trim_whitespace"
+                                 *             ],
+                                 *             "output_text_hash": "sha256:regex-live-input-after",
+                                 *             "phase_id": "prompt.user_input",
+                                 *             "placement": 1,
+                                 *             "skipped_rules": [],
+                                 *             "status": "executed"
+                                 *           },
+                                 *           {
+                                 *             "candidate_rule_names": [
+                                 *               "world_info_rule"
+                                 *             ],
+                                 *             "changed": false,
+                                 *             "channel": "prompt",
+                                 *             "depth": null,
+                                 *             "input_text_hash": null,
+                                 *             "matched_rule_names": [],
+                                 *             "output_text_hash": null,
+                                 *             "phase_id": "prompt.world_info.reserved",
+                                 *             "placement": 5,
+                                 *             "skipped_rules": [
+                                 *               {
+                                 *                 "reason": "reserved_non_executable",
+                                 *                 "rule_name": "world_info_rule"
+                                 *               }
+                                 *             ],
+                                 *             "status": "reserved"
+                                 *           }
+                                 *         ],
+                                 *         "preprocessed_user_message": "Please continue the campfire scene.",
+                                 *         "reserved_placements": [
+                                 *           5
+                                 *         ],
+                                 *         "substitution_mode": "bare_variable_only",
+                                 *         "user_input_rules": [
+                                 *           "trim_whitespace"
+                                 *         ]
+                                 *       },
+                                 *       "structure": {
+                                 *         "assistant_rewrite_count": 1,
+                                 *         "assistant_rewrite_strategy": "to_system",
+                                 *         "merge_adjacent_same_role": false,
+                                 *         "mode": "no_assistant",
+                                 *         "tail_assistant_detected": false
+                                 *       },
+                                 *       "tool_transport": {
+                                 *         "parsing": {
+                                 *           "accepted_count": 1,
+                                 *           "block_count": 1,
+                                 *           "diagnostics": [],
+                                 *           "diagnostics_by_reason": {},
+                                 *           "rejected_count": 0
+                                 *         },
+                                 *         "selection": {
+                                 *           "reason_code": "explicit_override",
+                                 *           "reason_detail": "Tool transport was explicitly overridden to 'text_protocol'.",
+                                 *           "transport": "text_protocol"
+                                 *         },
+                                 *         "tool_list": {
+                                 *           "budget_group": "tool_list",
+                                 *           "contributor_id": "builtin:tool_list",
+                                 *           "injected": true,
+                                 *           "placement_mode": "contributor_chain",
+                                 *           "token_count": 96,
+                                 *           "tool_count": 2
+                                 *         },
+                                 *         "tool_result": {
+                                 *           "block_count": 1,
+                                 *           "budget_group": "tool_result",
+                                 *           "token_count": 128,
+                                 *           "written_back": true
+                                 *         }
+                                 *       },
+                                 *       "worldbook": {
+                                 *         "hit_count": 1
+                                 *       }
+                                 *     }
+                                 */
+                                runtime_trace?: {
+                                    budgets?: {
+                                        by_group: {
+                                            allocated_token_count?: number;
+                                            estimated_token_count?: number;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            token_count: number;
+                                        }[];
+                                        trim_reasons?: {
+                                            detail?: string;
+                                            /** @description Budget group label. This may include concrete section groups such as `section:main`. */
+                                            group: string;
+                                            pruned_token_count?: number;
+                                            /** @enum {string} */
+                                            reason: "budget_exceeded" | "group_limit_exceeded" | "provider_constraint" | "policy_disabled";
+                                        }[];
+                                    };
+                                    delivery?: {
+                                        allow_assistant_prefill: boolean;
+                                        assistant_prefill_applied: boolean;
+                                        assistant_prefill_requested: boolean;
+                                        assistant_prefill_strategy: ("provider_native" | "assistant_message_fallback" | "transcript_append" | "unsupported" | "none") | null;
+                                        degrade_reasons: ("assistant_prefill_disabled" | "assistant_prefill_unsupported" | "require_last_user" | "no_assistant_override")[];
+                                        degraded: boolean;
+                                        ends_with_user: boolean;
+                                        last_message_role: ("system" | "user" | "assistant") | null;
+                                        no_assistant: boolean;
+                                        require_last_user: boolean;
+                                    };
+                                    generation_params_resolution?: {
+                                        /** @enum {string} */
+                                        cancelled_at?: "profile" | "instance" | "request";
+                                        /** @enum {string} */
+                                        filter_reason?: "field_not_supported_by_provider";
+                                        /** @enum {string} */
+                                        final_state: "sent" | "absent" | "cancelled" | "filtered";
+                                        /** @enum {string} */
+                                        name: "maxContextTokens" | "maxOutputTokens" | "temperature" | "topP" | "topK" | "frequencyPenalty" | "presencePenalty" | "stopSequences" | "seed" | "repetitionPenalty" | "minP" | "logitBias" | "responseFormat" | "stream" | "timeoutMs" | "maxRetries" | "reasoningEffort";
+                                        /** @enum {string} */
+                                        origin: "profile" | "instance" | "request" | "default" | "absent";
+                                        /** @enum {string} */
+                                        value_from?: "profile" | "instance" | "request" | "default";
+                                    }[];
+                                    /**
+                                     * @example {
+                                     *       "effective_turn_count": 2,
+                                     *       "merged_user_groups": [
+                                     *         {
+                                     *           "effective_role": "user",
+                                     *           "includes_current_input": true,
+                                     *           "source_floor_ids": [
+                                     *             "floor_11",
+                                     *             "floor_12"
+                                     *           ],
+                                     *           "source_message_ids": [
+                                     *             "msg_19",
+                                     *             "msg_21"
+                                     *           ]
+                                     *         }
+                                     *       ],
+                                     *       "raw_entry_count": 4,
+                                     *       "selected_turn_count": 2,
+                                     *       "trailing_user_source_floor_ids": [
+                                     *         "floor_11",
+                                     *         "floor_12"
+                                     *       ],
+                                     *       "violations": []
+                                     *     }
+                                     */
+                                    history_normalization?: {
+                                        effective_turn_count: number;
+                                        merged_user_groups: {
+                                            /** @enum {string} */
+                                            effective_role: "user";
+                                            includes_current_input: boolean;
+                                            source_floor_ids: string[];
+                                            source_message_ids: string[];
+                                        }[];
+                                        raw_entry_count: number;
+                                        selected_turn_count: number;
+                                        trailing_user_source_floor_ids: string[];
+                                        violations: {
+                                            /** @enum {string} */
+                                            code: "adjacent_assistant_floors";
+                                            message: string;
+                                            source_floor_ids: string[];
+                                            source_message_ids: string[];
+                                        }[];
+                                    };
+                                    injection?: {
+                                        applied_count?: number;
+                                        budget_group?: string | null;
+                                        items: {
+                                            anchor_resolved: {
+                                                depth?: number;
+                                                /** @enum {string} */
+                                                edge?: "before" | "after";
+                                                floor_no?: number;
+                                                internal_key?: string;
+                                                /** @enum {string} */
+                                                kind: "section" | "floor_by_no" | "floor_from_end" | "worldbook_depth" | "worldbook_edge" | "worldbook_author_note_top" | "contributor_block";
+                                                offset?: number;
+                                                resolved_depth?: number;
+                                            } | null;
+                                            applied: boolean;
+                                            budget_group: string | null;
+                                            budget_status: ("within_budget" | "rejected_by_item_limit" | "rejected_by_total_limit") | null;
+                                            content_length: number;
+                                            enabled: boolean | null;
+                                            injection_id: string | null;
+                                            not_applied_reason: ("placement_not_available_in_mode" | "unknown_placement" | "empty_title_or_content" | "prompt_section_absent" | "disabled" | "expired" | "mode_scope_mismatch" | "scope_quota_exceeded" | "content_length_exceeded" | "content_token_limit_exceeded" | "total_token_limit_exceeded" | "missing_placement_params" | "invalid_placement_params" | "floor_no_out_of_history_window" | "floor_offset_out_of_history_window") | null;
+                                            order_requested: number;
+                                            placement_params_requested: {
+                                                depth?: number;
+                                                floor_no?: number;
+                                                offset?: number;
+                                            } | null;
+                                            placement_requested: string;
+                                            placement_resolved: string | null;
+                                            request_index: number;
+                                            restricted: boolean;
+                                            /** @enum {string} */
+                                            scope: "request" | "session" | "branch";
+                                            source_chain: {
+                                                agent_run_id?: string;
+                                                agent_type_id?: string;
+                                                debug_session_tag?: string;
+                                                temporary_conversation_id?: string;
+                                            } | null;
+                                            source_kind: string;
+                                            title: string | null;
+                                            token_count: number | null;
+                                            /** @enum {string} */
+                                            visibility: "client" | "agent_private" | "debug" | "system";
+                                        }[];
+                                        rejected_count?: number;
+                                        requested_count?: number;
+                                        token_count?: number;
+                                    };
+                                    /**
+                                     * @example {
+                                     *       "mutation_preview": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "staged_mutations": [
+                                     *         {
+                                     *           "key": "mood",
+                                     *           "kind": "set",
+                                     *           "scope": "branch",
+                                     *           "source_macro": "setvar",
+                                     *           "value": "steady"
+                                     *         }
+                                     *       ],
+                                     *       "traces": [
+                                     *         {
+                                     *           "macro_name": "lastGenerationType",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{lastGenerationType}}",
+                                     *           "resolved_text": "respond",
+                                     *           "source_kind": "macro"
+                                     *         },
+                                     *         {
+                                     *           "macro_name": "if",
+                                     *           "phase": "assemble",
+                                     *           "raw_text": "{{if {{lastGenerationType}} == respond}}YES{{else}}NO{{/if}}",
+                                     *           "resolved_text": "YES",
+                                     *           "selected_branch": "then",
+                                     *           "source_kind": "if"
+                                     *         }
+                                     *       ],
+                                     *       "used_names": [
+                                     *         "if",
+                                     *         "lastGenerationType",
+                                     *         "setvar"
+                                     *       ],
+                                     *       "warnings": [
+                                     *         {
+                                     *           "code": "macro_preview_side_effect_suppressed",
+                                     *           "macro_name": "setvar",
+                                     *           "message": "Macro setvar side effect was previewed but not committed."
+                                     *         }
+                                     *       ]
+                                     *     }
+                                     */
+                                    macro?: {
+                                        mutation_preview: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            value?: string;
+                                        }[];
+                                        staged_mutations: {
+                                            key: string;
+                                            /** @enum {string} */
+                                            kind: "set" | "delete";
+                                            /** @enum {string} */
+                                            scope: "branch" | "global";
+                                            source_macro: string;
+                                            value?: string;
+                                        }[];
+                                        traces: {
+                                            macro_name: string;
+                                            phase?: string;
+                                            raw_text: string;
+                                            resolved_text: string;
+                                            /** @enum {string} */
+                                            selected_branch?: "then" | "else" | "raw";
+                                            /** @enum {string} */
+                                            source_kind?: "text" | "raw" | "macro" | "if";
+                                        }[];
+                                        used_names: string[];
+                                        warnings: {
+                                            code: string;
+                                            macro_name?: string;
+                                            message: string;
+                                            raw_text?: string;
+                                        }[];
+                                    };
+                                    memory?: {
+                                        effective_write?: boolean;
+                                        page_id?: string;
+                                        /** @enum {string} */
+                                        promotion_status?: "not_requested" | "promoted" | "rejected" | "superseded";
+                                        proposal_batch_id?: string;
+                                        /** @enum {string} */
+                                        proposal_status?: "not_requested" | "skipped_by_request" | "proposed" | "promoted" | "rejected" | "superseded";
+                                        requested_write?: boolean;
+                                        /** @enum {string} */
+                                        runtime_mode?: "disabled" | "legacy_sync" | "async_primary";
+                                        scope_resolution?: {
+                                            fallback_reason: string | null;
+                                            mode: string;
+                                            requested_branch_id: string | null;
+                                            requested_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            resolved_branch_id: string | null;
+                                            resolved_scopes: ("global" | "chat" | "branch" | "floor")[];
+                                            strict?: boolean;
+                                        };
+                                        selected_items?: {
+                                            branch_id?: string | null;
+                                            /** @enum {string} */
+                                            kind: "fact" | "micro_summary" | "macro_summary" | "summary" | "open_loop";
+                                            memory_id: string;
+                                            /** @enum {string} */
+                                            scope: "global" | "chat" | "branch" | "floor";
+                                            scope_id: string;
+                                            score?: number | null;
+                                            selected_reason?: string | null;
+                                            /** @enum {string} */
+                                            source?: "store" | "summary" | "open_loop" | "fallback";
+                                            token_count?: number | null;
+                                        }[];
+                                        /** @enum {string} */
+                                        strategy?: "none" | "single_summary" | "dual_summary" | "direct_items";
+                                        summary_injected: boolean;
+                                        summary_text?: string;
+                                        summary_text_hash?: string | null;
+                                        token_stats?: {
+                                            budget: number | null;
+                                            direct_items: number;
+                                            macro_summary: number;
+                                            micro_summary: number;
+                                            used: number;
+                                        };
+                                    };
+                                    preset?: {
+                                        continue_nudge_applied: boolean;
+                                        continue_nudge_text: string | null;
+                                        ignored_fields: string[];
+                                        ignored_prompt_order_character_ids: number[];
+                                        in_chat_inserted_entry_ids: string[];
+                                        names_behavior_applied: ("off" | "always") | null;
+                                        selected_prompt_order_character_id: number | null;
+                                        trigger_filtered_entry_ids: string[];
+                                        unresolved_markers: string[];
+                                        unsupported_fields: string[];
+                                        warnings: string[];
+                                    };
+                                    regex?: {
+                                        ai_output_rules: string[];
+                                        phases?: {
+                                            candidate_rule_names: string[];
+                                            changed: boolean;
+                                            channel: ("persist" | "prompt" | "display" | "edit") | null;
+                                            depth: number | null;
+                                            input_text_hash: string | null;
+                                            matched_rule_names: string[];
+                                            output_text_hash: string | null;
+                                            /** @enum {string} */
+                                            phase_id: "persist.user_input" | "prompt.user_input" | "persist.ai_output" | "prompt.world_info.reserved";
+                                            placement: number;
+                                            skipped_rules: {
+                                                /** @enum {string} */
+                                                reason: "channel_filtered" | "depth_filtered" | "invalid_regex" | "no_match" | "reserved_non_executable";
+                                                rule_name: string;
+                                            }[];
+                                            /** @enum {string} */
+                                            status: "executed" | "reserved";
+                                        }[];
+                                        preprocessed_user_message: string | null;
+                                        reserved_placements?: number[];
+                                        /** @enum {string} */
+                                        substitution_mode?: "bare_variable_only";
+                                        user_input_rules: string[];
+                                    };
+                                    source_selection?: {
+                                        excluded_sources: {
+                                            detail?: string;
+                                            /** @enum {string} */
+                                            reason: "disabled_by_policy" | "budget_trimmed" | "provider_constraint" | "visibility_filtered" | "not_triggered";
+                                            /**
+                                             * @description Public source kind. Internal budget groups such as `section:*` do not appear here.
+                                             * @enum {string}
+                                             */
+                                            source: "history" | "memory" | "worldbook" | "examples";
+                                        }[];
+                                    };
+                                    structure?: {
+                                        assistant_prefill_transcriptized?: boolean;
+                                        assistant_rewrite_count: number;
+                                        assistant_rewrite_strategy: ("to_system" | "to_user_transcript") | null;
+                                        merge_adjacent_same_role: boolean;
+                                        /** @enum {string} */
+                                        mode: "default" | "strict_alternating" | "no_assistant" | "flattened";
+                                        tail_assistant_detected: boolean;
+                                        transcript_message_count?: number;
+                                        transcriptized?: boolean;
+                                    };
+                                    tool_transport?: {
+                                        parsing?: {
+                                            accepted_count: number;
+                                            block_count: number;
+                                            diagnostics: {
+                                                call_id: string | null;
+                                                excerpt: string;
+                                                /** @enum {string} */
+                                                reason: "tool_not_registered" | "json_parse_failed" | "missing_args_field" | "missing_call_id" | "missing_tool_name" | "duplicate_call_id" | "malformed_block" | "malformed_attributes" | "invalid_tool_name";
+                                                tool_name: string | null;
+                                            }[];
+                                            diagnostics_by_reason?: {
+                                                [key: string]: number;
+                                            };
+                                            rejected_count: number;
+                                        };
+                                        selection: {
+                                            /** @enum {string} */
+                                            reason_code: "explicit_override" | "tools_disabled" | "instance_not_supports_function_call" | "default_native_function_call" | "mode_disallows_transport" | "override_rejected_by_mode";
+                                            reason_detail?: string;
+                                            /** @enum {string} */
+                                            transport: "native_function_call" | "text_protocol" | "none";
+                                        };
+                                        streaming_tool_call_unsupported?: boolean;
+                                        tool_choice_applied?: boolean;
+                                        tool_list?: {
+                                            budget_group?: string;
+                                            contributor_id?: string;
+                                            injected: boolean;
+                                            /** @enum {string} */
+                                            placement_mode?: "strict_fixed" | "contributor_chain";
+                                            token_count?: number;
+                                            tool_count: number;
+                                        };
+                                        tool_result?: {
+                                            block_count: number;
+                                            budget_group: string;
+                                            token_count: number;
+                                            written_back: boolean;
+                                        };
+                                    };
+                                    worldbook?: {
+                                        hit_count: number;
+                                        matches?: {
+                                            activation: {
+                                                first_match: {
+                                                    char_end: number;
+                                                    char_start: number;
+                                                    excerpt: string;
+                                                    injection_index?: number;
+                                                    matched_key: string;
+                                                    /** @enum {string} */
+                                                    matched_key_scope: "primary" | "secondary";
+                                                    /** @enum {string} */
+                                                    matched_key_type: "plain" | "regex";
+                                                    message_index_from_latest?: number;
+                                                    /** @enum {string} */
+                                                    source_kind: "message" | "persona_description" | "character_description" | "character_personality" | "character_depth_prompt" | "scenario" | "creator_notes" | "injection" | "recursion_buffer";
+                                                } | null;
+                                                /** @enum {string} */
+                                                mode: "constant" | "triggered";
+                                                recursion_level: number;
+                                            };
+                                            activation_key: string;
+                                            asset_scope_id: string;
+                                            comment: string;
+                                            content_preview: string;
+                                            insertion: {
+                                                depth?: number;
+                                                outlet_name?: string;
+                                                /** @enum {string} */
+                                                position: "before" | "after" | "an_top" | "an_bottom" | "em_top" | "em_bottom" | "at_depth" | "outlet";
+                                                /** @enum {string} */
+                                                role?: "system" | "user" | "assistant";
+                                            };
+                                            order: number;
+                                            source: {
+                                                asset_scope_id: string;
+                                                /** @enum {string} */
+                                                kind: "session_worldbook" | "character_book";
+                                                worldbook_id: string | null;
+                                                worldbook_name: string;
+                                            };
+                                            uid: number;
+                                        }[];
+                                    };
+                                };
+                                summaries: string[];
+                                /**
+                                 * @example {
+                                 *       "completion_tokens": 128,
+                                 *       "prompt_tokens": 320,
+                                 *       "total_tokens": 448
+                                 *     }
+                                 */
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                499: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                504: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/floors/{id}/run": {
         parameters: {
             query?: never;
@@ -7074,7 +8734,7 @@ export interface paths {
                                     public_phase: "preparing" | "generating" | "verifying" | "committing" | "post_processing";
                                     run_id: string;
                                     /** @enum {string} */
-                                    run_type: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
+                                    run_type: "respond" | "regenerate_page" | "retry_turn" | "retry_step" | "edit_and_regenerate";
                                     started_at: number;
                                     /** @enum {string} */
                                     status: "running" | "completed" | "failed" | "cancelled";
@@ -13907,6 +15567,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{id}/graph-assistant/prompt-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/graph-assistant/tool-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{id}/inbox": {
         parameters: {
             query?: never;
@@ -14918,6 +16686,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{id}/node-graph-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graph-imports/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{id}/node-graph-runs/{run_id}": {
         parameters: {
             query?: never;
@@ -15038,7 +16876,27 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -15081,6 +16939,42 @@ export interface paths {
         trace?: never;
     };
     "/projects/{id}/node-graphs/{graph_id}/current-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    graph_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{id}/node-graphs/{graph_id}/export": {
         parameters: {
             query?: never;
             header?: never;
@@ -25132,6 +27026,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/temporary-conversations/{id}/pending-tool-calls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/pending-tool-calls/{confirmationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    confirmationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/temporary-conversations/{id}/respond": {
         parameters: {
             query?: never;
@@ -25154,10 +27119,140 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        dynamic_context?: string;
+                        generation_params?: {
+                            max_context_tokens?: number;
+                            max_output_tokens?: number;
+                            reasoning_effort?: string;
+                            temperature?: number;
+                            top_p?: number;
+                        };
                         input_message?: {
                             content: string;
                             /** @enum {string} */
                             role: "user" | "assistant" | "system";
+                        };
+                        /** @enum {string} */
+                        tool_transport_preference?: "auto" | "native" | "text_protocol";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                conversation_id: string;
+                                final_state: string | null;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                page_id: string;
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a floor inside a temporary conversation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        confirmed_execution_ids?: string[];
+                        confirmed_session_state_mutation_ids?: string[];
+                        dynamic_context?: string;
+                        floor_id: string;
+                        generation_params?: {
+                            max_context_tokens?: number;
+                            max_output_tokens?: number;
+                            reasoning_effort?: string;
+                            temperature?: number;
+                            top_p?: number;
                         };
                     };
                 };
@@ -25177,6 +27272,135 @@ export interface paths {
                                 floor_id: string;
                                 floor_no: number;
                                 generated_text: string;
+                                page_id: string;
+                                total_usage: {
+                                    completion_tokens: number;
+                                    prompt_tokens: number;
+                                    total_tokens: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                details?: unknown;
+                                message: string;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/temporary-conversations/{id}/retry-step": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry from a step inside a temporary conversation */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        confirmed_execution_ids?: string[];
+                        confirmed_session_state_mutation_ids?: string[];
+                        dynamic_context?: string;
+                        floor_id: string;
+                        from_step_index: number;
+                        generation_params?: {
+                            max_context_tokens?: number;
+                            max_output_tokens?: number;
+                            reasoning_effort?: string;
+                            temperature?: number;
+                            top_p?: number;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                branch_id: string;
+                                conversation_id: string;
+                                discarded_from_step_index: number;
+                                final_state: string | null;
+                                floor_id: string;
+                                floor_no: number;
+                                generated_text: string;
+                                irreversible_side_effects: {
+                                    execution_id: string;
+                                    generation_step_no?: number | null;
+                                    side_effect_level: string;
+                                    started_at: number;
+                                    tool_name: string;
+                                }[];
                                 page_id: string;
                                 total_usage: {
                                     completion_tokens: number;
@@ -32882,10 +35106,11 @@ export interface operations {
                  */
                 "application/json": {
                     allow_private_network?: boolean;
-                    api_key: string;
+                    api_key?: string;
                     base_url?: string;
+                    profile_id?: string;
                     /** @enum {string} */
-                    provider: "openai" | "anthropic" | "google" | "deepseek" | "xai" | "openai-compatible";
+                    provider?: "openai" | "anthropic" | "google" | "deepseek" | "xai" | "openai-compatible";
                 };
             };
         };
@@ -32973,11 +35198,12 @@ export interface operations {
                  */
                 "application/json": {
                     allow_private_network?: boolean;
-                    api_key: string;
+                    api_key?: string;
                     base_url?: string;
-                    model_id: string;
+                    model_id?: string;
+                    profile_id?: string;
                     /** @enum {string} */
-                    provider: "openai" | "anthropic" | "google" | "deepseek" | "xai" | "openai-compatible";
+                    provider?: "openai" | "anthropic" | "google" | "deepseek" | "xai" | "openai-compatible";
                     /** @enum {string} */
                     reasoning_effort?: "low" | "medium" | "high";
                 };

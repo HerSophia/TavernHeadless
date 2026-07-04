@@ -1068,6 +1068,7 @@ export function createSessionsResource(client: TransportClient): SessionsResourc
         onEvent: (event) => options.onEvent?.(event),
         onRun: (payload) => options.onRun?.(payload),
         onStart: (payload) => options.onStart?.(payload),
+        onStepNarration: (payload) => options.onStepNarration?.(payload),
         onSummary: (payload) => options.onSummary?.(payload),
         onTool: (payload) => options.onTool?.(payload),
       });

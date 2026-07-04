@@ -304,6 +304,23 @@ function toPromptSnapshotInsert(record: PromptSnapshotRecord): PromptSnapshotIns
   };
 }
 
+/**
+ * 从 native 多步循环的按步记录里提取中间叙述。
+ *
+ * 只取「触发了工具调用且可见文本非空」的步——这些是模型的动作预告（中间叙述）；
+ * 末步结论已落入 message 正文，不重复落入叙述。text_protocol 路径无 agentStepRecords，返回空。
+ */
+function extractStepNarrations(
+  records: TurnExecutionResult["agentStepRecords"],
+): { stepIndex: number; text: string; createdAt: number }[] {
+  if (!records || records.length === 0) {
+    return [];
+  }
+  return records
+    .filter((record) => record.hasToolCalls && record.visibleText.trim().length > 0)
+    .map((record) => ({ stepIndex: record.stepIndex, text: record.visibleText, createdAt: record.createdAt }));
+}
+
 function toFloorResultSnapshotInsert(input: {
   floorId: string;
   outputPageId: string;
@@ -312,6 +329,9 @@ function toFloorResultSnapshotInsert(input: {
   summaries: string[];
   usage: TokenUsage;
   verifierResult?: TurnExecutionResult["verifierResult"];
+  reasoningText?: string;
+  /** native 中间叙述的 JSON 串（已序列化）；无叙述时为 null。 */
+  stepNarrationsJson?: string | null;
   committedAt: number;
 }): FloorResultSnapshotInsert {
   const verifier = input.verifierResult
@@ -330,6 +350,8 @@ function toFloorResultSnapshotInsert(input: {
     summariesJson: JSON.stringify(input.summaries),
     usageJson: JSON.stringify(input.usage),
     verifierJson: verifier ? JSON.stringify(verifier) : null,
+    reasoningText: input.reasoningText && input.reasoningText.length > 0 ? input.reasoningText : null,
+    stepNarrationsJson: input.stepNarrationsJson ?? null,
     committedAt: input.committedAt,
     updatedAt: input.committedAt,
   };
@@ -398,6 +420,7 @@ function toToolExecutionInsert(record: ExecutedToolCallRecord): ToolExecutionIns
     finishedAt: record.finishedAt ?? record.createdAt,
     attemptNo: record.attemptNo ?? 1,
     replayParentExecutionId: record.replayParentExecutionId ?? null,
+    generationStepNo: record.generationStepNo ?? null,
     createdAt: record.createdAt,
   };
 }
@@ -1172,6 +1195,10 @@ export class TurnCommitService {
             .run();
         }
 
+        const committedStepNarrations = extractStepNarrations(input.execution.agentStepRecords);
+        const stepNarrationsJson =
+          committedStepNarrations.length > 0 ? JSON.stringify(committedStepNarrations) : null;
+
         tx
           .insert(floorResultSnapshots)
           .values(
@@ -1183,6 +1210,8 @@ export class TurnCommitService {
               summaries: input.execution.summaries,
               usage,
               verifierResult: input.execution.verifierResult,
+              ...(input.execution.reasoningText ? { reasoningText: input.execution.reasoningText } : {}),
+              stepNarrationsJson,
               committedAt,
             })
           )
@@ -1198,10 +1227,14 @@ export class TurnCommitService {
                 ? JSON.stringify({
                     status: input.execution.verifierResult.output.passed ? "passed" : "warned",
                     suggestion: input.execution.verifierResult.output.suggestion,
-                    issues: input.execution.verifierResult.output.issues,
+             issues: input.execution.verifierResult.output.issues,
                   })
                 : null,
-              committedAt,
+              reasoningText: input.execution.reasoningText && input.execution.reasoningText.length > 0
+                ? input.execution.reasoningText
+                : null,
+              stepNarrationsJson,
+                    committedAt,
               updatedAt: committedAt,
             },
           })

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildMemoryProjectionContributor, buildStateProjectionContributor, buildToolListContributor } from "../../chat/prompt-runtime-builtin-contributors.js";
+import {
+  buildMemoryProjectionContributor,
+  buildStateProjectionContributor,
+  buildToolListContributor,
+} from "../../chat/prompt-runtime-builtin-contributors.js";
 
 function makeTool(name: string) {
   return {
@@ -59,7 +63,7 @@ describe("prompt-runtime-builtin-contributors", () => {
   });
 
   it("still builds memory projection contributor when only structured memory items exist", () => {
-      const result = buildMemoryProjectionContributor({
+    const result = buildMemoryProjectionContributor({
       promptMode: "native",
       memorySummary: undefined,
       memoryTrace: {
@@ -88,20 +92,24 @@ describe("prompt-runtime-builtin-contributors", () => {
       modeScope: "native",
       promptRenderable: {
         title: "Memory selection",
-        content: JSON.stringify({
-          selected_items: [
-            {
-              memory_id: "memory-1",
-              scope: "branch",
-              scope_id: "memscope:session-1:main",
-              branch_id: "main",
-              kind: "fact",
-              source: "store",
-              score: 0.8,
-              token_count: 12,
-            },
-          ],
-        }, null, 2),
+        content: JSON.stringify(
+          {
+            selected_items: [
+              {
+                memory_id: "memory-1",
+                scope: "branch",
+                scope_id: "memscope:session-1:main",
+                branch_id: "main",
+                kind: "fact",
+                source: "store",
+                score: 0.8,
+                token_count: 12,
+              },
+            ],
+          },
+          null,
+          2,
+        ),
       },
     });
     expect(result.contributor?.payload).toMatchObject({
@@ -144,7 +152,9 @@ describe("prompt-runtime-builtin-contributors", () => {
         cacheScope: "floor",
       },
     });
-    expect(result.contributor?.promptRenderable?.content).toContain("Scene text");
+    expect(result.contributor?.promptRenderable?.content).toContain(
+      "Scene text",
+    );
   });
 
   it("skips state projection contributor when no managed state is present", () => {
@@ -177,19 +187,73 @@ describe("prompt-runtime-builtin-contributors", () => {
         title: "Tool list",
       },
     });
-    expect(result.contributor?.promptRenderable?.content).toContain("<tool_list>");
-    expect(result.contributor?.promptRenderable?.content).toContain('name="roll_dice"');
+    expect(result.contributor?.promptRenderable?.content).toContain(
+      "<tool_list>",
+    );
+    expect(result.contributor?.promptRenderable?.content).toContain(
+      'name="roll_dice"',
+    );
+    // text_protocol 下应把工具调用协议说明前置到工具清单之前
+    expect(result.contributor?.promptRenderable?.content).toContain(
+      "Tool calling protocol",
+    );
+    expect(result.contributor?.promptRenderable?.content).toContain(
+      "<tool_call",
+    );
+    const content = result.contributor?.promptRenderable?.content ?? "";
+    expect(content.indexOf("Tool calling protocol")).toBeLessThan(
+      content.indexOf("<tool_list>"),
+    );
 
-    expect(buildToolListContributor({
+    expect(
+      buildToolListContributor({
+        promptMode: "native",
+        transport: "text_protocol",
+        toolsForSlot: [],
+      }).contributor,
+    ).toBeUndefined();
+  });
+
+  it("injects native anti-hallucination instructions for native_function_call transport", () => {
+    const result = buildToolListContributor({
       promptMode: "native",
       transport: "native_function_call",
       toolsForSlot: [makeTool("roll_dice")],
-    }).contributor).toBeUndefined();
+    });
 
-    expect(buildToolListContributor({
-      promptMode: "native",
-      transport: "text_protocol",
-      toolsForSlot: [],
-    }).contributor).toBeUndefined();
+    expect(result.contributor).toMatchObject({
+      id: "builtin:tool_list",
+      kind: "tool_list",
+      sourceKind: "tool_list",
+      modeScope: "native",
+      payload: {
+        transport: "native_function_call",
+        toolNames: ["roll_dice"],
+        budgetGroup: "tool_list",
+      },
+      promptRenderable: {
+        title: "Tool calling protocol",
+      },
+    });
+
+    const content = result.contributor?.promptRenderable?.content ?? "";
+    // native 说明仍属 Tool calling protocol，但明确禁止文本工具块。
+    expect(content).toContain("Tool calling protocol");
+    expect(content).toContain("native function calling");
+    expect(content).toContain("<tool_call>");
+    expect(content).toContain("<tool_result>");
+    expect(content).toContain("<tool_response>");
+    // native 不应输出 text_protocol 的 <tool_list> 清单或调用格式模板。
+    expect(content).not.toContain("<tool_list>");
+  });
+
+  it("does not inject tool_list contributor when transport is none", () => {
+    expect(
+      buildToolListContributor({
+        promptMode: "native",
+        transport: "none",
+        toolsForSlot: [makeTool("roll_dice")],
+      }).contributor,
+    ).toBeUndefined();
   });
 });

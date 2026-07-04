@@ -1,6 +1,13 @@
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { NodeGraphDiagnostic, NodeGraphDocument } from "@tavern/core";
+import {
+  BUILTIN_ADVISOR_SUBGRAPH_VERSION,
+  DEFAULT_NODE_GRAPH_RUNTIME_BUDGET,
+  getBuiltinAdvisorSubgraphById,
+  isBuiltinAdvisorSubgraphId,
+  resolveNodeGraphBudget,
+} from "@tavern/core";
 
 import { nodeGraphDefinitions, nodeGraphVersions } from "../db/schema.js";
 import { NodeGraphCheckpointService } from "./node-graph-checkpoint-service.js";
@@ -124,8 +131,11 @@ export class NodeGraphRuntimeJobProcessor
         })
       : undefined;
     const executor = createDefaultNodeGraphExecutor();
+    // SG11-3：父图 manifest 声明的可用权限集合，供内置顾问子图引用解析做权限上卷校验。
+    const availablePermissions = new Set<string>(document.permissions?.required ?? []);
     // NG2-β：注入子图递归运行器（加载子图版本 + 嵌套 executor + 边界 I/O 映射 + 环检测）。
-    const subgraphRunner = buildSubgraphRunner({ db, payload, executor });
+    // SG11-3：`ref.graphId` 命中内置 id（`system.subgraph.*`）时从内置注册表加载，否则查 DB。
+    const subgraphRunner = buildSubgraphRunner({ db, payload, executor, availablePermissions });
     const execution = await executor.execute({
       document,
       graphVersionId: version.id,
@@ -148,6 +158,7 @@ export class NodeGraphRuntimeJobProcessor
         graphRunId,
         graphVersionId: version.id,
         rootRunId: graphRunId,
+        budget: resolveNodeGraphBudget(DEFAULT_NODE_GRAPH_RUNTIME_BUDGET, document.budgets),
         subgraphRunner,
         subgraphStack: [payload.graphId],
         ...(this.deps.agentRouter ? { agentRouter: this.deps.agentRouter } : {}),
@@ -502,11 +513,13 @@ function loadSubgraphVersion(
  * 再把子图 `group.output` 的值按 portName 映射回实例输出端口。含引用环检测与深度上限。
  */
 function buildSubgraphRunner(input: {
-  db: RuntimeJobPrepareContext<NodeGraphRunJobPayload>["db"];
+    db: RuntimeJobPrepareContext<NodeGraphRunJobPayload>["db"];
   payload: NodeGraphRunJobPayload;
   executor: ReturnType<typeof createDefaultNodeGraphExecutor>;
+  /** SG11-3：父图 manifest 声明的可用权限，用于内置顾问子图引用的权限上卷校验。 */
+  availablePermissions: Set<string>;
 }): NodeGraphSubgraphRunner {
-  const { db, payload, executor } = input;
+  const { db, payload, executor, availablePermissions } = input;
   const runner: NodeGraphSubgraphRunner = async (subInput, parentContext) => {
     const stack = parentContext.subgraphStack ?? [];
     if (stack.includes(subInput.ref.graphId)) {
@@ -521,7 +534,28 @@ function buildSubgraphRunner(input: {
         `Subgraph nesting exceeds the maximum depth of ${MAX_SUBGRAPH_DEPTH}.`,
       );
     }
-    const loaded = loadSubgraphVersion(db, payload, subInput.ref);
+    // SG11-3：内置顾问子图（`system.subgraph.*`）优先从内置注册表解析（无需 fork 进项目 / 不查 DB），
+    // 并做权限上卷校验：子图所需权限必须被父图 manifest 声明，否则拒绝运行。
+    let loaded: { document: NodeGraphDocument; versionId: string } | null;
+    if (isBuiltinAdvisorSubgraphId(subInput.ref.graphId)) {
+      const builtin = getBuiltinAdvisorSubgraphById(subInput.ref.graphId);
+      if (!builtin) {
+        return subgraphFailure("node_graph_subgraph_not_found", `Subgraph definition not found: ${subInput.ref.graphId}`);
+      }
+      const missing = (builtin.permissions?.required ?? []).filter((permission: string) =>!availablePermissions.has(permission));
+      if (missing.length > 0) {
+        return subgraphFailure(
+          "node_graph_subgraph_permission_not_granted",
+          `Builtin subgraph '${subInput.ref.graphId}' requires permissions not granted by the parent graph: ${missing.join(", ")}`,
+        );
+      }
+      loaded = {
+        document: builtin,
+        versionId: `builtin:${subInput.ref.graphId}:${BUILTIN_ADVISOR_SUBGRAPH_VERSION}`,
+      };
+    } else {
+      loaded = loadSubgraphVersion(db, payload, subInput.ref);
+    }
     if (!loaded) {
       return subgraphFailure("node_graph_subgraph_not_found", `Subgraph definition not found: ${subInput.ref.graphId}`);
     }
@@ -535,6 +569,7 @@ function buildSubgraphRunner(input: {
         userInput: undefined,
         chatHistory: undefined,
         graphVersionId: loaded.versionId,
+        budget: resolveNodeGraphBudget(parentContext.budget ?? DEFAULT_NODE_GRAPH_RUNTIME_BUDGET, loaded.document.budgets),
         subgraphStack: [...stack, subInput.ref.graphId],
         subgraphRunner: runner,
       },

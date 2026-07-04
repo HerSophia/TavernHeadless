@@ -39,8 +39,9 @@ export interface LlmInstanceConfigItem {
   scopeId: string;
   instanceSlot: LlmInstanceSlot;
   /**
-   * LI11 命名坑：提示词预设覆盖（指向 `preset` 表），**不是 LLM Profile id**。
-   * 选 Profile 走 `llm_profile_binding`（activate / resolveActiveProfiles）。过渡字段：图化后废弃，勿扩展用途。
+   * @deprecated LI11-3：提示词预设覆盖（指向 `preset` 表），**不是 LLM Profile id**。
+   * 选 Profile 走 `llm_profile_binding`（activate / resolveActiveProfiles）。配方走图后废弃，
+   * 新写入请走楼层模板图 Narrator 节点 `config.presetRef`，勿扩展本字段用途。
    */
   presetId: string | null;
   modelIdOverride: string | null;
@@ -56,16 +57,16 @@ export interface ResolvedInstanceSlot {
   source: "session_config" | "global_config" | "default";
   scope: LlmInstanceScope | null;
   configId: string | null;
-  /** LI11：提示词预设覆盖（非 Profile id；过渡字段）。Profile 解析见 `/llm-profiles/runtime`。 */
+  /** @deprecated LI11-3：提示词预设覆盖（非 Profile id）。配方走图后废弃，新写入走 Narrator 节点 `config.presetRef`；Profile 解析见 `/llm-profiles/runtime`。 */
   presetId: string | null;
   modelIdOverride: string | null;
-  enabled: boolean;
+   enabled: boolean;
   params: LlmBindingGenerationParams | null;
   capabilities: LlmInstanceCapabilities;
 }
 
 export interface UpsertInstanceConfigInput {
-  /** LI11：提示词预设覆盖（非 Profile id；过渡字段）。新客户端勿用它选 Profile，应走 profile binding。 */
+  /** @deprecated LI11-3：提示词预设覆盖（非 Profile id）。配方走图后废弃，新写入走 Narrator 节点 `config.presetRef`；新客户端勿用它选 Profile，应走 profile binding。 */
   presetId?: string | null;
   modelIdOverride?: string | null;
   enabled?: boolean;

@@ -111,6 +111,18 @@ function makeDeps(overrides: Partial<TurnOrchestratorDeps> = {}): TurnOrchestrat
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }),
+      ensureGenerating: vi.fn().mockResolvedValue({
+        id: 'floor-1',
+        sessionId: 'session-1',
+        floorNo: 1,
+        branchId: 'main',
+        parentFloorId: null,
+        state: 'generating',
+        tokenIn: 0,
+        tokenOut: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
       fail: vi.fn().mockResolvedValue({
         id: 'floor-1',
         sessionId: 'session-1',
@@ -190,9 +202,9 @@ describe('TurnOrchestrator', () => {
     expect(result.consolidationResult).toBeUndefined();
     expect(result.memoryInjection).toBeUndefined();
 
-    // 状态转移：draft → generating
-    expect(deps.floorStateMachine.transition).toHaveBeenCalledTimes(1);
-    expect(deps.floorStateMachine.transition).toHaveBeenNthCalledWith(1, 'floor-1', 'generating');
+    // 状态转移：draft → generating（幂等推进）
+    expect(deps.floorStateMachine.ensureGenerating).toHaveBeenCalledTimes(1);
+    expect(deps.floorStateMachine.ensureGenerating).toHaveBeenNthCalledWith(1, 'floor-1');
   });
 
   it('emits generation events', async () => {
@@ -205,6 +217,35 @@ describe('TurnOrchestrator', () => {
     expect(eventNames).toContain('generation.completed');
   });
 
+  it('emits regular-path generation events carrying sessionId (RT1)', async () => {
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (_params: any, callbacks: any) => {
+          callbacks?.onChunk?.('Hello ');
+          return makeGenOutput();
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    await orchestrator.executeTurn(makeInput({ sessionId: 'session-rt1' }));
+
+    const emitCalls = (deps.eventBus.emit as any).mock.calls;
+    const payloadsOf = (name: string) =>
+      emitCalls.filter((c: any[]) => c[0] === name).map((c: any[]) => c[1]);
+
+    const started = payloadsOf('generation.started');
+    const chunk = payloadsOf('generation.chunk');
+    const completed = payloadsOf('generation.completed');
+
+    expect(started).toHaveLength(1);
+    expect(started[0].sessionId).toBe('session-rt1');
+    expect(chunk.length).toBeGreaterThan(0);
+    expect(chunk[0].sessionId).toBe('session-rt1');
+    expect(completed).toHaveLength(1);
+    expect(completed[0].sessionId).toBe('session-rt1');
+  });
+
   it('accumulates token usage', async () => {
     const result = await orchestrator.executeTurn(makeInput());
 
@@ -212,6 +253,58 @@ describe('TurnOrchestrator', () => {
     expect(result.totalUsage.completionTokens).toBe(50);
     expect(result.totalUsage.totalTokens).toBe(150);
   });
+  // ── 推理（思维链）透传 ──────────────────────────────
+
+  it('passes through reasoning text from the generation output', async () => {
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn().mockResolvedValue(
+          makeGenOutput({ reasoningText: 'Step-by-step thinking' }),
+        ),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const result = await orchestrator.executeTurn(makeInput());
+
+    expect(result.reasoningText).toBe('Step-by-step thinking');
+  });
+
+  it('omits reasoning text when the model returns none', async () => {
+    const result = await orchestrator.executeTurn(makeInput());
+
+    expect(result.reasoningText).toBeUndefined();
+  });
+
+  it('streams reasoning deltas through the run observer', async () => {
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (_params: any, callbacks: any) => {
+          callbacks?.onReasoning?.('Think');
+          callbacks?.onReasoning?.('ing');
+          return makeGenOutput({ reasoningText: 'Thinking' });
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const reasoningUpdates: Array<{ delta: string; text: string; attemptNo: number }> = [];
+    const result = await orchestrator.executeTurn(
+      makeInput({
+        runObserver: {
+          onReasoningUpdate: (payload) => {
+            reasoningUpdates.push(payload);
+          },
+        },
+      }),
+    );
+
+    expect(reasoningUpdates.map((u) => u.delta)).toEqual(['Think', 'ing']);
+    expect(reasoningUpdates[reasoningUpdates.length - 1]?.text).toBe('Thinking');
+    expect(result.reasoningText).toBe('Thinking');
+  });
+
+
 
   // ── 完整路径 ────────────────────────────────────────
 
@@ -519,6 +612,8 @@ describe('TurnOrchestrator', () => {
     const emitCalls = (deps.eventBus.emit as any).mock.calls;
     const failedEvents = emitCalls.filter((c: any[]) => c[0] === 'generation.failed');
     expect(failedEvents.length).toBeGreaterThan(0);
+    // RT1: generation.failed must carry the session id for ws routing.
+    expect(failedEvents[0]![1].sessionId).toBe('session-1');
   });
 
   it('does not mask the original generation error when fail compensation cannot overwrite a committed floor', async () => {
@@ -528,6 +623,7 @@ describe('TurnOrchestrator', () => {
       } as any,
       floorStateMachine: {
         transition: vi.fn().mockResolvedValue(undefined),
+        ensureGenerating: vi.fn().mockResolvedValue(undefined),
         canTransition: vi.fn().mockReturnValue(true),
         fail: vi.fn().mockRejectedValue(new InvalidStateTransitionError('committed', 'failed')),
       } as any,
@@ -547,7 +643,9 @@ describe('TurnOrchestrator', () => {
     deps = makeDeps({
       floorStateMachine: {
         transition: vi.fn().mockRejectedValue(new Error('Invalid transition')),
+        ensureGenerating: vi.fn().mockRejectedValue(new Error('Invalid transition')),
         canTransition: vi.fn(),
+        fail: vi.fn().mockResolvedValue(undefined),
       } as any,
     });
     orchestrator = new TurnOrchestrator(deps);
@@ -803,7 +901,7 @@ describe('TurnOrchestrator — Tool Integration', () => {
     }))).rejects.toBeInstanceOf(UnsupportedToolModeError);
 
     expect(deps.generationPipeline.run).not.toHaveBeenCalled();
-    expect(deps.floorStateMachine.transition).not.toHaveBeenCalled();
+    expect(deps.floorStateMachine.ensureGenerating).not.toHaveBeenCalled();
   });
 
   it('rejects both mode because only inline is supported', async () => {
@@ -817,7 +915,7 @@ describe('TurnOrchestrator — Tool Integration', () => {
     }))).rejects.toBeInstanceOf(UnsupportedToolModeError);
 
     expect(deps.generationPipeline.run).not.toHaveBeenCalled();
-    expect(deps.floorStateMachine.transition).not.toHaveBeenCalled();
+    expect(deps.floorStateMachine.ensureGenerating).not.toHaveBeenCalled();
   });
 
   it('uses text_protocol transport without passing native tools and writes back tool results', async () => {
@@ -886,6 +984,341 @@ describe('TurnOrchestrator — Tool Integration', () => {
     });
     expect(result.toolExecutionRecords).toHaveLength(1);
     expect((provider.executeTool as any).mock.calls[0][0]).toBe('roll_dice');
+  });
+
+  it('coerces quoted numeric text_protocol args before executing the tool', async () => {
+    const provider = makeTestToolProvider();
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async () => {
+          const text = [
+            'Narration before call.',
+            '<tool_call id="call-1" name="roll_dice">',
+            '{"args":{"sides":"20"}}',
+            '</tool_call>',
+            'Narration after call.',
+          ].join('\n');
+          return makeGenOutput({ text, rawText: text });
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(provider);
+
+    const result = await orchestrator.executeTurn(makeInput({
+      pageId: 'input-page-coerce',
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+        toolList: {
+          injected: true,
+          contributorId: 'builtin:tool_list',
+          toolCount: 2,
+        },
+      },
+    }));
+
+    expect(result.toolExecutionRecords).toHaveLength(1);
+    // 带引号的 "20" 应按 number schema 被还原为数字 20 再交给工具。
+    expect((provider.executeTool as any).mock.calls[0][0]).toBe('roll_dice');
+    expect((provider.executeTool as any).mock.calls[0][1]).toEqual({ sides: 20 });
+  });
+
+  it('emits text_protocol agent-loop generation events carrying sessionId (RT1)', async () => {
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (_runInput: any, callbacks: any) => {
+          callbacks?.onChunk?.('Hello ');
+          // No <tool_call> block → the agent loop stops naturally after one step.
+          return makeGenOutput({ text: 'Hello world', rawText: 'Hello world' });
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    await orchestrator.executeTurn(makeInput({
+      sessionId: 'session-loop',
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+        toolList: {
+          injected: true,
+          contributorId: 'builtin:tool_list',
+          toolCount: 2,
+        },
+      },
+      graphAssistantAgentLoop: {
+        decideConfirmation: () => 'auto' as const,
+      },
+    }));
+
+    const emitCalls = (deps.eventBus.emit as any).mock.calls;
+    const payloadsOf = (name: string) =>
+      emitCalls.filter((c: any[]) => c[0] === name).map((c: any[]) => c[1]);
+
+    const started = payloadsOf('generation.started');
+    const chunk = payloadsOf('generation.chunk');
+    const completed = payloadsOf('generation.completed');
+
+    expect(started).toHaveLength(1);
+    expect(started[0].sessionId).toBe('session-loop');
+    expect(chunk.length).toBeGreaterThan(0);
+    expect(chunk[0].sessionId).toBe('session-loop');
+    expect(completed).toHaveLength(1);
+    expect(completed[0].sessionId).toBe('session-loop');
+  });
+  it('strips tool round-trip text blocks from native-path visible output and stream when the model emits them as text (native leak regression)', async () => {
+    const streamedChunks: string[] = [];
+    const fullText = [
+   'Here is my answer head.',
+      '<tool_call id="c1" name="roll_dice">{"args":{"sides":6}}</tool_call>',
+      '<tool_response>{"data":{"value":4}}</tool_response>',
+      'Here is my answer tail.',
+    ].join('');
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (_runInput: any, callbacks: any) => {
+          callbacks?.onChunk?.('Here is my answer head.');
+          callbacks?.onChunk?.('<tool_call id="c1" name="roll_dice">{"args":{"sides":6}}</tool_call>');
+          callbacks?.onChunk?.('<tool_response>{"data":{"value":4}}</tool_response>');
+          callbacks?.onChunk?.('Here is my answer tail.');
+          // 模型把工具往返写成文本，未发起结构化调用 → toolCalls 为空。
+          return makeGenOutput({ text: fullText, rawText: fullText });
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const result = await orchestrator.executeTurn(makeInput({
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'native_function_call',
+          reasonCode: 'default_native_function_call',
+        },
+        toolChoiceApplied: true,
+      },
+      graphAssistantAgentLoop: {
+        decideConfirmation: () => 'auto' as const,
+      },
+      onChunk: (chunk) => streamedChunks.push(chunk),
+    }));
+
+    expect(result.generatedText).toBe('Here is my answer head.Here is my answer tail.');
+    expect(result.generatedText).not.toContain('<tool_call');
+    expect(result.generatedText).not.toContain('<tool_response');
+
+    const streamed = streamedChunks.join('');
+    expect(streamed).toBe('Here is my answer head.Here is my answer tail.');
+    expect(streamed).not.toContain('<tool_call');
+    expect(streamed).not.toContain('<tool_response');
+  });
+  it('emits step narration through the run observer for intermediate native steps that call tools', async () => {
+    let runCount = 0;
+    deps = makeDeps({
+      generationPipeline: {
+        run: vi.fn(async (_runInput: any, _callbacks: any) => {
+          runCount += 1;
+          if (runCount === 1) {
+            // 第一步：产出中间叙述 + 结构化工具调用。
+            return makeGenOutput({
+              text: 'Let me roll the dice first.',
+              rawText: 'Let me roll the dice first.',
+              finishReason: 'tool-calls',
+              toolCalls: [{ callId: 'call-1', toolName: 'roll_dice', args: { sides: 6 } }],
+            } as any);
+          }
+          // 末步：纯结论，无工具调用。
+          return makeGenOutput({ text: 'The dice shows 42.', rawText: 'The dice shows 42.' });
+        }),
+      } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const narrations: Array<{ stepIndex: number; text: string; createdAt: number }> = [];
+    await orchestrator.executeTurn(
+      makeInput({
+        config: { enableTools: true, toolMode: 'inline' },
+        toolRegistry: registry,
+        toolPermissions: makeToolPermissions(),
+        toolTransport: {
+          selection: {
+            transport: 'native_function_call',
+            reasonCode: 'default_native_function_call',
+          },
+          toolChoiceApplied: true,
+        },
+        graphAssistantAgentLoop: {
+          decideConfirmation: () => 'auto' as const,
+        },
+        runObserver: {
+          onStepNarration: (payload) => {
+            narrations.push(payload);
+          },
+        },
+      }),
+    );
+
+    // 第一步有工具调用且有可见文本 → 触发一次中间叙述；末步纯结论不触发。
+    expect(narrations).toHaveLength(1);
+    expect(narrations[0]?.stepIndex).toBe(1);
+    expect(narrations[0]?.text).toBe('Let me roll the dice first.');
+  });
+
+
+  it('normalizes legacy tool round-trip text blocks out of assistant history before the native request (history normalization)', async () => {
+    const runSpy = vi.fn(async (_runInput: any, _callbacks?: any) => makeGenOutput({ text: 'Final answer.', rawText: 'Final answer.' }));
+    deps = makeDeps({
+      generationPipeline: { run: runSpy } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    await orchestrator.executeTurn(makeInput({
+      messages: [
+        { role: 'system', content: 'You are a narrator.' },
+        { role: 'user', content: 'find the node' },
+        {
+          role: 'assistant',
+          content:
+            'Sure.<tool_call id="c1" name="roll_dice">{"args":{"sides":6}}</tool_call>' +
+            '<tool_response>{"data":{"value":4}}</tool_response> Done.',
+        },
+        { role: 'user', content: 'continue' },
+      ],
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'native_function_call',
+          reasonCode: 'default_native_function_call',
+        },
+        toolChoiceApplied: true,
+      },
+      graphAssistantAgentLoop: {
+        decideConfirmation: () => 'auto' as const,
+      },
+    }));
+
+    const firstRunMessages = (runSpy.mock.calls[0]![0] as any).messages as Array<{
+      role: string;
+      content: string;
+    }>;
+    const assistantHistory = firstRunMessages.find((message) => message.role === 'assistant');
+    expect(assistantHistory?.content).toBe('Sure. Done.');
+    // 请求上下文里不再含任何工具往返文本块。
+    for (const message of firstRunMessages) {
+      expect(message.content).not.toContain('<tool_call');
+      expect(message.content).not.toContain('<tool_response');
+    }
+  });
+
+  it('passes through assistant history unchanged on the native path when it has no tool blocks', async () => {
+    const runSpy = vi.fn(async (_runInput: any, _callbacks?: any) => makeGenOutput({ text: 'Final answer.', rawText: 'Final answer.' }));
+    deps = makeDeps({
+      generationPipeline: { run: runSpy } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const cleanAssistant = '  Plain answer with leading and trailing spaces.  ';
+    await orchestrator.executeTurn(makeInput({
+      messages: [
+        { role: 'system', content: 'You are a narrator.' },
+        { role: 'assistant', content: cleanAssistant },
+        { role: 'user', content: 'continue' },
+      ],
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'native_function_call',
+          reasonCode: 'default_native_function_call',
+        },
+        toolChoiceApplied: true,
+      },
+      graphAssistantAgentLoop: {
+        decideConfirmation: () => 'auto' as const,
+      },
+    }));
+
+    const firstRunMessages = (runSpy.mock.calls[0]![0] as any).messages as Array<{
+      role: string;
+      content: string;
+    }>;
+    const assistantHistory = firstRunMessages.find((message) => message.role === 'assistant');
+    // 不含工具块时原样透传，包括首尾空白不被改写。
+    expect(assistantHistory?.content).toBe(cleanAssistant);
+  });
+
+  it('does not apply native history normalization on the text_protocol path', async () => {
+    const runSpy = vi.fn(async (_runInput: any, _callbacks?: any) => makeGenOutput({ text: 'Final answer.', rawText: 'Final answer.' }));
+    deps = makeDeps({
+      generationPipeline: { run: runSpy } as any,
+    });
+    orchestrator = new TurnOrchestrator(deps);
+
+    const registry = new ToolRegistry();
+    registry.register(makeTestToolProvider());
+
+    const assistantWithBlocks =
+      'Sure.<tool_call id="c1" name="roll_dice">{"args":{"sides":6}}</tool_call> Done.';
+    await orchestrator.executeTurn(makeInput({
+      messages: [
+        { role: 'system', content: 'You are a narrator.' },
+        { role: 'assistant', content: assistantWithBlocks },
+        { role: 'user', content: 'continue' },
+      ],
+      config: { enableTools: true, toolMode: 'inline' },
+      toolRegistry: registry,
+      toolPermissions: makeToolPermissions(),
+      toolTransport: {
+        selection: {
+          transport: 'text_protocol',
+          reasonCode: 'explicit_override',
+        },
+      },
+      graphAssistantAgentLoop: {
+        decideConfirmation: () => 'auto' as const,
+      },
+    }));
+
+    const firstRunMessages = (runSpy.mock.calls[0]![0] as any).messages as Array<{
+      role: string;
+      content: string;
+    }>;
+    const assistantHistory = firstRunMessages.find((message) => message.role === 'assistant');
+    // text_protocol 路径不走 native 历史归一化，历史工具块原样保留。
+    expect(assistantHistory?.content).toBe(assistantWithBlocks);
   });
 
   it('captures parser diagnostics for invalid text_protocol calls without executing tools', async () => {

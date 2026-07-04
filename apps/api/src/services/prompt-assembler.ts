@@ -704,6 +704,13 @@ export interface AssemblePromptOptions {
    * 仅 compat_strict / compat_plus 消费；缺省为 prompt_mode + shadow off（与既有行为一致）。
    */
   compatPromptBridge?: CompatPromptBridgeDecision;
+  /**
+   * LI11-3（3a）：Narrator 预设主体引用覆盖，由 PromptRecipeResolver 从楼层模板图解析得出。
+   *
+   * 缺省（undefined/null）时维持读 `session.presetId` / `session.presetVersionId`，
+   * PromptIR 与现状逐字节一致。提供时用其覆盖「预设主体来源」（世界书 / 正则仍取 session）。
+   */
+  presetRefOverride?: { presetId: string; presetVersionId: string | null } | null;
 }
 
 const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
@@ -762,9 +769,12 @@ export async function assemblePrompt(
   options: AssemblePromptOptions = {},
 ): Promise<AssembleResult> {
   const resourceLoader = new PromptResourceLoader(db);
+  // LI11-3（3a）：预设主体来源支持图级覆盖。override 缺省时维持读 session，行为与现状逐字节一致。
   const { preset, worldbook, regexProfile } = await resourceLoader.loadPromptResourceBundle(accountId, {
-    presetId: session.presetId,
-    presetVersionId: session.presetVersionId,
+    presetId: options.presetRefOverride?.presetId ?? session.presetId,
+    presetVersionId: options.presetRefOverride
+      ? options.presetRefOverride.presetVersionId
+      : session.presetVersionId,
     worldbookProfileId: session.worldbookProfileId,
     worldbookVersionId: session.worldbookVersionId,
     regexProfileId: session.regexProfileId,

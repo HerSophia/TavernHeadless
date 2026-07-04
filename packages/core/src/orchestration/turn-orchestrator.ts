@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
+
 import type { FloorState } from '@tavern/shared';
 import type { CoreEventBus } from '../events/index.js';
 import type { FloorStateMachine } from '../floor/floor-state-machine.js';
 import type { GenerationParams, InstanceSlot, ModelConfig, TokenUsage } from '../llm/types.js';
 import type { GenerationPipeline } from '../generation/generation-pipeline.js';
-import type { TokenCounter } from '../prompt/types.js';
+import type { ChatMessage, TokenCounter } from '../prompt/types.js';
 import type { GenerationOutput } from '../generation/types.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { MemoryConsolidator } from '../memory/memory-consolidator.js';
@@ -29,9 +31,17 @@ import { ToolExecutor } from '../tools/tool-executor.js';
 import {
   TextProtocolToolCallParser,
   TextProtocolToolResultFormatter,
+  coerceTextProtocolToolArgs,
 } from '../tools/transport/index.js';
 import type { ToolCallParseDiagnostic } from '../tools/transport/index.js';
 import { TEXT_PROTOCOL_TOOL_CALL_CLOSE } from '../tools/transport/text-protocol/constants.js';
+import {
+  NativeToolBlockStreamBuffer,
+  stripNativeToolBlocksPreservingTrailingMalformed,
+  containsNativeToolBlock,
+} from '../tools/transport/text-protocol/native-tool-block-stripper.js';
+import { buildNativeToolNameMapping } from '../tools/transport/native-tool-name-mapping.js';
+import { emitDebug, isDebugEnabled } from '../debug/index.js';
 import type { Director } from './director.js';
 import type { DirectorResult } from './director.js';
 import type { Verifier } from './verifier.js';
@@ -44,7 +54,9 @@ import type {
   ToolMode,
 } from './types.js';
 import { TextProtocolAgentLoop } from './text-protocol-agent-loop.js';
-import type { AgentLoopGenerate } from './text-protocol-agent-loop.js';
+import { NativeFunctionCallAgentLoop } from './native-function-call-agent-loop.js';
+import { projectAgentLoopMessagesToChat, selectFinalAnswerText } from './agent-loop.js';
+import type { AgentLoopGenerate, AgentLoopStepRecord, NormalizedToolCall } from './agent-loop.js';
 
 // ── 错误类 ────────────────────────────────────────────
 
@@ -348,6 +360,41 @@ function stripTextProtocolToolCallBlocksPreservingTrailingMalformed(text: string
   return `${buffer.process(text)}${buffer.finalize()}`.trim();
 }
 
+/**
+ * native 路径历史协议归一化（仅作用于喂给模型的请求上下文）。
+ *
+ * 逐回合协议偏好允许切换，但历史会把上一回合的协议格式带进当前请求。若历史
+ * assistant 文本里残留 text_protocol 时代的 <tool_call> / <tool_result> 文本范例（或模型
+ * 自创的 <tool_response>），本回合切到 native 时模型会照着仿写文本格式，而 native 路径
+ * 期待结构化调用、解析为空，导致工具往返文本泄漏。这里对历史 assistant 文本剥离工具
+ * 往返文本块，消除「旧协议范例成了错误教具」的根因。
+ *
+ * 只作用于 input.messages 的投影副本，不改写已落库 transcript，保持 ChatMessage 纯文本契约
+ * 与审计真相不变。标签匹配复用阶段 A 的剥离器，避免两套匹配规则。
+ *
+ * - 仅处理 assistant 历史；user / system 消息原样透传。
+ * - 不含工具块的 assistant 文本原样透传（不做无谓改写）。
+ * - 含工具块时剥离；若整条消息全是工具块、剥离后为空，则移除该消息，避免空 assistant 消息。
+ */
+function normalizeNativeHistoryToolBlocks(messages: ChatMessage[]): ChatMessage[] {
+  const normalized: ChatMessage[] = [];
+  for (const message of messages) {
+    if (message.role !== 'assistant' || !containsNativeToolBlock(message.content)) {
+      normalized.push(message);
+      continue;
+    }
+
+    const stripped = stripNativeToolBlocksPreservingTrailingMalformed(message.content);
+    if (stripped.length === 0) {
+      continue;
+    }
+
+    normalized.push({ ...message, content: stripped });
+  }
+
+  return normalized;
+}
+
 function groupToolCallDiagnosticsByReason(
   diagnostics: ToolCallParseDiagnostic[],
 ): Record<string, number> {
@@ -412,11 +459,15 @@ export class TurnOrchestrator {
     let toolTransport: TurnExecutionResult['toolTransport'] = input.toolTransport;
     let agentLoopStopReason: TurnExecutionResult['agentLoopStopReason'];
     let agentLoopSteps: TurnExecutionResult['agentLoopSteps'];
+    let agentStepRecords: TurnExecutionResult['agentStepRecords'];
     let pendingToolConfirmation: TurnExecutionResult['pendingToolConfirmation'];
 
     try {
       // ── 1. draft → generating ──
-      await this.transitionOrFail(input.floorId, 'generating');
+      // 使用幂等推进：上层（如临时对话）可能为抢占同一个共享 draft 楼层、
+      // 防止并发请求互相覆盖，已提前把楼层推进到 generating。
+      // 这种情况下此处不应再次转换，否则会触发非法的 generating → generating。
+      await this.ensureGeneratingOrFail(input.floorId);
 
       // ── 2. Director（可选） ──
       if (cfg.enableDirector && input.directorInput) {
@@ -440,10 +491,16 @@ export class TurnOrchestrator {
             input.toolPermissions,
           );
           narratorToolContext = this.buildToolContext(input, 'narrator');
+          // native 图助手走自驱动循环（schema-only 工具，不让 SDK 自动执行），
+          // 因此此处不构造带 execute 的 LLM 工具；主链与其他会话的 native 仍由 SDK 自动执行。
+          const nativeGraphAssistantLoop =
+            input.graphAssistantAgentLoop !== undefined
+            && input.toolTransport?.selection.transport === 'native_function_call';
           if (
             narratorTools.length > 0
             && input.toolTransport?.selection.transport !== 'text_protocol'
             && input.toolTransport?.selection.transport !== 'none'
+            && !nativeGraphAssistantLoop
           ) {
             narratorLLMTools = toolExecutor.buildLLMTools(
               narratorTools,
@@ -466,27 +523,52 @@ export class TurnOrchestrator {
       }
 
       // ── 4 & 5. 生成 + Verifier（含重试逻辑 + 工具注入） ──
-      const useGraphAssistantAgentLoop =
+      const agentLoopTransport = input.toolTransport?.selection.transport;
+const useGraphAssistantAgentLoop =
         cfg.enableTools
         && input.graphAssistantAgentLoop !== undefined
-        && input.toolTransport?.selection.transport === 'text_protocol'
+        && (agentLoopTransport === 'text_protocol' || agentLoopTransport === 'native_function_call')
         && toolExecutor !== undefined
         && narratorToolContext !== undefined
         && input.toolPermissions !== undefined;
 
-      if (useGraphAssistantAgentLoop) {
-        //图助手 text_protocol 多轮 agent 循环（主链与其他会话不走此路径）
-        const loopResult = await this.runTextProtocolAgentLoop({
-          input,
-          toolExecutor: toolExecutor!,
-          narratorTools: narratorTools ?? [],
-          narratorToolContext: narratorToolContext!,
+      // 调试：记录图助手 agent loop 路径选择，确认实际走 native 还是 text_protocol，或回退普通生成。
+      if (isDebugEnabled('native-tool')) {
+        emitDebug('native-tool', 'info', 'loop-route', {
+          floorId: input.floorId,
+          agentLoopTransport,
+          enableTools: cfg.enableTools,
+          hasGraphAssistantAgentLoop: input.graphAssistantAgentLoop !== undefined,
+          hasToolExecutor: toolExecutor !== undefined,
+          hasNarratorToolContext: narratorToolContext !== undefined,
+          hasToolPermissions: input.toolPermissions !== undefined,
+          useGraphAssistantAgentLoop,
         });
+}
+
+      if (useGraphAssistantAgentLoop) {
+        // 图助手多轮 agent 循环（主链与其他会话不走此路径），按 transport 选适配。
+        const loopResult =
+        agentLoopTransport === 'native_function_call'
+            ? await this.runNativeFunctionCallAgentLoop({
+                input,
+                toolExecutor: toolExecutor!,
+                narratorTools: narratorTools ?? [],
+                narratorToolContext: narratorToolContext!,
+              })
+            : await this.runTextProtocolAgentLoop({
+                input,
+                toolExecutor: toolExecutor!,
+                narratorTools: narratorTools ?? [],
+                narratorToolContext: narratorToolContext!,
+              });
         generation = loopResult.generation;
         toolResultWritebackText = loopResult.toolResultWritebackText;
         toolTransport = loopResult.toolTransport ?? toolTransport;
         agentLoopStopReason = loopResult.agentLoopStopReason;
         agentLoopSteps = loopResult.agentLoopSteps;
+        // 仅 native 分支产出 agentStepRecords；text_protocol 返回 undefined。
+        agentStepRecords = loopResult.agentStepRecords;
         pendingToolConfirmation = loopResult.pendingToolConfirmation;
         totalUsage = addUsage(totalUsage, generation.usage);
       } else {
@@ -526,6 +608,7 @@ export class TurnOrchestrator {
         generatedText: generation.text,
         rawText: generation.rawText,
         summaries: generation.summaries,
+        ...(generation.reasoningText ? { reasoningText: generation.reasoningText } : {}),
         directorResult,
         verifierResult,
         memoryInjection,
@@ -544,7 +627,8 @@ export class TurnOrchestrator {
             : {}),
           ...(agentLoopStopReason ? { agentLoopStopReason } : {}),
           ...(agentLoopSteps !== undefined ? { agentLoopSteps } : {}),
-          ...(pendingToolConfirmation ? { pendingToolConfirmation } : {}),
+          ...(agentStepRecords && agentStepRecords.length > 0 ? { agentStepRecords } : {}),
+         ...(pendingToolConfirmation ? { pendingToolConfirmation } : {}),
       };
     } catch (error) {
       // 尝试将楼层标记为 failed
@@ -606,6 +690,36 @@ export class TurnOrchestrator {
     }
   }
 
+  private async notifyReasoningUpdate(
+    input: TurnInput,
+    payload: {
+      delta: string;
+      text: string;
+      attemptNo: number;
+    },
+  ): Promise<void> {
+    try {
+      await input.runObserver?.onReasoningUpdate?.(payload);
+    } catch {
+      // best-effort observer hook
+    }
+  }
+
+  private async notifyStepNarration(
+    input: TurnInput,
+    payload: {
+      stepIndex: number;
+      text: string;
+      createdAt: number;
+    },
+  ): Promise<void> {
+    try {
+      await input.runObserver?.onStepNarration?.(payload);
+    } catch {
+      // best-effort observer hook
+    }
+  }
+
   private async transitionOrFail(
     floorId: string,
     target: FloorState,
@@ -618,6 +732,27 @@ export class TurnOrchestrator {
           error instanceof Error ? error.message : String(error)
         }`,
         target === 'committed' ? 'commit' : 'transition',
+        error,
+      );
+    }
+  }
+
+  /**
+   * 幂等地把楼层推进到 generating。
+   *
+   * 若上层已先行把楼层推进到 generating（例如临时对话为抢占共享 draft 楼层、
+   * 防止并发互相覆盖而提前 promote），这里不再重复转换，避免非法的
+   * generating → generating。其余非法状态仍会照常抛错。
+   */
+  private async ensureGeneratingOrFail(floorId: string): Promise<void> {
+    try {
+      await this.deps.floorStateMachine.ensureGenerating(floorId);
+    } catch (error) {
+      throw new TurnError(
+        `State transition to 'generating' failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        'transition',
         error,
       );
     }
@@ -684,11 +819,13 @@ export class TurnOrchestrator {
 
       // 发出 generation.started 事件
       await this.deps.eventBus.emit('generation.started', {
+        sessionId: input.sessionId,
         floorId: input.floorId,
       });
 
       let accumulatedLength = 0;
       let accumulatedText = '';
+      let accumulatedReasoning = '';
       const textProtocolStreamBuffer = input.toolTransport?.selection.transport === 'text_protocol'
         ? new TextProtocolStreamOutputBuffer()
         : undefined;
@@ -700,6 +837,7 @@ export class TurnOrchestrator {
         accumulatedLength += chunk.length;
         accumulatedText += chunk;
         void this.deps.eventBus.emit('generation.chunk', {
+          sessionId: input.sessionId,
           floorId: input.floorId,
           chunk,
           accumulatedLength,
@@ -707,28 +845,36 @@ export class TurnOrchestrator {
         void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo });
         input.onChunk?.(chunk);
       };
-      const result = await this.deps.generationPipeline.run(
+      const emitReasoning = (delta: string) => {
+        if (delta.length === 0) {
+          return;
+        }
+        accumulatedReasoning += delta;
+        void this.notifyReasoningUpdate(input, { delta, text: accumulatedReasoning, attemptNo });
+      };
+   const result = await this.deps.generationPipeline.run(
         {
           messages: input.messages,
-          params: resolveSlotGenerationParams(input, 'narrator') ?? input.generationParams,
+      params: resolveSlotGenerationParams(input, 'narrator') ?? input.generationParams,
           preProcess: input.preProcess,
           postProcess: input.postProcess,
-          model: resolveSlotModel(input, 'narrator'),
-          abortSignal: input.abortSignal,
+       model: resolveSlotModel(input, 'narrator'),
+     abortSignal: input.abortSignal,
           summaryOptions: input.summaryOptions,
           ...(narratorLLMTools ? { tools: narratorLLMTools } : {}),
           ...(input.toolTransport?.toolChoiceApplied === true ? { toolChoice: 'auto' as const } : {}),
           ...(narratorLLMTools ? { maxSteps: input.toolPermissions?.maxStepsPerGeneration ?? 5 } : {}),
         },
         {
-          onChunk: (chunk) => {
+  onChunk: (chunk) => {
             const visibleChunk = textProtocolStreamBuffer
               ? textProtocolStreamBuffer.process(chunk)
               : chunk;
             emitChunk(visibleChunk);
           },
+          onReasoning: emitReasoning,
         },
-      );
+);
       const trailingBufferedChunk = textProtocolStreamBuffer?.finalize();
       if (trailingBufferedChunk) {
         emitChunk(trailingBufferedChunk);
@@ -744,6 +890,7 @@ export class TurnOrchestrator {
 
       // 发出 generation.completed 事件
       await this.deps.eventBus.emit('generation.completed', {
+        sessionId: input.sessionId,
         floorId: input.floorId,
         text: finalResult.generation.text,
         usage: finalResult.generation.usage,
@@ -764,6 +911,7 @@ export class TurnOrchestrator {
 
       // 发出 generation.failed 事件
       await this.deps.eventBus.emit('generation.failed', {
+        sessionId: input.sessionId,
         floorId: input.floorId,
         error: normalizedError,
       });
@@ -976,10 +1124,19 @@ export class TurnOrchestrator {
     const writebackBlocks: string[] = [];
 
     if (args.toolExecutor && args.narratorToolContext && args.input.toolPermissions) {
+      const toolsByName = new Map(
+        (args.narratorTools ?? []).map((tool) => [tool.name, tool] as const),
+      );
       for (const call of parseOutput.calls) {
+        // text_protocol 下模型只能输出字符串化 JSON，按工具 schema 还原顶层参数类型，
+        // 避免带引号的布尔/数字/数组导致执行失败。native 路径不经过这里。
+        const coercedArgs = coerceTextProtocolToolArgs(
+          call.args,
+          toolsByName.get(call.toolName)?.parameters,
+        );
         const result = await args.toolExecutor.execute(
           call.toolName,
-          call.args,
+          coercedArgs,
           args.narratorToolContext,
           args.input.toolPermissions,
         );
@@ -1035,25 +1192,31 @@ export class TurnOrchestrator {
     agentLoopStopReason: TurnExecutionResult['agentLoopStopReason'];
     agentLoopSteps: number;
     pendingToolConfirmation?: TurnExecutionResult['pendingToolConfirmation'];
+    /** text_protocol 路径不产出按步记录（与 native 联合类型对齐）。 */
+    agentStepRecords?: AgentLoopStepRecord[];
   }> {
     const { input } = args;
     const loopConfig = input.graphAssistantAgentLoop!;
     const baseTransport = input.toolTransport;
     const maxSteps = input.toolPermissions?.maxStepsPerGeneration ?? 5;
+    // 回合尝试号在整个多步循环内保持不变，避免用循环步号污染 attemptNo 导致 commit 误判 stale。
+    const runAttemptNo = input.runAttemptNo ?? 1;
 
     let lastFinishReason = 'stop';
+    let accumulatedReasoning = '';
 
     const generate: AgentLoopGenerate = async ({ messages, stepIndex }) => {
-      await this.notifyRunPhaseChange(input, 'page_generating', stepIndex);
-      await this.notifyPendingOutputUpdate(input, { text: '', state: 'draft', attemptNo: stepIndex, force: true });
+      await this.notifyRunPhaseChange(input, 'page_generating', runAttemptNo);
+      await this.notifyPendingOutputUpdate(input, { text: '', state: 'draft', attemptNo: runAttemptNo, force: true });
 
       await this.deps.eventBus.emit('generation.started', {
+        sessionId: input.sessionId,
         floorId: input.floorId,
       });
 
       let accumulatedLength = 0;
       let accumulatedText = '';
-      const streamBuffer = new TextProtocolStreamOutputBuffer();
+            const streamBuffer = new TextProtocolStreamOutputBuffer();
       const emitChunk = (chunk: string) => {
         if (chunk.length === 0) {
           return;
@@ -1061,12 +1224,20 @@ export class TurnOrchestrator {
         accumulatedLength += chunk.length;
         accumulatedText += chunk;
         void this.deps.eventBus.emit('generation.chunk', {
+          sessionId: input.sessionId,
           floorId: input.floorId,
           chunk,
           accumulatedLength,
         });
-        void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo: stepIndex });
+        void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo: runAttemptNo });
         input.onChunk?.(chunk);
+      };
+          const emitReasoning = (delta: string) => {
+        if (delta.length === 0) {
+          return;
+        }
+        accumulatedReasoning += delta;
+        void this.notifyReasoningUpdate(input, { delta, text: accumulatedReasoning, attemptNo: runAttemptNo });
       };
 
       const result = await this.deps.generationPipeline.run(
@@ -1083,6 +1254,7 @@ export class TurnOrchestrator {
           onChunk: (chunk) => {
             emitChunk(streamBuffer.process(chunk));
           },
+          onReasoning: emitReasoning,
         },
       );
       const trailing = streamBuffer.finalize();
@@ -1094,7 +1266,23 @@ export class TurnOrchestrator {
 
       const visibleText = stripTextProtocolToolCallBlocksPreservingTrailingMalformed(result.text);
 
+      // 调试：记录 text_protocol 每步原文与剥离结果，判断模型是否在正文虚构工具往返。
+      if (isDebugEnabled('native-tool')) {
+        emitDebug('native-tool', 'info', 'text-protocol-step', {
+          floorId: input.floorId,
+          stepIndex,
+          finishReason: result.finishReason,
+          rawTextLength: result.text.length,
+          rawTextPreview: result.text.slice(0, 800),
+          visibleTextLength: visibleText.length,
+          hasToolCallTag: result.text.includes('<tool_call'),
+          hasToolResponseTag: result.text.includes('<tool_response'),
+          hasToolResultTag: result.text.includes('<tool_result'),
+        });
+      }
+
       await this.deps.eventBus.emit('generation.completed', {
+        sessionId: input.sessionId,
         floorId: input.floorId,
         text: visibleText,
         usage: result.usage,
@@ -1128,6 +1316,20 @@ export class TurnOrchestrator {
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
     });
 
+    // 调试：记录 text_protocol loop 终态，stopReason=natural_stop 表示工具从未执行。
+    if (isDebugEnabled('native-tool')) {
+      emitDebug('native-tool', 'info', 'text-protocol-loop-result', {
+        floorId: input.floorId,
+        stopReason: loopResult.stopReason,
+           steps: loopResult.steps,
+        blockCount: loopResult.parsing.blockCount,
+        acceptedCount: loopResult.parsing.acceptedCount,
+        rejectedCount: loopResult.parsing.rejectedCount,
+        visibleTextLength: loopResult.visibleText.length,
+        hasWriteback: loopResult.toolResultWritebackText !== undefined,
+      });
+    }
+
     const finishReason =
       loopResult.stopReason === 'awaiting_confirmation'
         ? 'awaiting_tool_confirmation'
@@ -1139,12 +1341,13 @@ export class TurnOrchestrator {
       summaries: loopResult.summaries,
       usage: loopResult.totalUsage,
       finishReason,
+      ...(accumulatedReasoning ? { reasoningText: accumulatedReasoning } : {}),
     };
 
     await this.notifyPendingOutputUpdate(input, {
       text: generation.text,
       state: 'generated',
-      attemptNo: loopResult.steps,
+      attemptNo: runAttemptNo,
       force: true,
     });
 
@@ -1185,7 +1388,309 @@ export class TurnOrchestrator {
               ...(loopResult.pendingConfirmation.sideEffectLevel
                 ? { sideEffectLevel: loopResult.pendingConfirmation.sideEffectLevel }
                 : {}),
-              conversationMessages: loopResult.conversationMessages,
+              conversationMessages: projectAgentLoopMessagesToChat(loopResult.conversationMessages),
+            },
+          }
+        : {}),
+    };
+  }
+
+  /**
+   * 图助手 native function calling 多轮 agent 循环驱动。
+   *
+   * 只在 `input.graphAssistantAgentLoop` 存在且 transport 为 native_function_call 时由 executeTurn 调用。
+   * 模型用原生协议返回结构化 toolCalls（schema-only 工具，SDK 不自动执行），
+   * 仓库自驱动决策、执行、结构化回填、续跑。
+   */
+  private async runNativeFunctionCallAgentLoop(args: {
+   input: TurnInput;
+    toolExecutor: ToolExecutor;
+    narratorTools: ToolDefinition[];
+    narratorToolContext: ToolExecutionContext;
+  }): Promise<{
+    generation: GenerationOutput;
+    toolResultWritebackText?: TurnExecutionResult['toolResultWritebackText'];
+    toolTransport?: TurnExecutionResult['toolTransport'];
+  agentLoopStopReason: TurnExecutionResult['agentLoopStopReason'];
+       agentLoopSteps: number;
+    pendingToolConfirmation?: TurnExecutionResult['pendingToolConfirmation'];
+    /** 按步结构化记录（为阶段二旁路落库中间叙述备料）。 */
+    agentStepRecords: AgentLoopStepRecord[];
+  }> {
+    const { input } = args;
+    const loopConfig = input.graphAssistantAgentLoop!;
+    const baseTransport = input.toolTransport;
+    const maxSteps = input.toolPermissions?.maxStepsPerGeneration ?? 5;
+    //回合尝试号在整个多步循环内保持不变，避免用循环步号污染 attemptNo 导致 commit 误判 stale。
+    const runAttemptNo = input.runAttemptNo ?? 1;
+
+    // schema-only 工具：不带 execute，让 SDK 只返回 toolCalls 不自动执行。
+    // native 工具名清洗：provider（如 OpenAI）的 function name 只允许 [a-zA-Z0-9_-]，
+   // NodeGraph 等带点号的工具名原样导出会被拒绝（400）。这里用清洗后的 schema名导出，
+    // 模型按清洗名调用后在下方 generate 闭包里还原回原始名，下游执行与 transcript 不受影响。
+    const toolNameMapping = buildNativeToolNameMapping(args.narratorTools.map((tool) => tool.name));
+    const schemaTools = args.toolExecutor.buildLLMToolSchemas(args.narratorTools, toolNameMapping);
+
+    // preProcess（正则 USER_INPUT 前处理）只作用于初始纯文本消息，在进循环前应用一次；
+    // 循环内续跑的结构化工具消息不再走 preProcess。
+    // 历史协议归一化：先 preProcess（正则 USER_INPUT 前处理），再剥离历史 assistant 文本里的
+    // 工具往返文本块，避免旧协议文本范例误导本回合 native 协议遵循。仅作用请求上下文，不改 transcript。
+    const preProcessedMessages = input.preProcess
+      ? input.preProcess(input.messages)
+      : input.messages;
+    const initialMessages = normalizeNativeHistoryToolBlocks(preProcessedMessages);
+
+    if (isDebugEnabled('native-tool')) {
+      emitDebug('native-tool', 'info', 'loop-enter', {
+        floorId: input.floorId,
+        baseTransport: baseTransport ?? '(none)',
+        maxSteps,
+        schemaToolCount: Object.keys(schemaTools).length,
+        schemaToolNames: Object.keys(schemaTools),
+        initialMessageCount: initialMessages.length,
+      });
+    }
+
+    let lastFinishReason = 'stop';
+    let accumulatedReasoning = '';
+
+    const generate: AgentLoopGenerate = async ({ messages, stepIndex }) => {
+      await this.notifyRunPhaseChange(input, 'page_generating', runAttemptNo);
+      await this.notifyPendingOutputUpdate(input, { text: '', state: 'draft', attemptNo: runAttemptNo, force:true });
+
+      await this.deps.eventBus.emit('generation.started', {
+        sessionId: input.sessionId,
+        floorId: input.floorId,
+      });
+
+      let accumulatedLength = 0;
+      let accumulatedText = '';
+      // native 路径的输出侧防御性剥离：模型出格式把工具往返写成文本块时，
+      // 流式与终值两侧对称剥掉，避免泄漏进可见输出。剥离器是兜底而非主防线。
+      const streamBuffer = new NativeToolBlockStreamBuffer();
+      const emitChunk = (chunk: string) => {
+        if (chunk.length === 0) {
+          return;
+        }
+        accumulatedLength += chunk.length;
+        accumulatedText+= chunk;
+        void this.deps.eventBus.emit('generation.chunk', {
+          sessionId: input.sessionId,
+          floorId: input.floorId,
+          chunk,
+          accumulatedLength,
+        });
+        void this.notifyPendingOutputUpdate(input, { text: accumulatedText, state: 'streaming', attemptNo: runAttemptNo });
+        input.onChunk?.(chunk);
+      };
+      const emitReasoning = (delta: string) => {
+        if (delta.length === 0) {
+          return;
+        }
+        accumulatedReasoning += delta;
+        void this.notifyReasoningUpdate(input, { delta, text: accumulatedReasoning, attemptNo: runAttemptNo });
+      };
+
+      let result: Awaited<ReturnType<typeof this.deps.generationPipeline.run>>;
+try {
+        result = await this.deps.generationPipeline.run(
+          {
+            messages,
+            params: resolveSlotGenerationParams(input, 'narrator') ?? input.generationParams,
+            postProcess: input.postProcess,
+            model: resolveSlotModel(input, 'narrator'),
+            abortSignal: input.abortSignal,
+            summaryOptions: input.summaryOptions,
+            tools: schemaTools,
+            // 单步：SDK 只产出本步 toolCalls（工具无 execute，不会自动多步续跑）。
+            maxSteps: 1,
+            toolChoice: 'auto',
+          },
+          {
+            onChunk: (chunk) => {
+              emitChunk(streamBuffer.process(chunk));
+            },
+            onReasoning: emitReasoning,
+          },
+        );
+      } catch (error) {
+        // 捕获 provider 原始报文（如 400 Bad Request 的具体原因），便于定位 native 工具 schema 问题。
+        if (isDebugEnabled('native-tool')) {
+          emitDebug('native-tool', 'warn', 'llm-error', {
+            stepIndex,
+            message: error instanceof Error ? error.message : String(error),
+            name: error instanceof Error ? error.name : undefined,
+            cause: error instanceof Error && error.cause !== undefined ? String(error.cause) : undefined,
+            schemaToolNames: Object.keys(schemaTools),
+          });
+        }
+        throw error;
+      }
+      const trailing = streamBuffer.finalize();
+      if (trailing) {
+        emitChunk(trailing);
+      }
+
+      lastFinishReason = result.finishReason;
+
+      if (isDebugEnabled('native-tool')) {
+        emitDebug('native-tool', 'info', 'llm-raw', {
+          stepIndex,
+          finishReason: result.finishReason,
+          rawToolCallCount: (result.toolCalls ?? []).length,
+          rawToolCallNames: (result.toolCalls ?? []).map((c) => c.toolName),
+          rawTextLength: result.text.length,
+          rawTextPreview: result.text.slice(0, 300),
+          reasoningLength: accumulatedReasoning.length,
+        });
+          }
+
+      const visibleText = stripNativeToolBlocksPreservingTrailingMalformed(result.text);
+
+           const toolCalls: NormalizedToolCall[] = (result.toolCalls ?? []).map((call) => ({
+        callId: call.callId ?? randomUUID(),
+        // 还原 native 清洗名为原始工具名，使下游 allowedToolNames 匹配与执行查找一致。
+        toolName: toolNameMapping.toOriginalName(call.toolName),
+        args: call.args ?? {},
+      }));
+
+      if (isDebugEnabled('native-tool')) {
+        emitDebug('native-tool', 'info', 'post-strip', {
+          stepIndex,
+          visibleTextLength: visibleText.length,
+          visibleTextPreview: visibleText.slice(0, 200),
+          normalizedToolCallCount: toolCalls.length,
+          bodyHasLeakedToolBlocks: containsNativeToolBlock(result.text),
+        });
+      }
+
+      // 中间叙述实时旁路：仅当本步触发了工具调用且有可见文本时，把这段叙述作为独立事件
+      // 即时下发（判定口径与落库 extractStepNarrations 一致）。末步纯结论步不触发，
+      // 它走正文 streaming 通道与最终 message 正文。
+      const stepNarrationText = visibleText.trim();
+      if (toolCalls.length > 0 && stepNarrationText.length > 0) {
+        await this.notifyStepNarration(input, {
+          stepIndex,
+          text: stepNarrationText,
+          createdAt: Date.now(),
+        });
+      }
+
+      await this.deps.eventBus.emit('generation.completed', {
+        sessionId: input.sessionId,
+        floorId: input.floorId,
+        text: visibleText,
+        usage: result.usage,
+        finishReason: result.finishReason,
+        summaries: result.summaries,
+      });
+
+      return {
+        visibleText,
+        rawText: result.rawText,
+        usage: result.usage,
+      finishReason: result.finishReason,
+              summaries: result.summaries,
+        toolCalls,
+      };
+    };
+
+    const loop = new NativeFunctionCallAgentLoop({ eventBus: this.deps.eventBus });
+    const loopResult = await loop.run({
+      floorId: input.floorId,
+      ...(input.pageId ? { pageId: input.pageId } : {}),
+      callerSlot: 'narrator',
+      initialMessages,
+      tools: args.narratorTools,
+      toolContext: args.narratorToolContext,
+      permissions: input.toolPermissions!,
+      toolExecutor: args.toolExecutor,
+      generate,
+      decideConfirmation: loopConfig.decideConfirmation,
+      ...(loopConfig.resumeApprovedCall ? { resumeApprovedCall: loopConfig.resumeApprovedCall } : {}),
+      // step 重试：透传前缀工具往返，loop 在生成前重建前 N-1 步上下文、从第 N 步重启生成。
+      ...(input.priorRoundtrips && input.priorRoundtrips.length > 0
+        ? { priorRoundtrips: input.priorRoundtrips }
+        : {}),
+      maxSteps,
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+    });
+
+    const finishReason =
+      loopResult.stopReason === 'awaiting_confirmation'
+        ? 'awaiting_tool_confirmation'
+        : lastFinishReason;
+
+    if (isDebugEnabled('native-tool')) {
+      emitDebug('native-tool', 'info', 'loop-result', {
+        stopReason: loopResult.stopReason,
+        steps: loopResult.steps,
+        visibleTextLength: loopResult.visibleText.length,
+        parsing: {
+          blockCount: loopResult.parsing.blockCount,
+          acceptedCount: loopResult.parsing.acceptedCount,
+          rejectedCount: loopResult.parsing.rejectedCount,
+        },
+        diagnostics: loopResult.parsing.diagnostics.length,
+        finalVisibleTextPreview: loopResult.visibleText.slice(0, 200),
+      });
+    }
+
+    // native 多步循环下，message 正文只取「最终结论步」，不再拼接多步中间叙述（否则
+    // 中间叙述会与结论拼成一段、语义错位，且污染未来楼层 prompt）。中间叙述走阶段二旁路。
+    const finalAnswerText = selectFinalAnswerText(loopResult.stepRecords);
+    const generation: GenerationOutput = {
+      text: finalAnswerText,
+      rawText: finalAnswerText,
+      summaries: loopResult.summaries,
+      usage: loopResult.totalUsage,
+      finishReason,
+      ...(accumulatedReasoning ? { reasoningText: accumulatedReasoning } : {}),
+    };
+
+    await this.notifyPendingOutputUpdate(input, {
+      text: generation.text,
+      state: 'generated',
+      attemptNo: runAttemptNo,
+      force: true,
+    });
+
+    const toolTransport: TurnExecutionResult['toolTransport'] = baseTransport
+      ? {
+          ...baseTransport,
+          parsing: {
+            blockCount: loopResult.parsing.blockCount,
+            acceptedCount: loopResult.parsing.acceptedCount,
+            rejectedCount: loopResult.parsing.rejectedCount,
+            diagnostics: loopResult.parsing.diagnostics,
+            diagnosticsByReason: groupToolCallDiagnosticsByReason(loopResult.parsing.diagnostics),
+          },
+          // native不向 transcript 写回工具结果（结构化消息仅用于循环内部续跑）。
+          toolResult: {
+            writtenBack: false,
+            blockCount: 0,
+            tokenCount: 0,
+            budgetGroup: TEXT_PROTOCOL_TOOL_RESULT_BUDGET_GROUP,
+          },
+        }
+      : undefined;
+
+    return {
+      generation,
+      ...(toolTransport ? { toolTransport } : {}),
+      agentLoopStopReason: loopResult.stopReason,
+      agentLoopSteps: loopResult.steps,
+      agentStepRecords: loopResult.stepRecords,
+      ...(loopResult.pendingConfirmation
+        ? {
+            pendingToolConfirmation: {
+              callId: loopResult.pendingConfirmation.callId,
+              toolName: loopResult.pendingConfirmation.toolName,
+              args: loopResult.pendingConfirmation.args,
+              ...(loopResult.pendingConfirmation.sideEffectLevel
+                ? { sideEffectLevel: loopResult.pendingConfirmation.sideEffectLevel }
+            : {}),
+           conversationMessages: projectAgentLoopMessagesToChat(loopResult.conversationMessages),
             },
           }
         : {}),

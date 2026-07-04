@@ -494,4 +494,73 @@ describe("sdk floors expanded resource", () => {
 
     }));
   });
+
+  it("retries from a stepand surfaces discarded step + irreversible side effects", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        data: {
+          branch_id: "main",
+          floor_id: "floor-3",
+          floor_no: 3,
+          generated_text: "regenerated from step 2",
+          final_state: "committed",
+          summaries: [],
+          total_usage: { total_tokens: 80 },
+          discarded_from_step_index: 2,
+          irreversible_side_effects: [
+            {
+              execution_id: "exec-write-1",
+              tool_name: "write_note",
+              side_effect_level: "irreversible",
+              started_at: 1710000000000,
+              generation_step_no: 1,
+            },
+          ],
+        },
+      }),
+    );
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    await expect(
+      client.floors.retryStep({
+        floorId: "floor-1",
+        fromStepIndex: 2,
+        confirmedExecutionIds:["exec-1"],
+      }),
+    ).resolves.toEqual({
+      branchId: "main",
+      finalState: "committed",
+      floorId: "floor-3",
+      floorNo: 3,
+      generatedText: "regenerated from step 2",
+      inputTokens: 0,
+      outputTokens: 0,
+      summaries: [],
+      totalTokens: 80,
+      totalUsage:{
+        completionTokens: undefined,
+        inputTokens: undefined,
+        outputTokens: undefined,
+        promptTokens: undefined,
+       totalTokens: 80,
+      },
+     discardedFromStepIndex: 2,
+      irreversibleSideEffects: [
+        {
+          executionId: "exec-write-1",
+          generationStepNo: 1,
+        sideEffectLevel:"irreversible",
+          startedAt: 1710000000000,
+     toolName: "write_note",
+        },
+      ],
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toContain("/floors/floor-1/retry-step");
+    const parsedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(parsedBody.from_step_index).toBe(2);
+    expect(parsedBody.confirmed_execution_ids).toEqual(["exec-1"]);
+  });
+
 });

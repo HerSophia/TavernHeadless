@@ -30,10 +30,12 @@ export const FALLBACK_PORT_STYLE: PortStyle = {
 };
 
 /**
- * 14 种 port type 的颜色/形状编码。颜色低饱和、两主题通用；形状按数据族区分，
+ * 15 种 port type 的颜色/形状编码。颜色低饱和、两主题通用；形状按数据族区分，
  * 让端口在缩略与远观时仍可扫读。
  */
 export const PORT_STYLES: Record<NodeGraphPortType, PortStyle> = {
+  // 自适应通配类型（仅 source.global_input）→ 中性灰 + 圆
+  any: { color: "rgb(148 148 158)", shape: "circle" },
   // 标量 / 简单数据 → 圆
   text: { color: "rgb(154 167 184)", shape: "circle" },
   number: { color: "rgb(142 155 214)", shape: "circle" },

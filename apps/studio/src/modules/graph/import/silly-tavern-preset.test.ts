@@ -6,6 +6,7 @@ import {
   isSillyTavernPreset,
   parseSectionTag,
   parseSlotLabel,
+  SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING,
   type SillyTavernPreset,
 } from "./silly-tavern-preset";
 
@@ -170,22 +171,45 @@ describe("importSillyTavernPreset", () => {
     expect(validation.counts.error).toBe(0);
     expect(validation.isExecutable).toBe(true);
 
-    // main / charDescription / jb / disabledOne → 4 个块（禁用位保留）；chatHistory → 历史；missingId 跳过。
-    expect(result.summary.blockCount).toBe(4);
+    // main / jb / disabledOne → 3 个 template_render 块（禁用位保留）；
+    // charDescription marker → source.character + text_to_block 语义插槽；chatHistory → 历史；missingId 跳过。
+    expect(result.summary.blockCount).toBe(3);
+    expect(result.summary.slotNodeCount).toBe(1);
     expect(result.summary.disabledCount).toBe(1);
     expect(result.summary.hasHistory).toBe(true);
     expect(result.summary.skippedCount).toBe(1);
     expect(result.warnings.some((w) => w.includes("missingId"))).toBe(true);
 
-    // 节点：4 块 + 历史 + compose + narrator + commit = 8。
-    expect(result.document.nodes).toHaveLength(8);
-    expect(result.document.nodes.filter((n) => n.type === "compose.template_render")).toHaveLength(4);
+    // 节点：3 块 + (source.character + text_to_block) + 历史 + 用户输入 + compose + narrator + commit = 10。
+    expect(result.document.nodes).toHaveLength(10);
+    expect(result.document.nodes.filter((n) => n.type === "compose.template_render")).toHaveLength(3);
+    expect(result.document.nodes.filter((n) => n.type === "source.character")).toHaveLength(1);
+    expect(result.document.nodes.filter((n) => n.type === "compose.text_to_block")).toHaveLength(1);
     expect(result.document.nodes.some((n) => n.type === "source.chat_history")).toBe(true);
+    expect(result.document.nodes.filter((n) => n.type === "source.user_input")).toHaveLength(1);
     expect(result.document.nodes.filter((n) => n.type === "narration.narrator")).toHaveLength(1);
     expect(result.document.nodes.some((n) => n.type === "output.commit_gate")).toBe(true);
 
-    // 边：4 块→compose + 历史→compose + compose→narrator + narrator→commit = 7。
-    expect(result.document.edges).toHaveLength(7);
+    // 边：3 块→compose + slot(source→t2b, t2b→compose) + 历史→compose + 用户输入→narrator + compose→narrator + narrator→commit = 9。
+    expect(result.document.edges).toHaveLength(9);
+  });
+
+  it("wires a source.user_input into the narrator's required user_input port", () => {
+    const result = importSillyTavernPreset(samplePreset());
+
+    const userInput = result.document.nodes.find((n) => n.id === "n_user_input");
+    expect(userInput?.type).toBe("source.user_input");
+    expect(userInput?.phase).toBe("pre_response");
+
+    const edge = result.document.edges.find((e) => e.id === "e_user_input_narrator");
+    expect(edge?.from).toEqual({ nodeId: "n_user_input", port: "text" });
+    expect(edge?.to).toEqual({ nodeId: "n_narrator", port: "user_input" });
+
+    // 用户输入源不归入 Narrator 主体组（保持 g_narrator 只含 compose + narrator）。
+    const narratorGroup = result.document.groups?.find((g) => g.id === "g_narrator");
+    expect(narratorGroup?.nodeIds).not.toContain("n_user_input");
+
+    expect(validateGraphDocument(result.document).isExecutable).toBe(true);
   });
 
   it("clusters slots into subgraph groups by system function, keeping disabled slots", () => {
@@ -229,17 +253,20 @@ describe("importSillyTavernPreset", () => {
     expect(config?.outputRegex).toHaveLength(1);
   });
 
-  it("carries authored content and marker flags onto block config", () => {
+  it("carries authored content onto block config; marker slots become semantic source nodes", () => {
     const result = importSillyTavernPreset(samplePreset());
     const blocks = result.document.nodes.filter((n) => n.type === "compose.template_render");
 
     const main = blocks.find((n) => (n.config as { identifier?: string })?.identifier === "main");
     expect((main?.config as { content?: string })?.content).toBe("你是叙事者。");
 
-    const char = blocks.find((n) => (n.config as { identifier?: string })?.identifier === "charDescription");
-    expect((char?.config as { marker?: boolean })?.marker).toBe(true);
-    // marker 块无 content 字段（已剪除 undefined）。
-    expect((char?.config as { content?: string })?.content).toBeUndefined();
+    // charDescription 不再是 template_render 块，而是 source.character 语义源节点。
+    expect(blocks.some((n) => (n.config as { identifier?: string })?.identifier === "charDescription")).toBe(false);
+    const charSource = result.document.nodes.find(
+      (n) => n.type === "source.character" && (n.config as { identifier?: string })?.identifier === "charDescription",
+    );
+    expect(charSource).toBeDefined();
+    expect((charSource?.config as { part?: string })?.part).toBe("description");
   });
 
   it("keeps only prompt-relevant fields and drops redundant promptName", () => {
@@ -359,8 +386,8 @@ describe("importSillyTavernPreset", () => {
     const byName = (name: string) => result.document.groups?.find((g) => g.name === name);
 
     expect(result.summary.clusterMode).toBe("strict");
-    // <user>…</user> 分节 → 名为 user 的组（含两个标签块 + 角色描述）。
-    expect(byName("user")?.nodeIds).toHaveLength(3);
+    // <user>…</user> 分节 → 名为 user 的组（两个标签块 + charDescription 语义插槽的 source + text_to_block）。
+    expect(byName("user")?.nodeIds).toHaveLength(4);
     // 文风1/2/3 不归一化、各自成组（保序、相邻但类别不同）。
     expect(byName("文风1")?.nodeIds).toHaveLength(1);
     expect(byName("文风2")?.nodeIds).toHaveLength(1);
@@ -370,6 +397,44 @@ describe("importSillyTavernPreset", () => {
     // user + 文风1 + 文风2 + 文风3 + Sigon = 5 个功能组。
     expect(result.summary.groupCount).toBe(5);
     expect(validateGraphDocument(result.document).isExecutable).toBe(true);
+  });
+
+  it("marks the default import purpose as narrator_graph", () => {
+    const result = importSillyTavernPreset(samplePreset());
+    expect(result.document.metadata?.importedFrom).toBe("sillytavern_openai_preset");
+    expect(result.document.metadata?.importPurpose).toBe("narrator_graph");
+  });
+
+  it("marks a compat floor import without pretending to be the built-in compat template", () => {
+    const result = importSillyTavernPreset(samplePreset(), { purpose: "compat_floor_graph" });
+    expect(result.document.metadata?.importPurpose).toBe("compat_floor_graph");
+    expect(result.document.metadata?.template).toBeUndefined();
+    expect(result.document.mode).toBe("native_graph");
+  });
+
+  it("keeps compat floor imports within FG1 compat binding limits", () => {
+    const result = importSillyTavernPreset(samplePreset(), { purpose: "compat_floor_graph" });
+    const validation = validateGraphDocument(result.document);
+    const permissions = (result.document as { permissions?: { required?: unknown[] } }).permissions;
+
+    expect(result.document.nodes.some((node) => node.type.startsWith("agent."))).toBe(false);
+    expect(result.document.nodes.some((node) => node.type.startsWith("verify."))).toBe(false);
+    expect(permissions?.required ?? []).toHaveLength(0);
+    expect(result.document.nodes.filter((node) => node.type === "narration.narrator")).toHaveLength(1);
+    expect(validation.counts.error).toBe(0);
+    expect(validation.isExecutable).toBe(true);
+  });
+
+  it("warns that imported outputRegex is stored but not executed", () => {
+    const result = importSillyTavernPreset(samplePreset());
+    expect(result.warnings).toContain(SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING);
+
+    const withoutRegex = samplePreset();
+    delete withoutRegex.extensions;
+    delete withoutRegex.regex_scripts;
+    const second = importSillyTavernPreset(withoutRegex);
+    expect(second.summary.regexCount).toBe(0);
+    expect(second.warnings).not.toContain(SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING);
   });
 
 });
@@ -415,6 +480,161 @@ describe("importSillyTavernPreset: preset source of truth", () => {
     const second = importSillyTavernPreset(source, { clusterMode: "strict" });
     expect(second.document.metadata?.clusterMode).toBe("strict");
     expect(validateGraphDocument(second.document).isExecutable).toBe(true);
+  });
+});
+
+/** 含全部固定 marker slot（世界书 before/after、角色三 slot、人设、示例对话、历史）的预设。 */
+function slotPreset(): SillyTavernPreset {
+  return {
+    name: "插槽预设",
+    prompts: [
+      { identifier: "main", name: "Main Prompt", role: "system", content: "你是叙事者。", marker: false },
+      { identifier: "worldInfoBefore", name: "世界书（前）", role: "system", marker: true },
+      { identifier: "charDescription", name: "角色描述", role: "system", marker: true },
+      { identifier: "charPersonality", name: "角色性格",role: "system", marker: true },
+      { identifier: "scenario", name: "场景", role: "system", marker: true },
+      { identifier: "personaDescription", name: "用户人设", role: "system", marker: true },
+      { identifier: "dialogueExamples", name: "示例对话", role: "system", marker: true },
+   { identifier: "worldInfoAfter", name: "世界书（后）", role: "system", marker: true },
+      { identifier: "chatHistory", name: "对话历史", role: "system", marker: true },
+    ],
+    prompt_order: [
+      {
+        character_id: 1,
+        order: [
+          { identifier: "main", enabled: true },
+          { identifier: "worldInfoBefore", enabled: true },
+          { identifier: "charDescription", enabled: true },
+          { identifier: "charPersonality", enabled: true },
+          { identifier: "scenario", enabled: true },
+          { identifier: "personaDescription", enabled: false },
+          { identifier: "dialogueExamples", enabled: true},
+          {identifier: "worldInfoAfter", enabled: true },
+          { identifier: "chatHistory", enabled: true },
+        ],
+      },
+    ],
+  };
+}
+
+describe("importSillyTavernPreset: fixed marker slot routing", () => {
+  it("routes each fixed marker to its semantic source node plus a text_to_block converter", () => {
+    const result = importSillyTavernPreset(slotPreset());
+    const byType = (type: string) => result.document.nodes.filter((n) => n.type === type);
+    const cfgId = (n: { config?: unknown }) => (n.config as { identifier?: string })?.identifier;
+
+    // 世界书 before/after → 两个 select.worldbook_match（config.position 区分）。
+    const worldbook = byType("select.worldbook_match");
+    expect(worldbook).toHaveLength(2);
+    const before = worldbook.find((n) => cfgId(n) === "worldInfoBefore");
+    const after = worldbook.find((n) => cfgId(n) === "worldInfoAfter");
+    expect((before?.config as { position?: string })?.position).toBe("before");
+    expect((after?.config as { position?: string })?.position).toBe("after");
+
+    // 角色三 slot → 三个 source.character（config.part区分）。
+    const character = byType("source.character");
+    expect(character).toHaveLength(3);
+    const parts = character.map((n) => (n.config as { part?: string })?.part).sort();
+    expect(parts).toEqual(["description", "personality", "scenario"]);
+
+    // 人设 → source.persona；示例对话 → source.dialogue_examples。
+    expect(byType("source.persona")).toHaveLength(1);
+    expect(byType("source.dialogue_examples")).toHaveLength(1);
+
+    // 7 个固定 marker slot → 7 个语义源 + 7 个 text_to_block 转换节点。
+    expect(result.summary.slotNodeCount).toBe(7);
+    expect(byType("compose.text_to_block")).toHaveLength(7);
+
+    // chatHistory 仍为 source.chat_history；main 仍为 template_render。
+    expect(byType("source.chat_history")).toHaveLength(1);
+    expect(byType("compose.template_render")).toHaveLength(1);
+    expect(result.summary.hasHistory).toBe(true);
+    expect(result.summary.blockCount).toBe(1);
+
+    expect(validateGraphDocument(result.document).isExecutable).toBe(true);
+  });
+
+  it("wires each semantic source through text_to_block into compose.blocks", () => {
+    const result = importSillyTavernPreset(slotPreset());
+    const edges = result.document.edges;
+
+    // 世界书（前）：source text → converter text；converter block → composeblocks。
+    const srcToConv = edges.find((e) => e.id === "e_n_slot_worldInfoBefore_t2b");
+    expect(srcToConv?.from).toEqual({ nodeId: "n_slot_worldInfoBefore", port: "text" });
+    expect(srcToConv?.to).toEqual({ nodeId: "n_slot_worldInfoBefore_block", port: "text" });
+
+    const convToCompose = edges.find((e) => e.id === "e_n_slot_worldInfoBefore_block_compose");
+    expect(convToCompose?.from).toEqual({ nodeId: "n_slot_worldInfoBefore_block", port: "block" });
+    expect(convToCompose?.to).toEqual({ nodeId: "n_compose", port: "blocks" });
+
+    // 每个语义源都有对应的 source→converter 与 converter→compose 两条边。
+    const slotIds = [
+      "worldInfoBefore",
+      "charDescription",
+      "charPersonality",
+      "scenario",
+      "personaDescription",
+      "dialogueExamples",
+      "worldInfoAfter",
+    ];
+    for (const id of slotIds) {
+      expect(edges.some((e) => e.id === `e_n_slot_${id}_t2b`)).toBe(true);
+      expect(edges.some((e) => e.id === `e_n_slot_${id}_block_compose`)).toBe(true);
+    }
+  });
+
+  it("propagates the disabled marker state to both the source and its converter", () => {
+    const result = importSillyTavernPreset(slotPreset());
+    // personaDescription 在 prompt_order 中 enabled:false。
+    const personaSource = result.document.nodes.find((n) => n.id === "n_slot_personaDescription");
+    const personaConverter = result.document.nodes.find((n) => n.id === "n_slot_personaDescription_block");
+    expect(personaSource?.enabled).toBe(false);
+    expect(personaConverter?.enabled).toBe(false);
+
+    // 启用的 slot（世界书前）不写 enabled 字段（缺省开）。
+    const worldbookSource = result.document.nodes.find((n) => n.id === "n_slot_worldInfoBefore");
+    expect(worldbookSource?.enabled).toBeUndefined();
+
+    // 禁用 slot 仍连入 compose（开启即生效）。
+    expect(
+      result.document.edges.some((e) => e.id === "e_n_slot_personaDescription_block_compose"),
+    ).toBe(true);
+
+    expect(validateGraphDocument(result.document).isExecutable).toBe(true);
+  });
+
+  it("keeps non-marker authored blocks and unknown markers as compose.template_render", () => {
+    const preset: SillyTavernPreset = {
+      name: "混合预设",
+      prompts: [
+        { identifier: "main", name: "Main Prompt", role: "system", content: "正文", marker: false },
+        { identifier: "charDescription", name: "角色描述", role: "system", marker: true },
+        // 未知 marker：不在分流表内，退回 template_render。
+        { identifier: "unknownMarker", name: "未知插槽", role: "system", marker: true },
+      ],
+      prompt_order: [
+        {
+          character_id: 1,
+          order: [
+            { identifier: "main", enabled: true },
+            { identifier: "charDescription", enabled: true },
+            { identifier: "unknownMarker", enabled: true },
+          ],
+        },
+      ],
+    };
+    const result = importSillyTavernPreset(preset);
+    const templates = result.document.nodes.filter((n)=> n.type === "compose.template_render");
+    const cfgId = (n: { config?: unknown }) => (n.config as { identifier?: string })?.identifier;
+
+    // main（authored）与 unknownMarker（未知 marker）仍为 template_render。
+    expect(templates.map(cfgId).sort()).toEqual(["main", "unknownMarker"]);
+    // charDescription 变成语义源。
+    expect(result.document.nodes.some((n) => n.type === "source.character")).toBe(true);
+    expect(result.summary.slotNodeCount).toBe(1);
+    expect(result.summary.blockCount).toBe(2);
+
+    expect(validateGraphDocument(result.document).isExecutable).toBe(true);
   });
 });
 

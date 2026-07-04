@@ -44,6 +44,7 @@ function makeGraph(graphId = "ngraph_test"): NodeGraphDocument {
     permissions: { required: [] },
     nodes: [
       { id: "history", type: "source.chat_history", typeVersion: "1", phase: "pre_response" },
+      { id: "user_input", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
       { id: "messages", type: "compose.final_messages", typeVersion: "1", phase: "response" },
       { id: "narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
       { id: "commit", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
@@ -60,6 +61,12 @@ function makeGraph(graphId = "ngraph_test"): NodeGraphDocument {
         kind: "data",
         from: { nodeId: "messages", port: "messages" },
         to: { nodeId: "narrator", port: "messages" },
+      },
+      {
+        id: "e_user_input_narrator",
+        kind: "data",
+        from: { nodeId: "user_input", port: "text" },
+        to: { nodeId: "narrator", port: "user_input" },
       },
       {
         id: "e_narrator_commit",
@@ -119,6 +126,48 @@ function makeSingleCallAgentGraph(
       },
     }],
     edges: [],
+  };
+}
+
+function makeAnnotationGraph(graphId = "ngraph_annotation"): NodeGraphDocument {
+  const graph = makeGraph(graphId);
+  graph.nodes.unshift({
+    id: "note",
+    type: "annotation.comment",
+    typeVersion: "1",
+    phase: "pre_response",
+    config: { content: "This is only an editor note." },
+  });
+  return graph;
+}
+
+function makeDialogueExamplesGraph(graphId = "ngraph_dialogue_examples"): NodeGraphDocument {
+  return {
+    schemaVersion: 1,
+    graphId,
+    name: "Dialogue Examples Prompt",
+    mode: "native_graph",
+    policies: {},
+    permissions: { required: [] },
+    nodes: [
+      { id: "examples", type: "source.dialogue_examples", typeVersion: "1", phase: "pre_response" },
+      { id: "block", type: "compose.text_to_block", typeVersion: "1", phase: "pre_response" },
+      { id: "messages", type: "compose.final_messages", typeVersion: "1", phase: "response" },
+    ],
+    edges: [
+      {
+        id: "e_examples_block",
+        kind: "data",
+        from: { nodeId: "examples", port: "text" },
+        to: { nodeId: "block", port: "text" },
+      },
+      {
+        id: "e_block_messages",
+        kind: "data",
+        from: { nodeId: "block", port: "block" },
+        to: { nodeId: "messages", port: "blocks" },
+      },
+    ],
   };
 }
 
@@ -253,6 +302,43 @@ describe("NodeGraph runtime", () => {
     expect(database.db.select().from(nodeGraphVersions).all()).toHaveLength(1);
   });
 
+  it("ignores annotation comments during preview execution", async () => {
+    const result = await previewNodeGraph(createDefaultNodeGraphExecutor(), {
+      document: makeAnnotationGraph(),
+      context: {
+        accountId: "default-admin",
+        workspaceId: "ws_1",
+        projectId: "proj_1",
+        input: { chat_history: [{ role: "user", content: "Hello" }] },
+        chatHistory: [{ role: "user", content: "Hello" }],
+      },
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(result.nodeOutputs.note).toBeUndefined();
+    expect(result.nodeRuns.some((run) => run.nodeId === "note")).toBe(false);
+    expect(result.trace.topologicalLevels.flat()).not.toContain("note");
+  });
+
+  it("converts dialogue examples into prompt blocks during preview", async () => {
+    const result = await previewNodeGraph(createDefaultNodeGraphExecutor(), {
+      document: makeDialogueExamplesGraph(),
+      context: {
+        accountId: "default-admin",
+        workspaceId: "ws_1",
+        projectId: "proj_1",
+        character: { exampleDialogue: "<START>\nAri: The stars are loud tonight." },
+      },
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(result.nodeOutputs.examples?.outputs?.text).toBe("<START>\nAri: The stars are loud tonight.");
+    expect(result.nodeOutputs.block?.outputs?.block).toBe("<START>\nAri: The stars are loud tonight.");
+    expect(result.nodeOutputs.messages?.outputs?.messages).toEqual([
+      { role: "system", content: "<START>\nAri: The stars are loud tonight.", source: "node_graph:block" },
+    ]);
+  });
+
   it("previews a graph without writing run rows", async () => {
     const service = new NodeGraphDefinitionService(database.db);
     const { version } = service.create({
@@ -351,7 +437,7 @@ describe("NodeGraph runtime", () => {
       status: "succeeded",
       intent: "dry_run",
     });
-    expect(database.db.select().from(nodeGraphNodeRuns).all()).toHaveLength(4);
+    expect(database.db.select().from(nodeGraphNodeRuns).all()).toHaveLength(5);
   });
 
   it("dispatches persistent outputs only during successful commit", async () => {

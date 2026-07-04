@@ -48,4 +48,6 @@ export type {
   AgentLoopPendingConfirmation,
   AgentLoopResult,
   AgentLoopRunInput,
+  AgentLoopPriorRoundtrip,
+  AgentLoopPriorRoundtripCall,
 } from './text-protocol-agent-loop.js';

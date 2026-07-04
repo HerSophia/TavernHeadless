@@ -1,9 +1,11 @@
 import {
   compileNodeGraph,
-  createDefaultNodeTypeRegistry,
+  describeNodeTypeKnowledge,
+  listNodeTypeKnowledge,
   type ToolCallResult,
   type ToolDefinition,
   type ToolExecutionContext,
+  type ToolParameterProperty,
   type ToolProvider,
   type ToolSideEffectLevel,
   type NodeGraphDocument,
@@ -93,10 +95,18 @@ export class NodeGraphToolProvider implements ToolProvider {
           return { data: this.createGraph(args) };
         case "nodegraph.graph.get":
           return { data: this.getGraph(args) };
+     case "nodegraph.graph.list":
+          return { data: this.listGraphs(args) };
+        case "nodegraph.graph.find_by_name":
+          return { data: this.findGraphByName(args) };
         case "nodegraph.graph.list_versions":
           return { data: this.listVersions(args) };
-        case "nodegraph.node_type.list":
-          return { data: createDefaultNodeTypeRegistry().list() };
+        case "nodegraph.node.get":
+          return { data: this.getNode(args) };
+        case "nodegraph.preset.get":
+          return { data: this.getPreset(args) };
+             case "nodegraph.node_type.list":
+          return { data: listNodeTypeKnowledge() };
         case "nodegraph.node_type.describe":
           return { data: this.describeNodeType(args) };
         case "nodegraph.draft.create_from_version":
@@ -158,10 +168,18 @@ export class NodeGraphToolProvider implements ToolProvider {
     });
   }
 
+  /**
+ * 读取一张图的定义与当前版本，以「节点组为一等公民」的分层视图呈现。
+   *
+   * 需求约定：节点组是工具结果里的一等信息（区分 kind=subgraph 封装子图 / kind=visual 可视收纳），
+   * 组内成员只给摘要（二等公民，不含完整 config）；不属于任何组的游离节点单列。想看组内节点的
+   * 完整配置，用 nodegraph.node.get 展开。edges 全量给出以便理解连接关系；若该图来自酒馆预设导入，
+   * source 会标明并引导使用 nodegraph.preset.get。
+   */
   private getGraph(args: Record<string, unknown>) {
     const graphId = requireString(args.graph_id, "graph_id");
     const definition = this.options.service.get({
-      actor: this.options.actor,
+          actor: this.options.actor,
       projectId: this.options.projectId,
       graphId,
     });
@@ -170,7 +188,271 @@ export class NodeGraphToolProvider implements ToolProvider {
       projectId: this.options.projectId,
       graphId,
     });
-    return { definition, current_version: currentVersion };
+    const document = currentVersion.document;
+    const nodesById = new Map(document.nodes.map((node) => [node.id, node] as const));
+    const groups = document.groups ?? [];
+    const groupedNodeIds = new Set<string>();
+    for (const group of groups) {
+      for (const nodeId of group.nodeIds) {
+        groupedNodeIds.add(nodeId);
+      }
+    }
+    const ungroupedNodes = document.nodes
+      .filter((node) => !groupedNodeIds.has(node.id))
+      .map(toNodeSummary);
+    return {
+      definition,
+      current_version: {
+        id: currentVersion.id,
+        version_no: currentVersion.versionNo,
+        document_hash: currentVersion.documentHash,
+        created_at: currentVersion.createdAt,
+      },
+      graph: {
+        schema_version: document.schemaVersion,
+        name: document.name,
+        description: document.description,
+        source: buildGraphSourceInfo(document),
+      counts: {
+          nodes: document.nodes.length,
+          edges: document.edges.length,
+          groups: groups.length,
+        },
+        groups: groups.map((group) => toGroupView(group, nodesById)),
+        ungrouped_nodes: ungroupedNodes,
+        edges: document.edges,
+      },
+    };
+  }
+
+  /**
+   * 读取线上当前版本的单个节点；若传入的是节点组 id，则展开该组全部成员的完整信息。
+   *
+   * 与 graph.get 的「组一等、节点二等」呼应：graph.get 只给组与成员摘要，想看组内节点的完整
+   * 配置时用本工具——传节点 id 得该节点，传组 id 会展开整组成员（钻入子图 / 展开可视收纳）。
+   */
+  private getNode(args: Record<string,unknown>) {
+    const graphId = requireString(args.graph_id, "graph_id");
+    const nodeId = requireString(args.node_id, "node_id");
+    const currentVersion = this.options.service.getCurrentVersion({
+      actor: this.options.actor,
+      projectId: this.options.projectId,
+      graphId,
+    });
+    const document = currentVersion.document;
+    const nodesById = new Map(document.nodes.map((node) => [node.id, node] as const));
+
+    // 优先按节点组解析：命中组则展开成员完整信息（钻入子图 / 展开可视收纳）。
+    const group = (document.groups ?? []).find((candidate) => candidate.id === nodeId);
+    if (group) {
+      const members = group.nodeIds
+        .map((id) => nodesById.get(id))
+       .filter((node): node is NodeGraphNode => Boolean(node));
+      const memberIds = new Set(members.map((node) => node.id));
+      const relatedEdges = document.edges.filter(
+        (edge) => memberIds.has(edge.from.nodeId) || memberIds.has(edge.to.nodeId),
+      );
+      return {
+        graph_id: graphId,
+        resolved_as: "group" as const,
+     group: omitUndefined({
+          id: group.id,
+          name: group.name,
+          kind: group.kind,
+          collapsed: group.collapsed === true ? true : undefined,
+          enabled: group.enabled === false ? false : undefined,
+          input_ports: group.inputPorts && group.inputPorts.length > 0 ? group.inputPorts : undefined,
+          output_ports:
+         group.outputPorts && group.outputPorts.length > 0 ? group.outputPorts : undefined,
+        }),
+        nodes: members,
+        edges: relatedEdges,
+      };
+    }
+
+    // 否则按普通节点解析。
+    const node = nodesById.get(nodeId);
+    if (!node) {
+      throw new Error(`Node or group not found in the current version: ${nodeId}`);
+    }
+    const ownerGroup = (document.groups ?? []).find((candidate) =>
+      candidate.nodeIds.includes(nodeId),
+    );
+    return {
+      graph_id: graphId,
+      resolved_as: "node" as const,
+      node,
+      group: ownerGroup
+        ? { id: ownerGroup.id, name: ownerGroup.name, kind: ownerGroup.kind }
+        : null,
+      incoming_edges: document.edges.filter((edge) => edge.to.nodeId === nodeId),
+      outgoing_edges: document.edges.filter((edge) => edge.from.nodeId === nodeId),
+    };
+  }
+
+  /**
+   * 读取「来自酒馆（SillyTavern）预设导入」的图背后的原始预设信息。
+   *
+   * 不带 identifier：返回预设整体概览 + prompt_order 对照表（每条原始 prompt → 当前所属分组），
+   * 让 agent 一眼看清预设被拆分/封装成了哪些组。带 identifier：返回该条 prompt 的完整原文。
+   * 图不是从预设导入时返回 imported_from_preset=false，不报错。
+   */
+  private getPreset(args: Record<string, unknown>) {
+    const graphId =requireString(args.graph_id, "graph_id");
+    const currentVersion = this.options.service.getCurrentVersion({
+      actor: this.options.actor,
+      projectId: this.options.projectId,
+      graphId,
+    });
+    const document = currentVersion.document;
+    const meta = isRecord(document.metadata) ? document.metadata : null;
+    if (!meta || meta.importedFrom !== "sillytavern_openai_preset") {
+      return {
+        graph_id: graphId,
+        imported_from_preset: false,
+        message:
+          "This graph was not imported from a SillyTavern preset; there is no original preset to read.",
+      };
+    }
+
+    const presetSource =isRecord(meta.presetSource) ?meta.presetSource : null;
+    const prompts =
+      presetSource && Array.isArray(presetSource.prompts) ? presetSource.prompts : [];
+    const promptById = new Map<string, Record<string, unknown>>();
+    for (const prompt of prompts) {
+      if (isRecord(prompt) && typeof prompt.identifier === "string") {
+        promptById.set(prompt.identifier, prompt);
+      }
+    }
+
+    // 当前图里 block 节点通过 config.identifier 回指原始 prompt；据此对照分组归属。
+    const nodeByIdentifier = new Map<string, NodeGraphNode>();
+    for (const node of document.nodes) {
+      if (isRecord(node.config) && typeof node.config.identifier === "string") {
+        nodeByIdentifier.set(node.config.identifier, node);
+      }
+    }
+    const groupByNodeId = new Map<string, NodeGraphGroup>();
+    for (const group of document.groups ?? []) {
+      for (const memberId of group.nodeIds) {
+        groupByNodeId.set(memberId, group);
+      }
+    }
+
+    const identifierArg =
+  typeof args.identifier === "string" && args.identifier.trim().length > 0
+        ? args.identifier.trim()
+        : null;
+
+    if (identifierArg) {
+      const prompt = promptById.get(identifierArg) ?? null;
+      const node = nodeByIdentifier.get(identifierArg) ?? null;
+      const group = node ? groupByNodeId.get(node.id) ?? null : null;
+      if (!prompt && !node) {
+        throw new Error(`Preset prompt not found: ${identifierArg}`);
+      }
+   return {
+        graph_id: graphId,
+        imported_from_preset: true,
+        entry: {
+          identifier: identifierArg,
+          original: prompt,
+          current_node: node
+            ? { id: node.id, name: node.name ?? null, enabled: node.enabled !== false }
+            : null,
+          current_group: group
+            ? { id: group.id, name: group.name, kind: group.kind }
+            : null,
+        },
+      };
+    }
+
+    const order = pickPresetPromptOrder(presetSource, promptById);
+    const promptOrder = order.map((entry) => {
+      const prompt = promptById.get(entry.identifier);
+      const node = nodeByIdentifier.get(entry.identifier) ?? null;
+      const group = node ? groupByNodeId.get(node.id) ?? null : null;
+  return omitUndefined({
+        identifier: entry.identifier,
+        name: prompt && typeof prompt.name === "string" ? prompt.name : undefined,
+       enabled: entry.enabled,
+        role: prompt && typeof prompt.role === "string" ? prompt.role : undefined,
+        marker: prompt && prompt.marker === true ? true : undefined,
+        has_content:
+          prompt !== undefined && typeof prompt.content === "string" && prompt.content.length > 0,
+        current_node_id: node ? node.id : null,
+        current_group: group
+          ? { id: group.id, name: group.name, kind: group.kind }
+          : null,
+      });
+    });
+
+    const sampling = extractPresetSampling(presetSource);
+    return {
+      graph_id: graphId,
+      imported_from_preset: true,
+      overview: omitUndefined({
+        preset_name: typeof meta.presetName === "string" ? meta.presetName : undefined,
+        cluster_mode: typeof meta.clusterMode === "string" ? meta.clusterMode : undefined,
+        prompt_count: prompts.length,
+        order_count: order.length,
+        sampling: Object.keys(sampling).length > 0 ? sampling : undefined,
+        regex_count: countPresetRegex(presetSource),
+      }),
+      prompt_order: promptOrder,
+    };
+  }
+
+  /** 列出当前项目下的图（id / 名称 / 状态），用于「看看有哪些图」。只读，不修改任何数据。 */
+  private listGraphs(args: Record<string, unknown>) {
+    const status = normalizeStatusFilter(args.status);
+    const definitions = this.options.service.list({
+      actor: this.options.actor,
+      projectId: this.options.projectId,
+      ...(status ? { status } : {}),
+    });
+    return {
+      graphs: definitions.map((definition) => ({
+        id: definition.id,
+        name: definition.name,
+        status: definition.status,
+        current_version_id: definition.currentVersionId,
+        created_at: definition.createdAt,
+        updated_at: definition.updatedAt,
+      })),
+    };
+  }
+
+  /**
+   * 按名称查找图，返回其 Graph ID。
+   *
+   * 名称可能不唯一：优先精确匹配；无精确匹配时回退为大小写不敏感匹配。
+   * `matches` 返回所有命中项；`graph_id` 仅在恰好命中一张图时给出，便于直接接续后续工具调用。
+   */
+  private findGraphByName(args: Record<string, unknown>) {
+    const name = requireString(args.name, "name");
+    const status = normalizeStatusFilter(args.status);
+    const definitions = this.options.service.list({
+      actor: this.options.actor,
+      projectId: this.options.projectId,
+      ...(status? { status } : {}),
+    });
+    const exact = definitions.filter((definition) => definition.name === name);
+    const lower = name.toLowerCase();
+    const matched = exact.length > 0
+      ? exact
+      : definitions.filter((definition) => definition.name.toLowerCase() === lower);
+    const sole = matched.length === 1 ? matched[0] : null;
+    return {
+      name,
+      matches: matched.map((definition) => ({
+        id: definition.id,
+     name: definition.name,
+        status: definition.status,
+        current_version_id: definition.currentVersionId,
+      })),
+      graph_id: sole ? sole.id : null,
+    };
   }
 
   private listVersions(args: Record<string, unknown>) {
@@ -178,14 +460,18 @@ export class NodeGraphToolProvider implements ToolProvider {
     return this.options.service.listVersions({
       actor: this.options.actor,
       projectId: this.options.projectId,
-      graphId,
+       graphId,
     });
   }
 
   private describeNodeType(args: Record<string, unknown>) {
     const type = requireString(args.type, "type");
     const typeVersion = typeof args.type_version === "string" ? args.type_version : "1";
-    return createDefaultNodeTypeRegistry().get(type, typeVersion);
+    const detail = describeNodeTypeKnowledge(type, typeVersion);
+    if (!detail) {
+      throw new Error(`Node type not registered: ${type}@${typeVersion}`);
+    }
+    return detail;
   }
 
   private createDraft(args: Record<string, unknown>) {
@@ -468,9 +754,328 @@ function requireRecord(value: unknown, fieldName: string): Record<string, unknow
   return value as Record<string, unknown>;
 }
 
+/** 解析可选的图状态过滤参数：仅接受 active / archived，其余一律视为不过滤。 */
+function normalizeStatusFilter(value: unknown): "active" | "archived" | null {
+  return value === "active"|| value === "archived" ? value : null;
+}
+
+/** 浅层删除值为 undefined 的键，保持工具结果紧凑。 */
+function omitUndefined<T extends Record<string, unknown>>(value: T): T {
+ for (const key of Object.keys(value)) {
+    if (value[key] === undefined) {
+      delete value[key];
+    }
+  }
+  return value;
+}
+
+/** 轻量对象守卫（非数组的纯对象）。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 从文档 metadata 推断该图是否来自酒馆（SillyTavern）预设导入。
+ *
+ * 导入器（studio 侧 silly-tavern-preset）会写 `metadata.importedFrom = "sillytavern_openai_preset"`
+ * 及 presetName / clusterMode / presetSource。命中时附一句提示，引导 agent 使用 nodegraph.preset.get。
+ */
+function buildGraphSourceInfo(document: NodeGraphDocument): Record<string, unknown> {
+  const meta = isRecord(document.metadata) ? document.metadata : null;
+  if (meta && meta.importedFrom === "sillytavern_openai_preset") {
+    return omitUndefined({
+      imported_from_preset: true,
+      preset_name: typeof meta.presetName === "string" ? meta.presetName : undefined,
+      cluster_mode: typeof meta.clusterMode === "string" ?meta.clusterMode : undefined,
+      hint: "Imported from a SillyTavern preset. Use nodegraph.preset.get (with this graph_id) to read the original preset overview and the prompt_order -> group mapping.",
+    });
+  }
+  return { imported_from_preset: false };
+}
+
+/** 节点摘要（二等公民视图）：只给身份与开关，不含完整 config。 */
+function toNodeSummary(node: NodeGraphNode): Record<string, unknown> {
+  return omitUndefined({
+    id: node.id,
+    type: node.type,
+    name: node.name,
+    phase: node.phase,
+    enabled: node.enabled !== false,
+  });
+}
+
+/**
+ * 节点组视图（一等公民）：区分子图封装与可视收纳，带成员摘要与（子图的）对外接口端口。
+ *
+ * - `kind: "subgraph"`：封装成对外单节点的子图，成员默认藏在内部；
+ * - `kind: "visual"`：编辑器可视收纳，成员本身仍是画布上的独立节点。
+ */
+function toGroupView(
+  group: NodeGraphGroup,
+  nodesById: Map<string, NodeGraphNode>,
+): Record<string, unknown> {
+  const members = group.nodeIds
+    .map((id) => nodesById.get(id))
+    .filter((node): node is NodeGraphNode => Boolean(node))
+    .map(toNodeSummary);
+  return omitUndefined({
+    id: group.id,
+    name: group.name,
+    kind: group.kind,
+    collapsed: group.collapsed === true ? true : undefined,
+    enabled: group.enabled === false ? false : undefined,
+    member_count: group.nodeIds.length,
+    members,
+    input_ports: group.inputPorts && group.inputPorts.length > 0 ? group.inputPorts : undefined,
+    output_ports: group.outputPorts && group.outputPorts.length > 0 ? group.outputPorts : undefined,
+  });
+}
+
+/**
+ * 选定要展示的 `prompt_order`：取「启用且能解析到 prompt 定义」条目最多者，与导入器口径一致。
+ * 无prompt_order 时退化为按 prompts 顺序全部启用。
+ */
+function pickPresetPromptOrder(
+  presetSource: Record<string, unknown> | null,
+  promptById: Map<string, Record<string, unknown>>,
+): Array<{ identifier: string; enabled: boolean }> {
+  const orders =
+    presetSource && Array.isArray(presetSource.prompt_order) ? presetSource.prompt_order: [];
+  if (orders.length === 0) {
+    return [...promptById.keys()].map((identifier) => ({ identifier, enabled: true }));
+  }
+  let best: Array<{ identifier: string; enabled: boolean }> = [];
+  let bestScore = -1;
+  for (const order of orders) {
+    if (!isRecord(order) || !Array.isArray(order.order)) {
+      continue;
+    }
+    const entries = order.order
+      .filter(
+        (entry): entry is Record<string, unknown> =>
+          isRecord(entry) && typeof entry.identifier === "string",
+      )
+      .map((entry) => ({
+        identifier: entry.identifier as string,
+        enabled: entry.enabled !== false,
+      }));
+    const score = entries.filter(
+      (entry) => entry.enabled && promptById.has(entry.identifier),
+    ).length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = entries;
+    }
+  }
+  return best;
+}
+
+/** 采样字段名集合（酒馆 OpenAI 预设常见项）。 */
+const PRESET_SAMPLER_KEYS = [
+  "temperature",
+  "top_p",
+  "top_k",
+  "top_a",
+  "min_p",
+  "frequency_penalty",
+  "presence_penalty",
+  "repetition_penalty",
+  "openai_max_tokens",
+  "openai_max_context",
+];
+
+/** 从原始预设提取采样参数（仅保留数值项）。 */
+function extractPresetSampling(
+  presetSource: Record<string, unknown> | null,
+): Record<string, number> {
+  const sampling: Record<string, number> = {};
+  if (!presetSource) {
+    return sampling;
+  }
+  for (const key of PRESET_SAMPLER_KEYS) {
+    const value = presetSource[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      sampling[key] = value;
+    }
+  }
+  return sampling;
+}
+
+/** 统计原始预设里的正则脚本数量（兼容多种放置位置）。 */
+function countPresetRegex(presetSource: Record<string, unknown> | null): number {
+  if (!presetSource) {
+    return 0;
+  }
+  const extensions = isRecord(presetSource.extensions) ? presetSource.extensions : null;
+  const candidates: unknown[] = [
+    extensions?.regex_scripts,
+    presetSource.regex_scripts,
+    extensions?.regex,
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+  return candidate.length;
+    }
+  }
+  return 0;
+}
+
 const commonObjectSchema = {
   type: "object" as const,
   properties: {},
+};
+
+// ── NodeGraph 参数 schema 片段 ────────────────────────────
+//
+// 这些片段依据 core 的 NodeGraph 文档类型（NodeGraphNode / NodeGraphEdge /
+// NodeGraphGroup / NodeGraphDocument）描述复杂对象参数的形状，让文本协议下的
+// 模型知道每个对象 / 数组该怎么写。只增强对外暴露的 schema，不改变执行逻辑。
+
+const nodeGraphPhaseEnum = [
+  "floor_prepare",
+  "pre_response",
+  "response",
+  "post_response",
+  "commit",
+];
+
+const nodeUiSchema: ToolParameterProperty = {
+  type: "object",
+  description: "Optional UI hints for the node (canvas only; ignored by execution).",
+  properties: {
+    position: {
+      type: "object",
+      description: "Canvas position.",
+      properties: {
+        x: { type: "number" },
+        y: { type: "number" },
+      },
+      required: ["x", "y"],
+    },
+    groupId: { type: "string", description: "Id of the group this node belongs to." },
+  },
+};
+
+const nodeSchema: ToolParameterProperty = {
+  type: "object",
+  description:
+    "A NodeGraph node. Use nodegraph.node_type.describe to learn a type's config keys and ports before adding it.",
+  properties: {
+    id: { type: "string", description: "Unique node id within the document." },
+    type: { type: "string", description: "Registered node type (see nodegraph.node_type.list)." },
+    typeVersion: { type: "string", description: 'Node type version string, e.g. "1".' },
+    name: { type: "string", description: "Optional human-readable node name." },
+    enabled: {
+      type: "boolean",
+      description: "Whether the node participates in execution (default true).",
+    },
+    phase: {
+      type: "string",
+      description: "Execution phase the node runs in.",
+      enum: nodeGraphPhaseEnum,
+    },
+    config: {
+      type: "object",
+      description: "Node configuration object; its shape depends on the node type.",
+    },
+    ui: nodeUiSchema,
+  },
+  required: ["id", "type", "typeVersion", "phase"],
+};
+
+const edgeEndpointSchema: ToolParameterProperty = {
+  type: "object",
+  description: "An edge endpoint: a node id plus one of its port names.",
+  properties: {
+    nodeId: { type: "string", description: "Id of the connected node." },
+    port: { type: "string", description: "Port name on that node." },
+  },
+  required: ["nodeId", "port"],
+};
+
+const edgeSchema: ToolParameterProperty = {
+  type: "object",
+  description:
+    "A NodeGraph edge connecting one node's output port to another node's input port.",
+  properties: {
+    id: { type: "string", description: "Unique edge id within the document." },
+    from: edgeEndpointSchema,
+    to: edgeEndpointSchema,
+    kind: {
+      type: "string",
+      description: 'Edge kind; defaults to "data". "control" requires schemaVersion >= 2.',
+      enum: ["data", "control"],
+    },
+  },
+  required: ["id", "from", "to"],
+};
+
+const groupSchema: ToolParameterProperty = {
+  type: "object",
+   description: "A NodeGraph group (visual cluster or subgraph) over a set of member nodes.",
+  properties: {
+    id: { type: "string", description: "Unique group id within the document." },
+    name: { type: "string", description: "Group name." },
+    kind: {
+      type: "string",
+      description: "Group kind.",
+      enum: ["visual", "subgraph"],
+    },
+    nodeIds: {
+      type: "array",
+      description: "Ids of the member nodes.",
+      items: { type: "string" },
+    },
+    version: { type: "string", description: "Optional subgraph version lock." },
+    enabled: { type: "boolean", description: "Group-level enable switch." },
+    collapsed: { type: "boolean", description: "UI: render the group as a single collapsed node." },
+  },
+  required: ["id", "name", "kind", "nodeIds"],
+};
+
+const groupPatchSchema: ToolParameterProperty = {
+  type: "object",
+  description: "Partial group fields to merge into an existing group; the group id stays unchanged.",
+  properties: {
+    name: { type: "string" },
+    kind: { type: "string", enum: ["visual", "subgraph"] },
+    nodeIds: { type: "array", items: { type: "string" } },
+    version: { type: "string" },
+    enabled: { type: "boolean" },
+    collapsed: { type: "boolean" },
+  },
+};
+
+const nodeConfigSchema: ToolParameterProperty = {
+  type: "object",
+  description: "Replacement config object for the node; its shape depends on the node type.",
+};
+
+const documentSchema: ToolParameterProperty = {
+  type: "object",
+  description:
+    "A complete NodeGraph document. Prefer incremental building (draft.create_from_version + node.add / edge.add) over emitting a whole document at once.",
+  properties: {
+    schemaVersion: {
+      type: "number",
+      description: "Document schema version: 1 (v1) or 2 (NG2-CORE v2).",
+    },
+    graphId: { type: "string", description: "Stable graph id." },
+    name: { type: "string", description: "Graph name." },
+    description: { type: "string", description: "Optional graph description." },
+    mode: {
+      type: "string",
+      description: 'Always "native_graph".',
+      enum: ["native_graph"],
+    },
+    nodes: { type: "array", description: "All nodes in the graph.", items: nodeSchema },
+    edges: { type: "array", description: "All edges in the graph.", items: edgeSchema },
+    groups: { type: "array", description: "Optional groups.", items: groupSchema },
+    policies: { type: "object", description: "Graph-level execution policies." },
+    permissions: { type: "object", description: "Optional permission manifest." },
+    metadata: { type: "object", description: "Optional arbitrary metadata." },
+  },
+  required: ["schemaVersion", "graphId", "name", "mode", "nodes", "edges", "policies"],
 };
 
 const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -481,8 +1086,8 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string" },
-        document: { type: "object" },
+        name: { type: "string", description: "Optional graph name." },
+        document: documentSchema,
       },
       required: ["document"],
     },
@@ -500,14 +1105,91 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
     sideEffectLevel: "none",
     allowedSlots: [],
+   source: "builtin",
+  },
+  {
+    name: "nodegraph.graph.list",
+    description:
+      "List all NodeGraph definitions in the current project (id, name, status, current version). Use this to discover which graphs exist before reading or editing one.",
+    parameters: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          description: "Optional status filter; omit to list all.",
+          enum: ["active", "archived"],
+        },
+      },
+    },
+    sideEffectLevel: "none",
+    allowedSlots: [],
     source: "builtin",
   },
   {
-    name: "nodegraph.graph.list_versions",
-    description: "List versions for a NodeGraph.",
+    name: "nodegraph.graph.find_by_name",
+    description:
+      "Find a NodeGraph's id by its name within the current project. Returns every match; graph_id is set only when exactly one graph matches. Matching prefers an exact name, then falls back to case-insensitive.",
     parameters: {
       type: "object",
+      properties: {
+        name: { type: "string", description: "The graph name to look up." },
+        status: {
+          type: "string",
+          description: "Optional status filter; omit to search all.",
+          enum: ["active", "archived"],
+        },
+      },
+      required: ["name"],
+   },
+    sideEffectLevel: "none",
+    allowedSlots: [],
+    source: "builtin",
+  },
+  {
+ name: "nodegraph.graph.list_versions",
+    description: "List versions for a NodeGraph.",
+    parameters: {
+ type: "object",
       properties: { graph_id: { type: "string" } },
+      required: ["graph_id"],
+    },
+    sideEffectLevel: "none",
+    allowedSlots: [],
+    source: "builtin",
+  },
+  {
+    name: "nodegraph.node.get",
+    description:
+      "Read a single node from a NodeGraph's current live version. If the given id is a node group, this expands the group: it returns the group's interface plus the full details of every member node (drilling into a subgraph or expanding a visual cluster). Use nodegraph.graph.get first to see the group-level overview, then this to dive in.",
+    parameters: {
+      type: "object",
+      properties: {
+        graph_id: { type: "string" },
+        node_id: {
+          type: "string",
+          description: "A node id, or a group id to expand all ofits member nodes.",
+        },
+      },
+      required: ["graph_id", "node_id"],
+    },
+    sideEffectLevel: "none",
+    allowedSlots: [],
+    source: "builtin",
+  },
+  {
+    name: "nodegraph.preset.get",
+    description:
+      "For a graph imported from a SillyTavern preset, read the original preset: an overview (preset name, sampling params, regex count) plus a prompt_order mapping table (each original prompt -> the group it now belongs to). Pass an identifier to get one prompt's full original body. Returns imported_from_preset=false for graphs not imported from a preset.",
+    parameters: {
+      type: "object",
+      properties: {
+        graph_id: { type: "string" },
+        identifier: {
+          type: "string",
+          description:
+            "Optional preset prompt identifier; when set, returns that single entry's full original content.",
+        },
+      },
       required: ["graph_id"],
     },
     sideEffectLevel: "none",
@@ -559,7 +1241,7 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         draft_id: { type: "string" },
-        node: { type: "object" },
+        node: nodeSchema,
       },
       required: ["draft_id", "node"],
     },
@@ -575,7 +1257,7 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: {
         draft_id: { type: "string" },
         node_id: { type: "string" },
-        config: { type: "object" },
+        config: nodeConfigSchema,
       },
       required: ["draft_id", "node_id", "config"],
     },
@@ -621,7 +1303,7 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         draft_id: { type: "string" },
-        edge: { type: "object" },
+        edge: edgeSchema,
       },
       required: ["draft_id", "edge"],
     },
@@ -651,7 +1333,7 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "object",
       properties: {
         draft_id: { type: "string" },
-        group: { type: "object" },
+        group: groupSchema,
       },
       required: ["draft_id", "group"],
     },
@@ -667,7 +1349,7 @@ const NODE_GRAPH_TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: {
         draft_id: { type: "string" },
         group_id: { type: "string" },
-        patch: { type: "object" },
+        patch: groupPatchSchema,
       },
       required: ["draft_id", "group_id", "patch"],
     },

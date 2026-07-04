@@ -12,6 +12,8 @@ function createMockLLM(responseText: string, options?: {
   streamChunks?: string[];
   throwError?: Error;
   toolCalls?: LLMToolCall[];
+  reasoningText?: string;
+  reasoningChunks?: string[];
 }): LLMPort {
   const usage = options?.usage ?? { promptTokens: 10, completionTokens: 5, totalTokens: 15 };
   const finishReason = options?.finishReason ?? 'stop';
@@ -19,7 +21,13 @@ function createMockLLM(responseText: string, options?: {
   return {
     async generate(_request: LLMRequest): Promise<LLMResponse> {
       if (options?.throwError) throw options.throwError;
-      return { text: responseText, usage, finishReason, toolCalls: options?.toolCalls };
+      return {
+        text: responseText,
+        usage,
+        finishReason,
+        toolCalls: options?.toolCalls,
+        ...(options?.reasoningText ? { reasoningText: options.reasoningText } : {}),
+      };
     },
     async stream(request: LLMRequest, callbacks: StreamCallbacks): Promise<LLMResponse> {
       if (options?.throwError) throw options.throwError;
@@ -27,10 +35,21 @@ function createMockLLM(responseText: string, options?: {
       for (const chunk of chunks) {
         callbacks.onChunk?.(chunk);
       }
-      const response: LLMResponse = { text: responseText, usage, finishReason, toolCalls: options?.toolCalls };
+      for (const reasoningChunk of options?.reasoningChunks ?? []) {
+        callbacks.onReasoning?.(reasoningChunk);
+      }
+      const streamedReasoning = options?.reasoningText
+        ?? (options?.reasoningChunks ? options.reasoningChunks.join('') : undefined);
+      const response: LLMResponse = {
+        text: responseText,
+        usage,
+   finishReason,
+        toolCalls: options?.toolCalls,
+        ...(streamedReasoning ? { reasoningText: streamedReasoning } : {}),
+      };
       callbacks.onFinish?.(response);
       return response;
-    },
+},
   };
 }
 
@@ -77,6 +96,46 @@ describe('GenerationPipeline', () => {
       expect(receivedChunks).toEqual(['Hello', ' ', 'World']);
     });
   });
+  describe('reasoning passthrough', () => {
+    it('passes through reasoning text from non-streaming generation', async () => {
+      const llm = createMockLLM('Answer', { reasoningText: 'Some thinking' });
+      const pipeline = new GenerationPipeline(llm);
+
+      const output =await pipeline.run(baseInput({ params: { stream: false } }));
+
+      expect(output.text).toBe('Answer');
+      expect(output.reasoningText).toBe('Some thinking');
+    });
+
+    it('forwards reasoning deltas and accumulates reasoning text while streaming', async() => {
+      const llm = createMockLLM('Hello World', {
+        streamChunks: ['Hello', ' World'],
+        reasoningChunks: ['Think', 'ing'],
+      });
+      const pipeline = new GenerationPipeline(llm);
+
+      const receivedReasoning: string[] = [];
+      const output = await pipeline.run(baseInput(), {
+        onReasoning: (delta) => receivedReasoning.push(delta),
+      });
+
+      expect(output.text).toBe('Hello World');
+      expect(receivedReasoning).toEqual(['Think', 'ing']);
+      expect(output.reasoningText).toBe('Thinking');
+    });
+
+    it('leaves reasoning text undefined when the model returns no reasoning', async () => {
+      const llm = createMockLLM('Plain', { streamChunks:['Plain'] });
+      const pipeline = new GenerationPipeline(llm);
+
+      const output = await pipeline.run(baseInput());
+
+      expect(output.text).toBe('Plain');
+      expect(output.reasoningText).toBeUndefined();
+    });
+  });
+
+
 
   describe('summary extraction', () => {
     it('extracts summaries from LLM output', async () => {

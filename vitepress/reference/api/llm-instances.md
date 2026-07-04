@@ -194,6 +194,7 @@ PUT /llm-instances/:slot
 - `enabled=false` 且 `slot=narrator` 时，真实聊天执行会返回 `409 instance_slot_disabled_required`，不会再回退到环境变量 narrator。
 - `enabled=false` 且 `slot=director` / `verifier` / `memory` 时，对应子流程会在本轮 turn 中被强制跳过。
 - `preset_id` 是 narrator Prompt 组装阶段的**提示词预设覆盖**（指向 `preset` 表）；当它为非空字符串时，优先于 `session.presetId`。它**不是 LLM Profile id**——选哪个 Profile（连接 / 模型）走 `/llm-profiles` 的绑定（`activate`）与解析（`runtime`）。这是 LI11（批次 11）标注的**过渡字段**：方案 A 下提示词配方将由 NodeGraph 节点装配承载，该覆盖职责图化后进入废弃流程，请勿再扩展其用途。
+- **`preset_id` 已废弃（LI11-3，deprecated）**：配方走图后，新写入请改在楼层模板图的 Narrator 节点 `config.presetRef` 声明预设主体。兼容窗口内回退链「Narrator 节点 `config.presetRef` → narrator slot `preset_id` → `session.preset_id`」三路等价：其中 slot → session 由 turn 装配（`turn-model-service`）解析进会话提示词信息。迁移只对新建生效，不做全量存量迁移；`preset_id` 列保留不删，避免破坏存量数据与外部集成。
 - `model_id_override` 只影响最终使用的模型名，不会改动 provider、base URL、API Key 这类 Profile 连接信息。
 - `model_id_override` 只有在当前槽位最终解析到 active profile 时才生效；如果没有 active profile，它不会单独把环境变量 fallback 模型替换掉。
 - `params` 采用浅层 merge，同名键覆盖。当前槽位原有参数（包括 Profile 绑定参数和默认运行参数）先建立基线，再由 `llm_instance_config.params` 覆盖同名字段。

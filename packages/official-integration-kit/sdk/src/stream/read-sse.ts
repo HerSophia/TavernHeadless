@@ -6,9 +6,11 @@ import { createResponseError } from "../errors/normalize-error.js";
 import { toApiUsage } from "../types/usage.js";
 import type {
   RespondStreamCallbacks,
-  TavernRespondChunkPayload,
+TavernRespondChunkPayload,
   TavernRespondDonePayload,
   TavernRespondErrorPayload,
+  TavernRespondReasoningPayload,
+  TavernRespondStepNarrationPayload,
   TavernRespondStartPayload,
   TavernRespondRunPayload,
   TavernRespondStreamEvent,
@@ -18,6 +20,7 @@ import type {
   TavernRespondToolProviderType,
   TavernRespondToolReplaySafety,
   TavernRespondToolSideEffectLevel,
+  TavernRespondIrreversibleSideEffect,
 } from "./event-types.js";
 
 export async function readSseStream(
@@ -74,6 +77,16 @@ export async function readSseStream(
 
     if (event.type === "chunk") {
       callbacks.onChunk?.(event.payload);
+      return;
+    }
+
+    if (event.type === "reasoning") {
+      callbacks.onReasoning?.(event.payload);
+      return;
+    }
+
+    if (event.type === "step_narration") {
+      callbacks.onStepNarration?.(event.payload);
       return;
     }
 
@@ -213,6 +226,31 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
     return { payload: chunkPayload, type: "chunk" };
   }
 
+  if (eventName === "reasoning") {
+    const payload = parsed as Record<string, unknown> | null;
+    const reasoningPayload: TavernRespondReasoningPayload = {
+      delta: readString(payload?.delta),
+    };
+
+    return { payload: reasoningPayload, type: "reasoning" };
+  }
+
+  if (eventName === "step_narration") {
+    const payload = parsed as Record<string, unknown> | null;
+    const stepIndex = readOptionalNumber(payload?.step_index);
+    const createdAt = readOptionalNumber(payload?.created_at);
+    if (stepIndex === undefined || createdAt === undefined) {
+      return null;
+    }
+    const stepNarrationPayload: TavernRespondStepNarrationPayload = {
+      stepIndex,
+      text: readString(payload?.text),
+      createdAt,
+    };
+
+    return { payload: stepNarrationPayload, type: "step_narration" };
+  }
+
   if (eventName === "summary") {
     const payload = parsed as Record<string, unknown> | null;
     const summaryPayload: TavernRespondSummaryPayload = {
@@ -278,6 +316,13 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
       return null;
     }
 
+ const discardedFromStepIndex = readOptionalNumber(payload?.discarded_from_step_index);
+    const irreversibleSideEffects = Array.isArray(payload?.irreversible_side_effects)
+      ? (payload.irreversible_side_effects as unknown[])
+          .map(readIrreversibleSideEffect)
+          .filter((item): item is TavernRespondIrreversibleSideEffect => item !== null)
+      : undefined;
+
     const donePayload: TavernRespondDonePayload = {
       branchId: readOptionalString(payload?.branch_id),
       conversationId: readOptionalString(payload?.conversation_id),
@@ -290,6 +335,8 @@ function parseEvent(eventName: string, rawEvent: string): TavernRespondStreamEve
       ...mapPromptDebugPayload(payload),
       summaries: readStringArray(payload?.summaries),
       totalUsage: toApiUsage(payload?.total_usage),
+      ...(discardedFromStepIndex !== undefined ? { discardedFromStepIndex } : {}),
+      ...(irreversibleSideEffects !== undefined ? { irreversibleSideEffects } : {}),
     };
 
     return { payload: donePayload, type: "done" };
@@ -311,6 +358,26 @@ function parseJson(value: string): Record<string, unknown> | null {
 
 function readOptionalNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+/** 解析 step 级重试 done 事件中的单条不可回滚副作用条目（snake → camel）。 */
+function readIrreversibleSideEffect(value: unknown): TavernRespondIrreversibleSideEffect | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const executionId = readOptionalString(record.execution_id);
+  const startedAt = readOptionalNumber(record.started_at);
+  if (!executionId || startedAt === undefined) {
+    return null;
+  }
+  return {
+    executionId,
+    generationStepNo: typeof record.generation_step_no === "number" ? record.generation_step_no : null,
+    sideEffectLevel: readString(record.side_effect_level),
+    startedAt,
+    toolName: readString(record.tool_name),
+  };
 }
 
 function readOptionalFinalState(value: unknown): TavernRespondDonePayload["finalState"] | undefined {

@@ -23,6 +23,7 @@ function mvpDocument(overrides: Partial<NodeGraphDocument> = {}): NodeGraphDocum
     permissions: { required: [] },
     nodes: [
       { id: 'history', type: 'source.chat_history', typeVersion: '1', phase: 'pre_response' },
+      { id: 'userInput', type: 'source.user_input', typeVersion: '1', phase: 'pre_response' },
       { id: 'messages', type: 'compose.final_messages', typeVersion: '1', phase: 'response' },
       { id: 'narrator', type: 'narration.narrator', typeVersion: '1', phase: 'response' },
       { id: 'commit', type: 'output.commit_gate', typeVersion: '1', phase: 'commit' },
@@ -30,6 +31,7 @@ function mvpDocument(overrides: Partial<NodeGraphDocument> = {}): NodeGraphDocum
     edges: [
       { id: 'e_hm', kind: 'data', from: { nodeId: 'history', port: 'messages' }, to: { nodeId: 'messages', port: 'messages' } },
       { id: 'e_mn', kind: 'data', from: { nodeId: 'messages', port: 'messages' }, to: { nodeId: 'narrator', port: 'messages' } },
+      { id: 'e_un', kind: 'data', from: { nodeId: 'userInput', port: 'text' }, to: { nodeId: 'narrator', port: 'user_input' } },
       { id: 'e_nc', kind: 'data', from: { nodeId: 'narrator', port: 'text' }, to: { nodeId: 'commit', port: 'text' } },
     ],
     ...overrides,
@@ -60,6 +62,7 @@ describe('NodeGraphPackage export', () => {
       'narration.narrator@1',
       'output.commit_gate@1',
       'source.chat_history@1',
+      'source.user_input@1',
     ]);
     expect(pkg.dependencies.capabilities).toBeUndefined();
     expect(pkg.integrity?.contentHash).toMatch(/^sha256:/);
