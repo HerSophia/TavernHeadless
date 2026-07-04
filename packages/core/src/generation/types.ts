@@ -1,7 +1,7 @@
 // ── Generation 类型定义 ───────────────────────────────
 
 import type { ChatMessage, TokenCounter } from '../prompt/types.js';
-import type { GenerationParams, ModelConfig, TokenUsage, LLMToolDefinition, LLMToolCall } from '../llm/types.js';
+import type { GenerationParams, ModelConfig, TokenUsage, LLMMessage, LLMToolDefinition, LLMToolSchemaDefinition, LLMToolCall } from '../llm/types.js';
 import type { SummaryExtractorOptions } from './summary-extractor.js';
 
 /**
@@ -15,8 +15,11 @@ export interface GenerationInput {
   /**
    * 最终发给 LLM 的消息数组。
    * 由调用方通过 assembleCompat → MessageBuilder.build() 生成。
+   *
+   * 主链与文本协议路径传纯文本 ChatMessage；native agent loop 续跑时可能携带
+   * 结构化 assistant tool-call / tool-result 消息。
    */
-  messages: ChatMessage[];
+  messages: LLMMessage[];
 
   /** 生成参数 */
   params: GenerationParams;
@@ -44,8 +47,8 @@ export interface GenerationInput {
   /** 中止信号 */
   abortSignal?: AbortSignal;
 
-  /** 可用工具（inline 模式，Vercel AI SDK 兼容格式） */
-  tools?: Record<string, LLMToolDefinition>;
+  /** 可用工具（Vercel AI SDK 兼容格式；inline 带 execute，native agent loop 为 schema-only） */
+    tools?: Record<string, LLMToolDefinition | LLMToolSchemaDefinition>;
 
   /** 工具选择策略（当前仅在支持时显式设置 auto） */
   toolChoice?: 'auto';
@@ -85,12 +88,21 @@ export interface GenerationOutput {
 
   /** 本次生成中的工具调用记录 */
   toolCalls?: LLMToolCall[];
+
+  /**
+   *推理（思维链）文本。
+   *
+* 模型未返回 reasoning 时为空（缺省），按「无 reasoning」处理。
+   */
+  reasoningText?: string;
 }
 
 /** 流水线回调 */
 export interface PipelineCallbacks {
   /** 收到文本片段 */
   onChunk?: (chunk: string) => void;
+  /** 收到推理（思维链）片段 */
+  onReasoning?: (delta: string) => void;
   /** 生成出错 */
   onError?: (error: Error) => void;
 }

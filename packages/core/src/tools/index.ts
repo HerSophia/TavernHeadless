@@ -34,15 +34,15 @@ export type {
   ToolProvider,
   McpToolProviderConfig,
   ToolDenyReason,
-} from './types.js';
+} from "./types.js";
 
 //类
-export { ToolRegistry } from './tool-registry.js';
-export { ToolExecutor } from './tool-executor.js';
-export type { LLMToolEntry } from './tool-executor.js';
-export { BuiltinToolProvider } from './builtin-provider.js';
-export { PresetToolProvider } from './preset-provider.js';
-export { ToolMutationBuffer } from './tool-mutation-buffer.js';
+export { ToolRegistry } from "./tool-registry.js";
+export { ToolExecutor } from "./tool-executor.js";
+export type { LLMToolEntry } from "./tool-executor.js";
+export { BuiltinToolProvider } from "./builtin-provider.js";
+export { PresetToolProvider } from "./preset-provider.js";
+export { ToolMutationBuffer } from "./tool-mutation-buffer.js";
 export type {
   ParsedToolCall,
   ToolCallParseDiagnostic,
@@ -58,16 +58,27 @@ export type {
   ToolListRenderOutput,
   ToolResultFormatInput,
   ToolResultFormatOutput,
-} from './transport/index.js';
+} from "./transport/index.js";
 export {
   TextProtocolToolCallParser,
   TextProtocolToolListRenderer,
   TextProtocolToolResultFormatter,
-} from './transport/index.js';
+  TEXT_PROTOCOL_TOOL_CALL_INSTRUCTIONS,
+  NATIVE_FUNCTION_CALL_TOOL_CALL_INSTRUCTIONS,
+  coerceTextProtocolToolArgs,
+  buildTextProtocolToolCallFeedback,
+} from "./transport/index.js";
 export {
   evaluateExecutedToolCallReplaySafety,
   evaluateToolReplaySafety,
   isAutoReplaySafe,
   resolveToolProviderCompensationMode,
-} from './replay-safety.js';
-export type { PresetToolInput } from './preset-provider.js';
+} from "./replay-safety.js";
+export type { PresetToolInput } from "./preset-provider.js";
+export type {
+  StructuredTextHunk,
+  TextHunkMatchKind,
+  TextHunkOutcome,
+  TextHunkApplyResult,
+} from "./text-edit/index.js";
+export { applyStructuredTextHunks } from "./text-edit/index.js";

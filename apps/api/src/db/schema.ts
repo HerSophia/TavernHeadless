@@ -388,7 +388,7 @@ export const floorRunStates = sqliteTable(
   {
     floorId: text("floor_id").primaryKey().references(() => floors.id, { onDelete: "cascade" }),
     runId: text("run_id").notNull(),
-    runType: text("run_type", { enum: ["respond", "regenerate_page", "retry_turn", "edit_and_regenerate"] }).notNull(),
+    runType: text("run_type", { enum: ["respond", "regenerate_page", "retry_turn", "retry_step", "edit_and_regenerate"] }).notNull(),
     status: text("status", { enum: ["running", "completed", "failed", "cancelled"] }).notNull(),
     phase: text("phase", { enum: ["input_recorded", "semantic_resolved", "prechecked", "prompt_assembled", "page_generating", "candidate_generated", "verifier_checked", "transaction_prepared", "transaction_committed", "post_commit_scheduled"] }).notNull(),
     publicPhase: text("public_phase", { enum: ["preparing", "generating", "verifying", "committing", "post_processing"] }).notNull(),
@@ -1522,6 +1522,33 @@ export const nodeGraphVersions = sqliteTable(
   })
 );
 
+export const projectFloorGraphBindings = sqliteTable(
+  "project_floor_graph_binding",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["native", "compat"] }).notNull(),
+    graphId: text("graph_id").notNull().references(() => nodeGraphDefinitions.id, { onDelete: "restrict" }),
+    graphVersionId: text("graph_version_id").notNull().references(() => nodeGraphVersions.id, { onDelete: "restrict" }),
+    status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    activeKindUnique: uniqueIndex("project_floor_graph_binding_active_kind_uq")
+      .on(table.accountId, table.projectId, table.kind)
+      .where(sql`${table.status} = 'active'`),
+    projectKindStatusIdx: index("project_floor_graph_binding_project_kind_status_idx").on(
+      table.projectId,
+      table.kind,
+      table.status,
+    ),
+    graphIdx: index("project_floor_graph_binding_graph_idx").on(table.graphId, table.graphVersionId),
+  })
+);
+
 export const nodeGraphRuns = sqliteTable(
   "node_graph_run",
   {
@@ -1838,6 +1865,40 @@ export const graphAssistantPendingToolCalls = sqliteTable(
   })
 );
 
+/**
+ * 图助手「上下文与提示词」项目级配置表。
+ *
+ * 一个项目一条记录，跨临时对话持久。承载图助手设置页两块配置：
+ * - 静态提示词：`static_mode`（append 追加 / override 覆盖内置默认）+ `static_text`。
+ * - 上下文与动态提示词：`context_config`（数据块开关与预算 JSON）+ `dynamic_template`。
+ *
+ * 命名遵循协作指南：图助手专用、聊天主链路之外的状态，不使用 runtime 命名，
+graph_assistant_tool_policy 风格一致。无记录时由服务回退内置默认。
+ */
+export const graphAssistantPromptConfig = sqliteTable(
+  "graph_assistant_prompt_config",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    staticMode: text("static_mode", { enum: ["append", "override"] }).notNull().default("append"),
+    staticText: text("static_text").notNull().default(""),
+    dynamicTemplate: text("dynamic_template").notNull().default(""),
+    /** 上下文数据块配置 JSON 字符串（阶段二起使用）；为空表示用内置默认。 */
+    contextConfig: text("context_config"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectUnique: uniqueIndex("graph_assistant_prompt_config_project_uq").on(table.projectId),
+    workspaceIdx: index("graph_assistant_prompt_config_workspace_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  })
+);
+
 
 
 
@@ -2068,6 +2129,11 @@ export const floorResultSnapshots = sqliteTable(
     summariesJson: text("summaries_json").notNull().default("[]"),
     usageJson: text("usage_json").notNull().default("{}"),
     verifierJson: text("verifier_json"),
+    // 推理（思维链）文本，可空。模型未返回 reasoning时为 null。
+ reasoningText: text("reasoning_text"),
+    // native 多步循环的中间叙述（JSON 数组，可空）。旁路展示用，不进 prompt、不进 message 正文。
+    // 元素形状 { stepIndex, text, createdAt }；无中间叙述时为 null。
+    stepNarrationsJson: text("step_narrations_json"),
     committedAt: integer("committed_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -2243,10 +2309,14 @@ export const llmInstanceConfigs = sqliteTable(
     scope: text("scope", { enum: ["global", "session"] }).notNull(),
     scopeId: text("scope_id").notNull(),
     instanceSlot: text("instance_slot", { enum: ["*", "narrator", "director", "verifier", "memory"] }).notNull(),
-    // LI11（批次 11）命名坑澄清：`preset_id` 的真实语义是「提示词预设覆盖」（指向 `preset` 表），
+    // LI11（批次11）命名坑澄清：`preset_id` 的真实语义是「提示词预设覆盖」（指向 `preset` 表），
     // 在 narrator Prompt 组装阶段优先于 `session.preset_id`——它**不是** LLM Profile id。
     // 选 Profile（连接/模型）走独立的 `llm_profile_binding`（见 /llm-profiles 的 activate / runtime）。
     // 这是**过渡字段**：方案 A 下提示词配方将由图节点装配承载，该覆盖职责图化后进入废弃流程，不再扩展其用途。
+    // @deprecated LI11-3：配方走图后废弃。新写入请走楼层模板图 Narrator 节点 `config.presetRef`；
+    //   兼容窗口内回退链「节点 config.presetRef → narrator slot preset_id → session.preset_id」三路等价，
+    //   其中 slot→session 由 turn-model-service.buildSessionPromptInfo 解析进 sessionInfo.presetId。
+    //   仅新建生效，不做全量存量迁移；列保留不删，避免破坏存量数据与外部集成。
     presetId: text("preset_id"),
     modelIdOverride: text("model_id_override"),
     enabled: integer("enabled").notNull().default(1),
@@ -2339,6 +2409,9 @@ export const toolExecutionRecords = sqliteTable(
     finishedAt: integer("finished_at"),
     attemptNo: integer("attempt_no").notNull().default(1),
     replayParentExecutionId: text("replay_parent_execution_id"),
+    // step 级重试：该执行所属的 LLM 生成步号（1-based，可空，旧数据为 null）。
+    // 供「从第 N 步重试」按生成步精确截断前缀往返；拿不到时退化为按 started_at 序。
+    generationStepNo: integer("generation_step_no"),
     createdAt: integer("created_at").notNull(),
   },
   (table) => ({

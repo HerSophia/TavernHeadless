@@ -18,6 +18,7 @@ import {
   type RespondRequest,
   type RespondRuntimeOptions,
   type RetryFloorRequest,
+  type RetryStepRequest,
 } from "../../services/chat/contracts.js";
 import { ChatService } from "../../services/chat/chat-service.js";
 import { ChatServiceError } from "../../services/chat/errors.js";
@@ -54,8 +55,11 @@ import {
   respondBodyJsonSchema,
   respondBodySchema,
   respondSuccessResponseJsonSchema,
-  retryFloorBodyJsonSchema,
+retryFloorBodyJsonSchema,
   retryFloorBodySchema,
+  retryStepBodyJsonSchema,
+  retryStepBodySchema,
+  retryStepSuccessResponseJsonSchema,
   sessionIdParamsJsonSchema,
   sessionIdParamsSchema,
   streamResponseExample,
@@ -715,6 +719,96 @@ export async function registerChatRoutes(
       return handleChatError(error, request, reply);
     }
   });
+  app.post("/floors/:id/retry-step", {
+    schema: {
+      tags: ["chat"],
+      summary: "Retry a committed floor from a specific generation step",
+      description:
+        "Retry generation for an existing committed floor starting from a specificLLM generation step. "
+        + "Successful tool roundtrips before the start step are preserved and replayed; "
+        + "the start step and everything after it are regenerated under a new attempt on the same floor id. "
+        + "The start step tool must have no side effect; write-class side effects produced before the start step are not rolled back "
+        + "and are returned in irreversible_side_effects.",
+      params: idParamsJsonSchema,
+     body: retryStepBodyJsonSchema,
+      response: {
+        200: retryStepSuccessResponseJsonSchema,
+        ...chatMutationErrorResponses,
+      },
+    },
+    preValidation: async (request, reply) => {
+      ensureOptionalObjectBody(request);
+      if (!validateTurnSessionStateWritesShape(reply, request.body)) {
+        return;
+      }
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(floorIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+ if (!authorizeProjectWriteByFloorId(reply, getRequestAuthContext(request), parsedParams.data.id, "floor.retry")) {
+      return;
+    }
+
+    const body = request.body ?? {};
+    const parsedBody = parseWithSchema(retryStepBodySchema, body, reply);
+    if (!parsedBody.ok) return;
+
+    if (!ensureTurnSessionStateWritesEnabled(reply, parsedBody.data.session_state_writes, enableClientData)) {
+      return;
+    }
+
+    const retryStepRequest: RetryStepRequest = {
+      fromStepIndex: parsedBody.data.from_step_index,
+      config: parsedBody.data.config,
+      generationParams: parsedBody.data.generation_params
+        ? mapGenerationParams(parsedBody.data.generation_params)
+        : undefined,
+      structure: mapPromptStructureRequest(parsedBody.data.structure),
+      delivery: mapPromptDeliveryRequest(parsedBody.data.delivery),
+      debugOptions: mapLiveDebugOptionsRequest(parsedBody.data.debug_options),
+      confirmedExecutionIds: parsedBody.data.confirmed_execution_ids,
+      sessionStateWrites: mapTurnSessionStateWritesRequest(parsedBody.data.session_state_writes),
+      sessionStateOperationLog: buildSessionStateOperationLogContext(
+        request,
+        "POST /floors/:id/retry-step",
+        parsedBody.data.session_state_writes,
+      ),
+      confirmedSessionStateMutationIds: parsedBody.data.confirmed_session_state_mutation_ids,
+      turnOperationLog: buildTurnOperationLogContext(request, "POST /floors/:id/retry-step"),
+      promptRuntimeInjections: mapPromptRuntimeInjectionsRequest(parsedBody.data.prompt_runtime_injections),
+    };
+
+    const accountId = getRequestAuthContext(request).accountId;
+
+    try {
+      const result = await chatService.retryStep(parsedParams.data.id, retryStepRequest, accountId);
+      return reply.code(200).send({
+        data: {
+          floor_id: result.floorId,
+          floor_no: result.floorNo,
+          branch_id: result.branchId,
+          generated_text: result.generatedText,
+          summaries: result.summaries,
+        total_usage: mapUsageToSnakeCase(result.totalUsage),
+          memory: mapMemoryToSnakeCase(result.memory),
+          final_state: result.finalState,
+          discarded_from_step_index: result.discardedFromStepIndex,
+          irreversible_side_effects: result.irreversibleSideEffects.map((item) => ({
+            execution_id: item.executionId,
+            tool_name: item.toolName,
+            side_effect_level: item.sideEffectLevel,
+            started_at: item.startedAt,
+            generation_step_no: item.generationStepNo,
+          })),
+          ...mapOptionalPromptDebugResponseFields(result),
+        },
+      });
+    } catch (error) {
+      return handleChatError(error, request, reply);
+    }
+  });
+
+
 
   app.post("/messages/:id/edit-and-regenerate", {
     schema: {

@@ -9,7 +9,7 @@ import {
 } from "../prompt-runtime.js";
 import { resolveInputTokens, resolveOutputTokens, resolveTotalTokens, toApiUsage } from "../types/usage.js";
 import type { RegenerateResult } from "./messages.js";
-import type { RespondGenerationParams, RespondMemoryReceipt, RespondTurnConfig, TurnSessionStateWrite } from "./sessions.js";
+import type { RespondGenerationParams, RespondMemoryReceipt, RespondResult, RespondTurnConfig, TurnSessionStateWrite } from "./sessions.js";
 import {
   compactObject,
   readArray,
@@ -182,6 +182,27 @@ export type FloorsRetryOptions = {
   sessionStateWrites?: TurnSessionStateWrite[];
 };
 
+/** 起点之前已产生、不会回滚的写类副作用条目（脱敏后只暴露摘要字段）。 */
+export type FloorIrreversibleSideEffect = {
+  executionId: string;
+  generationStepNo?: number | null;
+  sideEffectLevel: string;
+  startedAt: number;
+  toolName: string;
+};
+
+export type FloorsRetryStepOptions = FloorsRetryOptions & {
+  /** 从第几步重生成（1-based）。该步及其之后的工具往返被丢弃，之前的成功往返保留。 */
+  fromStepIndex: number;
+};
+
+export type FloorRetryStepResult = RespondResult & {
+  /** 实际被丢弃的起始步号（1-based）。 */
+  discardedFromStepIndex: number;
+  /** 起点之前已产生、不会回滚的写类副作用清单（脱敏摘要）。 */
+  irreversibleSideEffects: FloorIrreversibleSideEffect[];
+};
+
 export type FloorsResource = {
   branch(options: FloorsBranchOptions): Promise<FloorBranchResult>;
   create(options: FloorsCreateOptions): Promise<FloorRecord>;
@@ -191,6 +212,7 @@ export type FloorsResource = {
   list(options?: FloorsListOptions): Promise<FloorRecord[]>;
   remove(options: FloorsRemoveOptions): Promise<boolean>;
   retry(options: FloorsRetryOptions): Promise<RegenerateResult>;
+  retryStep(options: FloorsRetryStepOptions): Promise<FloorRetryStepResult>;
   update(options: FloorsUpdateOptions): Promise<FloorRecord>;
 };
 
@@ -316,6 +338,24 @@ export function createFloorsResource(client: TransportClient): FloorsResource {
       });
 
       return mapRetryPayload(response.body);
+    },
+    async retryStep(options): Promise<FloorRetryStepResult> {
+      const response = await client.fetchJson<Record<string, unknown>>(`/floors/${encodeURIComponent(options.floorId)}/retry-step`, {
+        body: compactObject({
+          confirmed_execution_ids: options.confirmedExecutionIds,
+          confirmed_session_state_mutation_ids: options.confirmedSessionStateMutationIds,
+          config: options.config,
+          debug_options: mapPromptLiveDebugOptionsRequest(options.debugOptions),
+       from_step_index: options.fromStepIndex,
+          generation_params: mapGenerationParams(options.generationParams),
+          session_state_writes: mapTurnSessionStateWrites(options.sessionStateWrites),
+          prompt_runtime_injections: mapPromptRuntimeInjectionsRequest(options.promptRuntimeInjections),
+        }),
+        headers: buildAccountHeaders(options.accountId),
+        method: "POST",
+      });
+
+      return mapRetryStepPayload(response.body);
     },
     async update(options): Promise<FloorRecord> {
       const response = await client.patch("/floors/{id}", {
@@ -534,9 +574,71 @@ function mapRetryPayload(payload: Record<string, unknown> | null): RegenerateRes
     inputTokens: resolveInputTokens(totalUsage),
     outputTokens: resolveOutputTokens(totalUsage),
     memory: readRespondMemoryReceipt(data?.memory),
+       summaries: mapStringArray(data?.summaries),
+    totalTokens: resolveTotalTokens(totalUsage),
+    totalUsage,
+    ...mapPromptDebugPayload(data),
+  };
+}
+
+function mapFloorIrreversibleSideEffect(value: unknown): FloorIrreversibleSideEffect | null {
+  const record = readRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const executionId =readOptionalString(record.execution_id);
+  if (!executionId) {
+    return null;
+  }
+
+  return {
+    executionId,
+    generationStepNo: readNullableNumber(record.generation_step_no),
+    sideEffectLevel: readString(record.side_effect_level),
+    startedAt: readNumber(record.started_at),
+    toolName: readString(record.tool_name),
+  };
+}
+
+function mapRetryStepPayload(payload: Record<string, unknown> | null): FloorRetryStepResult {
+  const data = readRecord(payload?.data);
+  const floorId = readOptionalString(data?.floor_id);
+  const floorNo = typeof data?.floor_no === "number" ? data.floor_no : undefined;
+
+  if (!floorId || floorNo === undefined) {
+    throw new TavernApiError({
+      message: "Retry-step API returned an invalid payload",
+      status: 500,
+    });
+  }
+
+  const totalUsage = toApiUsage(data?.total_usage);
+  const discardedFromStepIndex =
+    typeof data?.discarded_from_step_index === "number" ? data.discarded_from_step_index : 0;
+
+  return {
+    branchId: readOptionalString(data?.branch_id),
+    finalState:
+      data?.final_state === "draft" ||
+      data?.final_state === "generating" ||
+      data?.final_state === "committed" ||
+      data?.final_state === "failed"
+        ? data.final_state
+        : undefined,
+    floorId,
+    floorNo,
+    generatedText: readString(data?.generated_text),
+    inputTokens: resolveInputTokens(totalUsage),
+    outputTokens: resolveOutputTokens(totalUsage),
+    memory: readRespondMemoryReceipt(data?.memory),
     summaries: mapStringArray(data?.summaries),
     totalTokens: resolveTotalTokens(totalUsage),
     totalUsage,
+    discardedFromStepIndex,
+    irreversibleSideEffects: readArray(data?.irreversible_side_effects)
+      .map(mapFloorIrreversibleSideEffect)
+      .filter((item): item is FloorIrreversibleSideEffect => item !== null),
     ...mapPromptDebugPayload(data),
   };
 }

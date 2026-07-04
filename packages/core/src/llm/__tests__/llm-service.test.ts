@@ -116,6 +116,130 @@ describe('LLMService', () => {
         },
       });
     });
+    function createAnthropicService(captured: { settings?: any }) {
+      const model = new MockLanguageModelV3({
+        doGenerate: async (options) => {
+          captured.settings = options;
+          return {
+            content: [{ type: 'text', text: 'ok' }],
+            finishReason: { unified: 'stop', raw: undefined },
+            usage: {
+              inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+              raw: { totalTokens: 2 },
+            },
+            warnings: [],
+          };
+        },
+      });
+      const registry = new ProviderRegistry();
+      const factory: ProviderFactory = () => () => model;
+      registry.registerFactory('anthropic', factory);
+      registry.register({ id: 'anthropic-provider', type: 'anthropic' });
+      return new LLMService(registry, {
+      providerId: 'anthropic-provider',
+        modelId: 'claude-opus-4-6',
+      });
+    }
+
+    it('maps an effort level to anthropic adaptive thinking + effort anddrops sampling params', async () => {
+      const captured: { settings?: any } = {};
+      const service = createAnthropicService(captured);
+
+      await service.generate({
+        messages: [{ role: 'user', content: 'test' }],
+        params: {
+          temperature: 0.7,
+          topP: 0.9,
+          topK: 40,
+          reasoningEffort: 'high',
+        },
+      });
+
+      // 努力级别走 adaptive + effort（output_config.effort），不强制 budget / max_tokens。
+      expect(captured.settings.providerOptions).toEqual({
+        anthropic: { thinking: { type: 'adaptive' }, effort: 'high' },
+      });
+    //anthropic 思考模式不接受这些采样参数，应被移除
+      expect(captured.settings.temperature).toBeUndefined();
+      expect(captured.settings.topP).toBeUndefined();
+      expect(captured.settings.topK).toBeUndefined();
+    });
+
+    it('maps the new xhigh / max effort levels to anthropic adaptive thinking + effort', async () => {
+      const captured: { settings?: any } = {};
+      const service = createAnthropicService(captured);
+
+      await service.generate({
+        messages: [{ role: 'user', content: 'test' }],
+        params: { reasoningEffort: 'max' },
+      });
+
+      expect(captured.settings.providerOptions).toEqual({
+        anthropic: { thinking: { type: 'adaptive' }, effort: 'max' },
+      });
+    });
+
+    it('maps a numeric reasoning effort to anthropic enabled thinking budget and bumps max_tokens', async () => {
+      const captured: { settings?: any } = {};
+      const service = createAnthropicService(captured);
+
+      await service.generate({
+        messages: [{ role: 'user', content: 'test' }],
+  params: { reasoningEffort: '12000' },
+      });
+
+      expect(captured.settings.providerOptions).toEqual({
+        anthropic: { thinking: { type: 'enabled', budgetTokens: 12000 } },
+      });
+      expect(captured.settings.maxOutputTokens).toBe(12000 + 4096);
+    });
+
+    it('maps the adaptive keyword to bare anthropic adaptive thinking', async () => {
+      const captured: { settings?: any } = {};
+      const service = createAnthropicService(captured);
+
+      await service.generate({
+        messages: [{ role: 'user', content: 'test' }],
+        params: { reasoningEffort: 'adaptive' },
+      });
+
+      expect(captured.settings.providerOptions).toEqual({
+        anthropic: { thinking: { type: 'adaptive' } },
+      });
+    });
+
+    it('does not send reasoning effort to openai when the adaptive keyword is used', async () => {
+      let capturedSettings: any;
+      const model = new MockLanguageModelV3({
+        doGenerate: async (options) => {
+          capturedSettings = options;
+          return {
+            content: [{ type: 'text', text: 'ok' }],
+            finishReason: { unified: 'stop', raw: undefined},
+            usage: {
+              inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 1, text: 1, reasoning: undefined },
+             raw: { totalTokens: 2 },
+            },
+            warnings: [],
+          };
+        },
+      });
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+
+      await service.generate({
+        messages: [{ role: 'user', content: 'test' }],
+        params: { reasoningEffort: 'adaptive' },
+      });
+
+      // 'adaptive' 是 Anthropic 专有概念，OpenAI 系不应下发 reasoningEffort。
+      expect(capturedSettings.providerOptions?.openai?.reasoningEffort).toBeUndefined();
+    });
+
+
+
 
     it('omits null-valued generation params from the final sdk settings', async () => {
       let capturedSettings: any;
@@ -324,6 +448,155 @@ describe('LLMService', () => {
       expect(onError).toHaveBeenCalledOnce();
     });
   });
+  describe('reasoning capture', () => {
+    it('captures reasoning text from non-streaming generation', async () => {
+      const model = new MockLanguageModelV3({
+        doGenerate: async () => ({
+          content: [
+            { type: 'reasoning', text: 'Thinking step by step' },
+            { type: 'text', text: 'Final answer' },
+          ],
+          finishReason: { unified: 'stop', raw: undefined },
+          usage: {
+            inputTokens: { total: 5, noCache: 5, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 5,text: 3, reasoning: 2 },
+            raw: { totalTokens: 10 },
+          },
+      warnings: [],
+        }),
+      });
+
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+
+      const response = await service.generate({
+        messages: [{ role: 'user', content: 'Hi' }],
+        params: { reasoningEffort: 'medium' },
+      });
+
+      expect(response.text).toBe('Final answer');
+      expect(response.reasoningText).toBe('Thinking step by step');
+    });
+
+    it('leaves reasoning text undefined when the model returns no reasoning', async () => {
+      const model = new MockLanguageModelV3({
+        doGenerate: async () => ({
+          content: [{ type: 'text', text: 'Plain answer' }],
+          finishReason: { unified: 'stop', raw: undefined },
+          usage: {
+            inputTokens: { total: 2, noCache: 2, cacheRead: undefined, cacheWrite: undefined },
+            outputTokens: { total: 2, text: 2, reasoning: undefined },
+            raw: { totalTokens: 4 },
+          },
+          warnings: [],
+        }),
+      });
+
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+
+      const response = await service.generate({
+        messages: [{ role: 'user', content: 'Hi' }],
+        params: {},
+      });
+
+      expect(response.text).toBe('Plain answer');
+      expect(response.reasoningText).toBeUndefined();
+    });
+
+    it('streams reasoning deltas and returns the accumulated reasoning text',async () => {
+      const model= new MockLanguageModelV3({
+    doStream: async () => ({
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: 'reasoning-start', id: 'r-1' });
+              controller.enqueue({ type: 'reasoning-delta', id: 'r-1', delta: 'Think' });
+              controller.enqueue({ type: 'reasoning-delta', id: 'r-1', delta: 'ing' });
+           controller.enqueue({ type: 'reasoning-end', id: 'r-1' });
+              controller.enqueue({ type: 'text-start', id: 'text-1' });
+              controller.enqueue({ type: 'text-delta', id: 'text-1', delta: 'Hello' });
+              controller.enqueue({ type: 'text-delta', id: 'text-1', delta: ' World' });
+              controller.enqueue({ type: 'text-end', id: 'text-1' });
+              controller.enqueue(({
+                type: 'finish',
+                finishReason: { unified: 'stop', raw: undefined },
+                logprobs: undefined,
+                usage: {
+                  inputTokens: { total: 8, noCache: 8, cacheRead: undefined, cacheWrite: undefined },
+                  outputTokens: {total: 6, text: 4, reasoning: 2 },
+                },
+              } as any));
+              controller.close();
+            },
+          }),
+        }),
+      });
+
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+
+      const chunks: string[] = [];
+      const reasoningChunks: string[] = [];
+
+      const response = await service.stream(
+        {
+        messages: [{ role: 'user', content: 'Hi' }],
+          params: {},
+        },
+        {
+          onChunk: (chunk) => chunks.push(chunk),
+          onReasoning: (delta) => reasoningChunks.push(delta),
+        },
+      );
+
+      expect(chunks).toEqual(['Hello', ' World']);
+      expect(reasoningChunks).toEqual(['Think', 'ing']);
+      expect(response.text).toBe('Hello World');
+      expect(response.reasoningText).toBe('Thinking');
+    });
+
+    it('does not invoke onReasoning when the stream has no reasoning parts', async () => {
+      const model = new MockLanguageModelV3({
+        doStream: async () => ({
+     stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({ type: 'text-start', id: 'text-1' });
+              controller.enqueue({ type: 'text-delta', id: 'text-1', delta: 'Hello' });
+          controller.enqueue({ type: 'text-end', id: 'text-1' });
+              controller.enqueue(({
+                type: 'finish',
+                finishReason: { unified: 'stop', raw: undefined },
+                logprobs: undefined,
+                usage: {
+                  inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined},
+                  outputTokens: { total: 1, text: 1, reasoning: undefined },
+              },
+              } as any));
+          controller.close();
+            },
+          }),
+        }),
+      });
+
+      const registry = createMockRegistry(model);
+      const service = new LLMService(registry, defaultModel);
+
+      const onReasoning = vi.fn();
+      const response = await service.stream(
+        {
+          messages: [{ role: 'user', content: 'Hi' }],
+          params: {},
+        },
+        { onReasoning },
+      );
+
+      expect(response.text).toBe('Hello');
+      expect(response.reasoningText).toBeUndefined();
+      expect(onReasoning).not.toHaveBeenCalled();
+    });
+  });
+
+
 
   describe('model override', () => {
     it('uses request.model over defaultModel', async () => {

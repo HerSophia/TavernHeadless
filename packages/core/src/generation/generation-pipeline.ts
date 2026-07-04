@@ -1,4 +1,6 @@
-import type { LLMPort } from '../llm/types.js';
+import type { ChatMessage } from '../prompt/types.js';
+import type { LLMMessage, LLMPort } from '../llm/types.js';
+import { isPlainTextModelMessage } from '../llm/types.js';
 import type {
   GenerationInput,
   GenerationOutput,
@@ -67,10 +69,12 @@ export class GenerationPipeline {
     const { params, summaryOptions, abortSignal } = input;
 
     // ── 1. 前处理 ──
-    let messages = [...input.messages];
-    if (input.preProcess) {
+    // preProcess（正则 USER_INPUT 前处理）只作用于纯文本消息。native agent loop 续跑时
+    // messages 可能含结构化 tool 往返消息，这些不是用户输入，不走 preProcess。
+    let messages: LLMMessage[] = [...input.messages];
+    if (input.preProcess && messages.every(isPlainTextModelMessage)) {
       try {
-        messages = input.preProcess(messages);
+        messages = input.preProcess(messages as ChatMessage[]);
       } catch (e) {
         throw new GenerationPipelineError(
           `Pre-processing failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -86,16 +90,19 @@ export class GenerationPipeline {
     let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
     let finishReason = 'other';
     let toolCalls: GenerationOutput['toolCalls'];
+    let reasoningText: GenerationOutput['reasoningText'];
 
     try {
       const request = {
         ...(input.model ? { model: input.model } : {}),
         ...(input.tools ? { tools: input.tools, maxSteps: input.maxSteps } : {}),
         ...(input.toolChoice ? { toolChoice: input.toolChoice } : {}),
-        messages: messages.map((m) => ({
-          role: m.role as 'system' | 'user' | 'assistant',
-          content: m.content,
-        })),
+        // 纯文本消息归一化为 { role, content }；结构化消息原样透传给 SDK。
+        messages: messages.map((m) =>
+          isPlainTextModelMessage(m)
+            ? { role: m.role, content: m.content }
+            : m,
+        ),
         params,
         abortSignal,
       };
@@ -103,18 +110,21 @@ export class GenerationPipeline {
       if (isStream) {
         const response = await this.llm.stream(request, {
           onChunk: callbacks?.onChunk,
+          onReasoning: callbacks?.onReasoning,
           onError: callbacks?.onError,
         });
         rawText = response.text;
         usage = response.usage;
         finishReason = response.finishReason;
         toolCalls = response.toolCalls;
+        reasoningText = response.reasoningText;
       } else {
         const response = await this.llm.generate(request);
         rawText = response.text;
         usage = response.usage;
         finishReason = response.finishReason;
         toolCalls = response.toolCalls;
+        reasoningText = response.reasoningText;
       }
     } catch (e) {
       if (e instanceof GenerationPipelineError) throw e;
@@ -145,10 +155,11 @@ export class GenerationPipeline {
     return {
       text: finalText,
       rawText,
-      summaries,
+     summaries,
       usage,
       finishReason,
       toolCalls,
+      ...(reasoningText ? { reasoningText } : {}),
     };
   }
 }

@@ -9,6 +9,8 @@ import {
   NODE_WIDTH,
   TAVERN_NODE_TYPE,
   mapDocumentToFlow,
+  summarizeNodeConfig,
+  summarizeNodePreview,
   type GraphCollapsedGroupNodeData,
   type GraphFlowNode,
   type GraphGroupNodeData,
@@ -81,6 +83,32 @@ describe("mapDocumentToFlow", () => {
     const narrator = tavernData(nodes, "n_narrator");
     expect(narrator.sideEffects).toBe("llm");
 
+    const lore = tavernData(nodes, "n_lore");
+    expect(lore.permissionsRequired).toEqual(["project.agent.run"]);
+    expect(lore.configSummary).toEqual([
+      { label: "medium", labelKey: "graphNode.summary.label.medium", value: "single_call" },
+      { label: "output", labelKey: "graphNode.summary.label.output", value: "return_inline" },
+      {
+        label: "execution",
+        labelKey: "graphNode.summary.label.execution",
+        value: "inherit",
+        valueKey: "graphNode.summary.value.execution.inherit",
+        tone: "neutral",
+      },
+    ]);
+ expect(lore.inlineConfigControls.map((control) => control.path)).toEqual([
+      "medium.kind",
+      "medium.deliveryTarget",
+      "triggerReason",
+      "execution.modelSource",
+      "execution.modelId",
+      "execution.generation.temperature",
+      "execution.generation.topP",
+      "execution.generation.maxOutputTokens",
+      "execution.generation.maxContextTokens",
+    ]);
+    expect(lore.previewSummary).toEqual({ status: "available", policy: "cached_only" });
+
     const derived = tavernData(nodes, "n_derived");
     expect(derived.sideEffects).toBe("write");
   });
@@ -152,13 +180,27 @@ describe("mapDocumentToFlow", () => {
     expect(nodes.find((node) => node.id === "n1")?.position).toEqual({ x: 123, y: 456 });
   });
 
-  it("overlays run status by node id", () => {
+  it("overlays run status and preview summary by node id", () => {
     const { nodes } = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT, {
-      runStatusByNodeId: { n_narrator: "running", n_commit: "succeeded" },
+      runStatusByNodeId: {
+        n_narrator: "running",
+        n_commit: "succeeded",
+        n_lore: "failed",
+        n_wb: "skipped",
+        n_history: "reused",
+      },
     });
 
     expect(tavernData(nodes, "n_narrator").runStatus).toBe("running");
+    expect(tavernData(nodes, "n_narrator").previewSummary.status).toBe("running");
     expect(tavernData(nodes, "n_commit").runStatus).toBe("succeeded");
+    expect(tavernData(nodes, "n_commit").previewSummary.status).toBe("succeeded");
+    expect(tavernData(nodes, "n_lore").runStatus).toBe("failed");
+    expect(tavernData(nodes, "n_lore").previewSummary.status).toBe("failed");
+    // NG2-4：skipped / reused 状态也应完整传递到节点数据（reused 归一为 succeeded 预览）。
+    expect(tavernData(nodes, "n_wb").runStatus).toBe("skipped");
+    expect(tavernData(nodes, "n_history").runStatus).toBe("reused");
+    expect(tavernData(nodes, "n_history").previewSummary.status).toBe("succeeded");
     expect(tavernData(nodes, "n_user").runStatus).toBeUndefined();
   });
 
@@ -227,6 +269,158 @@ describe("mapDocumentToFlow", () => {
   it("falls back to the full graph when the focus group id is unknown", () => {
     const { nodes } = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT, { focusGroupId: "does_not_exist" });
     expect(nodes).toHaveLength(26);
+  });
+
+  it("summarizes node config without exposing long JSON", () => {
+    const document: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: "summary",
+      name: "summary",
+      mode: "native_graph",
+      nodes: [
+        {
+          id: "agent",
+          type: "agent.call",
+          typeVersion: "1",
+          phase: "pre_response",
+          config: { medium: { kind: "background_job", deliveryTarget: "derived_output" } },
+        },
+        {
+          id: "cond",
+          type: "control.condition",
+          typeVersion: "1",
+          phase: "pre_response",
+          config: { condition: { op: "exists", value: { source: "runtime", path: ["intent"] } } },
+        },
+        {
+          id: "note",
+          type: "annotation.comment",
+          typeVersion: "1",
+          phase: "pre_response",
+          config: { content: "Explain the control path." },
+        },
+      ],
+      edges: [],
+      policies: {},
+    };
+
+    expect(summarizeNodeConfig(document, document.nodes[0]!).items).toEqual([
+      { label: "medium", labelKey: "graphNode.summary.label.medium", value: "background_job" },
+      { label: "output", labelKey: "graphNode.summary.label.output", value: "derived_output" },
+      { label: "binding", labelKey: "graphNode.summary.label.binding", value: "missing", valueKey: "graphNode.summary.value.missing", tone: "warning" },
+      {
+        label: "execution",
+        labelKey: "graphNode.summary.label.execution",
+        value: "inherit",
+        valueKey: "graphNode.summary.value.execution.inherit",
+        tone: "neutral",
+      },
+    ]);
+    expect(summarizeNodeConfig(document, document.nodes[0]!).missing).toBe(true);
+    expect(summarizeNodeConfig(document, document.nodes[1]!).items).toEqual([
+      { label: "condition", labelKey: "graphNode.summary.label.condition", value: "exists runtime.intent" },
+    ]);
+    expect(summarizeNodeConfig(document, document.nodes[2]!).items).toEqual([
+      { label: "note", labelKey: "graphNode.summary.label.note", value: "25 chars", valueKey: "graphNode.summary.value.chars", valueParams: { count: 25 } },
+    ]);
+  });
+
+  it("summarizes Agent execution overrides for node cards", () => {
+    const document: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: "agent-execution-summary",
+      name: "agent-execution-summary",
+      mode: "native_graph",
+      nodes: [
+        {
+          id: "director",
+          type: "agent.director_plan",
+          typeVersion: "1",
+          phase: "pre_response",
+          config: {
+            execution: {
+              modelSource: { mode: "llm_profile", profileId: "profile-a" },
+              modelId: "model-a",
+              generation: {
+                temperature: { enabled: true, value: 0.7 },
+                topP: { enabled: false, value: 1 },
+              },
+            },
+          },
+        },
+      ],
+      edges: [],
+      policies: {},
+    };
+
+    expect(summarizeNodeConfig(document, document.nodes[0]!).items).toEqual([
+      {
+        label: "execution",
+        labelKey: "graphNode.summary.label.execution",
+        value: "profile-a · model-a",
+      },
+      {
+        label: "generation",
+        labelKey: "graphNode.summary.label.generation",
+        value: "1 enabled",
+        valueKey: "graphNode.summary.value.execution.paramsEnabled",
+        valueParams: { count: 1 },
+      },
+    ]);
+  });
+
+  it("maps inline controls for first batch node types", () => {
+    const document: NodeGraphDocument = {
+      schemaVersion: 2,
+      graphId: "inline",
+      name: "inline",
+      mode: "native_graph",
+      nodes: [
+        { id: "comment", type: "annotation.comment", typeVersion: "1", phase: "pre_response", config: { content: "note" } },
+        { id: "template", type: "compose.template_render", typeVersion: "1", phase: "pre_response", config: { template: "hi" } },
+        { id: "branch", type: "control.branch", typeVersion: "1", phase: "pre_response" },
+        { id: "gate", type: "control.gate", typeVersion: "1", phase: "pre_response", config: { onSkip: "use_cached" } },
+        { id: "agent", type: "agent.call", typeVersion: "1", phase: "pre_response", config: { medium: { kind: "single_call", deliveryTarget: "return_inline" } } },
+        { id: "narrator", type: "narration.narrator", typeVersion: "1", phase: "response", config: { presetRef: { presetId: "p1" } } },
+      ],
+      edges: [],
+      policies: {},
+    };
+
+    const { nodes } = mapDocumentToFlow(document);
+    expect(tavernData(nodes, "comment").inlineConfigControls.map((control) => control.path)).toEqual(["content"]);
+    expect(tavernData(nodes, "template").inlineConfigControls.map((control) => control.path)).toEqual(["template", "role"]);
+    expect(tavernData(nodes, "branch").inlineConfigControls.map((control) => control.path)).toEqual(["condition"]);
+    expect(tavernData(nodes, "gate").inlineConfigControls.map((control) => control.path)).toEqual(["condition", "onSkip"]);
+    expect(tavernData(nodes, "agent").inlineConfigControls.map((control) => control.path)).toEqual([
+      "medium.kind",
+      "medium.deliveryTarget",
+      "triggerReason",
+      "execution.modelSource",
+      "execution.modelId",
+      "execution.generation.temperature",
+      "execution.generation.topP",
+       "execution.generation.maxOutputTokens",
+      "execution.generation.maxContextTokens",
+    ]);
+    expect(tavernData(nodes, "narrator").inlineConfigControls.map((control) => control.path)).toEqual([
+      "presetRef.presetId",
+      "presetRef.presetVersionId",
+      "execution.modelSource",
+      "execution.modelId",
+      "execution.generation.temperature",
+      "execution.generation.topP",
+      "execution.generation.maxOutputTokens",
+      "execution.generation.maxContextTokens",
+    ]);
+  });
+
+  it("summarizes preview status from run status and preview policy", () => {
+    expect(summarizeNodePreview("manual")).toEqual({ status: "available", policy: "manual" });
+    expect(summarizeNodePreview("disabled")).toEqual({ status: "disabled", policy: "disabled" });
+    expect(summarizeNodePreview("auto", "running")).toEqual({ status: "running", policy: "auto" });
+    expect(summarizeNodePreview("auto", "succeeded")).toEqual({ status: "succeeded", policy: "auto" });
+    expect(summarizeNodePreview("auto", "failed")).toEqual({ status: "failed", policy: "auto" });
   });
 
   it("renders group.node ports from its interface cache", () => {

@@ -48,6 +48,13 @@ html:not(.dark) {
   --c-line: 0 0 0;
 }
 
+@utility line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 @layer base {
   html,
   body,

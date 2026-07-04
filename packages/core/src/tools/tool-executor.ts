@@ -6,7 +6,7 @@ import type { JSONSchema7, Schema } from 'ai';
 
 import type { CoreEventBus } from '../events/event-bus.js';
 import type { ToolExecutionRepository } from '../ports/tool-execution-repository.js';
-import type { InstanceSlot, LLMToolDefinition } from '../llm/types.js';
+import type { InstanceSlot, LLMToolDefinition, LLMToolSchemaDefinition } from '../llm/types.js';
 import type {
   ExecutedToolCallRecord,
   BufferedToolVariableMutation,
@@ -28,11 +28,23 @@ import type {
 } from './types.js';
 import type { ToolRegistry } from './tool-registry.js';
 import { ToolMutationBuffer } from './tool-mutation-buffer.js';
+import type { NativeToolNameMapping } from './transport/native-tool-name-mapping.js';
 
 /** Vercel AI SDK 兼容的工具定义格式 */
 export interface LLMToolEntry extends LLMToolDefinition {
   description: string;
   execute: (args: Record<string, unknown>) => Promise<unknown>;
+  inputSchema: Schema<unknown>;
+}
+
+/**
+ * Vercel AI SDK 兼容的 schema-only 工具格式（不带 execute）。
+ *
+ * native agent loop 用它让 SDK 只返回 toolCalls 不自动执行；真实执行仍走
+ * {@link ToolExecutor.execute}，确认闸、副作用级别、变量缓冲、执行记录全部保留。
+ */
+export interface LLMToolSchemaEntry extends LLMToolSchemaDefinition {
+  description: string;
   inputSchema: Schema<unknown>;
 }
 
@@ -544,6 +556,32 @@ export class ToolExecutor {
     return tools;
   }
 
+  /**
+   * 将 ToolDefinition[] 转为 Vercel AI SDK 兼容的 schema-only tools 对象（不带 execute）。
+   *
+   * 与 {@link buildLLMTools} 并存。工具不带 execute 时，SDK 在该步只返回 toolCalls 并停止，
+   * 不自动执行；native agent loop 拿到结构化 toolCalls 后自己决策、执行、回填、续跑，
+   * 因此确认闸、副作用级别、变量缓冲、执行记录等既有能力全部保留。
+   */
+  buildLLMToolSchemas(
+ definitions: ToolDefinition[],
+    nameMapping?: NativeToolNameMapping,
+  ): Record<string, LLMToolSchemaEntry> {
+    const tools: Record<string, LLMToolSchemaEntry> = {};
+
+    for (const def of definitions) {
+      // native function calling 下用清洗后的 schema 名作为 key，避免点号等非法字符
+      // 被 provider 拒绝（400）。未提供映射时保持原名（向后兼容）。
+      const schemaName = nameMapping ? nameMapping.toSchemaName(def.name) : def.name;
+      tools[schemaName] = {
+        description: def.description,
+        inputSchema: jsonSchema(def.parameters as JSONSchema7),
+      };
+    }
+
+    return tools;
+  }
+
   /** 重置每回合调用计数器和真实执行记录。在新回合开始时调用。 */
   resetTurnCounter(runId?: string): void {
     this.turnCallCount = 0;
@@ -793,14 +831,17 @@ export class ToolExecutor {
       status: 'queued',
       lifecycleState: 'opened',
       commitOutcome: 'pending',
-      ...(openRecord.sideEffectLevel ? { sideEffectLevel: openRecord.sideEffectLevel } : {}),
+      ...(openRecord.sideEffectLevel ? { sideEffectLevel: openRecord.sideEffectLevel } :{}),
       durationMs: 0,
       startedAt: openRecord.startedAt,
-      attemptNo: openRecord.attemptNo,
+          attemptNo: openRecord.attemptNo,
+          ...(openRecord.generationStepNo !== undefined
+            ? { generationStepNo: openRecord.generationStepNo }
+            : {}),
       createdAt: openRecord.createdAt,
     };
 
-    this.executionRecords.push(queuedRecord);
+   this.executionRecords.push(queuedRecord);
     return queuedRecord;
   }
 
@@ -836,6 +877,10 @@ export class ToolExecutor {
       startedAt,
       createdAt: startedAt,
       attemptNo: this.nextAttemptNo(),
+      // step 重试：透传当前生成步号（由 native loop 注入 context.generationStepNo）。
+      ...(input.context.generationStepNo !== undefined
+        ? { generationStepNo: input.context.generationStepNo }
+        : {}),
     };
 
     if (this.executionRepository) {
@@ -878,7 +923,10 @@ export class ToolExecutor {
       ...(openRecord.runtimeJobId ? { runtimeJobId: openRecord.runtimeJobId } : {}),
       attemptNo: openRecord.attemptNo,
       ...(openRecord.replayParentExecutionId
-        ? { replayParentExecutionId: openRecord.replayParentExecutionId }
+        ? {replayParentExecutionId: openRecord.replayParentExecutionId }
+        : {}),
+      ...(openRecord.generationStepNo !== undefined
+        ? { generationStepNo: openRecord.generationStepNo }
         : {}),
       createdAt: openRecord.createdAt,
     };

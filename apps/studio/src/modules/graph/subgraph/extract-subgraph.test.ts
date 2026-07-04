@@ -14,6 +14,7 @@ function parentDoc(): NodeGraphDocument {
       { id: "b1", type: "compose.template_render", typeVersion: "1", phase: "pre_response" },
       { id: "b2", type: "compose.template_render", typeVersion: "1", phase: "pre_response" },
       { id: "compose", type: "compose.final_messages", typeVersion: "1", phase: "response" },
+      { id: "user_input", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
       { id: "narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
       { id: "commit", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
     ],
@@ -21,11 +22,12 @@ function parentDoc(): NodeGraphDocument {
       { id: "e_b1", from: { nodeId: "b1", port: "block" }, to: { nodeId: "compose", port: "blocks" } },
       { id: "e_b2", from: { nodeId: "b2", port: "block" }, to: { nodeId: "compose", port: "blocks" } },
       { id: "e_cn", from: { nodeId: "compose", port: "messages" }, to: { nodeId: "narrator", port: "messages" } },
+      { id: "e_ui", from: { nodeId: "user_input", port: "text" }, to: { nodeId: "narrator", port: "user_input" } },
       { id: "e_nc", from: { nodeId: "narrator", port: "text" }, to: { nodeId: "commit", port: "text" } },
     ],
     groups: [
       { id: "g_blocks", name: "Blocks", kind: "subgraph", nodeIds: ["b1", "b2"] },
-      { id: "g_narrator", name: "Narrator", kind: "subgraph", nodeIds: ["compose", "narrator"] },
+      { id: "g_narrator", name: "Narrator", kind: "subgraph", nodeIds: ["compose", "narrator", "user_input"] },
     ],
     policies: {},
   };

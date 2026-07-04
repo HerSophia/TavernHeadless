@@ -517,7 +517,7 @@ LLM 实例配置表。独立管理各实例槽位的配置（提示词预设覆�
 | `scope` | `TEXT` | `NOT NULL` | 作用域（`global \| session`） |
 | `scope_id` | `TEXT` | `NOT NULL` | 作用域 ID |
 | `instance_slot` | `TEXT` | `NOT NULL` | 槽位（`* \| narrator \| director \| verifier \| memory`） |
-| `preset_id` | `TEXT` | `NULL` | 提示词预设覆盖（指向 `preset` 表）。**非 LLM Profile id**；LI11 标注的过渡字段，图化后废弃 |
+| `preset_id` | `TEXT` | `NULL` | 提示词预设覆盖（指向 `preset` 表）。**非 LLM Profile id**；LI11 标注的过渡字段。**LI11-3 已废弃（deprecated）**：新写入走楼层模板图 Narrator 节点 `config.presetRef`，兼容窗口内回退链「节点 presetRef → slot preset_id → session preset_id」三路等价，列保留不删 |
 | `enabled` | `INTEGER` | `NOT NULL`, default `1` | 是否启用 |
 | `params_json` | `TEXT` | `NULL` | 生成参数 JSON |
 | `created_at` | `INTEGER` | `NOT NULL` | 创建时间戳（ms） |

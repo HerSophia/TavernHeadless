@@ -29,7 +29,10 @@ export function categorizeTool(toolName: string): ToolCategory {
   if (toolName === "nodegraph.patch.submit_proposal") return "proposal";
   if (
     toolName.startsWith("nodegraph.graph.get")
-    || toolName.startsWith("nodegraph.graph.list_versions")
+    || toolName.startsWith("nodegraph.graph.list")
+    || toolName === "nodegraph.graph.find_by_name"
+    || toolName === "nodegraph.node.get"
+    || toolName.startsWith("nodegraph.preset.")
     || toolName.startsWith("nodegraph.node_type.")
     || toolName === "nodegraph.patch.validate"
     || toolName === "nodegraph.patch.diff"

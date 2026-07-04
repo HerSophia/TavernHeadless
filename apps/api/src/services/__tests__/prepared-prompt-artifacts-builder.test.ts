@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SimpleTokenCounter } from "@tavern/core";
+import { SimpleTokenCounter, type NodeGraphDocument } from "@tavern/core";
 
 import type { PromptRuntimeInspectionResult } from "../prompt-runtime-control-service.js";
 
@@ -223,6 +223,102 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
 
     expect(result.injections).toHaveLength(1);
     expect(result.injections[0]?.title).toBe(expectedTitle);
+  });
+
+  it("forwards floor graph binding presetRef into assemblePrompt and records prompt recipe trace", async () => {
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+      db: createPresetLookupDb(["preset-node"]),
+    });
+    const floorGraph = createFloorGraphWithPresetRef("preset-node", "preset-version-1");
+
+    const result = await builder.prepare({
+      ...createPrepareArgs(),
+      floorGraphBinding: {
+        source: "project",
+        kind: "native",
+        graphId: "ngraph_bound",
+        graphVersionId: "ngver_bound",
+        document: floorGraph,
+      },
+    } as never);
+
+    const assembleOptions = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7];
+    expect(assembleOptions?.presetRefOverride).toEqual({
+      presetId: "preset-node",
+      presetVersionId: "preset-version-1",
+    });
+    expect(result.preparePhaseTrace).toContainEqual({
+      phase: "prompt_recipe",
+      detail: {
+        source: "node_preset_ref",
+        hasNodePresetRef: true,
+        floorGraphBinding: {
+          source: "project",
+          kind: "native",
+          graphId: "ngraph_bound",
+          graphVersionId: "ngver_bound",
+          fallbackReason: null,
+        },
+      },
+    });
+  });
+
+  it("keeps session fallback and records not_bound when no floor graph binding is present", async () => {
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+    });
+
+    const result = await builder.prepare(createPrepareArgs());
+
+    const assembleOptions = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7];
+    expect(assembleOptions?.presetRefOverride).toBeNull();
+    expect(result.preparePhaseTrace).toContainEqual({
+      phase: "prompt_recipe",
+      detail: {
+        source: "session_fallback",
+        hasNodePresetRef: false,
+        floorGraphBinding: {
+          source: "none",
+          kind: null,
+          graphId: null,
+          graphVersionId: null,
+          fallbackReason: "not_bound",
+        },
+      },
+    });
+  });
+
+  it("keeps session fallback when the bound floor graph has no presetRef", async () => {
+    const builder = createBuilder({
+      promptPreparationService,
+      modelService,
+      memoryService,
+      firstPartyStateContextService,
+      turnToolingService,
+    });
+
+    await builder.prepare({
+      ...createPrepareArgs(),
+      floorGraphBinding: {
+        source: "project",
+        kind: "compat",
+        graphId: "ngraph_bound_no_ref",
+        graphVersionId: "ngver_bound_no_ref",
+        document: createFloorGraphWithPresetRef(null, null),
+      },
+    } as never);
+
+    const assembleOptions = promptAssemblerMocks.assemblePrompt.mock.calls.at(-1)?.[7];
+    expect(assembleOptions?.presetRefOverride).toBeNull();
   });
 
   it("keeps tool_list contributors available in compat_strict and marks strict_fixed placement", async () => {
@@ -504,8 +600,10 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
       },
       toolChoiceApplied: true,
       streamingToolCallUnsupported: true,
+      // native 模式下注入反幻觉协议说明 contributor（与 text_protocol 对称），
+      // 因此 toolList.injected 为 true；native 不输出 <tool_list> 清单，只注入说明文本。
       toolList: {
-        injected: false,
+        injected: true,
         toolCount: 1,
       },
     });
@@ -539,9 +637,10 @@ function createBuilder(args: {
     resolveTurnToolingForTurn: ReturnType<typeof vi.fn>;
   };
   routeAgentContributorsAsInjections?: boolean;
+  db?: unknown;
 }): PreparedPromptArtifactsBuilder {
   return new PreparedPromptArtifactsBuilder(
-    {} as never,
+    (args.db ?? {}) as never,
     new SimpleTokenCounter(),
     args.promptPreparationService as never,
     args.modelService as never,
@@ -558,6 +657,22 @@ function createBuilder(args: {
         : {}),
     },
   );
+}
+
+function createPresetLookupDb(existingPresetIds: string[]) {
+  const presetIds = new Set(existingPresetIds);
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          get: () => {
+            const first = [...presetIds][0];
+            return first ? { id: first } : undefined;
+          },
+        }),
+      }),
+    }),
+  };
 }
 
 function createPrepareArgs(overrides: {
@@ -594,6 +709,35 @@ function createPrepareArgs(overrides: {
     executionContext: createExecutionContext() as never,
     conversationWindow: createConversationWindow(),
     resolvedTurnModels: {},
+  };
+}
+
+function createFloorGraphWithPresetRef(
+  presetId: string | null,
+  presetVersionId: string | null,
+): NodeGraphDocument {
+  return {
+    schemaVersion: 2,
+    graphId: "ngraph_bound",
+    name: "Bound Floor Graph",
+    mode: "native_graph",
+    policies: {},
+    permissions: { required: [] },
+    nodes: [
+      { id: "user_input", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+      {
+        id: "narrator",
+        type: "narration.narrator",
+        typeVersion: "1",
+        phase: "response",
+        config: presetId
+          ? { presetRef: { presetId, presetVersionId } }
+          : {},
+      },
+    ],
+    edges: [
+      { id: "e_user_input_narrator", kind: "data", from: { nodeId: "user_input", port: "text" }, to: { nodeId: "narrator", port: "user_input" } },
+    ],
   };
 }
 

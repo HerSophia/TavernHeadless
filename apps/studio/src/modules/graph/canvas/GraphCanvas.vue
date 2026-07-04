@@ -39,6 +39,7 @@ import {
   mapDocumentToFlow,
   type GraphFlowNodeData,
 } from "./map-document";
+import type { InlineConfigLlmProfileOption } from "../inline-config/node-inline-config";
 import { phaseStyle } from "./port-styles";
 
 const props = withDefaults(
@@ -52,8 +53,10 @@ const props = withDefaults(
     resetKey?: string | number;
     /** 钻入（drill-in）：仅渲染该组成员；null = 根图。 */
     focusGroupId?: string | null;
+    /** 可选的 LLM Profile 列表：供 Agent 节点卡片上的模型来源下拉选择。 */
+    llmProfiles?: InlineConfigLlmProfileOption[];
   }>(),
-  { editable: false, highlight: null, runStatusByNodeId: () => ({}), resetKey: undefined, focusGroupId: null },
+  { editable: false, highlight: null, runStatusByNodeId: () => ({}), resetKey: undefined, focusGroupId: null, llmProfiles: () => [] },
 );
 
 const emit = defineEmits<{
@@ -67,6 +70,8 @@ const emit = defineEmits<{
   (event: "setGroupCollapsed", payload: { groupId: string; collapsed: boolean }): void;
   (event: "selectGroup", groupId: string | null): void;
   (event: "moveGroup", payload: { groupId: string; position: { x: number; y: number } }): void;
+  (event: "updateNodeConfig", payload: { nodeId: string; path: string; value: unknown; emptyValue?: "delete" | "keep" | "null" }): void;
+  (event: "openNodeInspector", nodeId: string): void;
 }>();
 
 const { t } = useI18n();
@@ -95,6 +100,7 @@ const mapped = computed(() =>
   mapDocumentToFlow(props.document, {
     runStatusByNodeId: props.runStatusByNodeId,
     focusGroupId: props.focusGroupId,
+    llmProfiles: props.llmProfiles,
   }),
 );
 const nodes = computed(() => mapped.value.nodes);
@@ -150,9 +156,14 @@ const flowKey = computed(() => `${props.resetKey ?? props.document.graphId}::${p
 
 const autoLayoutDone = ref(false);
 
-watch(flowKey, () => {
-  autoLayoutDone.value = false;
-});
+// 自动布局仅在“打开 / 切换某张图”（resetKey 变化）时重新允许一次。
+// 钻入 / 退出组、折叠切换等仅改变 focusGroupId 的操作不再触发自动布局（仍会重挂载并 fitView）。
+watch(
+  () => props.resetKey,
+  () => {
+    autoLayoutDone.value = false;
+  },
+);
 
 function miniMapNodeColor(node: FlowGraphNode): string {
   const data = node.data as GraphFlowNodeData | undefined;
@@ -368,7 +379,11 @@ watch(
       @connect="onConnect"
     >
       <template #node-tavern="nodeProps">
-        <GraphNode v-bind="nodeProps" />
+        <GraphNode
+          v-bind="nodeProps"
+          @update-node-config="(payload) => emit('updateNodeConfig', payload)"
+          @open-node-inspector="(nodeId) => emit('openNodeInspector', nodeId)"
+        />
       </template>
       <template #node-group="nodeProps">
         <GraphGroupNode v-bind="nodeProps" />

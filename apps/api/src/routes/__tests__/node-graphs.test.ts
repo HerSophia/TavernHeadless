@@ -41,6 +41,7 @@ function createMvpDocument(graphId = "ngraph_route_mvp"): NodeGraphDocument {
     permissions: { required: [] },
     nodes: [
       { id: "history", type: "source.chat_history", typeVersion: "1", phase: "pre_response" },
+      { id: "user_input", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
       { id: "messages", type: "compose.final_messages", typeVersion: "1", phase: "response" },
       { id: "narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
       { id: "commit", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
@@ -57,6 +58,12 @@ function createMvpDocument(graphId = "ngraph_route_mvp"): NodeGraphDocument {
         kind: "data",
         from: { nodeId: "messages", port: "messages" },
         to: { nodeId: "narrator", port: "messages" },
+      },
+      {
+        id: "e_user_input_narrator",
+        kind: "data",
+        from: { nodeId: "user_input", port: "text" },
+        to: { nodeId: "narrator", port: "user_input" },
       },
       {
         id: "e_narrator_commit",

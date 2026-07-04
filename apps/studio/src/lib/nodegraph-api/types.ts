@@ -1,6 +1,7 @@
 import type {
   NodeGraphDiagnostic,
   NodeGraphDocument,
+  NodeGraphNodeRunStatus,
 } from "@tavern/core/node-graph";
 
 /**
@@ -68,6 +69,41 @@ export interface NodeGraphArchiveResponse {
   definition: NodeGraphDefinitionResponse;
 }
 
+export type FloorGraphBindingKind = "native" | "compat";
+
+export interface FloorGraphBindingResponse {
+  id: string;
+  account_id: string;
+  workspace_id: string;
+  project_id: string;
+  kind: FloorGraphBindingKind;
+  graph_id: string;
+  graph_version_id: string;
+  graph_name: string;
+  graph_version_no: number;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface FloorGraphBindingListResponse {
+  items: FloorGraphBindingResponse[];
+}
+
+export interface FloorGraphBindingMutationResponse {
+  item: FloorGraphBindingResponse;
+}
+
+export interface FloorGraphBindingClearResponse {
+  cleared: boolean;
+  previous: FloorGraphBindingResponse | null;
+}
+
+export interface FloorGraphBindingSetInput {
+  graph_id: string;
+  graph_version_id: string;
+}
+
 export interface NodeGraphRunEnqueueResponse {
   job_id: string;
   created: boolean;
@@ -75,9 +111,32 @@ export interface NodeGraphRunEnqueueResponse {
   graph_id: string;
   graph_version_id: string;
   worker_enabled: boolean;
+  /**
+   * 后端 `/run` 当前只返回 `job_id`（run record 由 worker 执行时才创建，id 无法在入队时获知）。
+   * 保留 `run_id` 可选字段用于容错：若后续后端在同步 dry-run 场景直接返回 run id，前端可无缝接入轮询。
+   */
+  run_id?: string | null;
 }
 
-export interface NodeGraphRunRecordResponse {
+/** getRun 返回的单条节点运行记录（对齐路由 `nodeRunToResponse`）。 */
+export interface NodeGraphNodeRunResponse {
+  id: string;
+  graph_run_id: string;
+  node_id: string;
+  phase: string;
+  status: NodeGraphNodeRunStatus | string;
+  input_hash: string | null;
+  output_hash: string | null;
+  started_at: number | null;
+  finished_at: number | null;
+  /** 节点输出正文，仅 manage debug 权限可见，默认裁剪为 null。 */
+  preview?: unknown;
+  diagnostics?: unknown;
+  restricted?: boolean;
+}
+
+/** getRun 返回的运行记录主体（对齐路由 `runToResponse`）。 */
+export interface NodeGraphRunRecord {
   id: string;
   graph_id: string;
   graph_version_id: string;
@@ -90,6 +149,17 @@ export interface NodeGraphRunRecordResponse {
   cleaned_at: number | null;
   created_at: number;
   updated_at: number;
+  [key: string]: unknown;
+}
+
+/**
+ * getRun 完整响应（对齐 apps/api `GET /projects/:id/node-graph-runs/:run_id`）。
+ * 后端返回 `{ run, node_runs, restricted }`，节点级状态来自 `node_runs`。
+ */
+export interface NodeGraphRunRecordResponse {
+  run: NodeGraphRunRecord;
+  node_runs: NodeGraphNodeRunResponse[];
+  restricted: boolean;
 }
 
 export interface NodeGraphPreviewInput {

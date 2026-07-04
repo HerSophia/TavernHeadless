@@ -28,7 +28,12 @@ export interface FloorFailedEvent {
   error: Error;
 }
 
-export type FloorRunType = 'respond' | 'regenerate_page' | 'retry_turn' | 'edit_and_regenerate';
+export type FloorRunType =
+  | 'respond'
+  | 'regenerate_page'
+  | 'retry_turn'
+  | 'retry_step'
+  | 'edit_and_regenerate';
 
 export type FloorRunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -157,6 +162,7 @@ export interface VariableDeletedEvent {
 
 /** 生成开始事件 */
 export interface GenerationStartedEvent {
+  sessionId?: string;
   floorId?: string;
   model?: ModelConfig;
   tokenBudget?: number;
@@ -164,6 +170,7 @@ export interface GenerationStartedEvent {
 
 /** 生成文本片段事件 */
 export interface GenerationChunkEvent {
+  sessionId?: string;
   floorId?: string;
   chunk: string;
   accumulatedLength: number;
@@ -171,6 +178,7 @@ export interface GenerationChunkEvent {
 
 /** 生成完成事件 */
 export interface GenerationCompletedEvent {
+  sessionId?: string;
   floorId?: string;
   text: string;
   usage: TokenUsage;
@@ -180,6 +188,7 @@ export interface GenerationCompletedEvent {
 
 /** 生成失败事件 */
 export interface GenerationFailedEvent {
+  sessionId?: string;
   floorId?: string;
   error: Error;
 }

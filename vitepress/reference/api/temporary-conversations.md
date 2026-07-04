@@ -383,16 +383,53 @@ POST /temporary-conversations/:id/respond
 
 `input_message` 是可选字段。传入时，服务会先把这条消息原子追加进 transcript，再执行本次生成。
 
+`dynamic_context` 是可选字段。调用方可以传入按当前上下文求值生成的本回合动态上下文文本；服务会把它作为一条仅本回合有效的注入参与 prompt 组装，不写入 transcript。空串或纯空白视为未提供。
+
+`generation_params` 是可选字段，用于覆盖本回合的生成参数。未传的字段不会下发，由后端/模型默认值生效。各字段含义：
+
+- `reasoning_effort`：推理（思维链）强度。预设三档 `low` / `medium` / `high`，也可传入模型支持的更强档位（例如 `xhigh`），最长 64 字符。是否真正产出 reasoning 取决于模型本身；模型不返回时，结果按「无 reasoning」处理，不臆造。
+- `temperature`：采样温度，取值范围 `[0, 2]`。
+- `top_p`：Top-P 采样，取值范围 `[0, 1]`。
+- `max_output_tokens`：最大输出 token 数，正整数。
+- `max_context_tokens`：最大上下文token 数，正整数。主要用于 prompt 组装阶段的 token 预算（历史裁剪），不是下发给模型的上下文窗口设置。
+
+`tool_transport_preference` 是可选字段，选择本回合的工具调用协议（仅对图助手会话 `purpose=graph-assistant` 生效，其他会话忽略）。缺省视为 `auto`：
+
+- `auto`：按所选模型能力自动选——支持原生 function calling 则走原生，否则走文本协议。
+- `native`：强制原生 function calling；所选模型不支持时后端安全回退到文本协议，不报错，回退由工具传输 trace 体现。
+- `text_protocol`：强制文本协议。
+
 ### 请求体
 
 ```json
 {
   "input_message": {
     "role": "user",
-    "content": "请给我三个不同语气的候选回复。"
-  }
+"content": "请给我三个不同语气的候选回复。"
+  },
+  "dynamic_context": "当前画布：3 个节点，2 条连线；选中节点：intro。",
+  "generation_params": {
+    "reasoning_effort": "medium",
+  "temperature": 1,
+    "top_p": 0.5,
+    "max_output_tokens": 8192,
+    "max_context_tokens": 300000
+  },
+  "tool_transport_preference": "auto"
 }
 ```
+
+| 字段 | 类型 | 必填 | 默认值 | 说明 |
+| ---- | ---- | ---- | ---- | ---- |
+| `input_message` | `object` | 否 | - | 本回合要追加的用户消息，含 `role` 与 `content` |
+| `dynamic_context` | `string` | 否 | - | 本回合动态上下文文本，仅本回合注入 prompt，不写入 transcript；最大 200000 字符 |
+| `generation_params` | `object` | 否 | - | 本回合生成参数覆盖 |
+| `generation_params.reasoning_effort` | `string` | 否 | - | 推理（思维链）强度，预设 `low` / `medium` / `high`，也可传模型支持的更强档位；最长 64 字符 |
+| `generation_params.temperature` | `number` | 否 | - | 采样温度，取值 `[0, 2]` |
+| `generation_params.top_p` | `number` | 否 | - | Top-P 采样，取值 `[0, 1]` |
+| `generation_params.max_output_tokens` | `integer` | 否 | - | 最大输出 token 数，≥ 1 |
+| `generation_params.max_context_tokens` | `integer` | 否 | - | 最大上下文 token 数，≥ 1；用于 prompt 组装阶段的 token 预算 |
+| `tool_transport_preference` | `string` | 否 | `auto` | 工具调用协议偏好，枚举 `auto` / `native` / `text_protocol`；仅图助手会话生效 |
 
 ### JSON 成功响应 `200`
 
@@ -427,6 +464,7 @@ SSE 事件序列会复用现有聊天流的基本习惯：
 
 - `start`：本次生成开始，返回 `floor_id`、`floor_no`、`branch_id`
 - `chunk`：文本增量，字段是 `chunk`
+- `reasoning`：推理（思维链）增量，字段是 `delta`；仅当模型在生成过程中产出 reasoning 时下发，模型不返回时不出现
 - `tool`：运行时工具事件摘要
 - `run`：楼层运行快照摘要
 - `done`：最终结果，包含 `conversation_id`、`page_id`、`generated_text`、`total_usage`、`final_state`
@@ -437,6 +475,9 @@ SSE 事件序列会复用现有聊天流的基本习惯：
 ```text
 event: start
 data: {"floor_id":"floor_002","floor_no":2,"branch_id":"main"}
+
+event: reasoning
+data: {"delta":"先分析一下需求……"}
 
 event: chunk
 data: {"chunk":"第一段文本"}
@@ -469,6 +510,129 @@ curl -X POST http://localhost:3000/temporary-conversations/temp_001/respond \
   -d '{"input_message":{"role":"user","content":"请给我三个不同语气的候选回复。"}}'
 ```
 
+## 楼层重试（JSON / SSE）
+
+```http
+POST /temporary-conversations/:id/retry
+```
+
+对临时对话中一个**已提交**的楼层整轮重试。它在目标楼层上新增一个 output page version（保留旧页历史），以新页承载本次重试输出，不原地清空旧页。
+
+同样支持 JSON 与 SSE 两种模式，出口规则与 `respond` 一致（默认 JSON，`Accept: text/event-stream` 时走 SSE）。
+
+### 请求体
+
+```json
+{
+  "floor_id": "floor_002",
+  "dynamic_context": "当前画布：3 个节点。",
+  "generation_params": { "temperature": 1 }
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `floor_id` | `string` | **是** | 目标楼层 ID，必须已提交 |
+| `dynamic_context` | `string` | 否 | 本回合动态上下文文本，仅本回合注入 prompt，不写入 transcript；最大 200000 字符 |
+| `generation_params` | `object` | 否 | 本回合生成参数覆盖，字段同 `respond` |
+| `confirmed_execution_ids` | `string[]` | 否 | 确认允许 replay 的工具执行 ID 列表 |
+| `confirmed_session_state_mutation_ids` | `string[]` | 否 | 确认允许 replay 的 session-state mutation ID 列表 |
+
+### JSON 成功响应 `200`
+
+```json
+{
+  "data": {
+    "conversation_id": "temp_001",
+    "branch_id": "main",
+    "floor_id": "floor_002",
+    "floor_no": 2,
+    "page_id": "page_003",
+    "generated_text": "重试后的正文",
+    "total_usage": { "prompt_tokens": 321, "completion_tokens": 144, "total_tokens": 465 },
+    "final_state": "stop"
+  }
+}
+```
+
+SSE 事件序列与 `respond` 一致，`done` 事件返回同样的结果字段。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `validation_error` | 请求体不合法 |
+| `403` | `project_access_denied` | 没有继续写入权限 |
+| `404` | `conversation_not_found` / `retry_target_not_found` | 会话不存在，或目标楼层不存在 |
+| `409` | `conversation_not_active` / `conversation_busy` / `missing_effective_user_tail` / `project_archived` | 资源不可写、正在忙、上下文不满足生成前提，或关联 Project 已归档 |
+
+## 楼层 Step 级重试（JSON / SSE）
+
+```http
+POST /temporary-conversations/:id/retry-step
+```
+
+对临时对话中一个**已提交**的楼层，从指定的某个 LLM 生成步开始重试。保留起点步之前已成功的工具往返结果并原样回放，只把起点步及其之后的内容重新生成，输出同样落在新的 output page version 上。
+
+起点约束与主会话 `/floors/:id/retry-step` 一致：`from_step_index` 指向的那一步，其工具必须没有写类副作用，否则返回 `409 step_retry_blocked_side_effect`。起点之前已产生的写类副作用不会回滚，在响应的 `irreversible_side_effects` 中列出。
+
+### 请求体
+
+在「楼层重试」请求体基础上，额外要求 `from_step_index`：
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `floor_id` | `string` | **是** | 目标楼层 ID，必须已提交 |
+| `from_step_index` | `integer` | **是** | 从哪一步开始重生成，1-based，≥ 1 |
+| `dynamic_context` | `string` | 否 | 同「楼层重试」 |
+| `generation_params` | `object` | 否 | 同「楼层重试」 |
+| `confirmed_execution_ids` | `string[]` | 否 | 同「楼层重试」 |
+| `confirmed_session_state_mutation_ids` | `string[]` | 否 | 同「楼层重试」 |
+
+### JSON 成功响应 `200`
+
+在「楼层重试」响应的基础上，额外返回 `discarded_from_step_index` 与 `irreversible_side_effects`：
+
+```json
+{
+  "data": {
+    "conversation_id": "temp_001",
+    "branch_id": "main",
+    "floor_id": "floor_002",
+    "floor_no": 2,
+    "page_id": "page_004",
+    "generated_text": "从第 3 步重生成的正文",
+    "total_usage": { "prompt_tokens": 210, "completion_tokens": 96, "total_tokens": 306 },
+    "final_state": "stop",
+   "discarded_from_step_index": 3,
+    "irreversible_side_effects": [
+      {
+        "execution_id": "exec_01",
+        "tool_name": "write_file",
+        "side_effect_level": "external",
+        "started_at": 1735689600000,
+        "generation_step_no": 2
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 类型 | 说明 |
+| ----| ---- | ---- |
+| `discarded_from_step_index` | number | 实际被丢弃并重生成的起点步号 |
+| `irreversible_side_effects` | object[] | 起点之前已产生、不会回滚的写类副作用摘要（`execution_id` / `tool_name` / `side_effect_level` / `started_at` / `generation_step_no`） |
+
+SSE 模式下，`done` 事件同样携带上述额外字段。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `409` | `step_retry_blocked_side_effect` |起点步的工具带写类副作用，不能作为重试起点 |
+
+其余错误语义与「楼层重试」一致。
+
 ## 读取 transcript
 
 ```http
@@ -477,7 +641,7 @@ GET /temporary-conversations/:id/transcript
 
 返回结构化 transcript，按 floor / page / message 三层展开。
 
-### 成功响应 `200`
+每个 floor 还带一个 `reasoning_text` 字段，表示该楼层提交时捕获的推理（思维链）文本。模型未返回 reasoning 或楼层尚未提交时为 `null`。
 
 ```json
 {
@@ -495,6 +659,7 @@ GET /temporary-conversations/:id/transcript
         "token_out": 0,
         "created_at": 1735689600000,
         "updated_at": 1735689600000,
+        "reasoning_text": null,
         "pages": [
           {
             "id": "page_001",
@@ -551,7 +716,7 @@ GET /temporary-conversations/:id/inspect
 
 ### 可见性分层
 
-- 默认裁剪：当临时对话是 agent-private（`visibility = internal`，或带 Agent 来源血缘）时，transcript 的 `content` 会被裁剪为 `null`，并把消息标记 `restricted: true`；`agent_origin` 也返回 `null`。结构性字段（role、seq、page、floor、`content_length`）始终保留。
+- 默认裁剪：当临时对话是 agent-private（`visibility = internal`，或带 Agent 来源血缘）时，transcript 的 `content` 会被裁剪为 `null`，并把消息标记 `restricted: true`；floor 的 `reasoning_text` 同样被脱敏为 `null`；`agent_origin` 也返回 `null`。结构性字段（role、seq、page、floor、`content_length`）始终保留。
 - 显式取回：`include_agent_private=true` 仅在调用方对该临时对话拥有 `project.write`（owner）权限时生效，此时返回完整正文与 `agent_origin`，并写入 `temporary_conversation.transcript_inspect` 审计日志。权限不足时该参数被忽略，正文保持裁剪。
 - 非 agent-private（`client_visible` 且无 Agent 来源）的临时对话不裁剪。
 
@@ -587,6 +752,7 @@ GET /temporary-conversations/:id/inspect
           "id": "floor_001",
           "floor_no": 1,
           "state": "committed",
+          "reasoning_text": null,
           "pages": [
             {
               "id": "page_001",
@@ -807,6 +973,10 @@ curl -X POST http://localhost:3000/temporary-conversations/temp_001/export \
 - `client.temporaryConversations.appendMessage(...)`
 - `client.temporaryConversations.respond(...)`
 - `client.temporaryConversations.respondStream(...)`
+- `client.temporaryConversations.retry(...)`
+- `client.temporaryConversations.retryStream(...)`
+- `client.temporaryConversations.retryStep(...)`
+- `client.temporaryConversations.retryStepStream(...)`
 - `client.temporaryConversations.getTranscript(...)`
 - `client.temporaryConversations.inspect(...)`
 - `client.temporaryConversations.finalize(...)`
