@@ -19,7 +19,10 @@ export type TemporaryConversationErrorCode =
   | "invalid_source_output_page"
   | "target_page_not_found"
   | "pending_tool_call_not_found"
-  | "pending_tool_call_not_pending";
+  | "pending_tool_call_not_pending"
+  | "retry_target_not_found"
+  | "invalid_from_step_index"
+  | "step_retry_blocked_side_effect";
 
 export class TemporaryConversationError extends Error {
   constructor(

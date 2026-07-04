@@ -133,8 +133,17 @@ console.log(result.generatedText);
 - 普通 `sessions` 列表和详情不会直接暴露临时对话
 - 生命周期只有 `active / finalized / discarded / expired / cancelled`
 - `respond(...)` / `respondStream(...)` 默认只返回 inline 结果
+- `respond(...)` / `respondStream(...)` 支持可选的 `dynamicContext` 字段：调用方按当前上下文求值生成的本回合动态上下文文本，随本回合注入 prompt 组装，不写入 transcript；空串视为未提供
+- `respond(...)` / `respondStream(...)` 支持可选的 `generationParams` 字段，用于覆盖本回合生成参数；未设置的字段不下发，由后端/模型默认值生效。包含：`reasoningEffort`（预设 `low` / `medium` / `high`，也可传模型支持的更强档位如 `xhigh`，是否产出 reasoning 取决于模型本身）、`temperature`（`[0, 2]`）、`topP`（`[0, 1]`）、`maxOutputTokens`（正整数）、`maxContextTokens`（正整数，用于 prompt 组装阶段的 token 预算，不是下发给模型的上下文窗口设置）
+- `respond(...)` / `respondStream(...)` 支持可选的 `toolTransportPreference` 字段（仅图助手 purpose=graph-assistant 会话生效），选择工具调用协议：`auto`（默认，按模型能力选）/ `native`（强制原生 function calling，模型不支持时后端安全回退文本协议）/ `text_protocol`（强制文本协议）；不传或传 `auto` 时不下发该字段
+- `respondStream(...)` 支持 `onReasoning`回调，按 `reasoning` SSE 事件接收推理增量（`payload.delta`）；模型不返回 reasoning 时不触发
+- `respondStream(...)` 支持 `onStepNarration` 回调，按 `step_narration` SSE 事件接收 native 多步循环的中间叙述（`payload` 为 `{ stepIndex, text, createdAt }`，已映射为 camelCase）；仅当某步触发工具调用且产出可见文本时下发，末步纯结论不触发（目前仅图助手 purpose=graph-assistant 临时对话会产出该事件）
+- `getTranscript(...)` / `inspect(...)` 返回的每个 floor 带 `reasoningText` 字段；模型未返回 reasoning、楼层未提交或 inspect 被脱敏时为 `null`
+- `getTranscript(...)` / `inspect(...)` 返回的每个 floor 的 `toolExecutions[]` 带 `generationStepNo` 字段，表示该工具执行所属的 LLM 生成步号（旧数据为 `null`）；供接入方按生成步精确归并 step 与定位 step 级重试起点
 - 如果要把结果送回正式页面，必须显式调用 `exportToPageStagedWrite(...)`
 - 公开路由只返回 `client_visible` 的临时对话
+- `retry(...)` / `retryStream(...)` / `retryStep(...)` / `retryStepStream(...)` 在指定 `floorId` 的已提交临时楼层上重试，语义是「开新消息页」：在同一楼层上生成一个新的 output page 版本，旧页历史保留。入参支持 `dynamicContext`、`generationParams`、`confirmedExecutionIds`、`confirmedSessionStateMutationIds`；流式变体复用与 `respondStream(...)` 相同的回调集合
+- `retryStep(...)` / `retryStepStream(...)` 额外需要 `fromStepIndex`（1-based），从该 LLM 生成步重生成：丢弃该步及其之后的工具往返，保留之前已成功的工具结果。结果额外带 `discardedFromStepIndex` 与 `irreversibleSideEffects`（起点之前已产生、不会回滚的写类副作用脱敏摘要）。起点工具带写副作用时后端拒绝（HTTP 409），`fromStepIndex` 越界返回 HTTP 400
 
 ## committed floor 用户人工修订
 
@@ -175,6 +184,32 @@ console.log(history.items[0]?.originalContent);
 - page 路由只支持能够稳定映射到单条可编辑 message 的页
 - 并发通过 `expectedLatestRevisionNo` 做乐观锁控制
 
+## Step 级重试（floors.retryStep）
+
+`client.floors.retryStep(...)` 在主会话已提交楼层上，从指定的 LLM 生成步重新生成：丢弃该步及其之后的工具往返，保留之前已成功的工具结果，让模型从该步继续多步生成。
+
+- `floorId`：目标已提交楼层。
+- `fromStepIndex`：从第几步重生成（1-based）。该步起点的工具必须是 `sideEffectLevel === "none"`，否则后端返回 `step_retry_blocked_side_effect`（HTTP 409）；`fromStepIndex`越界时返回 `invalid_from_step_index`（HTTP 400）。
+- 其余字段与 `floors.retry(...)` 一致（`config` / `generationParams` / `promptRuntimeInjections` / `sessionStateWrites` / 确认类字段）。
+
+返回值在 `floors.retry(...)` 的基础上额外携带：
+
+- `discardedFromStepIndex`：实际被丢弃的起始步号。
+- `irreversibleSideEffects`：起点之前已产生、不会回滚的写类副作用清单（脱敏摘要，含 `executionId` / `toolName` / `sideEffectLevel` / `startedAt` / `generationStepNo`）。这些副作用只用于提示用户，后端不会回滚。
+
+最小示例：
+
+```ts
+const result = await client.floors.retryStep({
+  floorId: "floor_1",
+  fromStepIndex: 2,
+});
+
+console.log(result.discardedFromStepIndex);
+console.log(result.irreversibleSideEffects);
+```
+
+
 ## Prompt Runtime 资源补充
 
 Prompt Runtime 资源当前有两条需要特别区分的只读入口：
@@ -191,7 +226,7 @@ Prompt Runtime 资源当前有两条需要特别区分的只读入口：
 
 当前 SDK 同时支持两类 Prompt Runtime Injection：
 
-1. 请求级注入：通过 `promptRuntimeInjections` 随 `previewText(...)`、`inspect(...)`、`sessions.respond(...)`、`sessions.respondDryRun(...)`、`sessions.regenerate(...)`、`floors.retry(...)`、`messages.editAndRegenerate(...)` 一起提交
+1. 请求级注入：通过 `promptRuntimeInjections` 随 `previewText(...)`、`inspect(...)`、`sessions.respond(...)`、`sessions.respondDryRun(...)`、`sessions.regenerate(...)`、`floors.retry(...)`、`floors.retryStep(...)`、`messages.editAndRegenerate(...)` 一起提交
 2. 持久注入：通过 `client.promptRuntime.list/create/patch/deleteSessionInjection(...)` 和 `...BranchInjection(...)` 管理 session / branch 级记录
 
 请求级注入示例：

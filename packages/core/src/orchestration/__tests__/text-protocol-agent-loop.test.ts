@@ -117,8 +117,8 @@ describe('TextProtocolAgentLoop', () => {
     expect(result.stopReason).toBe('natural_stop');
     expect(result.steps).toBe(3);
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(execute).toHaveBeenNthCalledWith(1, 'graph_query', { q: 'a' }, TOOL_CONTEXT, PERMISSIONS);
-    expect(execute).toHaveBeenNthCalledWith(2, 'graph_create', { node: 'n' }, TOOL_CONTEXT, PERMISSIONS);
+    expect(execute).toHaveBeenNthCalledWith(1, 'graph_query', { q: 'a' }, { ...TOOL_CONTEXT, generationStepNo: 1 }, PERMISSIONS);
+    expect(execute).toHaveBeenNthCalledWith(2, 'graph_create', { node: 'n' }, { ...TOOL_CONTEXT, generationStepNo: 2 }, PERMISSIONS);
     expect(result.visibleText).toBe('先查询。\n\n再创建。\n\n完成。');
     expect(result.toolResultWritebackText).toBeDefined();
     expect(result.pendingConfirmation).toBeUndefined();
@@ -212,7 +212,7 @@ describe('TextProtocolAgentLoop', () => {
     expect(result.stopReason).toBe('awaiting_confirmation');
     // 只有第一个 auto 工具被执行；confirm 后的 auto 工具被中止
     expect(execute).toHaveBeenCalledTimes(1);
-    expect(execute).toHaveBeenCalledWith('graph_query', { q: 'a' }, TOOL_CONTEXT, PERMISSIONS);
+    expect(execute).toHaveBeenCalledWith('graph_query', { q: 'a' }, { ...TOOL_CONTEXT, generationStepNo: 1 }, PERMISSIONS);
     expect(result.pendingConfirmation?.toolName).toBe('graph_create');
     // 已执行的 auto 结果作为用户消息回填
     const lastMessage = result.conversationMessages.at(-1);
@@ -338,6 +338,121 @@ describe('TextProtocolAgentLoop', () => {
       maxSteps: 5,
     });
 
-    expect(result.totalUsage).toEqual({ promptTokens: 2, completionTokens: 2, totalTokens: 4 });
+      expect(result.totalUsage).toEqual({ promptTokens: 2, completionTokens: 2, totalTokens: 4 });
+  });
+
+  it('执行前对带引号的布尔 / 数组串参数做类型容错', async () => {
+    const eventBus = createEventBus();
+    const { executor, execute } = makeExecutor();
+    const coercibleTool: ToolDefinition = {
+      name: 'graph_query',
+      description: 'graph_query description',
+      parameters: {
+        type: 'object',
+        properties: {
+          recursive: { type: 'boolean' },
+          tags: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      sideEffectLevel: 'none',
+      allowedSlots: [],
+      source: 'builtin',
+    };
+    const { generate } = scriptedGenerate([
+      {
+        rawText: toolCallBlock('c1', 'graph_query', {
+          recursive: 'true',
+          tags: '["a", "b"]',
+        }),
+      },
+      { rawText: '完成。' },
+    ]);
+
+    const loop = new TextProtocolAgentLoop({ eventBus });
+    const result = await loop.run({
+   floorId: 'floor_1',
+      callerSlot: 'narrator',
+   initialMessages: [{ role: 'user', content: '查' }],
+      tools: [coercibleTool],
+      toolContext: TOOL_CONTEXT,
+      permissions: PERMISSIONS,
+      toolExecutor: executor,
+      generate,
+      decideConfirmation: ALWAYS_AUTO,
+      maxSteps: 5,
+    });
+
+    expect(result.stopReason).toBe('natural_stop');
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith(
+      'graph_query',
+      { recursive: true, tags: ['a', 'b'] },
+      { ...TOOL_CONTEXT, generationStepNo: 1 },
+      PERMISSIONS,
+    );
+  });
+
+  it('格式错误不再误判 natural_stop，而是回填反馈并续跑', async () => {
+    const eventBus = createEventBus();
+    const { executor, execute } = makeExecutor();
+    const { generate, calls } = scriptedGenerate([
+      //第一步：body 不是合法 JSON，解析产生诊断但无有效调用。
+      { rawText: '<tool_call id="c1" name="graph_query">oops</tool_call>' },
+      // 第二步：模型按反馈纠正，输出合法调用。
+      { rawText: toolCallBlock('c2', 'graph_query', { q: 'a' })},
+      { rawText: '完成。' },
+    ]);
+
+    const loop = new TextProtocolAgentLoop({ eventBus });
+    const result = await loop.run({
+      floorId: 'floor_1',
+      callerSlot: 'narrator',
+      initialMessages: [{ role: 'user', content: '建节点' }],
+      tools: TOOLS,
+      toolContext: TOOL_CONTEXT,
+      permissions: PERMISSIONS,
+      toolExecutor: executor,
+      generate,
+      decideConfirmation: ALWAYS_AUTO,
+      maxSteps: 5,
+    });
+
+    expect(result.stopReason).toBe('natural_stop');
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledWith('graph_query', { q: 'a' }, { ...TOOL_CONTEXT, generationStepNo: 2 }, PERMISSIONS);
+    // 第二步生成时上下文：初始 user+ 第一步 assistant 原始输出 + 反馈 user = 3
+    expect(calls[1]?.messageCount).toBe(3);
+    const feedback = result.conversationMessages.find(
+      (message) => message.role === 'user' && message.content.includes('could not be parsed'),
+    );
+    expect(feedback).toBeDefined();
+  });
+
+  it('连续无效步达上限后以 invalid_format_stop 收敛停止', async () => {
+    const eventBus = createEventBus();
+    const { executor, execute } = makeExecutor();
+    const { generate } = scriptedGenerate([
+      { rawText: '<tool_call id="c1" name="graph_query">oops</tool_call>' },
+      { rawText: '<tool_call id="c2" name="graph_query">still bad</tool_call>' },
+      { rawText: '<tool_call id="c3" name="graph_query">again</tool_call>' },
+    ]);
+
+ const loop = new TextProtocolAgentLoop({ eventBus });
+    const result = await loop.run({
+      floorId: 'floor_1',
+      callerSlot: 'narrator',
+      initialMessages: [{ role: 'user', content: '建节点' }],
+      tools: TOOLS,
+      toolContext: TOOL_CONTEXT,
+      permissions: PERMISSIONS,
+      toolExecutor: executor,
+      generate,
+      decideConfirmation: ALWAYS_AUTO,
+    maxSteps: 5,
+    });
+
+    expect(result.stopReason).toBe('invalid_format_stop');
+    expect(result.steps).toBe(2);
+    expect(execute).not.toHaveBeenCalled();
   });
 });

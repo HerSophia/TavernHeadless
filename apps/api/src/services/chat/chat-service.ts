@@ -14,10 +14,12 @@ import type {
 } from "@tavern/core";
 import {
   createEventBus,
+  emitDebug,
   extractSummaries,
   FloorNotFoundError,
   FloorStateConflictError,
   FloorStateMachine,
+  isDebugEnabled,
   LLMTimeoutError,
   ToolReplayBlockedError,
   UnsupportedToolModeError,
@@ -51,6 +53,10 @@ import { GraphAssistantToolPolicyService } from "../graph-assistant-tool-policy-
 import { GraphAssistantToolConfirmationService } from "../graph-assistant-tool-confirmation-service.js";
 import { GRAPH_ASSISTANT_PURPOSE } from "../temporary-conversation-types.js";
 import {
+  resolveGraphAssistantToolTransport,
+  type ToolTransportPreference,
+} from "./tool-call-transport-resolver.js";
+import {
   BranchLocalVariableSnapshotService,
   isBranchLocalSnapshotMissingError,
 } from "../branch-local-variable-snapshot-service.js";
@@ -71,10 +77,13 @@ import type {
   ResolvedTurnModels,
   RetryFloorRequest,
   RetryFloorResult,
+  RetryStepRequest,
+  RetryStepResult,
   TurnExecutionPolicy,
   TurnExecutionPolicyOverrides,
 } from "./contracts.js";
 import { ChatServiceError } from "./errors.js";
+import { buildPriorRoundtripsForStepRetry, StepRetryError } from "./step-retry-prefix.js";
 import {
   PromptPreparationService,
   type PromptRuntimeConversationInput,
@@ -130,6 +139,11 @@ import {
 import { AgenticTurnCoordinator } from "./agentic-turn-coordinator.js";
 import type { TurnProposalEnvelope } from "./turn-proposal-envelope.js";
 import type { TurnAttemptIdentity } from "./turn-attempt-types.js";
+import {
+  ProjectFloorGraphBindingService,
+  ProjectFloorGraphBindingServiceError,
+  type ResolvedFloorGraphBinding,
+} from "../project-floor-graph-binding-service.js";
 
 export * from "./contracts.js";
 export { ChatServiceError } from "./errors.js";
@@ -180,6 +194,7 @@ export class ChatService {
   private readonly promptRuntimePreviewService: PromptRuntimePreviewService;
   private readonly preparedTurnInspectionService: PreparedTurnInspectionService;
   private readonly agenticTurnCoordinator: AgenticTurnCoordinator;
+  private readonly floorGraphBindingService: ProjectFloorGraphBindingService;
   private readonly turnAttemptCoordinator: TurnAttemptCoordinator;
   private readonly floorRunService: ChatServiceOptions["floorRunService"];
   private readonly commitGatePolicy: CommitGatePolicy;
@@ -306,6 +321,7 @@ export class ChatService {
       this.firstPartyStateContextService,
       this.preparedPromptArtifactsBuilder,
     );
+    this.floorGraphBindingService = new ProjectFloorGraphBindingService(db);
     this.turnAttemptCoordinator = new TurnAttemptCoordinator();
     this.commitGatePolicy = options.commitGatePolicy ?? "warn_only";
     this.enableAgenticInlineMvp = options.enableAgenticInlineMvp === true;
@@ -489,6 +505,8 @@ export class ChatService {
             firstPartyStateContext,
             abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
             onChunk: runtimeOptions.onChunk,
+            onReasoning: runtimeOptions.onReasoning,
+            onStepNarration: runtimeOptions.onStepNarration,
             stream: !!runtimeOptions.onChunk,
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Turn orchestration failed",
@@ -715,19 +733,22 @@ export class ChatService {
     floorId: string,
     request: RetryFloorRequest = {},
     accountId?: string,
-  ): Promise<RetryFloorResult> {
+    options: { allowTemporary?: boolean; runtimeOptions?: RespondRuntimeOptions } = {},
+  ): Promise<RetryFloorResult & { outputPageId?: string }> {
     const resolvedAccountId = this.resolveAccountId(accountId);
     const initialTargetFloor = this.targetResolver.requireRetryTargetFloor(floorId, resolvedAccountId);
     this.turnSessionStateService.assertTurnSessionStateWritesAvailable(request.sessionStateWrites);
-    await this.requireActiveSession(initialTargetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
+    await this.requireActiveSession(initialTargetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session", {allowTemporary: options.allowTemporary });
 
+    //流式回调：仅图助手临时对话 SSE 重试会传入；主会话重试为非流式（runtimeOptions 为空对象）。
+    const runtimeOptions = options.runtimeOptions ?? {};
     return this.withGenerationCoordinator(
       initialTargetFloor.sessionId,
       initialTargetFloor.branchId,
-      undefined,
+      runtimeOptions.abortSignal,
       async (generationRuntime) => {
         const targetFloor = await this.targetResolver.revalidateRetryTargetFloor(floorId, resolvedAccountId, initialTargetFloor);
-        const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session");
+        const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session", { allowTemporary: options.allowTemporary });
         await this.replayGuardService.assertRetryReplayConfirmed({
           floorId: targetFloor.id,
           sessionId: targetFloor.sessionId,
@@ -778,6 +799,10 @@ export class ChatService {
 
         const now = Date.now();
         await this.turnRunTracker.initializeFloorRun(targetFloor.sessionId, targetFloor.id, "retry_turn", now);
+
+        runtimeOptions.onStart?.({ floorId: targetFloor.id, floorNo: targetFloor.floorNo, branchId: targetFloor.branchId });
+        const unsubscribeRuntimeToolEvents = this.runtimeEventBridge.subscribeRuntimeToolEvents(targetFloor.id, runtimeOptions);
+        const unsubscribeFloorRunEvents = this.runtimeEventBridge.subscribeFloorRunEvents(targetFloor.id, runtimeOptions);
         try {
           const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
             mode: "retry_floor",
@@ -796,13 +821,24 @@ export class ChatService {
             conversationWindow,
             resolvedTurnModels,
             firstPartyStateContext,
-            abortSignal: generationRuntime.abortSignal,
-            stream: false,
+          abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
+            onChunk: runtimeOptions.onChunk,
+            onReasoning: runtimeOptions.onReasoning,
+            onStepNarration: runtimeOptions.onStepNarration,
+            stream: !!runtimeOptions.onChunk,
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Retry orchestration failed",
             commitFailureMessage: "Retry commit failed",
             sourceFloorId: targetFloor.id,
             sourceOutputPageId,
+          });
+
+          this.persistGraphAssistantPendingConfirmationIfNeeded({
+            session,
+            accountId: resolvedAccountId,
+            branchId: targetFloor.branchId,
+            floorId: targetFloor.id,
+            execution,
           });
 
           return {
@@ -816,18 +852,199 @@ export class ChatService {
             finalState: commit.finalState,
             promptSnapshot: prepared.promptDebug.promptSnapshot,
             runtimeTrace: prepared.promptDebug.runtimeTrace,
+            outputPageId: commit.outputPageId,
           };
         } catch (error) {
           await this.handlePreparedFloorGenerationFailure({
             floorId: targetFloor.id,
             error,
             failureCode: "retry_turn_failed",
+            // 重试非破坏性：executeTurn 已把已提交楼层重开为 generating，失败时还原回 committed，
+           // 不标 failed（保留原输出页历史）。
+            restoreCommittedInsteadOfFail: true,
           });
           throw error;
+    } finally {
+          unsubscribeRuntimeToolEvents();
+          unsubscribeFloorRunEvents();
         }
       },
     );
   }
+  /**
+   * step 级重试：保留前 N-1 步已成功工具结果，从第 fromStepIndex 步重新生成。
+   *
+   * 以 retryFloor 为骨架：复用 retry_floor 的 attempt 语义（新 attempt / 新 page version，不新建 floorNo），
+   * runType 用 retry_step。前缀往返由 buildPriorRoundtripsForStepRetry 从 tool_execution_record 重建，
+   * 起点工具带写类副作用时拒绝。
+   */
+  async retryStep(
+    floorId: string,
+    request: RetryStepRequest,
+    accountId?: string,
+    options: { allowTemporary?: boolean; runtimeOptions?: RespondRuntimeOptions } = {},
+  ): Promise<RetryStepResult & { outputPageId?: string }> {
+    const resolvedAccountId = this.resolveAccountId(accountId);
+    const initialTargetFloor = this.targetResolver.requireRetryTargetFloor(floorId, resolvedAccountId);
+    this.turnSessionStateService.assertTurnSessionStateWritesAvailable(request.sessionStateWrites);
+    await this.requireActiveSession(initialTargetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session", { allowTemporary: options.allowTemporary });
+
+    const runtimeOptions = options.runtimeOptions ?? {};
+    return this.withGenerationCoordinator(
+      initialTargetFloor.sessionId,
+      initialTargetFloor.branchId,
+      runtimeOptions.abortSignal,
+      async (generationRuntime) => {
+        const targetFloor = await this.targetResolver.revalidateRetryTargetFloor(floorId, resolvedAccountId, initialTargetFloor);
+        const session = await this.requireActiveSession(targetFloor.sessionId, resolvedAccountId, "Cannot retry in an archived session", { allowTemporary: options.allowTemporary });
+        await this.replayGuardService.assertRetryReplayConfirmed({
+          floorId: targetFloor.id,
+          sessionId: targetFloor.sessionId,
+          accountId: resolvedAccountId,
+          request,
+        });
+
+        // 前缀重建：从 tool_execution_record 重建第 1..N-1 步工具往返，并校验起点无写类副作用。
+        let prefix;
+        try {
+         prefix = await buildPriorRoundtripsForStepRetry({
+            db: this.db,
+            floorId: targetFloor.id,
+            fromStepIndex: request.fromStepIndex,
+         });
+        } catch (error) {
+          if (error instanceof StepRetryError) {
+            throw new ChatServiceError(error.code, error.message);
+          }
+          throw error;
+        }
+
+        const executionContext = resolvePromptRuntimeExecutionContext({
+          sessionId: targetFloor.sessionId,
+          metadataJson: session.metadataJson,
+          branchId: targetFloor.branchId,
+          branchExists: true,
+          historySourceBranchId: targetFloor.branchId,
+          historySourceMode: "existing_branch",
+          request: buildLivePromptRuntimeRequestPolicy(request),
+        });
+        const firstPartyStateContext = this.firstPartyStateContextService.loadFirstPartyStateContext({
+          accountId: resolvedAccountId,
+          sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
+          sourceFloorId: targetFloor.parentFloorId,
+          expectedSourceBranchId: targetFloor.branchId,
+          resolutionMode: "source_floor",
+        });
+
+        const replayInput = await this.draftFloorService.getEffectiveConversationInputFromFloor(targetFloor.id);
+        if (!replayInput) {
+          throw new ChatServiceError("no_user_message", `No user message found in floor '${floorId}'`);
+        }
+        const conversationWindow = await this.loadLiveConversationWindow({
+          sessionId: targetFloor.sessionId,
+          branchId: targetFloor.branchId,
+          beforeFloorNo: targetFloor.floorNo,
+          visibility: executionContext.resolvedPolicy.visibility,
+          sourceSelection: executionContext.effectivePolicy?.sourceSelection,
+          currentInput: replayInput.currentInput,
+          effectiveUserMessageOverride: replayInput.snapshot.effectiveText,
+        });
+        const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(targetFloor.sessionId, resolvedAccountId);
+        this.modelService.assertNarratorSlotEnabled(resolvedTurnModels);
+        const sessionInfo = this.buildSessionPromptInfo(
+          session,
+          resolvedTurnModels,
+          firstPartyStateContext,
+          this.getSessionBranchAssetBinding(resolvedAccountId, targetFloor.sessionId, targetFloor.branchId),
+        );
+        const sourceOutputPageId = await this.loadActiveOutputPageId(targetFloor.id);
+
+        const now = Date.now();
+        await this.turnRunTracker.initializeFloorRun(targetFloor.sessionId, targetFloor.id, "retry_step", now);
+
+        runtimeOptions.onStart?.({ floorId: targetFloor.id, floorNo: targetFloor.floorNo, branchId: targetFloor.branchId });
+        const unsubscribeRuntimeToolEvents = this.runtimeEventBridge.subscribeRuntimeToolEvents(targetFloor.id, runtimeOptions);
+        const unsubscribeFloorRunEvents = this.runtimeEventBridge.subscribeFloorRunEvents(targetFloor.id, runtimeOptions);
+        try {
+          const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
+            mode: "retry_floor",
+                  runType: "retry_step",
+            sessionId: targetFloor.sessionId,
+       branchId: targetFloor.branchId,
+            floorId: targetFloor.id,
+            pageId: replayInput.currentInput?.pageId,
+            pageMessageId: replayInput.currentInput?.messageId,
+            accountId: resolvedAccountId,
+            session,
+            sessionInfo,
+            userMessage: conversationWindow.effectiveUserMessage!,
+            request,
+            executionContext,
+            conversationWindow,
+            resolvedTurnModels,
+            firstPartyStateContext,
+            abortSignal: runtimeOptions.abortSignal ?? generationRuntime.abortSignal,
+            onChunk: runtimeOptions.onChunk,
+            onReasoning: runtimeOptions.onReasoning,
+            onStepNarration: runtimeOptions.onStepNarration,
+            stream: !!runtimeOptions.onChunk,
+            orchestrationFailureCode: "orchestration_failed",
+            orchestrationFailureMessage: "Retry step orchestration failed",
+            commitFailureMessage: "Retry step commit failed",
+            sourceFloorId: targetFloor.id,
+            sourceOutputPageId,
+            ...(prefix.priorRoundtrips.length > 0 ? { priorRoundtrips: prefix.priorRoundtrips } : {}),
+          });
+
+          this.persistGraphAssistantPendingConfirmationIfNeeded({
+            session,
+            accountId: resolvedAccountId,
+            branchId: targetFloor.branchId,
+            floorId: targetFloor.id,
+            execution,
+          });
+
+          return {
+            floorId: targetFloor.id,
+            floorNo: targetFloor.floorNo,
+            branchId: targetFloor.branchId,
+            generatedText: this.composeAssistantOutputText(execution),
+            summaries: execution.summaries,
+            totalUsage: commit.usage,
+            memory: commit.memory,
+            finalState: commit.finalState,
+            promptSnapshot: prepared.promptDebug.promptSnapshot,
+            runtimeTrace: prepared.promptDebug.runtimeTrace,
+            discardedFromStepIndex: prefix.discardedFromStepIndex,
+            irreversibleSideEffects: prefix.irreversibleSideEffects.map((item) => ({
+              executionId: item.executionId,
+              toolName: item.toolName,
+              sideEffectLevel: item.sideEffectLevel,
+              startedAt: item.startedAt,
+              generationStepNo: item.generationStepNo,
+            })),
+            outputPageId: commit.outputPageId,
+          };
+        } catch (error) {
+          await this.handlePreparedFloorGenerationFailure({
+            floorId: targetFloor.id,
+            error,
+            failureCode: "retry_step_failed",
+            //重试非破坏性：executeTurn 已把已提交楼层重开为 generating，失败时还原回 committed，
+            // 不标 failed（保留原输出页历史）。
+            restoreCommittedInsteadOfFail: true,
+          });
+          throw error;
+        } finally {
+          unsubscribeRuntimeToolEvents();
+          unsubscribeFloorRunEvents();
+        }
+      },
+    );
+  }
+
+
 
   async editAndRegenerate(
     messageId: string,
@@ -1137,6 +1354,8 @@ export class ChatService {
             firstPartyStateContext,
             abortSignal: args.runtimeOptions?.abortSignal ?? generationRuntime.abortSignal,
             onChunk: args.runtimeOptions?.onChunk,
+            onReasoning: args.runtimeOptions?.onReasoning,
+            onStepNarration: args.runtimeOptions?.onStepNarration,
             stream: !!args.runtimeOptions?.onChunk,
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Turn orchestration failed",
@@ -1188,15 +1407,27 @@ export class ChatService {
       sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
       structure?: RespondRequest["structure"];
       delivery?: RespondRequest["delivery"];
+      promptRuntimeInjections?: RespondRequest["promptRuntimeInjections"];
+      toolTransportPreference?: ToolTransportPreference;
     };
     executionContext: import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
-    conversationWindow: PromptRuntimeConversationWindow;
+     conversationWindow: PromptRuntimeConversationWindow;
     runtimeOptions?: RespondRuntimeOptions;
-  }): Promise<RespondResult & { outputPageId: string; assistantMessageId: string }> {
+    /**
+     * 生成运行类型（默认 respond）。
+     *
+     * 临时对话的 floor 级 / step 级重试传 retry_step，仅用于 trace 与 model role 分辨；
+     * draft floor 机制本身已处理新 attempt / 新 page version。
+     */
+    runType?: "respond" | "retry_step";
+    /** step 重试：已完成的前缀工具往返（按 stepIndex 升序）。仅 step 重试传入。 */
+    priorRoundtrips?: import("@tavern/core").AgentLoopPriorRoundtrip[];
+  }): Promise<RespondResult& { outputPageId: string; assistantMessageId: string }> {
     this.turnSessionStateService.assertTurnSessionStateWritesAvailable(args.request.sessionStateWrites);
-    const branchId = normalizeBranchId(args.branchId);
+ const branchId = normalizeBranchId(args.branchId);
+    const resolvedRunType = args.runType ?? "respond";
     const preparedRunStartedAt = Date.now();
-    await this.turnRunTracker.initializeFloorRun(args.sessionId, args.floorId, "respond", preparedRunStartedAt);
+    await this.turnRunTracker.initializeFloorRun(args.sessionId, args.floorId, resolvedRunType, preparedRunStartedAt);
 
     try {
       return await this.withGenerationCoordinator(
@@ -1250,11 +1481,11 @@ export class ChatService {
         const unsubscribeFloorRunEvents = this.runtimeEventBridge.subscribeFloorRunEvents(args.floorId, args.runtimeOptions ?? {});
 
         try {
-          const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
+                 const { prepared, execution, commit } = await this.runPreparedFloorGeneration({
             mode: "respond",
-            runType: "respond",
+            runType: resolvedRunType,
             sessionId: args.sessionId,
-            branchId,
+    branchId,
             floorId: args.floorId,
             pageId: args.pageId,
             pageMessageId: args.pageMessageId,
@@ -1270,39 +1501,27 @@ export class ChatService {
             firstPartyStateContext,
             abortSignal: args.runtimeOptions?.abortSignal ?? generationRuntime.abortSignal,
             onChunk: args.runtimeOptions?.onChunk,
+            onReasoning: args.runtimeOptions?.onReasoning,
+            onStepNarration: args.runtimeOptions?.onStepNarration,
             stream: !!args.runtimeOptions?.onChunk,
             orchestrationFailureCode: "orchestration_failed",
             orchestrationFailureMessage: "Turn orchestration failed",
             commitFailureMessage: "Turn commit failed",
+       ...(args.priorRoundtrips && args.priorRoundtrips.length > 0
+              ? { priorRoundtrips: args.priorRoundtrips }
+              : {}),
           });
 
-          // 阶段 3 待确认暂停收尾：图助手多轮循环遇 confirm 工具暂停时，
-          // 登记一条待确认记录（含续跑上下文），等待用户批准/拒绝。
-          // auto 工具结果与可见文本已随本次 commit 落库；commit 付出后才登记，
-          // 避免 commit 失败时遗留孤立的 pending 记录。
-          if (
-            session.purpose === GRAPH_ASSISTANT_PURPOSE
-            && execution.pendingToolConfirmation
-            && session.projectId
-            && session.workspaceId
-          ) {
-            new GraphAssistantToolConfirmationService(this.db).createPending({
-              workspaceId: session.workspaceId,
-              projectId: session.projectId,
-              accountId: args.accountId,
-              conversationId: args.sessionId,
-              branchId,
-              floorId: args.floorId,
-              callId: execution.pendingToolConfirmation.callId,
-              toolName: execution.pendingToolConfirmation.toolName,
-              args: execution.pendingToolConfirmation.args,
-              ...(execution.pendingToolConfirmation.sideEffectLevel
-                ? { sideEffectLevel: execution.pendingToolConfirmation.sideEffectLevel }
-                : {}),
-              conversationMessages: execution.pendingToolConfirmation.conversationMessages,
-              agentSteps: execution.agentLoopSteps ?? 0,
-            });
-          }
+          // 阶段 3 待确认暂停收尾：图助手多轮循环遇 confirm 工具暂停时，登记一条待确认记录
+       // （含续跑上下文），等待用户批准/拒绝。commit 付出后才登记，避免遗留孤立 pending。
+          this.persistGraphAssistantPendingConfirmationIfNeeded({
+            session,
+            accountId: args.accountId,
+            branchId,
+            floorId: args.floorId,
+            execution,
+          });
+
 
           return {
             floorId: args.floorId,
@@ -1408,17 +1627,26 @@ export class ChatService {
   }
 
   /**
-   * 为图助手临时对话（purpose=graph-assistant）构造 text_protocol 多轮 agent 循环配置。
+   * 为图助手临时对话（purpose=graph-assistant）构造多轮 agent 循环配置。
    *
    * 返回两件东西：
-   * - `toolTransportOverride`：强制该会话走 text_protocol（覆盖默认 native），拿到「可暂停」能力。
+   * - `toolTransportOverride`：本回合选定的工具传输（text_protocol 或 native_function_call），覆盖默认。
+   *   两条 transport 都具备「可暂停」能力（原生走自驱动循环，文本协议走解析回填）。
    * - `graphAssistantAgentLoop`：含 auto/confirm 决策回调，决策来源是项目级逐工具策略。
+   *
+   * transport 选择按「用户偏好 + provider 能力」三档决策（设计 §4.6 / §4.7）：
+   * - `auto`（缺省）：能力支持原生 → native，否则 text_protocol。
+   * - `native`：强制原生；provider 明确不支持时安全回退 text_protocol（不报错），
+   *   回退后实际走 text_protocol，由既有工具传输 trace 体现。
+   * - `text_protocol`：强制文本协议。
    *
    * 非图助手会话返回 undefined，不影响主链与其他会话。决策在构造时从 DB 快照一次，
    * 一个 turn 内保持一致；core 不反向依赖图助手策略服务，只消费该回调。
    */
   private buildGraphAssistantAgentLoopTurnConfig(
-session: typeof sessions.$inferSelect,
+    session: typeof sessions.$inferSelect,
+    resolvedTurnModels: ResolvedTurnModels,
+    toolTransportPreference: ToolTransportPreference = "auto",
   ): {
     toolTransportOverride: ToolCallTransportKind;
     graphAssistantAgentLoop: GraphAssistantAgentLoopConfig;
@@ -1438,8 +1666,27 @@ session: typeof sessions.$inferSelect,
       conversationId: session.id,
     });
 
+    // 三档决策：按用户协议偏好 + narrator provider capability 选 transport。
+    // native 偏好下 provider 不支持时安全回退 text_protocol（nativeFellBack 供后续可观测核对）。
+    const supportsFunctionCall = resolvedTurnModels.narrator?.capabilities?.supportsFunctionCall;
+    const { transport: toolTransportOverride, nativeFellBack } = resolveGraphAssistantToolTransport(
+      toolTransportPreference,
+      supportsFunctionCall,
+    );
+    // 调试：记录图助手工具协议协商结果，定位 native→text_protocol 降级与最终 transport。
+    if (isDebugEnabled("native-tool")) {
+      emitDebug("native-tool", "info", "transport-resolve", {
+        projectId,
+        conversationId: session.id,
+        preference: toolTransportPreference,
+        supportsFunctionCall,
+        resolvedTransport: toolTransportOverride,
+        nativeFellBack,
+      });
+    }
+
     return {
-      toolTransportOverride: "text_protocol",
+      toolTransportOverride,
       graphAssistantAgentLoop: {
         decideConfirmation,
         ...(resumable
@@ -1455,10 +1702,50 @@ session: typeof sessions.$inferSelect,
       ...(resumable ? { resumedPendingId: resumable.id } : {}),
     };
   }
+  /**
+   *图助手（purpose=graph-assistant）多轮循环遇 confirm 工具暂停时，登记一条待确认记录。
+   *
+   * respond / retryFloor/ retryStep 共用：仅在 session.purpose === graph-assistant 且本次生成
+   * 产生了待确认暂停时才登记。须在 commit 付出后调用，避免 commit 失败遗留孤立 pending。
+   */
+  private persistGraphAssistantPendingConfirmationIfNeeded(args: {
+    session: typeof sessions.$inferSelect;
+    accountId: string;
+    branchId: string;
+    floorId: string;
+    execution: TurnExecutionResult;
+  }): void {
+    const { session, execution } = args;
+    if (
+      session.purpose === GRAPH_ASSISTANT_PURPOSE
+      && execution.pendingToolConfirmation
+      && session.projectId
+      && session.workspaceId
+    ) {
+      new GraphAssistantToolConfirmationService(this.db).createPending({
+        workspaceId: session.workspaceId,
+        projectId: session.projectId,
+        accountId: args.accountId,
+        conversationId: session.id,
+        branchId: args.branchId,
+        floorId: args.floorId,
+       callId: execution.pendingToolConfirmation.callId,
+        toolName: execution.pendingToolConfirmation.toolName,
+        args: execution.pendingToolConfirmation.args,
+        ...(execution.pendingToolConfirmation.sideEffectLevel
+          ? { sideEffectLevel: execution.pendingToolConfirmation.sideEffectLevel }
+          : {}),
+        conversationMessages: execution.pendingToolConfirmation.conversationMessages,
+        agentSteps: execution.agentLoopSteps ?? 0,
+      });
+    }
+  }
+
+
 
   private async runPreparedFloorGeneration(args: {
     mode: "respond" | "regenerate" | "retry_floor" | "edit_and_regenerate";
-    runType: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
+    runType: "respond" | "regenerate_page" | "retry_turn" | "retry_step" | "edit_and_regenerate";
     sessionId: string;
     branchId?: string;
     floorId: string;
@@ -1476,15 +1763,22 @@ session: typeof sessions.$inferSelect,
       promptIntent?: import("@tavern/core").PromptRunIntent;
       debugOptions?: import("./contracts.js").PromptLiveDebugOptions;
       sessionStateWrites?: import("./contracts.js").TurnSessionStateWriteRequest[];
-      sessionStateOperationLog?: import("../../session-state/session-state-operation-log.js").SessionStateOperationLogContext;
+         sessionStateOperationLog?: import("../../session-state/session-state-operation-log.js").SessionStateOperationLogContext;
       turnOperationLog?: import("../turn-commit-service.js").TurnCommitOperationLogContext;
+      structure?: RespondRequest["structure"];
+      delivery?: RespondRequest["delivery"];
+      promptRuntimeInjections?: RespondRequest["promptRuntimeInjections"];
+      toolTransportPreference?: ToolTransportPreference;
     };
-    executionContext: import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
-    conversationWindow?: PromptRuntimeConversationWindow;
+    executionContext:import("../prompt-runtime-execution.js").PromptRuntimeResolvedContext;
+ conversationWindow?: PromptRuntimeConversationWindow;
     resolvedTurnModels: ResolvedTurnModels;
     firstPartyStateContext?: FirstPartyStateContext;
+    floorGraphBinding?: ResolvedFloorGraphBinding | null;
     abortSignal?: AbortSignal;
     onChunk?: (chunk: string) => void;
+    onReasoning?: (delta: string) => void;
+    onStepNarration?: (narration: { stepIndex: number; text: string; createdAt: number }) => void;
     stream?: boolean;
     orchestrationFailureCode: string;
     orchestrationFailureMessage: string;
@@ -1492,6 +1786,8 @@ session: typeof sessions.$inferSelect,
     supersedeSourceFloor?: { floorId: string };
     sourceFloorId?: string;
     sourceOutputPageId?: string;
+    /** step 重试：已完成的前缀工具往返（按 stepIndex 升序），透传给 agent loop 从第 N 步重启。 */
+    priorRoundtrips?: import("@tavern/core").AgentLoopPriorRoundtrip[];
   }): Promise<{
     prepared: import("./types.js").PreparedTurnContext;
     execution: TurnExecutionResult;
@@ -1518,7 +1814,16 @@ session: typeof sessions.$inferSelect,
         })
       : undefined;
 
-    const graphAssistantTurn = this.buildGraphAssistantAgentLoopTurnConfig(args.session);
+    const graphAssistantTurn = this.buildGraphAssistantAgentLoopTurnConfig(
+      args.session,
+      args.resolvedTurnModels,
+      args.request.toolTransportPreference,
+    );
+    const floorGraphBinding = args.floorGraphBinding ?? this.resolveFloorGraphBindingForTurn({
+      sessionId: args.sessionId,
+      accountId: args.accountId,
+      promptMode: args.sessionInfo?.promptMode ?? args.session.promptMode ?? null,
+    });
     const prepared = await this.preparedTurnContextBuilder.prepare({
       mode: args.mode,
       runType: args.runType,
@@ -1538,14 +1843,22 @@ session: typeof sessions.$inferSelect,
       conversationWindow: args.conversationWindow,
       resolvedTurnModels: args.resolvedTurnModels,
       firstPartyStateContext: args.firstPartyStateContext,
+      floorGraphBinding,
          abortSignal: args.abortSignal,
       onChunk: args.onChunk,
+      ...(args.onReasoning ? { onReasoning: args.onReasoning } : {}),
+      ...(args.onStepNarration ? { onStepNarration: args.onStepNarration } : {}),
       stream: args.stream,
+      // 透传回合尝试号：与 commit 并发判断的 attempt.attemptNo 保持一致，避免多步循环污染 floor_run_state.attemptNo。
+      runAttemptNo: attempt.attemptNo,
       ...(graphAssistantTurn
         ? {
             toolTransportOverride: graphAssistantTurn.toolTransportOverride,
             graphAssistantAgentLoop: graphAssistantTurn.graphAssistantAgentLoop,
           }
+        : {}),
+      ...(args.priorRoundtrips && args.priorRoundtrips.length > 0
+        ? { priorRoundtrips: args.priorRoundtrips }
         : {}),
       ...(agenticPreResponse ? { agentContributors: agenticPreResponse.aggregated.contributors } : {}),
     });
@@ -1630,14 +1943,34 @@ session: typeof sessions.$inferSelect,
     return { prepared, execution, commit };
   }
 
+  private resolveFloorGraphBindingForTurn(args: {
+    sessionId: string;
+    accountId: string;
+    promptMode: import("../prompt-assembler.js").PromptMode | null;
+  }): ResolvedFloorGraphBinding | null {
+    try {
+      return this.floorGraphBindingService.resolveForSession({
+        sessionId: args.sessionId,
+        accountId: args.accountId,
+        promptMode: args.promptMode,
+      });
+    } catch (error) {
+      if (error instanceof ProjectFloorGraphBindingServiceError) {
+        throw new ChatServiceError(error.code, error.message, error, error.details);
+      }
+      throw error;
+    }
+  }
+
   private async runAgenticPreResponse(turn: {
     sessionId: string;
     branchId?: string;
     floorId: string;
     pageId?: string;
-    accountId: string;
-    mode: "respond" | "regenerate" | "retry_floor" | "edit_and_regenerate";
-    runType: "respond" | "regenerate_page" | "retry_turn" | "edit_and_regenerate";
+accountId: string;
+     mode: "respond" | "regenerate" | "retry_floor" | "edit_and_regenerate";
+    // step 重试复用 retry_floor 语义， runType 需接受 retry_step。
+    runType: import("@tavern/core").FloorRunType;
     session: {
       promptMode: import("../prompt-assembler.js").SessionPromptInfo["promptMode"];
       metadataJson: string | null;
@@ -2233,8 +2566,25 @@ session: typeof sessions.$inferSelect,
     error: unknown;
     failureCode: string;
     restoreSupersededSourceFloor?: string;
+    /**
+     * 重试专用：失败 / 取消时不把楼层标为 failed，而是还原回 committed。
+     * 重试在已提交楼层上重开重跑（committed → generating），失败时应保留原输出页历史，
+     *仅把 run 标为失败 / 取消供 trace，不丢掉楼层已提交状态。
+     */
+    restoreCommittedInsteadOfFail?: boolean;
   }): Promise<void> {
     if (isChatServiceErrorCode(args.error, "turn_attempt_stale")) {
+      return;
+    }
+
+    if (args.restoreCommittedInsteadOfFail) {
+      // 重试失败 / 取消：标 run 状态供 trace，但楼层还原回 committed（非破坏性，保留原输出页）。
+      if (isChatServiceErrorCode(args.error, "generation_cancelled")) {
+        await this.turnRunTracker.tryMarkRunCancelled(args.floorId, args.error, "generation_cancelled");
+      } else {
+        await this.turnRunTracker.tryMarkRunFailed(args.floorId, args.error, args.failureCode);
+      }
+      await this.floorStateMachine.restoreCommittedForRetry(args.floorId);
       return;
     }
 
@@ -2244,9 +2594,9 @@ session: typeof sessions.$inferSelect,
         args.error,
         "generation_cancelled",
         args.restoreSupersededSourceFloor
-          ? { restoreSupersededSourceFloor: args.restoreSupersededSourceFloor }
+          ? {restoreSupersededSourceFloor: args.restoreSupersededSourceFloor }
           : undefined,
-      );
+            );
       await this.turnRunTracker.tryMarkFloorFailed(args.floorId, args.error);
       return;
     }

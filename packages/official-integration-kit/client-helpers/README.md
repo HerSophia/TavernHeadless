@@ -47,6 +47,12 @@ TavernHeadless 官方接入的语义层。
 | ---- | ---- |
 | `resolveUsage` | 把各种格式的 usage 归一化成统一结构 |
 | `buildTimelineMessages` | 把楼层数据平展成时间线消息列表 |
+| `buildFloorSteps` | 把工具步、回答步与中间叙述步归并成有序 step 序列（最小输入，历史与流式两路共用） |
+| `buildFloorStepsFromTranscriptFloor` | 从 transcript floor 归并 step 序列（历史楼层用，工具 / 回答 / 中间叙述按真实时序交叉） |
+| `groupFloorStepsIntoSegments` | 把已归并的 step 序列聚成渲染段（连续工具步合并为一段；叙述步 / 回答步各自单独成段） |
+| `canRetryFromStep` | 判定某个 step 能否作为 step 级重试起点（仅无写副作用的工具步，`kind === "tool" && sideEffectLevel === "none"`） |
+| `collectIrreversibleSideEffectsBefore` | 收集重试起点之前已产生、不会回滚的写类副作用摘要（`sideEffectLevel` 非 `none` 的工具步），供发起前提示用户 |
+| `collectIrreversibleSideEffectsFrom` | 收集重试起点及其之后（将被丢弃重跑的范围）已产生、不会回滚的写类副作用摘要，供发起前弹框告知用户（重跑可能重复执行或遗留孤儿记录） |
 | `createInitialRespondStreamState` | 创建流式生成的初始状态 |
 | `reduceRespondStream` | 根据 SSE 事件累积流式状态，并在 `done` 到达后保留 `result.promptSnapshot` / `result.runtimeTrace` |
 | `groupToolEventsByExecution` | 把同一次工具执行的流式事件整理成历史组 |

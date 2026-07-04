@@ -17,7 +17,12 @@ import { registerSessionStateRoutes } from "./routes/session-state";
 import { registerSessionStateObservationRoutes } from "./routes/session-state-observation";
 import { registerTemporaryConversationRoutes } from "./routes/temporary-conversations.js";
 
-import { registerWsPlugin, type WsBridge } from "./ws";
+import {
+  registerWsPlugin,
+  type WsBridge,
+  type RealtimeRunLog,
+  type RealtimeResumeCoordinator,
+} from "./ws";
 import {
   DrizzleFloorRepository,
   DrizzleMemoryRepository,
@@ -304,6 +309,10 @@ export type BuildAppResult = {
   database: DatabaseConnection["db"];
   orchestrationContext?: OrchestrationContext;
   wsBridge?: WsBridge;
+ /** RT2：per-run 内存事件日志（实验性，旁路缓冲，供 RT3 缺口补发使用） */
+  realtimeRunLog?: RealtimeRunLog;
+  /** RT3：resume/ack 协调器（实验性，仅当 WS 启用且提供 DB 最终态兜底来源时存在） */
+  realtimeResumeCoordinator?: RealtimeResumeCoordinator;
   mcpManager?: McpConnectionManager;
   projectEventLiveHub: ProjectEventLiveHub;
   temporaryConversationService?: TemporaryConversationService;
@@ -633,6 +642,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
   let orchestrationContext: OrchestrationContext | undefined;
   let wsBridge: WsBridge | undefined;
+  let realtimeRunLog: RealtimeRunLog | undefined;
+  let realtimeResumeCoordinator: RealtimeResumeCoordinator | undefined;
   let baseToolRegistry: ToolRegistry | undefined;
   let sessionToolRegistryService: SessionToolRegistryService | undefined;
   let mutationRuntimeComponents: ReturnType<typeof createDefaultMutationRuntimeComponents> | undefined;
@@ -932,8 +943,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
                 providerType: activeProfile.provider,
                 model: {
                   providerId,
-                  modelId: effectiveModelId,
+                      modelId: effectiveModelId,
                   languageModel,
+                  // 显式传递 provider 类型：turn 级用 languageModel 句柄，providerId 未注册进 registry，
+                  // core 需要该字段才能按 provider 分流生成参数（例如推理强度 OpenAI/Anthropic 开启方式不同）。
+                  providerType: activeProfile.provider,
                 },
               };
             }
@@ -998,7 +1012,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
 
     const shouldEnableWs = options.enableWebSocket ?? Boolean(options.orchestration);
     if (shouldEnableWs) {
-      wsBridge = await registerWsPlugin(app, { eventBus: orchestrationContext.eventBus, db: database.db });
+      const wsPlugin = await registerWsPlugin(app, {
+        eventBus: orchestrationContext.eventBus,
+        db: database.db,
+        // RT3：注入 floor_run 只读查询作为 DB 最终态兜底来源，启用 resume/ack 协议。
+        ...(floorRunService ? { floorRunReader: floorRunService } : {}),
+      });
+      wsBridge = wsPlugin.bridge;
+      realtimeRunLog = wsPlugin.runLog;
+      realtimeResumeCoordinator = wsPlugin.coordinator;
     }
 
   }
@@ -1208,6 +1230,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     database: database.db,
     orchestrationContext,
     wsBridge,
+    realtimeRunLog,
+    realtimeResumeCoordinator,
     mcpManager,
     projectEventLiveHub,
     temporaryConversationService,

@@ -66,11 +66,16 @@ export const tempConversationApi = {
 
 export * from "./stream";
 export type {
+  TemporaryConversationGenerationParams,
+  TemporaryConversationIrreversibleSideEffect,
+  TemporaryConversationReasoningEffort,
   TemporaryConversationRecord,
   TemporaryConversationResult,
+  TemporaryConversationRetryStepResult,
   TemporaryConversationStatus,
   TemporaryConversationTranscript,
   TemporaryConversationTranscriptFloor,
   TemporaryConversationTranscriptMessage,
   TemporaryConversationTranscriptPage,
+  TemporaryConversationToolTransportPreference,
 } from "@tavern/sdk";

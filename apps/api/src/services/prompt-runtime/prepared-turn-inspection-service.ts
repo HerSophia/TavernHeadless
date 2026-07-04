@@ -12,6 +12,10 @@ import { TurnSessionStateService } from "../chat/turn-session-state-service.js";
 import { FirstPartyStateContextService } from "../chat/first-party-state-context-service.js";
 import { PreparedPromptArtifactsBuilder } from "../chat/prepared-prompt-artifacts-builder.js";
 import { buildPromptRuntimeContributorViews } from "../chat/prompt-runtime-contributors.js";
+import {
+  ProjectFloorGraphBindingService,
+  ProjectFloorGraphBindingServiceError,
+} from "../project-floor-graph-binding-service.js";
 
 import { buildPromptRuntimeGovernanceView } from "./governance-view-builder.js";
 import { resolvePromptModeDetails, type SessionMetadata } from "../prompt-assembler.js";
@@ -79,6 +83,19 @@ export class PreparedTurnInspectionService {
       firstPartyStateContext,
       branchContext.assetBinding,
     );
+    let floorGraphBinding;
+    try {
+      floorGraphBinding = new ProjectFloorGraphBindingService(this.db).resolveForSession({
+        sessionId,
+        accountId,
+        promptMode: sessionInfo.promptMode ?? session.promptMode ?? null,
+      });
+    } catch (error) {
+      if (error instanceof ProjectFloorGraphBindingServiceError) {
+        throw new ChatServiceError(error.code, error.message, error, error.details);
+      }
+      throw error;
+    }
 
     const prepared = await this.preparedPromptArtifactsBuilder.prepare({
       mode: "inspect",
@@ -99,6 +116,7 @@ export class PreparedTurnInspectionService {
       llmInstanceCapabilities: resolvedTurnModels.narrator?.capabilities,
       firstPartyStateContext,
       sessionInfo,
+      floorGraphBinding,
       extraDiagnostics: branchContext.branchExists
         ? []
         : [createUnmaterializedBranchInspectDiagnostic(branchId)],

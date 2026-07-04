@@ -63,6 +63,7 @@ export function buildCompatPromptFloorStructure(): CompatPromptFloorStructure {
     edges: [
       { id: 'e_history_compose', kind: 'data', from: { nodeId: 'history', port: 'messages' }, to: { nodeId: 'compose', port: 'messages' } },
       { id: 'e_compose_narrator', kind: 'data', from: { nodeId: 'compose', port: 'messages' }, to: { nodeId: 'narrator', port: 'messages' } },
+      { id: 'e_user_input_narrator', kind: 'data', from: { nodeId: 'user_input', port: 'text' }, to: { nodeId: 'narrator', port: 'user_input' } },
       { id: 'e_narrator_commit', kind: 'data', from: { nodeId: 'narrator', port: 'text' }, to: { nodeId: 'commit', port: 'text' } },
     ],
   };

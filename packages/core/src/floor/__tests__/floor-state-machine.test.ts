@@ -257,6 +257,39 @@ describe('FloorStateMachine', () => {
     });
   });
 
+  describe('ensureGenerating', () => {
+    it('transitions draft → generating', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'draft' }));
+      const result = await sm.ensureGenerating('f1');
+      expect(result.state).toBe('generating');
+    });
+
+    it('is idempotent when floor is already generating', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'generating' }));
+      const result = await sm.ensureGenerating('f1');
+      expect(result.state).toBe('generating');
+    });
+
+    it('throws FloorNotFoundError when floor is missing', async () => {
+      await expect(sm.ensureGenerating('missing')).rejects.toThrow(
+        FloorNotFoundError
+      );
+    });
+
+    it('reopens committed → generating（重试：executeTurn 遇到已提交楼层时重开）', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'committed' }));
+      const result = await sm.ensureGenerating('f1');
+      expect(result.state).toBe('generating');
+    });
+
+    it('throws InvalidStateTransitionError for failed floor', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'failed' }));
+      await expect(sm.ensureGenerating('f1')).rejects.toThrow(
+        InvalidStateTransitionError
+      );
+    });
+  });
+
   describe('commit', () => {
     it('transitions generating → committed', async () => {
       repo.add(makeFloor({ id: 'f1', state: 'generating' }));
@@ -312,5 +345,81 @@ describe('FloorStateMachine', () => {
         FloorStateConflictError
       );
     });
+
+  // ── reopenForRetry ──
+
+  describe('reopenForRetry', () => {
+    it('committed → generating：重试专用重开入口', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'committed' }));
+      const updated = await sm.reopenForRetry('f1');
+      expect(updated.state).toBe('generating');
+      expect((await repo.findById('f1'))?.state).toBe('generating');
+    });
+
+    it('已处于 generating 时幂等返回，不报错', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'generating' }));
+      const updated = await sm.reopenForRetry('f1');
+      expect(updated.state).toBe('generating');
+    });
+
+    it('楼层既非 committed 也非 generating（draft）时抛 InvalidStateTransitionError', async () => {
+      repo.add(makeFloor({ id: 'f1',state: 'draft' }));
+      await expect(sm.reopenForRetry('f1')).rejects.toThrow(InvalidStateTransitionError);
+    });
+
+    it('failed 时抛 InvalidStateTransitionError', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'failed' }));
+      await expect(sm.reopenForRetry('f1')).rejects.toThrow(InvalidStateTransitionError);
+    });
+
+    it('楼层不存在时抛 FloorNotFoundError', async () => {
+      await expect(sm.reopenForRetry('nope')).rejects.toThrow(FloorNotFoundError);
+    });
+
+    it('CAS 落空时抛 FloorStateConflictError', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'committed' }));
+      repo.simulateNextCasConflict();
+      await expect(sm.reopenForRetry('f1')).rejects.toThrow(FloorStateConflictError);
+    });
+
+    it('发出 floor.stateChanged 事件', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'committed' }));
+      const handler = vi.fn();
+      bus.on('floor.stateChanged', handler);
+      await sm.reopenForRetry('f1');
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ previousState: 'committed', newState: 'generating' }),
+      );
+    });
+  });
+
+  // ── restoreCommittedForRetry ──
+
+  describe('restoreCommittedForRetry', () => {
+    it('generating → committed：重试失败回滚还原', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'generating' }));
+      await sm.restoreCommittedForRetry('f1');
+      expect((await repo.findById('f1'))?.state).toBe('committed');
+    });
+
+    it('非 generating（committed）时不动作', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'committed' }));
+      await sm.restoreCommittedForRetry('f1');
+      expect((await repo.findById('f1'))?.state).toBe('committed');
+    });
+
+    it('楼层不存在时静默返回（best-effort）', async () => {
+      await expect(sm.restoreCommittedForRetry('nope')).resolves.toBeUndefined();
+    });
+
+    it('不发 floor.committed 事件（避免提交副作用）', async () => {
+      repo.add(makeFloor({ id: 'f1', state: 'generating' }));
+      const handler = vi.fn();
+      bus.on('floor.committed', handler);
+      await sm.restoreCommittedForRetry('f1');
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
   });
 });

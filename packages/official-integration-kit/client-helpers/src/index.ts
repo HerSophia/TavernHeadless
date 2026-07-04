@@ -33,6 +33,28 @@ export {
   isProjectEvent,
 } from "./projects/index.js";
 export type { ProjectEventCursor } from "./projects/index.js";
+export {
+  buildFloorSteps,
+  buildFloorStepsFromTranscriptFloor,
+} from "./steps/build-floor-steps.js";
+export { groupFloorStepsIntoSegments } from "./steps/group-floor-step-segments.js";
+export type { FloorStepSegment } from "./steps/group-floor-step-segments.js";
+export {
+  canRetryFromStep,
+  collectIrreversibleSideEffectsBefore,
+  collectIrreversibleSideEffectsFrom,
+} from "./steps/step-retry.js";
+export type { IrreversibleSideEffectSummary } from "./steps/step-retry.js";
+export type {
+  BuildFloorStepsInput,
+  FloorAnswerStep,
+  FloorNarrationStep,
+  FloorStep,
+  FloorStepAnswerInput,
+  FloorStepNarrationInput,
+  FloorStepToolInput,
+  FloorToolStep,
+} from "./steps/types.js";
 export { buildTimelineMessages } from "./timeline/build-timeline-messages.js";
 export type { TimelineContentFormat, TimelineMessageView } from "./timeline/types.js";
 export { resolveUsage } from "./usage/resolve-usage.js";

@@ -9,6 +9,10 @@ import { PromptPreparationService } from "./prompt-preparation-service.js";
 import { TurnModelService } from "./turn-model-service.js";
 import { RegexInputService } from "./regex-input-service.js";
 import { PreparedPromptArtifactsBuilder } from "./prepared-prompt-artifacts-builder.js";
+import {
+  ProjectFloorGraphBindingService,
+  ProjectFloorGraphBindingServiceError,
+} from "../project-floor-graph-binding-service.js";
 
 export class DryRunService {
   constructor(
@@ -46,6 +50,19 @@ export class DryRunService {
     const resolvedTurnModels = await this.modelService.resolveTurnModelsForSession(sessionId, accountId);
 
     const sessionInfo = this.modelService.buildSessionPromptInfo(session, resolvedTurnModels);
+    let floorGraphBinding;
+    try {
+      floorGraphBinding = new ProjectFloorGraphBindingService(this.db).resolveForSession({
+        sessionId,
+        accountId,
+        promptMode: sessionInfo.promptMode ?? session.promptMode ?? null,
+      });
+    } catch (error) {
+      if (error instanceof ProjectFloorGraphBindingServiceError) {
+        throw new ChatServiceError(error.code, error.message, error, error.details);
+      }
+      throw error;
+    }
     const persistedUserMessage = await this.regexInputService.applyPersistedUserInputRegex({
       accountId,
       sessionId,
@@ -88,6 +105,7 @@ export class DryRunService {
       conversationWindow: conversationState,
       resolvedTurnModels,
       llmInstanceCapabilities: resolvedTurnModels.narrator?.capabilities,
+      floorGraphBinding,
       includeRuntimeTrace: true,
       baseRuntimeTrace: persistedUserMessage.runtimeTrace
         ? { regex: persistedUserMessage.runtimeTrace }

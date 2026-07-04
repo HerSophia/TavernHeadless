@@ -457,9 +457,10 @@ export class TurnModelService {
       case "respond":
         return "respond";
       case "retry_turn":
+      case "retry_step":
         return "retry";
       case "regenerate_page":
-      case "edit_and_regenerate":
+  case "edit_and_regenerate":
         return "regenerate";
       default:
         return "respond";

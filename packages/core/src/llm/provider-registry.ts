@@ -214,6 +214,16 @@ export class ProviderRegistry {
   }
 
   /**
+   * 按 providerId 读取已注册的提供商配置。
+   *
+   * 主要用于在生成阶段按 provider 类型分流参数映射（例如推理强度在
+   * OpenAI 与 Anthropic 下的开启方式完全不同）。未注册时返回 undefined。
+   */
+  getConfig(providerId: string): ProviderConfig | undefined {
+    return this.configs.get(providerId);
+  }
+
+  /**
    * 检查提供商是否已注册。
    */
   has(providerId: string): boolean {

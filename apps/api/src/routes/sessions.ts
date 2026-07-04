@@ -781,7 +781,7 @@ const sessionActiveRunSummaryJsonSchema = {
     branch_id: { type: "string" },
     latest_floor_id: { anyOf: [{ type: "string" }, { type: "null" }] },
     active_run_id: { anyOf: [{ type: "string" }, { type: "null" }] },
-    active_run_type: { anyOf: [{ type: "string", enum: ["respond", "regenerate_page", "retry_turn", "edit_and_regenerate"] }, { type: "null" }] },
+    active_run_type: { anyOf: [{ type: "string", enum: ["respond", "regenerate_page", "retry_turn", "retry_step", "edit_and_regenerate"] }, { type: "null" }] },
     busy: { type: "boolean" },
     public_phase: { anyOf: [{ type: "string", enum: ["preparing", "generating", "verifying", "committing", "post_processing"] }, { type: "null" }] },
     updated_at: { type: "integer", minimum: 0 },

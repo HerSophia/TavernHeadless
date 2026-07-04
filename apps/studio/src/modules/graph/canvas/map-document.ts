@@ -20,12 +20,15 @@ import {
   type NodeGraphPhase,
   type NodeGraphPortDefinition,
   type NodeGraphPortType,
+  type NodeGraphPreview,
   type NodeGraphPreviewPolicy,
   type NodeTypeRegistry,
   type NodeTypeRegistryEntry,
 } from "@tavern/core/node-graph";
 import type { Edge, EdgeMarker, MarkerType, Node, Styles } from "@vue-flow/core";
 
+import type { InlineConfigLlmProfileOption, NodeInlineConfigControl } from "../inline-config/node-inline-config";
+import { buildInlineConfigControls } from "../inline-config/node-inline-config";
 import {
   channelHandleId,
   deriveGroupBoundaryHandles,
@@ -37,7 +40,7 @@ import { EDGE_STYLES, phaseStyle, type NodeSideEffect } from "./port-styles";
 /** 节点固定宽度（px）。组件与包围盒计算共用，保证一致。 */
 export const NODE_WIDTH = 220;
 /** 节点头部高度（标题 + 类型行）。 */
-export const NODE_HEADER_HEIGHT = 48;
+export const NODE_HEADER_HEIGHT = 66;
 /** 单个端口行高。 */
 export const NODE_PORT_ROW_HEIGHT = 22;
 /** 节点底部高度（phase / previewPolicy 行）。 */
@@ -61,6 +64,45 @@ export const GROUP_COLLAPSED_NODE_TYPE = "groupCollapsed" as const;
 /** 折叠节点的 Vue Flow node id 前缀（区别于包围盒容器 `group:`）。 */
 export const COLLAPSED_NODE_ID_PREFIX = "groupx:" as const;
 
+const AGENT_EXECUTION_NODE_TYPES = new Set([
+  "narration.narrator",
+  "agent.director_plan",
+  "agent.player_agency_precheck",
+  "agent.call",
+  "verify.continuity",
+  "verify.player_agency_postcheck",
+]);
+
+const AGENT_GENERATION_PARAM_KEYS = [
+  "temperature",
+  "topP",
+  "maxOutputTokens",
+  "maxContextTokens",
+  "frequencyPenalty",
+  "presencePenalty",
+  "repetitionPenalty",
+];
+
+export interface GraphNodeConfigSummaryItem {
+  label: string;
+  /** 标签 i18n key（缺省回退到 label 英文技术短码）。 */
+  labelKey?: string;
+  value?: string;
+/** 描述性取值的 i18n key（枚举 / 表达式等技术标识不设，保留原样等宽展示）。 */
+  valueKey?: string;
+  /** valueKey 的插值参数（如字符数、端口数）。 */
+  valueParams?: Record<string, string | number>;
+  tone?: "neutral" | "warning";
+}
+
+export type GraphNodePreviewStatus = "available" | "disabled" | "running" | "succeeded" | "failed";
+
+export interface GraphNodePreviewSummary {
+  status: GraphNodePreviewStatus;
+  policy: NodeGraphPreviewPolicy;
+  source?: NodeGraphPreview["source"];
+}
+
 export interface GraphTavernNodeData {
   kind: "node";
   node: NodeGraphNode;
@@ -69,9 +111,14 @@ export interface GraphTavernNodeData {
   title: string;
   phase: NodeGraphPhase;
   sideEffects: NodeSideEffect;
+  permissionsRequired: string[];
   inputPorts: NodeGraphPortDefinition[];
   outputPorts: NodeGraphPortDefinition[];
   previewPolicy: NodeGraphPreviewPolicy;
+  previewSummary: GraphNodePreviewSummary;
+  configSummary: GraphNodeConfigSummaryItem[];
+  inlineConfigControls: NodeInlineConfigControl[];
+  configMissing: boolean;
   /** 运行状态叠加（来自 run trace，可缺省）。 */
   runStatus?: NodeGraphNodeRunStatus;
   /** 原文档是否自带坐标（false = 本次为占位布局）。 */
@@ -139,6 +186,8 @@ export interface MapDocumentOptions {
    * 用于把导入的大图按「系统功能」分组聚焦编辑。组不存在时回退为整图。
    */
   focusGroupId?: string | null;
+  /**可选的 LLM Profile 列表：供 Agent 节点卡片上的模型来源下拉选择。 */
+  llmProfiles?: InlineConfigLlmProfileOption[];
 }
 
 export interface MappedGraph {
@@ -146,11 +195,312 @@ export interface MappedGraph {
   edges: GraphFlowEdge[];
 }
 
-export function estimateNodeHeight(entry: NodeTypeRegistryEntry | undefined): number {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function summarizeAgentExecutionConfig(config: Record<string, unknown>): GraphNodeConfigSummaryItem[] {
+  const execution = asRecord(config.execution);
+  const modelSource = asRecord(execution.modelSource);
+  const mode = readString(modelSource.mode) ?? "inherit";
+  const profileId = readString(modelSource.profileId);
+  const agentBindingId = readString(config.agentBindingId) ?? readString(modelSource.agentBindingId);
+  const slot = readString(modelSource.slot);
+  const modelId = readString(execution.modelId);
+  const items: GraphNodeConfigSummaryItem[] = [summarizeAgentExecutionSource(mode, profileId, modelId, agentBindingId, slot)];
+  const generationSummary = summarizeAgentGenerationConfig(execution.generation);
+  if (generationSummary) {
+    items.push(generationSummary);
+  }
+  return items;
+}
+
+function summarizeAgentExecutionSource(
+  mode: string,
+  profileId: string | undefined,
+  modelId: string | undefined,
+  agentBindingId: string | undefined,
+  slot: string | undefined,
+): GraphNodeConfigSummaryItem {
+  if (profileId && modelId) {
+    return { label: "execution", value: `${profileId} · ${modelId}` };
+  }
+  if (profileId) {
+    return { label: "execution", value: profileId };
+  }
+  if (modelId) {
+    return { label: "execution", value: modelId };
+  }
+  if (agentBindingId) {
+    return { label: "execution", value: agentBindingId };
+  }
+  if (mode === "slot" && slot) {
+    return { label: "execution", value: slot };
+  }
+  if (mode === "inherit" || mode === "llm_profile" || mode === "agent_binding" || mode === "slot") {
+    const missing = mode !== "inherit";
+    return {
+      label: "execution",
+      value: missing ? "missing" : mode,
+      valueKey: missing ? "graphNode.summary.value.missing" : "graphNode.summary.value.execution.inherit",
+      tone: missing ? "warning" : "neutral",
+    };
+  }
+  return { label: "execution", value: mode, tone: "warning" };
+}
+
+function summarizeAgentGenerationConfig(generation: unknown): GraphNodeConfigSummaryItem | null {
+  const record = asRecord(generation);
+  const knownParams = AGENT_GENERATION_PARAM_KEYS.filter((key) => record[key] !== undefined);
+  if (knownParams.length === 0) {
+    return null;
+  }
+  const enabledCount = knownParams.filter((key) => asRecord(record[key]).enabled === true).length;
+  if (enabledCount === 0) {
+    return {
+      label: "generation",
+      value: "default",
+      valueKey: "graphNode.summary.value.execution.backendDefaults",
+    };
+  }
+  return {
+    label: "generation",
+    value: `${enabledCount} enabled`,
+    valueKey: "graphNode.summary.value.execution.paramsEnabled",
+    valueParams: { count: enabledCount },
+  };
+}
+
+function compactPath(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+  return value.map((segment) => String(segment)).join(".");
+}
+
+function summarizeConditionExpr(expr: unknown): string {
+  const condition = asRecord(expr);
+  const op = typeof condition.op === "string" ? condition.op : "condition";
+  switch (op) {
+    case "exists":
+    case "empty": {
+      const value = asRecord(condition.value);
+      const source = typeof value.source === "string" ? value.source : "value";
+      const path = compactPath(value.path);
+      return path ? `${op} ${source}.${path}` : op;
+    }
+    case "eq":
+    case "neq":
+    case "gt":
+    case "gte":
+    case "lt":
+    case "lte": {
+      const left = asRecord(condition.left);
+      const source = typeof left.source === "string" ? left.source : "value";
+      const path = compactPath(left.path);
+      return path ? `${source}.${path} ${op}` : op;
+    }
+    case "and":
+    case "or":
+      return `${op} ${Array.isArray(condition.items) ? condition.items.length : 0}`;
+    case "not":
+      return "not";
+    default:
+      return op;
+  }
+}
+
+function hasIncomingConditionEdge(document: NodeGraphDocument, nodeId: string): boolean {
+  return document.edges.some((edge) => nodeGraphEdgeKind(edge) === "data" && edge.to.nodeId === nodeId && edge.to.port === "condition");
+}
+
+export function summarizeNodeConfig(
+  document: NodeGraphDocument,
+  node: NodeGraphNode,
+): { items: GraphNodeConfigSummaryItem[]; missing: boolean } {
+  const config = asRecord(node.config);
+  const items: GraphNodeConfigSummaryItem[] = [];
+  let missing = false;
+
+  switch (node.type) {
+    case "agent.call": {
+      const medium = asRecord(config.medium);
+      const kind = readString(medium.kind) ?? "single_call";
+      const deliveryTarget = readString(medium.deliveryTarget) ?? "return_inline";
+      items.push({ label: "medium", value: kind });
+      items.push({ label: "output", value: deliveryTarget });
+
+      if (kind === "background_job") {
+        const agentBindingId = readString(config.agentBindingId);
+        items.push({
+          label: "binding",
+          value: agentBindingId ?? "missing",
+          valueKey: agentBindingId ? undefined : "graphNode.summary.value.missing",
+          tone: agentBindingId ? "neutral" : "warning",
+        });
+        missing = missing || !agentBindingId;
+      }
+
+      const request = asRecord(config.temporaryConversationRequest);
+      if (deliveryTarget === "page_staged_write") {
+        const targetPageId = readString(request.targetPageId);
+        missing = missing || !targetPageId;
+      } else if (deliveryTarget === "derived_output") {
+        const derivedOutput = asRecord(request.derivedOutput);
+        missing = missing || !readString(derivedOutput.projectId) || !readString(derivedOutput.domain);
+      } else if (deliveryTarget === "project_inbox") {
+        const projectInbox = asRecord(request.projectInbox);
+        missing = missing || !readString(projectInbox.projectId) || !readString(projectInbox.type);
+      } else if (deliveryTarget === "prompt_runtime_injection") {
+        const injection = asRecord(request.promptRuntimeInjection);
+        missing = missing || !readString(injection.targetSessionId) || !readString(injection.content);
+      }
+      break;
+    }
+
+    case "control.condition": {
+      if (config.condition === undefined) {
+        items.push({ label: "condition", value: "missing", valueKey: "graphNode.summary.value.missing", tone: "warning" });
+        missing = true;
+      } else {
+        items.push({ label: "condition", value: summarizeConditionExpr(config.condition) });
+      }
+      break;
+    }
+
+    case "control.branch": {
+      if (config.condition === undefined) {
+        items.push({ label: "condition", value: "input", valueKey: "graphNode.summary.value.input" });
+      } else {
+        items.push({ label: "condition", value: summarizeConditionExpr(config.condition) });
+      }
+      items.push({ label: "ports", value: "true / false" });
+      break;
+    }
+
+    case "control.gate": {
+      const onSkip = readString(config.onSkip) ?? "empty_output";
+      items.push({ label: "onSkip", value: onSkip });
+      if (config.condition !== undefined) {
+        items.push({ label: "condition", value: summarizeConditionExpr(config.condition) });
+      } else if (hasIncomingConditionEdge(document, node.id)) {
+        items.push({ label: "condition", value: "input", valueKey: "graphNode.summary.value.input" });
+      } else {
+        items.push({ label: "condition", value: "missing", valueKey: "graphNode.summary.value.missing", tone: "warning" });
+        missing = true;
+      }
+      break;
+    }
+
+    case "compose.template_render": {
+      const template = readString(config.template) ?? readString(config.content);
+      if (template) {
+        items.push({ label: "template", value: `${template.length} chars`, valueKey: "graphNode.summary.value.chars", valueParams: { count: template.length } });
+      }
+      break;
+    }
+
+    case "narration.narrator": {
+      const presetRef = asRecord(config.presetRef);
+      const presetId = readString(presetRef.presetId);
+      items.push({ label: "preset", value: presetId ?? "session", valueKey: presetId ? undefined : "graphNode.summary.value.session" });
+      break;
+    }
+
+    case "annotation.comment": {
+    const content = readString(config.content);
+      items.push(
+        content
+          ? { label: "note", value: `${content.length} chars`, valueKey: "graphNode.summary.value.chars", valueParams: { count: content.length } }
+          : { label: "note", value: "empty", valueKey: "graphNode.summary.value.empty" },
+      );
+      break;
+    }
+
+    case "group.node": {
+      const ref = asRecord(config.ref);
+      const graphId = readString(ref.graphId);
+      const iface = asRecord(config.interface);
+      const inputs = Array.isArray(iface.inputs) ? iface.inputs.length : 0;
+      const outputs = Array.isArray(iface.outputs) ? iface.outputs.length : 0;
+      items.push({
+        label: "ref",
+        value: graphId ?? "missing",
+        valueKey: graphId ? undefined : "graphNode.summary.value.missing",
+        tone: graphId ? "neutral" : "warning",
+      });
+      items.push({ label: "ports", value: `${inputs} in / ${outputs} out`, valueKey: "graphNode.summary.value.ports", valueParams: { in: inputs, out: outputs } });
+      missing = missing || !graphId || config.interface === undefined;
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  if (AGENT_EXECUTION_NODE_TYPES.has(node.type)) {
+    items.push(...summarizeAgentExecutionConfig(config));
+  }
+
+  const maxSummaryItems = AGENT_EXECUTION_NODE_TYPES.has(node.type) ? 5 : 4;
+  const localized = items.slice(0, maxSummaryItems).map((item) => ({
+    ...item,
+    labelKey: item.labelKey ?? `graphNode.summary.label.${item.label}`,
+  }));
+  return { items: localized, missing };
+}
+
+export function summarizeNodePreview(
+  previewPolicy: NodeGraphPreviewPolicy,
+  runStatus?: NodeGraphNodeRunStatus,
+): GraphNodePreviewSummary {
+  if (previewPolicy === "disabled") {
+    return { status: "disabled", policy: previewPolicy };
+  }
+  if (runStatus === "running") {
+    return { status: "running", policy: previewPolicy };
+  }
+  if (runStatus === "succeeded" || runStatus === "reused") {
+    return { status: "succeeded", policy: previewPolicy };
+  }
+  if (runStatus === "failed") {
+    return { status: "failed", policy: previewPolicy };
+  }
+  return { status: "available", policy: previewPolicy };
+}
+
+function estimateInlineControlsHeight(controls: readonly NodeInlineConfigControl[] = []): number {
+  if (controls.length === 0) {
+    return 0;
+  }
+  const rows = controls.reduce((sum, control) => {
+    if (control.type === "textarea") {
+      return sum + 52;
+    }
+    if (control.type === "summary") {
+      return sum + 20;
+    }
+    return sum + 25;
+  }, 14);
+  return Math.min(rows, 170);
+}
+
+export function estimateNodeHeight(
+  entry: NodeTypeRegistryEntry | undefined,
+  inlineControls: readonly NodeInlineConfigControl[] = [],
+): number {
   const inCount = entry?.inputPorts.length ?? 0;
   const outCount = entry?.outputPorts.length ?? 0;
   const rows = Math.max(inCount, outCount, 0);
-  return NODE_HEADER_HEIGHT + rows * NODE_PORT_ROW_HEIGHT + NODE_FOOTER_HEIGHT;
+  return NODE_HEADER_HEIGHT + rows * NODE_PORT_ROW_HEIGHT + estimateInlineControlsHeight(inlineControls) + NODE_FOOTER_HEIGHT;
 }
 
 /**
@@ -160,6 +510,7 @@ export function estimateNodeHeight(entry: NodeTypeRegistryEntry | undefined): nu
 function computeFallbackPositions(
   nodes: NodeGraphNode[],
   entries: Map<string, NodeTypeRegistryEntry | undefined>,
+  inlineControlsByNodeId: Map<string, NodeInlineConfigControl[]> = new Map(),
 ): Map<string, { x: number; y: number }> {
   const missing = nodes.filter((node) => !node.ui?.position);
   const orders = [...new Set(missing.map((node) => phaseStyle(node.phase).order))].sort(
@@ -177,7 +528,10 @@ function computeFallbackPositions(
       x: FALLBACK_ORIGIN.x + column * FALLBACK_COLUMN_GAP,
       y: FALLBACK_ORIGIN.y + cumulativeY,
     });
-    cumulativeYByOrder.set(order, cumulativeY + estimateNodeHeight(entries.get(node.id)) + FALLBACK_ROW_GAP);
+    cumulativeYByOrder.set(
+      order,
+      cumulativeY + estimateNodeHeight(entries.get(node.id), inlineControlsByNodeId.get(node.id) ?? []) + FALLBACK_ROW_GAP,
+    );
   }
   return result;
 }
@@ -240,16 +594,25 @@ export function mapDocumentToFlow(
     string,
     { inputPorts: readonly NodeGraphPortDefinition[]; outputPorts: readonly NodeGraphPortDefinition[] }
   >();
+  const inlineControlsByNodeId = new Map<string, NodeInlineConfigControl[]>();
   const nodeById = new Map<string, NodeGraphNode>();
   for (const node of layoutNodes) {
     const entry = registry.find(node.type, node.typeVersion);
     entries.set(node.id, entry);
     titleById.set(node.id, node.name ?? entry?.title ?? node.type);
     portsById.set(node.id, resolveNodeGraphNodePorts(node, entry));
+    inlineControlsByNodeId.set(
+      node.id,
+      buildInlineConfigControls(node, entry, {
+        document,
+        policies: document.policies ?? null,
+        llmProfiles: options.llmProfiles,
+      }),
+    );
     nodeById.set(node.id, node);
   }
 
-  const fallbackPositions = computeFallbackPositions(layoutNodes, entries);
+  const fallbackPositions = computeFallbackPositions(layoutNodes, entries, inlineControlsByNodeId);
   const resolvedPositions = new Map<string, { x: number; y: number }>();
   for (const node of layoutNodes) {
     resolvedPositions.set(node.id, node.ui?.position ?? fallbackPositions.get(node.id) ?? { x: 0, y: 0 });
@@ -303,6 +666,9 @@ export function mapDocumentToFlow(
       const explicit = node.ui?.position;
       const position = resolvedPositions.get(node.id) ?? { x: 0, y: 0 };
       const ports = portsById.get(node.id) ?? { inputPorts: [], outputPorts: [] };
+      const previewPolicy = node.previewPolicy ?? entry?.previewPolicy ?? "auto";
+      const configSummary = summarizeNodeConfig(document, node);
+      const inlineConfigControls = inlineControlsByNodeId.get(node.id) ?? [];
 
       const data: GraphTavernNodeData = {
         kind: "node",
@@ -313,9 +679,14 @@ export function mapDocumentToFlow(
         title: titleById.get(node.id) ?? node.type,
         phase: node.phase,
         sideEffects: (entry?.sideEffects ?? "none") as NodeSideEffect,
+        permissionsRequired: [...(entry?.permissionsRequired ?? [])],
         inputPorts: [...ports.inputPorts],
         outputPorts: [...ports.outputPorts],
-        previewPolicy: node.previewPolicy ?? entry?.previewPolicy ?? "auto",
+        previewPolicy,
+        previewSummary: summarizeNodePreview(previewPolicy, runStatusByNodeId[node.id]),
+        configSummary: configSummary.items,
+        inlineConfigControls,
+        configMissing: configSummary.missing,
         runStatus: runStatusByNodeId[node.id],
         hasPosition: Boolean(explicit),
         unknownType: !entry,
@@ -383,6 +754,7 @@ export function mapDocumentToFlow(
       sourceHandle,
       targetHandle,
       data: { kind, muted },
+      label: kind === "control" ? "control" : undefined,
       class: `graph-edge graph-edge--${kind}${muted ? " graph-edge--muted" : ""}`,
       style,
       markerEnd,
@@ -405,7 +777,7 @@ export function mapDocumentToFlow(
           x: position.x,
           y: position.y,
           width: NODE_WIDTH,
-          height: estimateNodeHeight(entries.get(nodeId)),
+          height: estimateNodeHeight(entries.get(nodeId), inlineControlsByNodeId.get(nodeId) ?? []),
         };
       })
       .filter((rect): rect is { x: number; y: number; width: number; height: number } => rect !== null);

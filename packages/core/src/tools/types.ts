@@ -83,8 +83,17 @@ export interface ToolParameterProperty {
   description?: string;
   enum?: string[];
   default?: unknown;
-  /** 数组元素的类型描述（type 为 array 时使用） */
-  items?: { type: string; description?: string };
+  /**
+   * 数组元素的类型描述（type 为 array 时使用）。
+   *
+   * 为支持「对象数组」（如 document.nodes），items 本身也是一个完整属性 schema，
+   * 可递归携带 properties / required。旧的 `{ type, description }` 写法仍兼容。
+   */
+  items?: ToolParameterProperty;
+  /** 对象子属性的 schema（type 为 object 时使用） */
+  properties?: Record<string, ToolParameterProperty>;
+  /** 对象的必填字段名（type 为 object 时使用） */
+  required?: string[];
 }
 
 /**
@@ -268,6 +277,8 @@ export interface ExecutedToolCallRecord {
   finishedAt?: number;
   attemptNo?: number;
   replayParentExecutionId?: string;
+  /** 该执行所属的 LLM 生成步号（1-based，可选；旧数据为空）。 */
+  generationStepNo?: number;
   createdAt: number;
 }
 
@@ -289,8 +300,10 @@ export interface ToolExecutionOpenRecord {
   sideEffectLevel?: ToolSideEffectLevel;
   startedAt: number;
   createdAt: number;
-  attemptNo: number;
+ attemptNo: number;
   replayParentExecutionId?: string;
+  /** 该执行所属的 LLM 生成步号（1-based，可选）。 */
+  generationStepNo?: number;
 }
 
 /** 结束一条真实执行日志时可更新的字段 */
@@ -372,6 +385,13 @@ export interface ToolExecutionContext {
   variableContext: VariableContext;
   /** 中止信号 */
   abortSignal?: AbortSignal;
+  /**
+   * 当前 LLM 生成步号（1-based，可选）。
+   *
+   * native 多步循环执行工具时注入，供落库的 generation_step_no 精确归属到某个生成步，
+   * 支撑 step 级重试按步截断前缀往返。拿不到时留空，重试退化为按 started_at 序处理。
+   */
+  generationStepNo?: number;
 }
 
 // ── Permissions ───────────────────────────────────────

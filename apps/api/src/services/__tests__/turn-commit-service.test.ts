@@ -210,6 +210,7 @@ describe("TurnCommitService", () => {
         completionTokens: 34,
         totalTokens: 46,
       },
+      reasoningText: "chain of thought for persistence",
     };
 
     const promptSnapshot: PromptSnapshotRecord = {
@@ -462,6 +463,7 @@ describe("TurnCommitService", () => {
     expect(resultSnapshotRow?.summariesJson).toBe(JSON.stringify(execution.summaries));
     expect(resultSnapshotRow?.usageJson).toBe(JSON.stringify(execution.totalUsage));
     expect(resultSnapshotRow?.verifierJson).toBeNull();
+    expect(resultSnapshotRow?.reasoningText).toBe("chain of thought for persistence");
 
     const [executedToolCall] = await database.db
       .select()

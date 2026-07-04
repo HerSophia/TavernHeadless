@@ -27,6 +27,10 @@ vi.mock("../lib/nodegraph-api", () => {
       create: vi.fn(),
       createVersion: vi.fn(),
       setCurrentVersion: vi.fn(),
+      validate: vi.fn(),
+      listFloorGraphBindings: vi.fn(),
+      setFloorGraphBinding: vi.fn(),
+      clearFloorGraphBinding: vi.fn(),
       remove: vi.fn(),
     },
   };
@@ -35,6 +39,7 @@ vi.mock("../lib/nodegraph-api", () => {
 import {
   NodeGraphApiError,
   nodeGraphApi,
+  type FloorGraphBindingResponse,
   type NodeGraphDefinitionResponse,
   type NodeGraphVersionResponse,
 } from "../lib/nodegraph-api";
@@ -49,6 +54,29 @@ function validDocument(): NodeGraphDocument {
     nodes: [{ id: "n1", type: "source.user_input", typeVersion: "1", phase: "pre_response" }],
     edges: [],
     policies: {},
+  };
+}
+
+function importedPresetDocument(purpose: "narrator_graph" | "compat_floor_graph"): NodeGraphDocument {
+  return {
+    schemaVersion: 2,
+    graphId: "imported-narrator",
+    name: purpose === "compat_floor_graph" ? "Compat Import" : "Narrator Import",
+    mode: "native_graph",
+    nodes: [
+      { id: "n_user_input", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+      { id: "n_narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
+      { id: "n_commit", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
+    ],
+    edges: [
+      { id: "e_user_input", from: { nodeId: "n_user_input", port: "text" }, to: { nodeId: "n_narrator", port: "user_input" } },
+      { id: "e_commit", from: { nodeId: "n_narrator", port: "text" }, to: { nodeId: "n_commit", port: "text" } },
+    ],
+    policies: {},
+    metadata: {
+      importedFrom: "sillytavern_openai_preset",
+      importPurpose: purpose,
+    },
   };
 }
 
@@ -81,6 +109,24 @@ function verResponse(over: Partial<NodeGraphVersionResponse> = {}): NodeGraphVer
   };
 }
 
+function floorBindingResponse(over: Partial<FloorGraphBindingResponse> = {}): FloorGraphBindingResponse {
+  return {
+    id: "fgb1",
+    account_id: "a1",
+    workspace_id: "w1",
+    project_id: "p1",
+    kind: "compat",
+    graph_id: "g1",
+    graph_version_id: "v1",
+    graph_name: "G1",
+    graph_version_no: 1,
+    status: "active",
+    created_at: 0,
+    updated_at: 0,
+    ...over,
+  };
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
@@ -93,6 +139,40 @@ describe("pure helpers", () => {
     document.nodes.push({ id: "n_user_input_1", type: "source.user_input", typeVersion: "1", phase: "pre_response" });
     expect(generateNodeId(document, "source.user_input")).toBe("n_user_input_2");
   });
+
+describe("graph settings actions", () => {
+  it("patches graph policies and marks the document dirty", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+
+    store.patchGraphPolicies({ allowBackgroundJobs: true });
+
+    expect(store.document?.policies.allowBackgroundJobs).toBe(true);
+    expect(store.dirty).toBe(true);
+  });
+
+  it("updates permissions and budgets on the same document", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+
+    store.updateGraphPermissions({ required: ["project.agent.run"], outputTargets: [] });
+    store.updateGraphBudgets({ maxNodesExecuted: 10, maxNestedAgentJobs: 0 });
+
+    expect(store.document?.permissions?.required).toEqual(["project.agent.run"]);
+    expect(store.document?.permissions?.outputTargets).toEqual([]);
+    expect(store.document?.budgets).toEqual({ maxNodesExecuted: 10, maxNestedAgentJobs: 0 });
+  });
+
+  it("removes empty budgets", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+
+    store.updateGraphBudgets({});
+
+    expect(store.document?.budgets).toBeUndefined();
+  });
+});
+
 
   it("generateEdgeId stays unique", () => {
     const document = validDocument();
@@ -155,10 +235,12 @@ describe("graph-editor store: sample + validation gating", () => {
         name: "原名",
         mode: "native_graph",
         nodes: [
-          { id: "n_narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
+          { id: "n_user_input", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+            { id: "n_narrator", type: "narration.narrator", typeVersion: "1", phase: "response" },
           { id: "n_commit", type: "output.commit_gate", typeVersion: "1", phase: "commit" },
         ],
         edges: [
+          { id: "e_ui", from: { nodeId: "n_user_input", port: "text" }, to: { nodeId: "n_narrator", port: "user_input" } },
           { id: "e1", from: { nodeId: "n_narrator", port: "text" }, to: { nodeId: "n_commit", port: "text" } },
         ],
         policies: {},
@@ -173,6 +255,21 @@ describe("graph-editor store: sample + validation gating", () => {
     expect(store.document?.name).toBe("我的预设图");
     expect(store.isExecutable).toBe(true);
     expect(store.baseVersionId).toBeNull();
+  });
+
+  it("recognizes SillyTavern compat floor import drafts", () => {
+    const store = useGraphEditorStore();
+    store.importPreset(importedPresetDocument("compat_floor_graph"), "Compat Import");
+    expect(store.isImportedSillyTavernPreset).toBe(true);
+    expect(store.isCompatFloorImportDraft).toBe(true);
+
+    store.importPreset(importedPresetDocument("narrator_graph"), "Narrator Import");
+    expect(store.isImportedSillyTavernPreset).toBe(true);
+    expect(store.isCompatFloorImportDraft).toBe(false);
+
+    store.loadSample();
+    expect(store.isImportedSillyTavernPreset).toBe(false);
+    expect(store.isCompatFloorImportDraft).toBe(false);
   });
 
   it("blocks saving an invalid graph and keeps the draft", async () => {
@@ -429,7 +526,7 @@ describe("graph-editor store: editing actions", () => {
     expect(store.document?.edges.some((e) => e.from.nodeId === "n_user" || e.to.nodeId === "n_user")).toBe(false);
   });
 
-  it("adds edges and ignores duplicates", () => {
+  it("adds edges, ignores duplicates, and infers control edge kind", () => {
     const store = useGraphEditorStore();
     store.loadSample();
     const before = store.edgeCount;
@@ -437,18 +534,64 @@ describe("graph-editor store: editing actions", () => {
     expect(store.addEdge({ nodeId: "n_user", port: "text" }, { nodeId: "n_wb", port: "query" })).toBeNull();
     expect(store.edgeCount).toBe(before);
     const created = store.addEdge({ nodeId: "n_user", port: "text" }, { nodeId: "n_compose", port: "messages" });
-    expect(created).not.toBeNull();
+    expect(created?.kind).toBeUndefined();
     expect(store.edgeCount).toBe(before + 1);
+
+    const control = store.addEdge({ nodeId: "n_gate", port: "open" }, { nodeId: "n_director", port: "input" });
+    expect(control).toMatchObject({ kind: "control" });
+    expect(store.selectedEdgeId).toBe(control?.id);
   });
 
-  it("updates node config and removes edges by id", () => {
+  it("upgrades v1 documents when adding control nodes or control edges", () => {
+    const store = useGraphEditorStore();
+    store.importPreset({ ...validDocument(), schemaVersion: 1 }, "V1");
+    const node = store.addNode("control.gate");
+    expect(node?.config).toEqual({
+      condition: { op: "exists", value: { source: "runtime", path: ["intent"] } },
+      onSkip: "empty_output",
+    });
+    expect(store.document?.schemaVersion).toBe(2);
+    expect(store.error).toBe("schema_upgraded_to_v2");
+
+    store.importPreset({
+      ...validDocument(),
+      schemaVersion: 1,
+      nodes: [
+        { id: "gate", type: "control.gate", typeVersion: "1", phase: "pre_response", config: { condition: { op: "exists", value: { source: "runtime", path: ["intent"] } } } },
+        { id: "target", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+      ],
+      edges: [],
+    }, "V1 control edge");
+    const edge = store.addEdge({ nodeId: "gate", port: "open" }, { nodeId: "target", port: "text" });
+    expect(edge?.kind).toBe("control");
+    expect(store.document?.schemaVersion).toBe(2);
+    expect(store.error).toBe("schema_upgraded_to_v2");
+  });
+
+  it("updates node config, edge kind, and removes edges by id", () => {
     const store = useGraphEditorStore();
     store.loadSample();
     store.updateNodeConfig("n_cond", { condition: { all: [] } });
     expect(store.document?.nodes.find((n) => n.id === "n_cond")?.config).toEqual({ condition: { all: [] } });
 
+    store.updateEdgeKind("e_user_wb", "control");
+    expect(store.document?.edges.find((edge) => edge.id === "e_user_wb")?.kind).toBe("control");
+    store.updateEdgeKind("e_user_wb", "data");
+    expect(store.document?.edges.find((edge) => edge.id === "e_user_wb")?.kind).toBe("data");
+
     store.removeEdge("e_user_wb");
     expect(store.document?.edges.some((e) => e.id === "e_user_wb")).toBe(false);
+  });
+
+  it("adds annotation comments with editor-only config", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const node = store.addNode("annotation.comment");
+    expect(node).toMatchObject({
+      type: "annotation.comment",
+      config: { content: "" },
+    });
+    expect(store.isExecutable).toBe(true);
   });
 
   it("toggles a group switch, syncing member node.enabled in both directions", () => {
@@ -672,6 +815,300 @@ describe("graph-editor store: version read / save", () => {
     expect(ok).toBe(true);
     expect(nodeGraphApi.setCurrentVersion).toHaveBeenCalledWith("p1", "g1", "v2");
     expect(store.serverCurrentVersionId).toBe("v2");
+  });
+
+  it("runs manual server validation and keeps the local draft", async () => {
+    const serverDiagnostic = {
+      severity: "warning" as const,
+      code: "server_warning",
+      message: "server warning",
+      nodeId: "n1",
+    };
+    vi.mocked(nodeGraphApi.validate).mockResolvedValue({
+      isExecutable: true,
+      diagnostics: [serverDiagnostic],
+      topologicalLevels: [["n1"]],
+    });
+
+    const store = useGraphEditorStore();
+    store.importPreset(validDocument(), "G", { graphId: "g1", baseVersionId: "v1" });
+    const before = store.document;
+
+    const ok = await store.validateOnServer("p1");
+
+    expect(ok).toBe(true);
+    expect(nodeGraphApi.validate).toHaveBeenCalledWith("p1", "g1", before);
+    expect(store.serverDiagnostics).toEqual([{ ...serverDiagnostic, source: "server" }]);
+    expect(store.diagnostics.some((diagnostic) => diagnostic.source === "server")).toBe(true);
+    expect(store.document).toBe(before);
+  });
+
+  it("clears stale server diagnostics after editing", async () => {
+    vi.mocked(nodeGraphApi.validate).mockResolvedValue({
+      isExecutable: true,
+      diagnostics: [{ severity: "info", code: "server_info", message: "server" }],
+    });
+    const store = useGraphEditorStore();
+    store.importPreset(validDocument(), "G", { graphId: "g1", baseVersionId: "v1" });
+    await store.validateOnServer("p1");
+    expect(store.serverDiagnostics).toHaveLength(1);
+
+    store.renameGraph("G edited");
+
+    expect(store.serverDiagnostics).toEqual([]);
+    expect(store.serverValidationCheckedAt).toBeNull();
+  });
+
+  it("surfaces server validation API errors and keeps the draft", async () => {
+    vi.mocked(nodeGraphApi.validate).mockRejectedValue(new NodeGraphApiError(422, { message: "too large" }));
+    const store = useGraphEditorStore();
+    store.importPreset(validDocument(), "G", { graphId: "g1", baseVersionId: "v1" });
+    const before = store.document;
+
+    const ok = await store.validateOnServer("p1");
+
+    expect(ok).toBe(false);
+    expect(store.error).toBe("too large");
+    expect(store.document).toBe(before);
+  });
+
+  it("loads, sets and clears floor graph bindings", async () => {
+    vi.mocked(nodeGraphApi.listFloorGraphBindings).mockResolvedValue({
+      items: [
+        {
+          id: "fgb1",
+          account_id: "a1",
+          workspace_id: "w1",
+          project_id: "p1",
+          kind: "native",
+          graph_id: "g1",
+          graph_version_id: "v1",
+          graph_name: "G1",
+          graph_version_no: 1,
+          status: "active",
+          created_at: 0,
+          updated_at: 0,
+        },
+      ],
+    });
+    vi.mocked(nodeGraphApi.setFloorGraphBinding).mockResolvedValue({
+      item: {
+        id: "fgb2",
+        account_id: "a1",
+        workspace_id: "w1",
+        project_id: "p1",
+        kind: "compat",
+        graph_id: "g1",
+        graph_version_id: "v1",
+        graph_name: "G1",
+        graph_version_no: 1,
+        status: "active",
+        created_at: 0,
+        updated_at: 1,
+      },
+    });
+    vi.mocked(nodeGraphApi.clearFloorGraphBinding).mockResolvedValue({ cleared: true, previous: null });
+
+    const store = useGraphEditorStore();
+    store.graphId = "g1";
+    store.baseVersionId = "v1";
+    store.isSample = false;
+
+    await store.loadFloorGraphBindings("p1");
+    expect(store.floorGraphBindings).toHaveLength(1);
+    expect(store.isCurrentVersionBoundAs("native")).toBe(true);
+    expect(store.isCurrentGraphBoundAs("native")).toBe(true);
+    expect(store.hasCurrentGraphFloorBindingVersionMismatch("native")).toBe(false);
+
+    const setOk = await store.setCurrentGraphAsFloorBinding("p1", "compat");
+    expect(setOk).toBe(true);
+    expect(nodeGraphApi.setFloorGraphBinding).toHaveBeenCalledWith("p1", "compat", {
+      graph_id: "g1",
+      graph_version_id: "v1",
+    });
+    expect(store.isCurrentVersionBoundAs("compat")).toBe(true);
+
+    const clearOk = await store.clearFloorGraphBinding("p1", "native");
+    expect(clearOk).toBe(true);
+    expect(store.getFloorGraphBinding("native")).toBeNull();
+  });
+
+  it("does not bind an unsaved graph", async () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const ok = await store.setCurrentGraphAsFloorBinding("p1", "native");
+    expect(ok).toBe(false);
+    expect(nodeGraphApi.setFloorGraphBinding).not.toHaveBeenCalled();
+  });
+
+  it("does not bind an unsaved compat preset import", async () => {
+    const store = useGraphEditorStore();
+    store.importPreset(importedPresetDocument("compat_floor_graph"), "Compat Import");
+    expect(store.isCompatFloorImportDraft).toBe(true);
+    expect(store.canBindCurrentVersionAsFloorGraph).toBe(false);
+
+    const ok = await store.setCurrentGraphAsFloorBinding("p1", "compat");
+    expect(ok).toBe(false);
+    expect(nodeGraphApi.setFloorGraphBinding).not.toHaveBeenCalled();
+  });
+
+  it("saves a compat preset import without auto-binding, then binds only on explicit action", async () => {
+    const draft = importedPresetDocument("compat_floor_graph");
+    const savedDocument = { ...draft, graphId: "g_compat" };
+    vi.mocked(nodeGraphApi.create).mockResolvedValue({
+      definition: defResponse({ id: "g_compat", name: "Compat Import", current_version_id: "v1" }),
+      version: verResponse({ id: "v1", graph_id: "g_compat", document: savedDocument }),
+      validation: { diagnostics: [], isValid: true },
+    });
+    vi.mocked(nodeGraphApi.listVersions).mockResolvedValue({
+      items: [verResponse({ graph_id: "g_compat", document: savedDocument })],
+    });
+    vi.mocked(nodeGraphApi.setFloorGraphBinding).mockResolvedValue({
+      item: floorBindingResponse({
+        kind: "compat",
+        graph_id: "g_compat",
+        graph_version_id: "v1",
+        graph_name: "Compat Import",
+      }),
+    });
+
+    const store = useGraphEditorStore();
+    store.importPreset(draft, "Compat Import");
+    expect(store.isCompatFloorImportDraft).toBe(true);
+    expect(store.canBindCurrentVersionAsFloorGraph).toBe(false);
+
+    const saveOk = await store.saveAsNewVersion("p1");
+    expect(saveOk).toBe(true);
+    expect(store.graphId).toBe("g_compat");
+    expect(store.baseVersionId).toBe("v1");
+    expect(store.isCompatFloorImportDraft).toBe(true);
+    expect(store.getFloorGraphBinding("compat")).toBeNull();
+    expect(nodeGraphApi.setFloorGraphBinding).not.toHaveBeenCalled();
+
+    const bindOk = await store.setCurrentGraphAsFloorBinding("p1", "compat");
+    expect(bindOk).toBe(true);
+    expect(nodeGraphApi.setFloorGraphBinding).toHaveBeenCalledWith("p1", "compat", {
+      graph_id: "g_compat",
+      graph_version_id: "v1",
+    });
+    expect(store.isCurrentVersionBoundAs("compat")).toBe(true);
+  });
+
+  it("saving a new version of a compat import does not update the compat binding", async () => {
+    const draft = importedPresetDocument("compat_floor_graph");
+    const savedV2 = { ...draft, graphId: "g_compat", name: "Compat Import edited" };
+    vi.mocked(nodeGraphApi.createVersion).mockResolvedValue({
+      definition: defResponse({ id: "g_compat", name: "Compat Import edited", current_version_id: "v2" }),
+      version: verResponse({
+        id: "v2",
+        graph_id: "g_compat",
+        version_no: 2,
+        parent_version_id: "v1",
+        document: savedV2,
+      }),
+      validation: { diagnostics: [], isValid: true },
+    });
+    vi.mocked(nodeGraphApi.listVersions).mockResolvedValue({
+      items: [
+        verResponse({ id: "v1", graph_id: "g_compat", document: draft }),
+        verResponse({ id: "v2", graph_id: "g_compat", version_no: 2, document: savedV2 }),
+      ],
+    });
+
+    const store = useGraphEditorStore();
+    store.importPreset(draft, "Compat Import", { graphId: "g_compat", baseVersionId: "v1" });
+    store.floorGraphBindings = [
+      floorBindingResponse({
+        kind: "compat",
+        graph_id: "g_compat",
+        graph_version_id: "v1",
+        graph_name: "Compat Import",
+      }),
+    ];
+    expect(store.isCurrentVersionBoundAs("compat")).toBe(true);
+
+    store.renameGraph("Compat Import edited");
+    const ok = await store.saveAsNewVersion("p1");
+    expect(ok).toBe(true);
+    expect(store.baseVersionId).toBe("v2");
+    expect(store.getFloorGraphBinding("compat")?.graph_version_id).toBe("v1");
+    expect(store.hasCurrentGraphFloorBindingVersionMismatch("compat")).toBe(true);
+    expect(nodeGraphApi.setFloorGraphBinding).not.toHaveBeenCalled();
+  });
+
+  it("detects when the current saved version differs from the bound version", async () => {
+    vi.mocked(nodeGraphApi.listFloorGraphBindings).mockResolvedValue({
+      items: [
+        {
+          id: "fgb1",
+          account_id: "a1",
+          workspace_id: "w1",
+          project_id: "p1",
+          kind: "native",
+          graph_id: "g1",
+          graph_version_id: "v1",
+          graph_name: "G1",
+          graph_version_no: 1,
+          status: "active",
+          created_at: 0,
+          updated_at: 0,
+        },
+      ],
+    });
+    const store = useGraphEditorStore();
+    store.graphId = "g1";
+    store.baseVersionId = "v2";
+    store.isSample = false;
+
+    await store.loadFloorGraphBindings("p1");
+    expect(store.isCurrentGraphBoundAs("native")).toBe(true);
+    expect(store.isCurrentVersionBoundAs("native")).toBe(false);
+    expect(store.hasCurrentGraphFloorBindingVersionMismatch("native")).toBe(true);
+  });
+
+  it("saving a new version does not update an existing floor graph binding", async () => {
+    vi.mocked(nodeGraphApi.get).mockResolvedValue({
+      definition: defResponse(),
+      current_version: verResponse(),
+    });
+    vi.mocked(nodeGraphApi.listVersions).mockResolvedValue({ items: [verResponse()] });
+    vi.mocked(nodeGraphApi.createVersion).mockResolvedValue({
+      definition: defResponse({ current_version_id: "v2" }),
+      version: verResponse({ id: "v2", version_no: 2, parent_version_id: "v1" }),
+      validation: { diagnostics: [], isValid: true },
+    });
+    vi.mocked(nodeGraphApi.listFloorGraphBindings).mockResolvedValue({
+      items: [
+        {
+          id: "fgb1",
+          account_id: "a1",
+          workspace_id: "w1",
+          project_id: "p1",
+          kind: "native",
+          graph_id: "g1",
+          graph_version_id: "v1",
+          graph_name: "G1",
+          graph_version_no: 1,
+          status: "active",
+          created_at: 0,
+          updated_at: 0,
+        },
+      ],
+    });
+
+    const store = useGraphEditorStore();
+    await store.loadGraph("p1", "g1");
+    await store.loadFloorGraphBindings("p1");
+    expect(store.isCurrentVersionBoundAs("native")).toBe(true);
+
+    store.renameGraph("G1 edited");
+    const ok = await store.saveAsNewVersion("p1");
+
+    expect(ok).toBe(true);
+    expect(store.baseVersionId).toBe("v2");
+    expect(store.getFloorGraphBinding("native")?.graph_version_id).toBe("v1");
+    expect(store.hasCurrentGraphFloorBindingVersionMismatch("native")).toBe(true);
+    expect(nodeGraphApi.setFloorGraphBinding).not.toHaveBeenCalled();
   });
 
   it("creates a brand-new graph (blank graphId) when saving a draft without a target", async () => {

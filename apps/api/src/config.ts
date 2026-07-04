@@ -56,7 +56,7 @@
  * - CLIENT_DATA_DEFAULT_MAX_ITEM_SIZE_BYTES: 默认单条目最大字节数（默认 1048576）
  * - CLIENT_DATA_DEFAULT_QUOTA_MAX_ENTRIES: 默认域级最大条目数（默认 10000）
  * - CLIENT_DATA_DEFAULT_QUOTA_MAX_BYTES: 默认域级最大字节数（默认 10485760）
- * - CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT: 单账号最大域数（默认 64）
+ * - CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT: 单账号最大域数（默认 1024）
  * - CLIENT_DATA_MAX_TOTAL_ENTRIES_PER_ACCOUNT: 单账号客户端数据总条目数（默认 100000）
  * - CLIENT_DATA_MAX_TOTAL_BYTES_PER_ACCOUNT: 单账号客户端数据总字节数（默认 104857600）
  * - ENABLE_NODE_GRAPH_WORKER: 是否启用 NodeGraph worker（默认 false）
@@ -292,7 +292,7 @@ export function loadConfig(): AppConfig {
     defaultMaxItemSizeBytes: parsePositiveInt(process.env.CLIENT_DATA_DEFAULT_MAX_ITEM_SIZE_BYTES) ?? 1_048_576,
     defaultQuotaMaxEntries: parsePositiveInt(process.env.CLIENT_DATA_DEFAULT_QUOTA_MAX_ENTRIES) ?? 10_000,
     defaultQuotaMaxBytes: parsePositiveInt(process.env.CLIENT_DATA_DEFAULT_QUOTA_MAX_BYTES) ?? 10_485_760,
-    maxDomainsPerAccount: parsePositiveInt(process.env.CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT) ?? 64,
+    maxDomainsPerAccount: parsePositiveInt(process.env.CLIENT_DATA_MAX_DOMAINS_PER_ACCOUNT) ?? 1024,
     maxTotalEntriesPerAccount: parsePositiveInt(process.env.CLIENT_DATA_MAX_TOTAL_ENTRIES_PER_ACCOUNT) ?? 100_000,
     maxTotalBytesPerAccount: parsePositiveInt(process.env.CLIENT_DATA_MAX_TOTAL_BYTES_PER_ACCOUNT) ?? 104_857_600,
   };

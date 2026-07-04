@@ -12,6 +12,8 @@
  */
 export type {
   CompiledNodeGraph,
+  NodeGraphBudgetOverrides,
+  NodeGraphRuntimeBudget,
   NodeGraphCheckpointPolicy,
   NodeGraphCompilerOptions,
   NodeGraphDiagnostic,
@@ -23,10 +25,19 @@ export type {
   NodeGraphFailurePolicy,
   NodeGraphGroup,
   NodeGraphNode,
+  NodeGraphNodeCategory,
+  NodeGraphNodeConfigFieldKnowledge,
+  NodeGraphNodeConfigFieldType,
+  NodeGraphNodeConfigKnowledge,
+  NodeGraphNodeExample,
   NodeGraphNodeRunOutput,
   NodeGraphNodeRunRecord,
   NodeGraphNodeRunStatus,
   NodeGraphNodeScope,
+  NodeGraphNodeTypeKnowledge,
+  NodeGraphNodeTypeKnowledgeDetail,
+  NodeGraphNodeTypeKnowledgeListItem,
+  NodeGraphNodeTypePortSummary,
   NodeGraphPermissionManifest,
   NodeGraphPhase,
   NodeGraphPolicies,
@@ -43,6 +54,7 @@ export type {
 } from './types.js';
 export {
   NODE_GRAPH_CHECKPOINT_POLICIES,
+  NODE_GRAPH_NODE_CATEGORIES,
   NODE_GRAPH_NODE_SCOPES,
   NODE_GRAPH_PHASES,
   NODE_GRAPH_PORT_TYPES,
@@ -50,6 +62,16 @@ export {
   NODE_GRAPH_SCHEMA_VERSION_V2,
   NODE_GRAPH_SUPPORTED_SCHEMA_VERSIONS,
 } from './types.js';
+export {
+  DEFAULT_NODE_GRAPH_RUNTIME_BUDGET,
+  DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET,
+  countNodeGraphNestedAgentJobs,
+  countNodeGraphTemporaryConversations,
+  countRuntimeNodes,
+  resolveNodeGraphBudget,
+  summarizeNodeGraphBudgetUsage,
+  type NodeGraphBudgetUsageSummary,
+} from './budget.js';
 export {
   createNodeGraphDiagnostic,
   formatNodeGraphDiagnostics,
@@ -60,6 +82,19 @@ export {
   NodeTypeRegistry,
   createDefaultNodeTypeRegistry,
 } from './registry.js';
+export {
+  NODE_GRAPH_NODE_CATEGORY_LABELS,
+  describeNodeTypeKnowledge,
+  describeNodeTypeKnowledgeFromEntry,
+  getNodeTypeCategoryLabel,
+  listNodeTypeKnowledge,
+} from './node-type-knowledge.js';
+export {
+  NODE_GRAPH_ANNOTATION_COMMENT_TYPE,
+  NODE_GRAPH_ANNOTATION_NODE_TYPES,
+  isNodeGraphAnnotationNodeType,
+  type NodeGraphAnnotationNodeType,
+} from './annotation.js';
 export {
   NodeGraphCompileError,
   compileNodeGraph,
@@ -157,4 +192,9 @@ export {
   buildPlayerAgencyVerifierSubgraph,
   buildMemoryRetrieveSubgraph,
   listBuiltinAdvisorSubgraphs,
+  BUILTIN_ADVISOR_SUBGRAPH_IDS,
+  isBuiltinAdvisorSubgraphId,
+  getBuiltinAdvisorSubgraphById,
+  NATIVE_PROMPT_FLOOR_SUBGRAPH_REF_TEMPLATE_ID,
+  buildNativePromptFloorTemplateWithAdvisorRefs,
 } from './templates/builtin-advisor-subgraphs.js';

@@ -203,6 +203,34 @@ export interface RetryFloorResult {
   runtimeTrace?: PromptRuntimeTrace;
 }
 
+/**
+ * step 级重试起点之前、已产生且不会回滚的写类副作用条目。
+ *
+ * 仅用于提示用户，脱敏边界与 transcript / inspect 一致（只暴露摘要字段）。
+ */
+export interface RetryStepIrreversibleSideEffect {
+  executionId: string;
+  toolName: string;
+  sideEffectLevel: string;
+  startedAt: number;
+  generationStepNo: number | null;
+}
+
+/**
+ * step 级重试请求。
+ *
+ * 继承 RetryFloorRequest 的 replay / 确认字段，额外指定从哪一步重生成（fromStepIndex，1-based）。
+ */
+export interface RetryStepRequest extends RetryFloorRequest {
+  fromStepIndex: number;
+}
+
+/** step 级重试结果：在 RetryFloorResult 基础上追加被丢弃起点与不可回滚副作用清单。 */
+export interface RetryStepResult extends RetryFloorResult {
+ discardedFromStepIndex: number;
+  irreversibleSideEffects: RetryStepIrreversibleSideEffect[];
+}
+
 export interface EditAndRegenerateRequest extends RetryFloorRequest {
   content: string;
   branchId?: string;
@@ -233,6 +261,19 @@ export interface RespondRuntimeToolEvent {
 export interface RespondRuntimeOptions {
   onStart?: (context: { floorId: string; floorNo: number; branchId: string }) => void;
   onChunk?: (chunk: string) => void;
+  /**
+   * 推理（思维链）流式增量回调。
+   *
+   * 仅当模型在生成过程中产出 reasoning delta 时触发，供上层实时下发。
+   */
+  onReasoning?: (delta: string) => void;
+  /**
+   * 中间叙述流式增量回调。
+   *
+   * native 多步循环中，仅当某步触发工具调用且产出可见文本时触发，
+   * 供上层实时下发该步中间叙述。末步纯结论步不触发。
+   */
+  onStepNarration?: (narration: { stepIndex: number;text: string; createdAt: number }) => void;
   onTool?: (event: RespondRuntimeToolEvent) => void;
   onRun?: (event: FloorRunSnapshot) => void;
   abortSignal?: AbortSignal;

@@ -8,8 +8,13 @@ loadDotenv({ path: resolve(__dirname, "../../../.env") });
 
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { configureDebugFromEnv } from "./debug/configure-debug.js";
 
 const config = loadConfig();
+
+// 调试日志系统：读取 TAVERN_DEBUG 环境变量，按域注册文件调试接收器。
+// 未设时不注册，调试系统完全不输出。须在 buildApp 之前调用一次。
+configureDebugFromEnv();
 
 const { app } = await buildApp({
   databasePath: config.databasePath,

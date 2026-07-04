@@ -15,10 +15,16 @@ import {
 } from "@tavern/core/node-graph";
 
 export type DiagnosticSeverity = NodeGraphDiagnostic["severity"];
+export type DiagnosticSource = "local" | "server";
+
+export type SourcedNodeGraphDiagnostic = NodeGraphDiagnostic & {
+  /** 诊断来源：本地同步校验或手动服务端校验。 */
+  source: DiagnosticSource;
+};
 
 export interface LocalValidationResult {
-  /** 诊断列表（与后端 validate 同源）。 */
-  diagnostics: NodeGraphDiagnostic[];
+  /** 诊断列表（与后端 validate 同源），并标记为本地来源。 */
+  diagnostics: SourcedNodeGraphDiagnostic[];
   /** 无 error 即可执行 / 可保存为版本（对齐后端 assertExecutable）。 */
   isExecutable: boolean;
   /** 各严重级别计数。 */
@@ -34,6 +40,13 @@ export const EMPTY_LOCAL_VALIDATION: LocalValidationResult = {
   topologicalLevels: [],
 };
 
+export function withDiagnosticSource(
+  diagnostics: readonly NodeGraphDiagnostic[],
+  source: DiagnosticSource,
+): SourcedNodeGraphDiagnostic[] {
+  return diagnostics.map((diagnostic) => ({ ...diagnostic, source }));
+}
+
 /** 同步校验一个文档，返回诊断、可执行性与计数。 */
 export function validateGraphDocument(document: NodeGraphDocument): LocalValidationResult {
   const compiled = compileNodeGraph(document);
@@ -42,7 +55,7 @@ export function validateGraphDocument(document: NodeGraphDocument): LocalValidat
     counts[diagnostic.severity] += 1;
   }
   return {
-    diagnostics: compiled.diagnostics,
+    diagnostics: withDiagnosticSource(compiled.diagnostics, "local"),
     isExecutable: compiled.isExecutable,
     counts,
     topologicalLevels: compiled.topologicalLevels.map((level) => level.map((node) => node.id)),
@@ -73,7 +86,7 @@ export function diagnosticTarget(diagnostic: NodeGraphDiagnostic): DiagnosticTar
 /** 诊断稳定排序：error → warning → info，再按 code 与目标，保证面板渲染顺序确定。 */
 const SEVERITY_ORDER: Record<DiagnosticSeverity, number> = { error: 0, warning: 1, info: 2 };
 
-export function sortDiagnostics(diagnostics: readonly NodeGraphDiagnostic[]): NodeGraphDiagnostic[] {
+export function sortDiagnostics<T extends NodeGraphDiagnostic>(diagnostics: readonly T[]): T[] {
   return [...diagnostics].sort((left, right) => {
     const bySeverity = SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity];
     if (bySeverity !== 0) {
