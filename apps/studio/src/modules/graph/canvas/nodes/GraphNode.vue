@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { isNodeGraphAnnotationNodeType, type NodeGraphPortDefinition } from "@tavern/core/node-graph";
+import { arePortTypesCompatible, isNodeGraphAnnotationNodeType, type NodeGraphPortDefinition } from "@tavern/core/node-graph";
 import { Handle, Position, type NodeProps } from "@vue-flow/core";
 import { AlertTriangle, CheckCircle2, Database, Eye, EyeOff, Hand, KeyRound, Loader2, XCircle } from "lucide-vue-next";
 import { computed, inject, ref, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 
-import { GRAPH_EDITABLE_KEY } from "../editable-context";
+import { GRAPH_CONNECTING_SOURCE_TYPE_KEY, GRAPH_EDITABLE_KEY } from "../editable-context";
 import NodeInlineConfigControls from "../../inline-config/NodeInlineConfigControls.vue";
 import {
   NODE_HEADER_HEIGHT,
@@ -26,6 +26,15 @@ const { t, te } = useI18n();
 
 /** 编辑态：端口可连线（读取画布注入的 editable ref，缺省只读）。 */
 const editable = inject(GRAPH_EDITABLE_KEY, ref(false));
+
+/** NG2-6：正在拖出连线的源端口类型（供输入端口兼容高亮）。 */
+const connectingSourceType = inject(GRAPH_CONNECTING_SOURCE_TYPE_KEY, ref(null));
+
+/** 输入端口在连线中是否不兼容（置灰）：仅当有源类型且不兼容时为 true。 */
+function isInputPortIncompatible(port: NodeGraphPortDefinition): boolean {
+  const sourceType = connectingSourceType.value;
+  return sourceType !== null && !arePortTypesCompatible(sourceType, port.type);
+}
 
 const d = computed(() => props.data as GraphTavernNodeData);
 const phase = computed(() => phaseStyle(d.value.phase));
@@ -240,6 +249,7 @@ function onOpenInspector(): void {
             type="target"
             :position="Position.Left"
             :connectable="editable"
+            :class="{ 'gn__handle--incompatible': isInputPortIncompatible(port), 'gn__handle--compatible': connectingSourceType !== null && !isInputPortIncompatible(port) }"
             :style="portHandleStyle(port, index, 'left')"
             :title="portTitle(port)"
           />
@@ -531,6 +541,15 @@ function onOpenInspector(): void {
 
 .gn__preview--running .gn__preview-icon {
   animation: gn-spin 900ms linear infinite;
+}
+
+/* NG2-6：连线时输入端口类型兼容提示。 */
+.gn__handle--incompatible {
+  opacity: 0.28;
+}
+
+.gn__handle--compatible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-signal-accent) 45%, transparent);
 }
 
 @keyframes gn-spin {
