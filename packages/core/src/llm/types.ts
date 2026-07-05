@@ -23,6 +23,20 @@ export interface ProviderConfig {
   apiKey?: string;
   /** 自定义 Base URL（用于代理/兼容端点） */
   baseURL?: string;
+  /**
+   * OpenAI 兼容端点的 API 形态选择。
+   *
+   * - `'chat'`：Chat Completions（`/v1/chat/completions`）
+   * - `'responses'`：Responses（`/v1/responses`）
+   * - `'completion'`：legacy Completions（`/v1/completions`）
+   *
+   * 仅对 openai / deepseek / xai / openai-compatible 生效；anthropic/google 忽略。
+   * 缺省时保持 SDK 默认（@ai-sdk/openai v3 默认走 Responses）。
+   *
+   * 用途：部分自部署端点（vLLM / LM Studio 等）的 Responses API 实现不完整，
+   * 可显式设为 `'chat'` 回退到 Chat Completions。
+   */
+  apiMode?: 'chat' | 'responses' | 'completion';
   /** 额外配置 */
   options?: Record<string, unknown>;
 }

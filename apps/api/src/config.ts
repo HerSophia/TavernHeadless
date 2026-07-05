@@ -8,6 +8,9 @@
  * - LLM_API_KEY: API 密钥（必须）
  * - LLM_BASE_URL: 自定义 Base URL
  * - LLM_MODEL: 默认模型 ID（默认 gpt-4o-mini）
+ * - OPENAI_API_MODE: OpenAI 兼容端点的 API 形态（chat | responses | completion，可选）。
+ *     缺省保持 SDK 默认（@ai-sdk/openai v3 默认走 Responses）。当自部署端点
+ *     （vLLM / LM Studio 等）的 Responses API 实现不完整时，设为 chat 回退到 Chat Completions。
  * - LLM_DIRECTOR_MODEL: Director 模型（可选）
  * - LLM_VERIFIER_MODEL: Verifier 模型（可选）
  * - LLM_MEMORY_MODEL: Memory 模型（可选）
@@ -447,6 +450,7 @@ export function loadConfig(): AppConfig {
   const providerType = (process.env.LLM_PROVIDER ?? "openai-compatible") as ProviderType;
   const baseURL = process.env.LLM_BASE_URL || undefined;
   const modelId = process.env.LLM_MODEL ?? "gpt-4o-mini";
+  const apiMode = parseOpenAIApiMode(process.env.OPENAI_API_MODE);
 
   // Provider ID 从类型派生，加上 "default-" 前缀区分
   const providerId = `default-${providerType}`;
@@ -458,6 +462,7 @@ export function loadConfig(): AppConfig {
         type: providerType,
         apiKey,
         baseURL,
+        ...(apiMode ? { apiMode } : {}),
       },
     ],
     defaultModel: {
@@ -938,6 +943,22 @@ function parseApiKeyAccountMap(raw: string | undefined): Record<string, string> 
   }
 
   return Object.keys(map).length > 0 ? map : undefined;
+}
+
+/**
+ * 解析 OPENAI_API_MODE 环境变量。
+ *
+ * 只接受 chat | responses | completion（大小写不敏感，允许前后空白）；
+ * 缺省或非法值返回 undefined（保持 SDK 默认行为，零回归）。
+ */
+function parseOpenAIApiMode(
+  value: string | undefined,
+): "chat" | "responses" | "completion" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "chat" || normalized === "responses" || normalized === "completion") {
+    return normalized;
+  }
+  return undefined;
 }
 
 function parseDelimitedStrings(value: string | undefined): string[] {
