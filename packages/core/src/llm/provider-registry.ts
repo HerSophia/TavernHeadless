@@ -65,7 +65,24 @@ function createOpenAIFactory(config: ProviderConfig): (modelId: string) => Langu
     ...config.options,
   });
 
-  return (modelId: string) => provider(modelId) as LanguageModel;
+  // 按 apiMode 选择底层 API 形态：
+  // - 'chat'       → Chat Completions（/v1/chat/completions）
+  // - 'completion' → legacy Completions（/v1/completions）
+  // - 'responses'  → Responses（/v1/responses）
+  // - 缺省         → SDK 默认（@ai-sdk/openai v3 默认走 Responses）
+  //
+  // 背景：v3 起 `provider(modelId)` 默认走 Responses API，部分自部署端点
+  // （vLLM / LM Studio 等）的 Responses 实现不完整，需要显式回退到 Chat Completions。
+  const modelFactory =
+    config.apiMode === 'chat'
+      ? provider.chat
+      : config.apiMode === 'completion'
+        ? provider.completion
+        : config.apiMode === 'responses'
+          ? provider.responses
+          : provider;
+
+  return (modelId: string) => modelFactory(modelId) as LanguageModel;
 }
 
 /**

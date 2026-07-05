@@ -282,6 +282,37 @@ describe("LLM model configuration", () => {
     expect(config.orchestration!.verifierModel).toBeUndefined();
     expect(config.orchestration!.memoryModel).toBeUndefined();
   });
+
+  it("does not set apiMode when OPENAI_API_MODE is absent", () => {
+    vi.stubEnv("LLM_API_KEY", "sk-test");
+
+    const config = loadConfig();
+    expect(config.orchestration!.providers[0]!.apiMode).toBeUndefined();
+  });
+
+  it("reads OPENAI_API_MODE=chat into provider apiMode", () => {
+    vi.stubEnv("LLM_API_KEY", "sk-test");
+    vi.stubEnv("OPENAI_API_MODE", "chat");
+
+    const config = loadConfig();
+    expect(config.orchestration!.providers[0]!.apiMode).toBe("chat");
+  });
+
+  it("normalizes OPENAI_API_MODE casing / whitespace", () => {
+    vi.stubEnv("LLM_API_KEY", "sk-test");
+    vi.stubEnv("OPENAI_API_MODE", "  Responses ");
+
+    const config = loadConfig();
+    expect(config.orchestration!.providers[0]!.apiMode).toBe("responses");
+  });
+
+  it("ignores invalid OPENAI_API_MODE values", () => {
+    vi.stubEnv("LLM_API_KEY", "sk-test");
+    vi.stubEnv("OPENAI_API_MODE", "grpc");
+
+    const config = loadConfig();
+    expect(config.orchestration!.providers[0]!.apiMode).toBeUndefined();
+  });
 });
 
 // ── CORS 配置 ────────────────────────────────────────

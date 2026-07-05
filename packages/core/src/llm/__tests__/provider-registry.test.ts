@@ -155,6 +155,50 @@ describe('ProviderRegistry', () => {
     });
   });
 
+  describe('openai apiMode', () => {
+    // 说明：@ai-sdk/openai v3 起 provider(modelId) 默认走 Responses API。
+    // apiMode 提供从 Responses 回退到 Chat Completions 的显式开关，
+    // 用于绕过部分自部署端点（vLLM / LM Studio 等）Responses 实现不完整的问题。
+    const modelProvider = (apiMode?: 'chat' | 'responses' | 'completion'): string => {
+      const registry = new ProviderRegistry();
+      registry.register({
+        id: 'openai',
+        type: 'openai',
+        apiKey: 'test-key',
+        ...(apiMode ? { apiMode } : {}),
+      });
+      return (registry.getModel('openai', 'gpt-4o-mini') as any).provider as string;
+    };
+
+    it('defaults to the Responses API when apiMode is unset', () => {
+      expect(modelProvider()).toBe('openai.responses');
+    });
+
+    it('uses Chat Completions when apiMode is "chat"', () => {
+      expect(modelProvider('chat')).toBe('openai.chat');
+    });
+
+    it('uses the Responses API when apiMode is "responses"', () => {
+      expect(modelProvider('responses')).toBe('openai.responses');
+    });
+
+    it('uses legacy Completions when apiMode is "completion"', () => {
+      expect(modelProvider('completion')).toBe('openai.completion');
+    });
+
+    it('honors apiMode for openai-compatible providers too', () => {
+      const registry = new ProviderRegistry();
+      registry.register({
+        id: 'proxy',
+        type: 'openai-compatible',
+        apiKey: 'test-key',
+        baseURL: 'http://127.0.0.1:11434/v1',
+        apiMode: 'chat',
+      });
+      expect((registry.getModel('proxy', 'gpt-4o-mini') as any).provider).toBe('proxy.chat');
+    });
+  });
+
   describe('listProviders', () => {
     it('lists all registered providers', () => {
       const registry = new ProviderRegistry();
