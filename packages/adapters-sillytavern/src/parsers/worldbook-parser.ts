@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { STWorldBook, STWorldBookEntry } from '../types/worldbook.js';
+import type { STWorldBook, STWorldBookEntry, WIPosition } from '../types/worldbook.js';
 import { WI_LOGIC, WI_POSITION, WI_ROLE } from '../types/worldbook.js';
 
 // ── Raw Zod schemas ───────────────────────────────────
@@ -20,7 +20,10 @@ const rawEntrySchema = z.object({
   constant: z.boolean().default(false),
   content: z.string().default(''),
   comment: z.string().default(''),
-  position: z.number().default(WI_POSITION.BEFORE),
+  // ST v2/v3 规范里顶层 entry.position 是 string（'before_char' / 'after_char'），
+  // 而 extensions.position 才是完整数字位置（0-7）。这里放宽为 number|string|null，
+  // 由 resolveEntryPosition 归一化成 WIPosition 数字（对齐 ST world-info.js:5517）。
+  position: z.union([z.number(), z.string()]).nullable().default(WI_POSITION.BEFORE),
   order: z.number().default(100),
   insertion_order: z.number().optional(), // v2 spec 别名
   depth: z.number().default(4),
@@ -36,7 +39,8 @@ const rawEntrySchema = z.object({
   outletName: z.string().optional(),
   // Extensions 嵌套（v2 spec 把一些字段放在 extensions 里）
   extensions: z.object({
-    position: z.number().optional(),
+    // 规范里 extensions.position 是 number（0-7）；这里额外容忍 string/null 以防非规范导出。
+    position: z.union([z.number(), z.string()]).nullable().optional(),
     scan_depth: z.number().nullable().optional(),
     case_sensitive: z.boolean().nullable().optional(),
     match_whole_words: z.boolean().nullable().optional(),
@@ -161,6 +165,38 @@ function normalizeDelayUntilRecursion(value: boolean | number | null | undefined
 }
 
 /**
+ * 把单个 position 取值归一化成 WIPosition 数字；无法识别时返回 undefined。
+ *
+ * - number：直接作为完整位置（0-7）。
+ * - string：对齐 ST world-info.js:5517 的二元容错——'before_char' → BEFORE，其余任意字符串 → AFTER。
+ * - null / undefined：返回 undefined，交由上层回退。
+ */
+function coercePosition(value: number | string | null | undefined): WIPosition | undefined {
+  if (typeof value === 'number') {
+    return value as WIPosition;
+  }
+
+  if (typeof value === 'string') {
+    return value === 'before_char' ? WI_POSITION.BEFORE : WI_POSITION.AFTER;
+  }
+
+  return undefined;
+}
+
+/**
+ * 归一化条目插入位置。
+ *
+ * 优先级对齐 ST 加载逻辑（world-info.js:5517）：先取 extensions.position（运行时权威的数字位置），
+ * 否则用顶层 position（规范里的字符串）。两者都无法识别时回退 BEFORE（保持既有缺省行为）。
+ */
+function resolveEntryPosition(
+  extPosition: number | string | null | undefined,
+  rawPosition: number | string | null | undefined,
+): WIPosition {
+  return coercePosition(extPosition) ?? coercePosition(rawPosition) ?? WI_POSITION.BEFORE;
+}
+
+/**
  * 将单个原始条目转换为精简类型
  */
 function normalizeEntry(raw: z.infer<typeof rawEntrySchema>, index: number): STWorldBookEntry {
@@ -184,7 +220,7 @@ function normalizeEntry(raw: z.infer<typeof rawEntrySchema>, index: number): STW
     constant: raw.constant,
     content: raw.content,
     comment: raw.comment,
-    position: (ext?.position ?? raw.position) as STWorldBookEntry['position'],
+    position: resolveEntryPosition(ext?.position, raw.position),
     order: raw.insertion_order ?? raw.order,
     depth: ext?.depth ?? raw.depth,
     role: (ext?.role ?? raw.role) as STWorldBookEntry['role'],
