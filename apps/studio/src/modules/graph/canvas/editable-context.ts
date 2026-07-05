@@ -6,7 +6,17 @@
  */
 import type { InjectionKey, Ref } from "vue";
 
+import type { NodeGraphPortType } from "@tavern/core/node-graph";
+
 export const GRAPH_EDITABLE_KEY: InjectionKey<Ref<boolean>> = Symbol("graph-editable");
+
+/**
+ * NG2-6：当前正在拖出连线的源输出端口类型（`null` = 未在连线）。
+ * `GraphNode` 经 `inject` 读取，拖线时把输入端口按类型兼容点亮 / 不兼容置灰。
+ */
+export const GRAPH_CONNECTING_SOURCE_TYPE_KEY: InjectionKey<Ref<NodeGraphPortType | null>> = Symbol(
+  "graph-connecting-source-type",
+);
 
 /**
  * 组开关回调：`GraphGroupNode` 经 `inject` 取得，点击组容器上的开关时调用，由 `GraphCanvas`

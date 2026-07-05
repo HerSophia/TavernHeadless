@@ -133,6 +133,19 @@ describe("mapDocumentToFlow", () => {
     expect((dataEdge?.markerEnd as EdgeMarker).type).toBe("arrowclosed");
   });
 
+  it("NG2-6：选中边输出选中态与高亮描边", () => {
+    const { edges } = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT, { selectedEdgeId: "e_user_wb" });
+    const selected = edges.find((edge) => edge.id === "e_user_wb");
+    expect(selected?.selected).toBe(true);
+    expect(selected?.class).toContain("graph-edge--selected");
+    // 选中描边加粗（>= 2.5）。
+    expect(Number((selected?.style as Record<string, unknown>).strokeWidth)).toBeGreaterThanOrEqual(2.5);
+
+    const other = edges.find((edge) => edge.id !== "e_user_wb");
+    expect(other?.selected).toBe(false);
+  });
+
+
   it("applies deterministic placeholder positions when coordinates are missing", () => {
     const first = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT);
     const second = mapDocumentToFlow(SAMPLE_NODE_GRAPH_DOCUMENT);
