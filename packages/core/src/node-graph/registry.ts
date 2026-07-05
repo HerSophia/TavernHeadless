@@ -519,12 +519,20 @@ export const NODE_GRAPH_BUILTIN_NODE_TYPES: NodeTypeRegistryEntry[] = [
       config: {
         mode: 'object',
         fields: [
-          { path: 'presetRef.presetId', label: 'Preset id', type: 'string', description: 'Optional preset id used by this narrator node.' },
+          { path: 'source', label: 'Carrier source', type: 'enum', enumValues: ['preset', 'subgraph'], description: 'Optional execution carrier source. A narrator carries either a preset or a subgraph, never both. If omitted, the source is inferred from the content (subgraphRef => subgraph, otherwise preset).' },
+          { path: 'presetRef.presetId', label: 'Preset id', type: 'string', description: 'Preset id carried by this narrator (preset source). If omitted, the recipe falls back to the session preset.' },
           { path: 'presetRef.presetVersionId', label: 'Preset version id', type: 'string', description: 'Optional preset version id. If omitted, the active preset version is used.' },
+          { path: 'subgraphRef.graphId', label: 'Subgraph id', type: 'string', description: "Subgraph id carried by this narrator (subgraph source). Required when source === 'subgraph'; mutually exclusive with presetRef." },
+          { path: 'subgraphRef.versionId', label: 'Subgraph version id', type: 'string', description: 'Optional subgraph version id. If omitted, the active subgraph version is used.' },
         ],
       },
       examples: [{ title: 'Use session preset', node: { type: 'narration.narrator', typeVersion: '1', phase: 'response' } }],
-      pitfalls: ['This node performs the main LLM call and usually belongs in the response phase.'],
+      pitfalls: [
+        'This node performs the main LLM call and usually belongs in the response phase.',
+        'Carrier source is mutually exclusive: a narrator carries either a preset (presetRef) or a subgraph (subgraphRef), never both.',
+        'When source is omitted it is inferred from content: a structurally valid subgraphRef implies subgraph, otherwise preset (existing graphs stay backward compatible).',
+        "When source === 'subgraph' a structurally valid subgraphRef { graphId, versionId? } is required.",
+      ],
       relatedNodeTypes: ['compose.final_messages', 'verify.continuity', 'output.commit_gate'],
     },
   }),
