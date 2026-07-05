@@ -81,10 +81,15 @@ function graphWithNarratorConfig(config: unknown): NodeGraphDocument {
 
 describe("resolvePromptRecipe", () => {
   it("returns no override (session_fallback) when no floor graph is provided", () => {
-    expect(resolvePromptRecipe({})).toEqual({ narratorPresetRef: null, source: "session_fallback" });
+    expect(resolvePromptRecipe({})).toEqual({
+      narratorPresetRef: null,
+      source: "session_fallback",
+      carrierSource: "preset",
+    });
     expect(resolvePromptRecipe({ floorGraph: null })).toEqual({
       narratorPresetRef: null,
       source: "session_fallback",
+      carrierSource: "preset",
     });
   });
 
@@ -102,6 +107,7 @@ describe("resolvePromptRecipe", () => {
     expect(resolvePromptRecipe({ floorGraph: graph })).toEqual({
       narratorPresetRef: null,
       source: "session_fallback",
+      carrierSource: "preset",
     });
   });
 
@@ -109,10 +115,12 @@ describe("resolvePromptRecipe", () => {
     expect(resolvePromptRecipe({ floorGraph: graphWithNarratorConfig(undefined) })).toEqual({
       narratorPresetRef: null,
       source: "session_fallback",
+      carrierSource: "preset",
     });
     expect(resolvePromptRecipe({ floorGraph: graphWithNarratorConfig({}) })).toEqual({
       narratorPresetRef: null,
       source: "session_fallback",
+      carrierSource: "preset",
     });
   });
 
@@ -121,33 +129,89 @@ describe("resolvePromptRecipe", () => {
     expect(resolvePromptRecipe({ floorGraph: graph })).toEqual({
       narratorPresetRef: { presetId: "preset_x", presetVersionId: "pv_1" },
       source: "node_preset_ref",
+      carrierSource: "preset",
     });
   });
 
   it("defaults presetVersionId to null when absent or empty", () => {
     expect(
       resolvePromptRecipe({ floorGraph: graphWithNarratorConfig({ presetRef: { presetId: "preset_x" } }) }),
-    ).toEqual({ narratorPresetRef: { presetId: "preset_x", presetVersionId: null }, source: "node_preset_ref" });
+    ).toEqual({
+      narratorPresetRef: { presetId: "preset_x", presetVersionId: null },
+      source: "node_preset_ref",
+      carrierSource: "preset",
+    });
     expect(
       resolvePromptRecipe({
         floorGraph: graphWithNarratorConfig({ presetRef: { presetId: "preset_x",presetVersionId: "" } }),
       }),
-    ).toEqual({ narratorPresetRef: { presetId: "preset_x", presetVersionId: null }, source: "node_preset_ref" });
+    ).toEqual({
+      narratorPresetRef: { presetId: "preset_x", presetVersionId: null },
+      source: "node_preset_ref",
+      carrierSource: "preset",
+    });
   });
 
   it("ignores presetRef with a missing or non-string presetId", () => {
     expect(
       resolvePromptRecipe({ floorGraph: graphWithNarratorConfig({ presetRef: { presetVersionId: "pv_1" } }) }),
-    ).toEqual({ narratorPresetRef: null, source: "session_fallback" });
+    ).toEqual({ narratorPresetRef: null, source: "session_fallback", carrierSource: "preset" });
     expect(
       resolvePromptRecipe({ floorGraph: graphWithNarratorConfig({ presetRef: { presetId: 123 } }) }),
-    ).toEqual({ narratorPresetRef: null, source: "session_fallback" });
+    ).toEqual({ narratorPresetRef: null, source: "session_fallback", carrierSource: "preset" });
+  });
+
+  it("defers to NG2-9 (subgraph_deferred) when the carrier source is subgraph (explicit source)", () => {
+    // NG2-8 §3.3：显式 source === 'subgraph' + 结构有效 subgraphRef → 不产出预设覆盖。
+    const graph = graphWithNarratorConfig({ source: "subgraph", subgraphRef: { graphId: "g_1", versionId: "v_1" } });
+    expect(resolvePromptRecipe({ floorGraph: graph })).toEqual({
+      narratorPresetRef: null,
+      source: "subgraph_deferred",
+      carrierSource: "subgraph",
+    });
+  });
+
+  it("defers to NG2-9 (subgraph_deferred) when the carrier source is inferred from subgraphRef", () => {
+    // NG2-7 §3.2：缺省 source + 结构有效 subgraphRef → 推断为 subgraph。
+    const graph = graphWithNarratorConfig({ subgraphRef: { graphId: "g_1" } });
+    expect(resolvePromptRecipe({ floorGraph: graph })).toEqual({
+      narratorPresetRef: null,
+      source: "subgraph_deferred",
+      carrierSource: "subgraph",
+    });
+  });
+
+  it("treats an explicit preset source with a presetRef as node_preset_ref", () => {
+    const graph = graphWithNarratorConfig({ source: "preset", presetRef: { presetId: "preset_x" } });
+    expect(resolvePromptRecipe({ floorGraph: graph })).toEqual({
+      narratorPresetRef: { presetId: "preset_x", presetVersionId: null },
+      source: "node_preset_ref",
+      carrierSource: "preset",
+    });
   });
 });
 
 describe("assertNarratorPresetRefResolvable (LI11-3 3b reference validity)", () => {
   it("passeswithout probing when there is no node-level override", async () => {
-    const recipe: ResolvedPromptRecipe = { narratorPresetRef: null, source: "session_fallback" };
+    const recipe: ResolvedPromptRecipe = {
+      narratorPresetRef: null,
+      source: "session_fallback",
+      carrierSource: "preset",
+    };
+    let probed = false;
+    await assertNarratorPresetRefResolvable(recipe, async () => {
+      probed = true;
+      return true;
+    });
+    expect(probed).toBe(false);
+  });
+
+  it("passes without probing for a subgraph carrier (subgraph_deferred, null override)", async () => {
+    const recipe: ResolvedPromptRecipe = {
+      narratorPresetRef: null,
+      source: "subgraph_deferred",
+      carrierSource: "subgraph",
+    };
     let probed = false;
     await assertNarratorPresetRefResolvable(recipe, async () => {
       probed = true;
@@ -160,6 +224,7 @@ describe("assertNarratorPresetRefResolvable (LI11-3 3b reference validity)", () 
     const recipe: ResolvedPromptRecipe = {
       narratorPresetRef: { presetId: "preset_x", presetVersionId: null},
       source: "node_preset_ref",
+      carrierSource: "preset",
     };
     await expect(assertNarratorPresetRefResolvable(recipe, async () => true)).resolves.toBeUndefined();
   });
@@ -168,6 +233,7 @@ describe("assertNarratorPresetRefResolvable (LI11-3 3b reference validity)", () 
     const recipe: ResolvedPromptRecipe = {
       narratorPresetRef: { presetId: "preset_missing", presetVersionId: null },
       source: "node_preset_ref",
+      carrierSource: "preset",
     };
     await expect(assertNarratorPresetRefResolvable(recipe, async () => false)).rejects.toBeInstanceOf(
       PromptRecipePresetRefError,
