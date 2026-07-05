@@ -643,6 +643,25 @@ GET /temporary-conversations/:id/transcript
 
 每个 floor 还带一个 `reasoning_text` 字段，表示该楼层提交时捕获的推理（思维链）文本。模型未返回 reasoning 或楼层尚未提交时为 `null`。
 
+每个 floor 另带一个 `tool_executions` 数组，记录该楼层「当前这次生成」的工具执行（与 message 并列的旁路数组，不进 floor→page→message 层级，也不参与 prompt）。无工具调用时为 `[]`。字段含义见下表。
+
+| 字段 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `id` | `string` | 工具执行记录 id |
+| `tool_name` | `string` | 工具名 |
+| `status` | `string` | 执行状态（`success` / `error` / `denied` / `timeout` 等） |
+| `args` | `unknown` | 已解析的入参 |
+| `result` | `unknown` | 已解析的结果 |
+| `side_effect_level` | `string \| null` | 副作用级别（`none` / `sandbox` / `irreversible`） |
+| `commit_outcome` | `string` | 提交结果（`committed` / `discarded` 等） |
+| `error_message` | `string \| null` | 错误信息，无错误时为 `null` |
+| `duration_ms` | `number` | 执行耗时（毫秒） |
+| `started_at` | `number` | 开始时间戳（毫秒） |
+| `finished_at` | `number \| null` | 结束时间戳（毫秒），未结束时为 `null` |
+| `attempt_no` | `number` | 第几次尝试（1-based） |
+| `replay_parent_execution_id` | `string \| null` | 重放来源执行 id |
+| `generation_step_no` | `number \| null` | 所属 LLM 生成步号（1-based，旧数据为 `null`） |
+
 ```json
 {
   "data": {
@@ -660,6 +679,24 @@ GET /temporary-conversations/:id/transcript
         "created_at": 1735689600000,
         "updated_at": 1735689600000,
         "reasoning_text": null,
+        "tool_executions": [
+          {
+            "id": "exec_001",
+            "tool_name": "search_memory",
+            "status": "success",
+            "args": { "query": "背景设定" },
+            "result": { "hits": 2 },
+            "side_effect_level": "none",
+            "commit_outcome": "committed",
+            "error_message": null,
+            "duration_ms": 12,
+            "started_at": 1735689600000,
+            "finished_at": 1735689600012,
+            "attempt_no": 1,
+            "replay_parent_execution_id": null,
+            "generation_step_no": 1
+          }
+        ],
         "pages": [
           {
             "id": "page_001",
@@ -716,7 +753,7 @@ GET /temporary-conversations/:id/inspect
 
 ### 可见性分层
 
-- 默认裁剪：当临时对话是 agent-private（`visibility = internal`，或带 Agent 来源血缘）时，transcript 的 `content` 会被裁剪为 `null`，并把消息标记 `restricted: true`；floor 的 `reasoning_text` 同样被脱敏为 `null`；`agent_origin` 也返回 `null`。结构性字段（role、seq、page、floor、`content_length`）始终保留。
+- 默认裁剪：当临时对话是 agent-private（`visibility = internal`，或带 Agent 来源血缘）时，transcript 的 `content` 会被裁剪为 `null`，并把消息标记 `restricted: true`；floor 的 `reasoning_text` 同样被脱敏为 `null`；floor 的 `tool_executions` 逐条把 `args` / `result` / `error_message` 脱敏为 `null`（其余结构字段如 `id` / `tool_name` / `status` / `side_effect_level` / `commit_outcome` / `duration_ms` / `generation_step_no` 等保留）；`agent_origin` 也返回 `null`。结构性字段（role、seq、page、floor、`content_length`）始终保留。
 - 显式取回：`include_agent_private=true` 仅在调用方对该临时对话拥有 `project.write`（owner）权限时生效，此时返回完整正文与 `agent_origin`，并写入 `temporary_conversation.transcript_inspect` 审计日志。权限不足时该参数被忽略，正文保持裁剪。
 - 非 agent-private（`client_visible` 且无 Agent 来源）的临时对话不裁剪。
 
@@ -753,6 +790,24 @@ GET /temporary-conversations/:id/inspect
           "floor_no": 1,
           "state": "committed",
           "reasoning_text": null,
+          "tool_executions": [
+            {
+              "id": "exec_001",
+              "tool_name": "search_memory",
+              "status": "success",
+              "args": null,
+              "result": null,
+              "side_effect_level": "none",
+              "commit_outcome": "committed",
+              "error_message": null,
+              "duration_ms": 12,
+              "started_at": 1735689600000,
+              "finished_at": 1735689600012,
+              "attempt_no": 1,
+              "replay_parent_execution_id": null,
+              "generation_step_no": 1
+            }
+          ],
           "pages": [
             {
               "id": "page_001",
@@ -796,6 +851,8 @@ GET /temporary-conversations/:id/inspect
 ```
 
 `conversation` 字段沿用 `TemporaryConversationResource`（含 `cleaned_at`），示例里只展示了关键字段。
+
+floor 的 `tool_executions` 与 [transcript](#读取-transcript) 共用同一套字段形状（参见上述字段表），无工具调用时为 `[]`。上例为受限（agent-private 且未取回）形态，`args` / `result` / `error_message` 已脱敏为 `null`，结构字段保留；非受限（`client_visible` 或已经 `include_agent_private=true` 取回）时与 transcript 一致返回已解析的 `args` / `result`。脱敏由服务层独占，route / SDK 只透传。
 
 ### 错误
 

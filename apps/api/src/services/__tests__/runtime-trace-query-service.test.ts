@@ -142,6 +142,79 @@ async function runBackgroundAgentCallGraph(database: DatabaseConnection): Promis
   return { graphRunId: graphRun.id, agentJobId: agentJob.id };
 }
 
+// NG2-13：跑一个父图 -> group.node -> 用户子图（透传），落一条持久 child run（run_role="subgraph"）。
+async function runUserSubgraphGraph(
+  database: DatabaseConnection,
+): Promise<{ parentRunId: string; childRunId: string }> {
+  const service = new NodeGraphDefinitionService(database.db);
+  const sub = service.create({
+    actor: ACTOR,
+    projectId: "proj_1",
+    document: {
+      schemaVersion: 2,
+      graphId: "ngraph_trace_sub",
+      name: "Trace Sub",
+      mode: "native_graph",
+      policies: {},
+      permissions: { required: [] },
+      metadata: { subgraph: true },
+      nodes: [
+        { id: "gi", type: "group.input", typeVersion: "1", phase: "pre_response", config: { ports: [{ name: "in_1", type: "text" }] } },
+        { id: "go", type: "group.output", typeVersion: "1", phase: "commit", config: { ports: [{ name: "out_1", type: "text" }] } },
+      ],
+      edges: [{ id: "e_gi_go", kind: "data", from: { nodeId: "gi", port: "in_1" }, to: { nodeId: "go", port: "out_1" } }],
+    },
+  });
+  const parent = service.create({
+    actor: ACTOR,
+    projectId: "proj_1",
+    document: {
+      schemaVersion: 2,
+      graphId: "ngraph_trace_parent",
+      name: "Trace Parent",
+      mode: "native_graph",
+      policies: {},
+      permissions: { required: [] },
+      nodes: [
+        { id: "u", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+        {
+          id: "g",
+          type: "group.node",
+          typeVersion: "1",
+          phase: "pre_response",
+          config: {
+            ref: { graphId: sub.definition.id, versionId: sub.version.id },
+            interface: { inputs: [{ name: "in_1", type: "text" }], outputs: [{ name: "out_1", type: "text" }] },
+          },
+        },
+      ],
+      edges: [{ id: "e_u_g", kind: "data", from: { nodeId: "u", port: "text" }, to: { nodeId: "g", port: "in_1" } }],
+    },
+  });
+
+  enqueueGraphRun(database, {
+    accountId: "default-admin",
+    workspaceId: "ws_1",
+    projectId: "proj_1",
+    graphId: parent.definition.id,
+    graphVersionId: parent.version.id,
+    intent: "normal",
+    dryRun: false,
+    inputJson: { user_input: "hello" },
+  });
+
+  const worker = new NodeGraphWorker(database.db, {
+    workerId: "node-graph-worker-trace-subgraph",
+    pollIntervalMs: 60_000,
+  });
+  await worker.processOneDueJob();
+
+  const runs = database.db.select().from(nodeGraphRuns).all();
+  const childRun = runs.find((row) => JSON.parse(row.traceJson!).run_role === "subgraph")!;
+  const parentRun = runs.find((row) => row.id !== childRun.id)!;
+  return { parentRunId: parentRun.id, childRunId: childRun.id };
+}
+
 describe("RuntimeTraceQueryService", () => {
   let database: DatabaseConnection;
 
@@ -205,6 +278,27 @@ describe("RuntimeTraceQueryService", () => {
     expect(lineage.job?.parentRuntimeKind).toBe("node_graph_run");
     expect(lineage.parentRun?.runId).toBe(graphRunId);
     expect(lineage.parentRun?.source).toBe("node_graph_run");
+  });
+
+  // NG2-13：group.node 子图不入队后台 job，不出现在 nestedJobs / payload.lineage；
+  // 第三条发现路径按 trace_json.parent_run_id 反查同步 child graph run。
+  it("resolves graph run -> child graph run lineage for a group.node subgraph", async () => {
+    const { parentRunId, childRunId } = await runUserSubgraphGraph(database);
+
+    const service = new RuntimeTraceQueryService(database.db);
+    const lineage = service.resolveGraphRunLineage({
+      accountId: "default-admin",
+      projectId: "proj_1",
+      graphRunId: parentRunId,
+    });
+
+    expect(lineage.run?.runId).toBe(parentRunId);
+    expect(lineage.childGraphRuns.map((entry) => entry.runId)).toContain(childRunId);
+    const child = lineage.childGraphRuns.find((entry) => entry.runId === childRunId);
+    expect(child?.parentRunId).toBe(parentRunId);
+    expect(child?.runtimeKind).toBe("node_graph_run");
+    // NG2-13 / NG2-14：血缘角色应从 trace_json 回读（run_role -> runRole）。
+    expect(child?.runRole).toBe("subgraph");
   });
 
   it("includes governance operation logs when requested", async () => {
