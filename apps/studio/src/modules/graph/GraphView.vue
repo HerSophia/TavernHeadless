@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { listBuiltinAdvisorSubgraphs, type NodeGraphDocument } from "@tavern/core/node-graph";
-import { AlertCircle, BookOpen, Bot, ChevronDown, CornerUpLeft, Download, FileDown, GitCompare, GripVertical, Link2, Package, PackagePlus, PanelRightClose, PanelRightOpen, Play, RotateCcw, Save, Settings, ShieldCheck, Trash2, Unlink2, Upload, Workflow, Wrench, X } from "lucide-vue-next";
+import { AlertCircle, BookOpen, Bot, ChevronDown, CornerUpLeft, Download, FileDown, GitCompare, GripVertical, Keyboard, Link2, Package, PackagePlus, PanelRightClose, PanelRightOpen, Play, RotateCcw, Save, Settings, ShieldCheck, Trash2, Unlink2, Upload, Workflow, Wrench, X } from "lucide-vue-next";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -25,6 +25,8 @@ import { useGraphRun } from "./run/use-graph-run";
 import { summarizeNodeRunStatuses } from "./run/graph-run-view";
 import NodeTypeBrowser from "./node-types/NodeTypeBrowser.vue";
 import NodeTypePicker from "./node-types/NodeTypePicker.vue";
+import NodeSearchPalette from "./node-types/NodeSearchPalette.vue";
+import ShortcutsHelpOverlay from "./canvas/ShortcutsHelpOverlay.vue";
 import DiagnosticsPanel from "./panels/DiagnosticsPanel.vue";
 import NodeInspector from "./panels/NodeInspector.vue";
 import type { DiagnosticTarget } from "./validate/local-validation";
@@ -486,6 +488,61 @@ function onConnect(payload: { source: string; target: string; sourceHandle: stri
   );
 }
 
+// —— NG2-6：键盘与连线交互转调 store ——
+
+/** 节点搜索面板（Shift+A）开合与落点位置。 */
+const showNodeSearch = ref(false);
+const nodeSearchPosition = ref<{ x: number; y: number } | null>(null);
+/** 快捷键说明浮层开合。 */
+const showShortcutsHelp = ref(false);
+
+function onRequestAddNode(position: { x: number; y: number } | null): void {
+  nodeSearchPosition.value = position;
+  showNodeSearch.value = true;
+}
+
+function onSearchPaletteAdd(payload: { type: string; typeVersion: string }): void {
+  const node = store.addNode(payload.type, payload.typeVersion);
+  showNodeSearch.value = false;
+  if (node && nodeSearchPosition.value) {
+    store.updateNodePosition(node.id, nodeSearchPosition.value);
+  }
+  if (node) {
+    rightPanelMode.value = "inspector";
+    panelOpen.value = true;
+  }
+}
+
+function onDeleteSelection(payload: { nodeIds: string[]; edgeIds: string[] }): void {
+  if (payload.nodeIds.length > 0) {
+    store.removeNodes(payload.nodeIds);
+  }
+  for (const edgeId of payload.edgeIds) {
+    store.removeEdge(edgeId);
+  }
+}
+
+function onDuplicateSelection(nodeIds: string[]): void {
+  store.duplicateNodes(nodeIds);
+}
+
+function onGroupSelection(nodeIds: string[]): void {
+  store.groupNodes(nodeIds);
+}
+
+function onCutEdges(edgeIds: string[]): void {
+  for (const edgeId of edgeIds) {
+    store.removeEdge(edgeId);
+  }
+}
+
+function onLazyConnect(payload: { source: string; sourceHandle: string; target: string; targetHandle: string }): void {
+  store.addEdge(
+    { nodeId: payload.source, port: payload.sourceHandle },
+    { nodeId: payload.target, port: payload.targetHandle },
+  );
+}
+
 function onSelectGroup(groupId: string | null): void {
   store.selectGroup(groupId);
   if (groupId) {
@@ -777,6 +834,12 @@ onUnmounted(() => {
             >
          <template #icon><BookOpen :size="14" :stroke-width="1.5" /></template>
             </UiMenuItem>
+            <UiMenuItem
+              :label="t('graph.shortcuts.toggle')"
+              @click="() => { showShortcutsHelp = true; close(); }"
+            >
+              <template #icon><Keyboard :size="14" :stroke-width="1.5" /></template>
+            </UiMenuItem>
             <div class="my-1 h-px bg-line-subtle" aria-hidden="true" />
             <UiMenuItem
               :label="t('graph.settings.open')"
@@ -1056,13 +1119,14 @@ onUnmounted(() => {
           editable
           :reset-key="store.loadToken"
           :highlight="highlight"
-          :focus-group-id="store.activeGroupId"
+            :focus-group-id="store.activeGroupId"
           :run-status-by-node-id="runState.nodeStatusById"
           :llm-profiles="llmProfileOptions"
+          :selected-edge-id="store.selectedEdgeId"
           @update:laid-out="(value: boolean) => (laidOut = value)"
           @update:positions="(positions) => store.applyNodePositions(positions)"
           @select-node="onCanvasSelectNode"
-          @select-edge="onCanvasSelectEdge"
+              @select-edge="onCanvasSelectEdge"
           @connect="onConnect"
           @enter-group="onEnterGroup"
           @toggle-group="onToggleGroup"
@@ -1071,6 +1135,14 @@ onUnmounted(() => {
           @move-group="onMoveGroup"
           @update-node-config="onInlineConfigUpdate"
           @open-node-inspector="onOpenNodeInspector"
+          @delete-selection="onDeleteSelection"
+          @duplicate-selection="onDuplicateSelection"
+          @group-selection="onGroupSelection"
+          @undo="store.undo"
+          @redo="store.redo"
+          @request-add-node="onRequestAddNode"
+          @cut-edges="onCutEdges"
+          @lazy-connect="onLazyConnect"
         />
 
         <div v-else-if="store.loading" class="absolute inset-0 flex flex-col gap-2 p-4">
@@ -1161,6 +1233,17 @@ onUnmounted(() => {
       @add="onAddNode"
       @close="showNodeTypeBrowser = false"
     />
+
+    <!-- NG2-6：节点搜索面板（Shift+A） -->
+    <NodeSearchPalette
+      v-if="showNodeSearch && store.document"
+      :entries="store.availableNodeTypes"
+      @add="onSearchPaletteAdd"
+      @close="showNodeSearch = false"
+    />
+
+    <!-- NG2-6：快捷键说明浮层 -->
+    <ShortcutsHelpOverlay v-if="showShortcutsHelp" @close="showShortcutsHelp = false" />
 
     <!-- 重复导入决策：覆盖已有图 / 作为新图 / 取消 -->
     <div

@@ -1234,3 +1234,125 @@ describe("graph-editor store: guards with no document", () => {
     expect(store.error).toBe("offline");
   });
 });
+
+
+describe("NG2-6 undo/redo", () => {
+  it("每次原子操作可撤销并恢复文档", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const before = store.nodeCount;
+
+    store.addNode("source.user_input", "1");
+    expect(store.nodeCount).toBe(before + 1);
+    expect(store.canUndo).toBe(true);
+
+    store.undo();
+    expect(store.nodeCount).toBe(before);
+    expect(store.canRedo).toBe(true);
+  });
+
+  it("redo 恢复被撤销的操作", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const before = store.nodeCount;
+
+    store.addNode("source.user_input", "1");
+    store.undo();
+    store.redo();
+    expect(store.nodeCount).toBe(before + 1);
+  });
+
+  it("新的写操作清空redo 栈", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+
+    store.addNode("source.user_input", "1");
+    store.undo();
+    expect(store.canRedo).toBe(true);
+
+    store.addNode("source.user_input", "1");
+    expect(store.canRedo).toBe(false);
+  });
+
+  it("撤销栈超过上限后从栈底截断", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    // 连续 120 次写操作，超过 100 上限。
+    for (let i = 0; i < 120; i += 1) {
+      store.addNode("source.user_input", "1");
+    }
+    // 上限 100：最多只能撤销 100 步。
+    let undoCount = 0;
+    while (store.canUndo) {
+      store.undo();
+      undoCount += 1;
+    }
+    expect(undoCount).toBe(100);
+  });
+
+  it("加载新图重置撤销重做栈", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    store.addNode("source.user_input", "1");
+    expect(store.canUndo).toBe(true);
+
+    store.loadSample();
+    expect(store.canUndo).toBe(false);
+    expect(store.canRedo).toBe(false);
+  });
+});
+
+describe("NG2-6 复制粘贴 / 批量删除 / 成组", () => {
+  it("复制节点重映射 id 并复制内部边", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const doc = store.document!;
+    // 取前两个节点及其之间的一条边（若无则手动建一条）。
+    const [n1, n2] = doc.nodes;
+    if (n1 && n2) {
+      store.addEdge({nodeId: n1.id, port: "any" }, { nodeId: n2.id, port: "any" });
+    }
+    const beforeNodes = store.nodeCount;
+    const ids = store.duplicateNodes(doc.nodes.slice(0, 2).map((node) => node.id));
+    expect(ids.length).toBe(2);
+    // 新 id 不与原 id 冲突。
+    for (const id of ids) {
+      expect(doc.nodes.slice(0, 2).map((node) => node.id)).not.toContain(id);
+    }
+    expect(store.nodeCount).toBe(beforeNodes + 2);
+  });
+
+  it("批量删除节点及其关联边（一次原子操作）", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const doc = store.document!;
+    const targets = doc.nodes.slice(0, 2).map((node) => node.id);
+    const beforeNodes = store.nodeCount;
+
+    store.removeNodes(targets);
+    expect(store.nodeCount).toBe(beforeNodes - targets.length);
+    // 一次原子操作：单次 undo 即可恢复。
+    store.undo();
+    expect(store.nodeCount).toBe(beforeNodes);
+  });
+
+  it("成组把选中节点写入一个 visual 分组", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const doc = store.document!;
+    const targets = doc.nodes.slice(0, 2).map((node) => node.id);
+
+    const groupId = store.groupNodes(targets, "我的组");
+    expect(groupId).not.toBeNull();
+    const group = store.document?.groups?.find((candidate) => candidate.id === groupId);
+    expect(group?.kind).toBe("visual");
+    expect(group?.nodeIds.sort()).toEqual([...targets].sort());
+  });
+
+  it("成组不足两个有效节点时返回 null", () => {
+    const store = useGraphEditorStore();
+    store.loadSample();
+    const doc = store.document!;
+    expect(store.groupNodes([doc.nodes[0]!.id])).toBeNull();
+  });
+});

@@ -137,6 +137,7 @@ export {
   type NodeGraphSchemaMigrationDiagnostic,
 } from './migration.js';
 export {
+  arePortTypesCompatible,
   validateNodeGraph,
   type NodeGraphValidationOptions,
   type NodeGraphValidationResult,

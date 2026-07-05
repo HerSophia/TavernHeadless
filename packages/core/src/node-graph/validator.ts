@@ -90,7 +90,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function arePortTypesCompatible(from: NodeGraphPortType, to: NodeGraphPortType): boolean {
+/**
+ * 判断输出端口类型 `from` 是否可连到输入端口类型 `to`。
+ *
+ * 规则（前后端同源，供 Studio 连线校验高亮与 lazy connect 复用）：
+ * - 同类型直接兼容（`from === to`）；
+ * - 任一端为通配类型 `any` 兼容（NG2-GLOBAL-INPUT：`source.global_input` 的 `value:any`）；
+ * - 目标端口为 `json` 时接受任意来源（`to === 'json'`）。
+ *
+ * @param from - 输出端口类型
+ * @param to - 输入端口类型
+ * @returns 两端类型是否可连
+ */
+export function arePortTypesCompatible(from: NodeGraphPortType, to: NodeGraphPortType): boolean {
   // NG2-GLOBAL-INPUT：`any` 为通配类型，与任意端口类型兼容（作为输出可流向任意输入，作为输入可接受任意输出）。
   if (from === to || from === 'any' || to === 'any') {
     return true;
