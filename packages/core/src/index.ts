@@ -377,6 +377,15 @@ export type {
   CompatPromptFloorStructure,
 } from "./node-graph/index.js";
 export {
+  NODE_GRAPH_AGENT_SOURCES,
+  readNodeGraphPresetRef,
+  readNodeGraphSubgraphRef,
+  resolveNodeGraphAgentSource,
+  type NodeGraphAgentSource,
+  type NodeGraphPresetRef,
+  type NodeGraphSubgraphRef,
+} from "./node-graph/index.js";
+export {
   DEFAULT_NODE_GRAPH_RUNTIME_BUDGET,
   DEFAULT_NODE_GRAPH_SYNC_PREVIEW_BUDGET,
   countNodeGraphNestedAgentJobs,

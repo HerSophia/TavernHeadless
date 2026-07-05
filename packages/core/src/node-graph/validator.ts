@@ -14,6 +14,9 @@ import { hasNodeGraphErrors } from './diagnostics.js';
 import { nodeGraphDocumentSchemaVersion } from './migration.js';
 import { createDefaultNodeTypeRegistry, NodeTypeRegistry } from './registry.js';
 import {
+  readNodeGraphSubgraphRef,
+} from './agent-source.js';
+import {
   isNodeGraphGroupNodeType,
   readGroupNodeInterface,
   readGroupNodeRef,
@@ -1008,12 +1011,22 @@ function validateGroupNodes(document: NodeGraphDocument, diagnostics: NodeGraphD
 }
 
 /**
- * LI11-3（3b）：`narration.narrator` 节点的 `config.presetRef` 结构校验。
+ * LI11-3（3b）/ NG2-7：`narration.narrator` 节点的承载来源（预设 / 子图二选一）与结构校验。
  *
- * `presetRef` 可选——节点不带它时配方回退 `session.presetId`（设计 §6.2、§8）。提供时只做
- * **结构校验**：必须是对象，且 `presetId` 为非空字符串；`presetVersionId` 若提供须为字符串或 null。
- * 引用有效性（preset 是否存在 / 属当前 account）不在 core 校验，而在后端解析时校验并阻断
- * （core 无 DB 依赖，保持可进浏览器子路径）。
+ * 承载来源二选一（设计 §3）：一个 narrator 节点要么承载一份酒馆预设（`presetRef`，走传统
+ * `assemblePrompt` / compat 链路），要么承载一张子图（`subgraphRef`，走 `subgraphRunner`
+ * 图链路），二者互斥、不可同时。`source` 可选：缺省时按内容推断，既有图零回归。
+ *
+ * 本函数只做 **core 结构校验 + 互斥校验**（无 DB 依赖，可进浏览器子路径）：
+ * - `presetRef` 结构：对象、`presetId` 非空字符串、`presetVersionId` 为字符串或 null（现有逻辑保留）。
+ * - `subgraphRef` 结构：对象、`graphId` 非空字符串、`versionId` 为字符串或 null。
+ * - 来源冲突：同时带 presetRef 与 subgraphRef，或 `source` 与实际 ref 矛盾。
+ * - `source` 取值合法性（仅 `'preset' | 'subgraph'`）。
+ * - `source === 'subgraph'` 却无结构有效的 `subgraphRef`。
+ *
+ * 引用有效性（preset / subgraph 是否存在、属当前 account、是否成环）不在 core 校验，交后端解析时
+ * 校验并阻断（NG2-8 / NG2-9）。运行分派同样不在本任务：本函数校验通过 **不代表已能运行**，
+ * 子图承载的运行接通留给 NG2-9。校验顺序：先结构，再互斥。
  */
 function validateNarrationNodes(document: NodeGraphDocument, diagnostics: NodeGraphDiagnostic[]): void {
   for (const node of document.nodes) {
@@ -1022,33 +1035,94 @@ function validateNarrationNodes(document: NodeGraphDocument, diagnostics: NodeGr
     }
     const config = isRecord(node.config) ? node.config : {};
     const presetRef = config.presetRef;
-    if (presetRef === undefined) {
-      continue;
+    const subgraphRef = config.subgraphRef;
+    const source = config.source;
+    const hasPresetRef = presetRef !== undefined;
+    const hasSubgraphRef = subgraphRef !== undefined;
+
+    // --- 结构校验（先于互斥）---
+    // presetRef 结构（现有逻辑保留，诊断码 node_graph_narrator_preset_ref_invalid 不变）。
+    if (hasPresetRef) {
+      if (!isRecord(presetRef)) {
+        add(diagnostics, {
+          severity: 'error',
+          code: 'node_graph_narrator_preset_ref_invalid',
+          message: `Narrator node '${node.id}' has a malformed config.presetRef; it must be an object { presetId, presetVersionId? }.`,
+          nodeId: node.id,
+        });
+      } else {
+        if (typeof presetRef.presetId !== 'string' || presetRef.presetId.length === 0) {
+          add(diagnostics, {
+            severity: 'error',
+            code: 'node_graph_narrator_preset_ref_invalid',
+            message: `Narrator node '${node.id}' config.presetRef requires a non-empty 'presetId' string.`,
+            nodeId: node.id,
+          });
+        }
+        if (presetRef.presetVersionId !== undefined
+          && presetRef.presetVersionId !== null
+          && typeof presetRef.presetVersionId !== 'string') {
+          add(diagnostics, {
+            severity: 'error',
+            code: 'node_graph_narrator_preset_ref_invalid',
+            message: `Narrator node '${node.id}' config.presetRef.presetVersionId must be a string or null when provided.`,
+            nodeId: node.id,
+          });
+        }
+      }
     }
-    if (!isRecord(presetRef)) {
+
+    // subgraphRef 结构：命名与 preset 结构码对齐（暂 narrator 作用域）。
+    if (hasSubgraphRef && readNodeGraphSubgraphRef(node) === null) {
       add(diagnostics, {
         severity: 'error',
-        code: 'node_graph_narrator_preset_ref_invalid',
-        message: `Narrator node '${node.id}' has a malformed config.presetRef; it must be an object { presetId, presetVersionId? }.`,
+        code: 'node_graph_narrator_subgraph_ref_invalid',
+        message: `Narrator node '${node.id}' has a malformed config.subgraphRef; it must be an object { graphId, versionId? } with a non-empty graphId.`,
         nodeId: node.id,
       });
-      continue;
     }
-    if (typeof presetRef.presetId !== 'string' || presetRef.presetId.length === 0) {
+
+    // source 取值合法性：仅 'preset' | 'subgraph'（诊断码不带 narrator，保留给将来 agent.call 复用）。
+    if (source !== undefined && source !== 'preset' && source !== 'subgraph') {
       add(diagnostics, {
         severity: 'error',
-        code: 'node_graph_narrator_preset_ref_invalid',
-        message: `Narrator node '${node.id}' config.presetRef requires a non-empty 'presetId' string.`,
+        code: 'node_graph_agent_source_invalid',
+        message: `Narrator node '${node.id}' declares unknown config.source '${String(source)}'; expected 'preset' or 'subgraph'.`,
         nodeId: node.id,
       });
     }
-    if (presetRef.presetVersionId !== undefined
-      && presetRef.presetVersionId !== null
-      && typeof presetRef.presetVersionId !== 'string') {
+
+    // --- 互斥校验 ---
+    // 来源冲突：双 ref 同时存在，或 source 与实际 ref 矛盾。
+    if (hasPresetRef && hasSubgraphRef) {
       add(diagnostics, {
         severity: 'error',
-        code: 'node_graph_narrator_preset_ref_invalid',
-        message: `Narrator node '${node.id}' config.presetRef.presetVersionId must be a string or null when provided.`,
+        code: 'node_graph_agent_source_conflict',
+        message: `Narrator node '${node.id}' cannot carry both a preset and a subgraph; config.presetRef and config.subgraphRef are mutually exclusive.`,
+        nodeId: node.id,
+      });
+    } else if (source === 'preset' && hasSubgraphRef) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_agent_source_conflict',
+        message: `Narrator node '${node.id}' declares config.source 'preset' but also carries a config.subgraphRef.`,
+        nodeId: node.id,
+      });
+    } else if (source === 'subgraph' && hasPresetRef) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_agent_source_conflict',
+        message: `Narrator node '${node.id}' declares config.source 'subgraph' but also carries a config.presetRef.`,
+        nodeId: node.id,
+      });
+    }
+
+    // 子图来源缺 ref：显式 source === 'subgraph' 却无结构有效的 subgraphRef。
+    if (source === 'subgraph' && readNodeGraphSubgraphRef(node) === null) {
+      add(diagnostics, {
+        severity: 'error',
+        code: 'node_graph_agent_subgraph_ref_missing',
+        message: `Narrator node '${node.id}' declares config.source 'subgraph' but has no structurally valid config.subgraphRef { graphId, versionId? }.`,
         nodeId: node.id,
       });
     }

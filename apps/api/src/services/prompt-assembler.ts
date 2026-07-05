@@ -705,10 +705,14 @@ export interface AssemblePromptOptions {
    */
   compatPromptBridge?: CompatPromptBridgeDecision;
   /**
-   * LI11-3（3a）：Narrator 预设主体引用覆盖，由 PromptRecipeResolver 从楼层模板图解析得出。
+   * LI11-3（3a）+ NG2-8：Narrator 预设主体引用覆盖，由 PromptRecipeResolver 从楼层模板图解析得出。
    *
    * 缺省（undefined/null）时维持读 `session.presetId` / `session.presetVersionId`，
    * PromptIR 与现状逐字节一致。提供时用其覆盖「预设主体来源」（世界书 / 正则仍取 session）。
+   *
+   * NG2-8：承载来源二选一。只有承载节点有效来源为 `preset`（且带结构有效 `presetRef`）时 resolver 才
+   * 产出非 null override（承载预设 = 传统链路）；有效来源为 `subgraph` 时 override 为 null（子图分派待
+   * NG2-9，中间态暂回退 session 预设）。本消费逻辑对 override 是否为 null 之外的语义**不变**。
    */
   presetRefOverride?: { presetId: string; presetVersionId: string | null } | null;
 }
