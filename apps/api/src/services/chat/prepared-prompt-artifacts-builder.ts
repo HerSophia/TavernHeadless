@@ -417,11 +417,14 @@ export class PreparedPromptArtifactsBuilder {
           graphVersionId: null,
           fallbackReason: "not_bound",
         };
-    // LI11-3（3b）：治理诊断——标注本次配方来源（node_preset_ref / session_fallback）。
+    // LI11-3（3b）+ NG2-8（§4.3）：治理诊断——标注本次配方来源与承载来源。
+    // - source：node_preset_ref（预设覆盖生效）/ session_fallback（回退 session）/ subgraph_deferred（承载子图、待 NG2-9）。
+    // - carrierSource：preset / subgraph（NG2-7 有效来源），可区分中间态"配置子图却暂按 session 预设跑"。
     preparePhaseTrace.push({
       phase: "prompt_recipe",
       detail: {
         source: promptRecipe.source,
+        carrierSource: promptRecipe.carrierSource,
         hasNodePresetRef: promptRecipe.narratorPresetRef !== null,
         floorGraphBinding: floorGraphBindingTrace,
       },

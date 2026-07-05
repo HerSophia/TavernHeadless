@@ -3,6 +3,7 @@ import {
   groupSwitchState,
   isNodeGraphAnnotationNodeType,
   NODE_GRAPH_PHASES,
+  resolveNodeGraphAgentSource,
   type NodeGraphDiagnostic,
   type NodeGraphPhase,
   type NodeGraphPortType,
@@ -159,6 +160,18 @@ const selectedNodeDiagnostics = computed<NodeGraphDiagnostic[]>(() => {
 });
 const presetIdText = ref("");
 const presetVersionText = ref("");
+// NG2-10：承载节点（narrator）来源二选一（preset / subgraph），与 NG2-7 config 契约（source / presetRef / subgraphRef 互斥）对齐。
+const agentSource = ref<"preset" | "subgraph">("preset");
+const subgraphGraphIdText = ref("");
+const subgraphVersionText = ref("");
+
+/** 读出 narrator 有效来源（缺省推断，复用 core resolveNodeGraphAgentSource）；非法枚举 / null 回退 preset。 */
+function readAgentSource(config: unknown): "preset" | "subgraph" {
+  const resolved = resolveNodeGraphAgentSource({
+    config: (config ?? undefined) as Record<string, unknown> | undefined,
+  });
+  return resolved === "subgraph" ? "subgraph" : "preset";
+}
 
 /** 从 config 读出 narrator presetRef（presetId / presetVersionId），缺省回退空串。 */
 function readPresetRef(config: unknown): { presetId: string; presetVersionId: string } {
@@ -176,30 +189,106 @@ function readPresetRef(config: unknown): { presetId: string; presetVersionId: st
   return { presetId: "", presetVersionId: "" };
 }
 
-/**
- * 把 presetId / presetVersionId 输入写回 config.presetRef。
- * presetId为空时删除 presetRef（回退会话预设）；presetVersionId 为空时写 null。
- */
-function applyPresetRef(): void {
+/** 从 config 读出 narrator subgraphRef（graphId / versionId），缺省回退空串。 */
+function readSubgraphRef(config: unknown): { graphId: string; versionId: string } {
+  if (config && typeof config === "object" && !Array.isArray(config)) {
+    const subgraphRef = (config as { subgraphRef?: unknown }).subgraphRef;
+    if (subgraphRef && typeof subgraphRef === "object" && !Array.isArray(subgraphRef)) {
+      const gid = (subgraphRef as { graphId?: unknown }).graphId;
+      const vid = (subgraphRef as { versionId?: unknown }).versionId;
+      return {
+        graphId: typeof gid === "string" ? gid : "",
+        versionId: typeof vid === "string" ? vid : "",
+      };
+    }
+  }
+  return { graphId: "", versionId: "" };
+}
+
+/** 克隆当前节点 config 为可写对象（非对象则空对象）。 */
+function cloneNodeConfig(): Record<string, unknown> {
+  const base = node.value?.config;
+  return base && typeof base === "object" && !Array.isArray(base)
+    ? { ...(base as Record<string, unknown>) }
+    : {};
+}
+
+/** 将编辑后的 config 写回 store（空对象 → undefined），并同步 JSON 高级编辑框。 */
+function commitNodeConfig(config: Record<string, unknown>): void {
   if (!node.value) {
     return;
-  }
-  const base = node.value.config;
-  const config =
-    base && typeof base === "object" && !Array.isArray(base)
-      ? { ...(base as Record<string, unknown>) }
-      : {};
-  const pid = presetIdText.value.trim();
-  if (pid.length === 0) {
-    delete config.presetRef;
-  } else {
-    const vid = presetVersionText.value.trim();
-  config.presetRef = vid.length === 0 ? { presetId: pid, presetVersionId: null } : { presetId: pid, presetVersionId: vid };
   }
   const next = Object.keys(config).length > 0 ? config : undefined;
   store.updateNodeConfig(node.value.id, next);
   configText.value = next === undefined ? "" : JSON.stringify(next, null, 2);
   configError.value = null;
+}
+
+/** 把 presetId / presetVersionId 输入写入 config（空 presetId 删 presetRef 回退会话预设；version 空写 null）。 */
+function writePresetRefInto(config: Record<string, unknown>): void {
+  const pid = presetIdText.value.trim();
+  if (pid.length === 0) {
+    delete config.presetRef;
+  } else {
+    const vid = presetVersionText.value.trim();
+    config.presetRef = vid.length === 0 ? { presetId: pid, presetVersionId: null } : { presetId: pid, presetVersionId: vid };
+  }
+}
+
+/** 把 graphId / versionId 输入写入 config（空 graphId 删 subgraphRef；version 空写 null）。 */
+function writeSubgraphRefInto(config: Record<string, unknown>): void {
+  const gid = subgraphGraphIdText.value.trim();
+  if (gid.length === 0) {
+    delete config.subgraphRef;
+  } else {
+    const vid = subgraphVersionText.value.trim();
+    config.subgraphRef = vid.length === 0 ? { graphId: gid, versionId: null } : { graphId: gid, versionId: vid };
+  }
+}
+
+/**
+ * preset 分支：presetId / presetVersionId 输入失焦时写回 config.presetRef。
+ * 零回归：对无 source 的既有 narrator 仅写 presetRef（不注入 source），行为与现状逐字节等价；
+ * source 与互斥在显式切换来源（applyAgentSource）时才落入。
+ */
+function applyPresetRef(): void {
+  if (!node.value) {
+    return;
+  }
+  const config = cloneNodeConfig();
+  writePresetRefInto(config);
+  commitNodeConfig(config);
+}
+
+/** subgraph 分支：graphId / versionId 输入失焦时写回 config.subgraphRef。 */
+function applySubgraphRef(): void {
+  if (!node.value) {
+    return;
+  }
+  const config = cloneNodeConfig();
+  writeSubgraphRefInto(config);
+  commitNodeConfig(config);
+}
+
+/**
+ * 显式切换承载来源：置 config.source，清除另一侧引用（互斥），并写回同侧引用。
+ * 仅在用户主动切换时落 source（既有无 source narrator 不会因编辑 presetRef 而被注入 source）。
+ */
+function applyAgentSource(source: "preset" | "subgraph"): void {
+  if (!node.value || agentSource.value === source) {
+    return;
+  }
+  agentSource.value = source;
+  const config = cloneNodeConfig();
+  config.source = source;
+  if (source === "subgraph") {
+    delete config.presetRef;
+    writeSubgraphRefInto(config);
+  } else {
+    delete config.subgraphRef;
+    writePresetRefInto(config);
+  }
+  commitNodeConfig(config);
 }
 
 const userInput = ref("");
@@ -231,6 +320,10 @@ function syncSelectedConfigEditors(config: unknown): void {
   const presetRef = readPresetRef(config);
   presetIdText.value = presetRef.presetId;
   presetVersionText.value = presetRef.presetVersionId;
+  const subgraphRef = readSubgraphRef(config);
+  subgraphGraphIdText.value = subgraphRef.graphId;
+  subgraphVersionText.value = subgraphRef.versionId;
+  agentSource.value = readAgentSource(config);
 }
 
 watch(
@@ -473,21 +566,61 @@ const previewValueText = computed(() => {
           <p class="mt-1 text-[10px] text-text-muted">{{ contentFieldHint }}</p>
         </div>
 
-        <div v-if="isNarratorNode">
-          <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.presetRef") }}</span>
-          <input
-            v-model="presetIdText"
-            :placeholder="t('graph.inspector.presetRefId')"
-            class="w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
-            @blur="applyPresetRef"
-          />
-          <input
-            v-model="presetVersionText"
-            :placeholder="t('graph.inspector.presetRefVersion')"
-            class="mt-1.5 w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
-            @blur="applyPresetRef"
-          />
-          <p class="mt-1 text-[10px] text-text-muted">{{ t("graph.inspector.presetRefHint") }}</p>
+        <div v-if="isNarratorNode" class="space-y-2">
+          <!-- NG2-10 承载来源二选一：preset / subgraph（互斥，写入时清另一侧引用）。 -->
+          <div class="space-y-1">
+            <span class="block text-[11px] text-text-muted">{{ t("graph.inspector.agentSource") }}</span>
+            <div class="flex gap-2">
+              <button
+                v-for="source in (['preset', 'subgraph'] as const)"
+                :key="source"
+                type="button"
+                class="flex-1 rounded-md border px-2 py-1 text-xs transition-colors duration-150"
+                :class="agentSource === source
+                  ? 'border-signal-accent bg-float text-text-primary'
+                  : 'border-line-subtle text-text-secondary hover:border-line-active'"
+                @click="applyAgentSource(source)"
+              >
+                {{ source === 'subgraph' ? t("graph.inspector.sourceSubgraph") : t("graph.inspector.sourcePreset") }}
+              </button>
+            </div>
+          </div>
+
+          <!-- preset 来源：presetId / presetVersionId 手输编辑。 -->
+          <div v-if="agentSource === 'preset'">
+            <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.presetRef") }}</span>
+            <input
+              v-model="presetIdText"
+              :placeholder="t('graph.inspector.presetRefId')"
+              class="w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+              @blur="applyPresetRef"
+            />
+            <input
+              v-model="presetVersionText"
+              :placeholder="t('graph.inspector.presetRefVersion')"
+              class="mt-1.5 w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+              @blur="applyPresetRef"
+            />
+            <p class="mt-1 text-[10px] text-text-muted">{{ t("graph.inspector.presetRefHint") }}</p>
+          </div>
+
+          <!-- subgraph 来源：graphId / versionId 手输编辑（NG2-9 承载契约）。 -->
+          <div v-else>
+            <span class="mb-1 block text-[11px] text-text-muted">{{ t("graph.inspector.subgraphRef") }}</span>
+            <input
+              v-model="subgraphGraphIdText"
+              :placeholder="t('graph.inspector.subgraphRefId')"
+              class="w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+              @blur="applySubgraphRef"
+            />
+            <input
+              v-model="subgraphVersionText"
+              :placeholder="t('graph.inspector.subgraphRefVersion')"
+              class="mt-1.5 w-full rounded-md border border-line-subtle bg-float px-2 py-1 text-xs text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+              @blur="applySubgraphRef"
+            />
+            <p class="mt-1 text-[10px] text-text-muted">{{ t("graph.inspector.subgraphRefHint") }}</p>
+          </div>
         </div>
 
         <div v-if="hasStructuredConfigForm" class="space-y-2">
