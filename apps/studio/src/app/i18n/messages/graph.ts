@@ -557,6 +557,45 @@ export const graph = {
       "overwrite": "覆盖该图",
       "importAsNew": "作为新图导入",
       "yes": "是"
+    },
+    "edit": {
+      "undo": "撤销",
+      "redo": "重做",
+      "duplicate": "复制选中节点",
+      "deleteSelection": "删除选中",
+      "group": "成组",
+      "search": "搜索节点"
+    },
+    "shortcuts": {
+      "title": "快捷键",
+      "toggle": "快捷键说明",
+      "hintDrag": "拖动可移动",
+      "close": "关闭",
+      "section": {
+        "edit": "编辑",
+        "connect": "连线",
+        "nav": "导航"
+      },
+      "key": {
+        "addNode": "搜索并添加节点",
+        "duplicate": "复制选中节点",
+        "group": "把选中节点成组",
+        "delete": "删除选中的节点或边",
+        "undo": "撤销",
+        "redo": "重做",
+        "lazyConnect": "拖到目标节点附近自动连线",
+        "cutConnection": "划线切断相交的连线"
+      }
+    },
+    "connect": {
+      "incompatible": "端口类型不兼容",
+      "lazyConnected": "已自动连线到最近的兼容端口",
+      "lazyNoTarget": "附近没有可连接的兼容输入端口"
+    },
+    "searchPanel": {
+      "title": "添加节点",
+      "placeholder": "搜索节点类型…",
+      "noResults": "无匹配的节点类型"
     }
   },
   "en": {
@@ -1112,6 +1151,45 @@ export const graph = {
       "overwrite": "Overwrite",
       "importAsNew": "Import as new",
       "yes": "yes"
+    },
+    "edit": {
+      "undo": "Undo",
+      "redo": "Redo",
+      "duplicate": "Duplicate selected node",
+      "deleteSelection": "Delete selection",
+      "group": "Group",
+      "search": "Search node"
+    },
+    "shortcuts": {
+      "title": "Shortcuts",
+      "toggle": "Shortcuts help",
+      "hintDrag": "Drag to move",
+      "close": "Close",
+      "section": {
+        "edit": "Edit",
+        "connect": "Connect",
+        "nav": "Navigate"
+      },
+      "key": {
+        "addNode": "Search and add node",
+        "duplicate": "Duplicate selected node",
+        "group": "Group selected nodes",
+        "delete": "Delete selected node or edge",
+        "undo": "Undo",
+        "redo": "Redo",
+        "lazyConnect": "Drag near a node to auto-connect",
+        "cutConnection": "Drag a line to cut intersecting edges"
+      }
+    },
+    "connect": {
+      "incompatible": "Incompatible port types",
+      "lazyConnected": "Auto-connected to the nearest compatible port",
+      "lazyNoTarget": "No compatible input port nearby"
+    },
+    "searchPanel": {
+      "title": "Add node",
+      "placeholder": "Search node type…",
+      "noResults": "No matching node type"
     }
   }
 } as const;

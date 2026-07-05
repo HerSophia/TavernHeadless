@@ -175,7 +175,11 @@ export interface GraphFlowEdgeData {
   kind: NodeGraphEdgeKind;
   muted: boolean;
 }
-export type GraphFlowEdge = Edge<GraphFlowEdgeData>;
+/**
+ * vue-flow 的输入 `Edge` 类型不含 `selected`（该字段属内部 `GraphEdge`），
+ * NG2-6 需要在映射结果上携带选中态供高亮与测试断言，故用交叉类型补上。
+ */
+export type GraphFlowEdge = Edge<GraphFlowEdgeData> & { selected?: boolean };
 
 export interface MapDocumentOptions {
   registry?: NodeTypeRegistry;
@@ -188,6 +192,8 @@ export interface MapDocumentOptions {
   focusGroupId?: string | null;
   /**可选的 LLM Profile 列表：供 Agent 节点卡片上的模型来源下拉选择。 */
   llmProfiles?: InlineConfigLlmProfileOption[];
+  /** NG2-6：当前选中的边 id，用于选中态高亮（描边加粗提亮）。 */
+  selectedEdgeId?: string | null;
 }
 
 export interface MappedGraph {
@@ -540,8 +546,26 @@ function computeFallbackPositions(
 const MUTED_EDGE_STROKE = "rgb(113 113 122 / 0.4)";
 const MUTED_EDGE_DASH = "2 4";
 
-function toEdgeStyle(kind: NodeGraphEdgeKind, muted: boolean): { style: Styles; markerColor: string } {
+/** NG2-6：选中边高亮色（复用语义强调令牌，随主题切换）。 */
+const SELECTED_EDGE_STROKE = "var(--color-signal-accent)";
+
+function toEdgeStyle(
+  kind: NodeGraphEdgeKind,
+  muted: boolean,
+  selected = false,
+): { style: Styles; markerColor: string } {
   const edgeStyle = EDGE_STYLES[kind];
+  // NG2-6：选中态优先——描边提亮加粗（内联 style 会盖过 vue-flow 默认选中高亮，故这里显式给出）。
+  if (selected) {
+    const style: Styles = {
+      stroke: SELECTED_EDGE_STROKE,
+      strokeWidth: Math.max(edgeStyle.width + 1.25, 2.5),
+    };
+    if (edgeStyle.dash) {
+      style.strokeDasharray = edgeStyle.dash;
+    }
+    return { style, markerColor: SELECTED_EDGE_STROKE };
+  }
   if (muted) {
     return {
       style: { stroke: MUTED_EDGE_STROKE, strokeWidth: 1.25, strokeDasharray: MUTED_EDGE_DASH },
@@ -550,13 +574,44 @@ function toEdgeStyle(kind: NodeGraphEdgeKind, muted: boolean): { style: Styles; 
   }
   const style: Styles = {
     stroke: edgeStyle.stroke,
-    strokeWidth: edgeStyle.width,
+       strokeWidth: edgeStyle.width,
   };
   if (edgeStyle.dash) {
     style.strokeDasharray = edgeStyle.dash;
   }
   return { style, markerColor: edgeStyle.stroke };
 }
+/**
+ * NG2-6：把某条边装饰为「选中态」（描边提亮加粗）。
+ *
+ * 单独抽出，供画布在不重算节点的前提下叠加选中高亮——选中边属于高频交互，
+ * 若混进 `mapDocumentToFlow` 会导致 nodes 一并重算、丢失仅存于视图层的自动布局坐标。
+ *
+ * @param edge - 基础边（由 `mapDocumentToFlow` 产出，未选中）
+ * @param selected - 是否选中
+ * @returns 选中则返回带高亮样式的新边；否则原样返回
+ */
+export function decorateSelectedEdge(edge: GraphFlowEdge, selected: boolean): GraphFlowEdge {
+  if (!selected) {
+    return edge;
+  }
+  const kind = edge.data?.kind ?? "data";
+  const muted = edge.data?.muted ?? false;
+  const { style, markerColor } = toEdgeStyle(kind, muted, true);
+  const baseClass =
+    typeof edge.class === "string" ? edge.class : `graph-edge graph-edge--${kind}${muted ? " graph-edge--muted" : ""}`;
+  const nextMarkerEnd =
+    edge.markerEnd && typeof edge.markerEnd === "object" ? { ...edge.markerEnd, color: markerColor } : edge.markerEnd;
+  return {
+    ...edge,
+    selected: true,
+    class: `${baseClass} graph-edge--selected`,
+    style,
+    markerEnd: nextMarkerEnd,
+  };
+}
+
+
 
 /** 将 `NodeGraphDocument` 映射为 Vue Flow 的 nodes / edges。 */
 export function mapDocumentToFlow(
@@ -565,6 +620,7 @@ export function mapDocumentToFlow(
 ): MappedGraph {
   const registry = options.registry ?? createDefaultNodeTypeRegistry();
   const runStatusByNodeId = options.runStatusByNodeId ?? {};
+  const selectedEdgeId = options.selectedEdgeId ?? null;
 
   // 钻入：聚焦某组时仅渲染其成员 + 组内边，隐藏其余节点与所有分组容器。
   const focusGroup = options.focusGroupId
@@ -738,7 +794,8 @@ export function mapDocumentToFlow(
     }
 
     const kind = nodeGraphEdgeKind(edge);
-    const { style, markerColor } = toEdgeStyle(kind, muted);
+    const selected = edge.id === selectedEdgeId;
+    const { style, markerColor } = toEdgeStyle(kind, muted, selected);
     // 字面量 'arrowclosed' 即 MarkerType.ArrowClosed，避免从 @vue-flow/core 引入运行时值，
     // 使本纯映射可在无 DOM 的 node 环境单测。
     const markerEnd: EdgeMarker = {
@@ -755,7 +812,8 @@ export function mapDocumentToFlow(
       targetHandle,
       data: { kind, muted },
       label: kind === "control" ? "control" : undefined,
-      class: `graph-edge graph-edge--${kind}${muted ? " graph-edge--muted" : ""}`,
+      selected,
+      class: `graph-edge graph-edge--${kind}${muted ? " graph-edge--muted" : ""}${selected ? " graph-edge--selected" : ""}`,
       style,
       markerEnd,
     });
