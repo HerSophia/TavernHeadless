@@ -185,4 +185,39 @@ describe("runtime governance helpers", () => {
     expect(trace.reason_code).toBe("succeeded");
     expect(trace.dry_run).toBe(true);
   });
+
+  it("emits NG2-14 main-chain shadow lineage markers (run_role / shadow / carrier)", () => {
+    const summary = buildNodeGraphRunGovernanceTraceSummary({
+      trace: { statusCounts: { skipped: 0, running: 0, succeeded: 3, failed: 0, reused: 0 } },
+      graphRunId: "ngrun_shadow_1",
+      graphId: "ngraph_sys_1",
+      graphVersionId: "ngver_sys_1",
+      status: "succeeded",
+      intent: "preview",
+      runRole: "main",
+      shadow: true,
+      carrier: "system_graph",
+    });
+
+    expect(summary).toMatchObject({
+      run_role: "main",
+      shadow: true,
+      carrier: "system_graph",
+      preview: true,
+    });
+  });
+
+  it("omits NG2-14 carrier / shadow markers when not provided (backward compatible)", () => {
+    const summary = buildNodeGraphRunGovernanceTraceSummary({
+      trace: {},
+      graphRunId: "ngrun_plain_1",
+      graphId: "ngraph_1",
+      graphVersionId: "ngver_1",
+      status: "succeeded",
+    });
+
+    expect(summary).not.toHaveProperty("carrier");
+    expect(summary).not.toHaveProperty("run_role");
+    expect(summary).not.toHaveProperty("shadow");
+  });
 });

@@ -1,3 +1,4 @@
+import { createDefaultNodeTypeRegistry } from './registry.js';
 import { NODE_GRAPH_PORT_TYPES, type NodeGraphDocument, type NodeGraphNode, type NodeGraphPortDefinition, type NodeGraphPortType } from './types.js';
 
 /**
@@ -249,4 +250,50 @@ export function resolveNodeGraphNodePorts(
     inputPorts: registryPorts?.inputPorts ?? [],
     outputPorts: registryPorts?.outputPorts ?? [],
   };
+}
+
+/**
+ * NG2-13（缺口 4.5，方案 A）：诊断码 —— 被 `group.node` 引用的子图内部含持久 `output.*` 写节点。
+ *
+ * 持久正史写入只能发生在**主图（父图）**的单一 CommitGate 边界，不能从子图内部旁路。
+ * 违反不变量「CommitGate 单一正史边界」，因此在子图引用解析处静态拒绝 + 运行时兜底拒绝。
+ */
+export const NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE =
+  'node_graph_subgraph_persistent_output_forbidden' as const;
+
+/**
+ * 持久输出（写正史）节点类型集合。**事实源为节点注册表**：`sideEffects === 'write'`
+ * 的内置节点即持久写节点（当前为 `output.session_state_proposal` / `output.derived_output`
+ * / `output.project_inbox`）。以类型（而非 typeVersion）匹配，跨版本稳健，避免在多处硬编码列表。
+ */
+let cachedPersistentOutputNodeTypes: ReadonlySet<string> | null = null;
+
+function persistentOutputNodeTypes(): ReadonlySet<string> {
+  if (!cachedPersistentOutputNodeTypes) {
+    const registry = createDefaultNodeTypeRegistry();
+    cachedPersistentOutputNodeTypes = new Set(
+      registry
+        .list()
+        .filter((entry) => entry.sideEffects === 'write')
+        .map((entry) => entry.type),
+    );
+  }
+  return cachedPersistentOutputNodeTypes;
+}
+
+/** 某节点类型是否为持久输出（写正史）节点（事实源：注册表 `sideEffects === 'write'`）。 */
+export function isNodeGraphPersistentOutputNodeType(type: string): boolean {
+  return persistentOutputNodeTypes().has(type);
+}
+
+/**
+ * 扫描一份（子图）文档，返回其中所有持久输出写节点的 id。
+ *
+ * NG2-13 方案 A：`group.node` 引用的子图不得包含这些节点。返回非空即应拒绝该图作为子图运行。
+ */
+export function findNodeGraphPersistentOutputNodeIds(
+  document: Pick<NodeGraphDocument, 'nodes'>,
+): string[] {
+  const writeTypes = persistentOutputNodeTypes();
+  return document.nodes.filter((node) => writeTypes.has(node.type)).map((node) => node.id);
 }
