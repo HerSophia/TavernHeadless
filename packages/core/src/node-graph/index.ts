@@ -143,6 +143,15 @@ export {
   type NodeGraphValidationResult,
 } from './validator.js';
 export {
+  NODE_GRAPH_AGENT_SOURCES,
+  readNodeGraphPresetRef,
+  readNodeGraphSubgraphRef,
+  resolveNodeGraphAgentSource,
+  type NodeGraphAgentSource,
+  type NodeGraphPresetRef,
+  type NodeGraphSubgraphRef,
+} from './agent-source.js';
+export {
   deriveSubgraphInterface,
   groupSwitchState,
   isNodeGraphGroupNodeType,

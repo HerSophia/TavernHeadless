@@ -1,8 +1,11 @@
 import {
   computeNodeGraphControlSignal,
   evaluateNodeGraphConditionWithTrace,
+  readNodeGraphSubgraphRef,
+  resolveNodeGraphAgentSource,
   type NodeGraphConditionExpr,
   type NodeGraphConditionTraceEntry,
+  type NodeGraphDiagnostic,
   type NodeGraphNode,
   type NodeGraphNodeRunOutput,
 } from "@tavern/core";
@@ -16,13 +19,11 @@ import type {
   NodeGraphNodeInputs,
   NodeGraphRuntimeContext,
 } from "../node-handler-registry.js";
+import { dispatchCarrierSubgraph } from "./carrier-subgraph-dispatch.js";
+import { readString, textOutput } from "./handler-io.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function readString(value: unknown): string {
-  return typeof value === "string" ? value : value === undefined || value === null ? "" : JSON.stringify(value);
 }
 
 function readDialogueExamples(character: Record<string, unknown> | undefined): unknown {
@@ -48,25 +49,6 @@ function firstInput(inputs: NodeGraphNodeInputs, keys: readonly string[]): unkno
     }
   }
   return undefined;
-}
-
-function textOutput(
-  title: string,
-  text: string,
-  source: "live" | "dry_run" | "synthetic" = "live",
-  outputs: Record<string, unknown> = {},
-): NodeGraphNodeRunOutput {
-  return {
-    value: text,
-    outputs: { text, ...outputs },
-    preview: {
-      kind: "text",
-      title,
-      value: text,
-      tokenEstimate: Math.ceil(text.length / 4),
-      source,
-    },
-  };
 }
 
 function jsonOutput(
@@ -131,6 +113,38 @@ function makeCachedOnlyOutput(node: NodeGraphNode, context: NodeGraphRuntimeCont
   }
   const planned = { planned: true, nodeId: node.id, nodeType: node.type };
   return jsonOutput(title, planned, "synthetic", { brief: planned, diagnostics: [] });
+}
+
+/**
+ * NG2-9：把承载子图的边界输出（`outputsByPort`）映射为 narrator 的文本输出。
+ *
+ * 子图 `group.output` 端口按名称对齐：优先取名为 `text` 的输出；否则取子图**单一输出**兜底；
+ * 仍缺（无 text 且非单一输出）则映射为空文本并附一条 `node_graph_narrator_subgraph_output_unmapped`
+ * warning 诊断（不阻断）。
+ */
+function mapNarratorSubgraphText(
+  node: NodeGraphNode,
+  outputsByPort: Record<string, unknown>,
+): { text: string; diagnostics: NodeGraphDiagnostic[] } {
+  if (outputsByPort.text !== undefined && outputsByPort.text !== null) {
+    return { text: readString(outputsByPort.text), diagnostics: [] };
+  }
+  const keys = Object.keys(outputsByPort);
+  if (keys.length === 1) {
+    const only = outputsByPort[keys[0]!];
+    if (only !== undefined && only !== null) {
+      return { text: readString(only), diagnostics: [] };
+    }
+  }
+  return {
+    text: "",
+    diagnostics: [{
+      severity: "warning",
+      code: "node_graph_narrator_subgraph_output_unmapped",
+      message: `Narrator subgraph for node '${node.id}' produced no mappable text output; mapped to empty text.`,
+      nodeId: node.id,
+    }],
+  };
 }
 
 function buildMessagesFromInputs(inputs: NodeGraphNodeInputs, context: NodeGraphRuntimeContext): Array<{ role: string; content: string; source?: string }> {
@@ -450,11 +464,38 @@ export function registerBuiltinNodeGraphHandlers(registry: NodeGraphNodeHandlerR
     });
   }));
 
-  registry.register(makeHandler("narration.narrator", ({ node, inputs, context }) => {
+  // NG2-9：承载来源二选一（NG2-7 契约）。narrator 有效来源 = subgraph 且有合法 subgraphRef 时，
+  // 走子图图链路（复用既有 subgraphRunner，边界原样透传）；preset / 缺省来源一字不差走原分支。
+  // 分派只在执行器逐节点运行上下文（运行 job / 试运行 / 预览 / 子图引用）生效——真实主链 chat turn
+  // 不逐节点执行图（属 NG2-14），故本分支不进真实正史；§10.4 Narrator 强制内联（透明摊平）延后 NG2-14。
+  registry.register(makeHandler("narration.narrator", async ({ node, inputs, context }) => {
     const cached = context.cachedNodeOutputs?.[node.id];
     if (cached) {
       return cached;
     }
+
+    const subgraphRef = resolveNodeGraphAgentSource(node) === "subgraph"
+      ? readNodeGraphSubgraphRef(node)
+      : null;
+    if (subgraphRef) {
+      return dispatchCarrierSubgraph({
+        node,
+        inputs,
+        context,
+        subgraphRef,
+        label: "Narrator (subgraph)",
+        outputPortMapping: (out) => {
+          const { text, diagnostics } = mapNarratorSubgraphText(node, out);
+          return textOutput("Narrator (subgraph)", text, "live", {
+            carrier: { source: "subgraph", ref: subgraphRef },
+            subgraph_outputs: out,
+            diagnostics,
+          });
+        },
+      });
+    }
+
+    // 原分支：preset / 缺省来源。真实生成由 NG2-8 传统链路（配方解析层）负责，此处仍为 synthetic / dry-run 文本。
     const messages = firstInput(inputs, ["messages"]);
     return textOutput(
       "Narrator",

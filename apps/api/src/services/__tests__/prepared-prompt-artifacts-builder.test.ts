@@ -256,6 +256,7 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
       phase: "prompt_recipe",
       detail: {
         source: "node_preset_ref",
+        carrierSource: "preset",
         hasNodePresetRef: true,
         floorGraphBinding: {
           source: "project",
@@ -285,6 +286,7 @@ describe("PreparedPromptArtifactsBuilder injections", () => {
       phase: "prompt_recipe",
       detail: {
         source: "session_fallback",
+        carrierSource: "preset",
         hasNodePresetRef: false,
         floorGraphBinding: {
           source: "none",
