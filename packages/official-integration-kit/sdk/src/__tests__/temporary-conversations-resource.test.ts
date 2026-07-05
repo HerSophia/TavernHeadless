@@ -416,6 +416,132 @@ describe("sdk temporary conversation resources", () => {
     );
   });
 
+  it("maps tool_executions on inspect floors, forwards null redaction fields, and normalizes missing arrays to []", async () => {
+    const inspectPayload = {
+      conversation: { ...temporaryConversationPayload, cleaned_at: null },
+      agent_private: true,
+      transcript_restricted: true,
+      source_snapshot: { digest: null, source_session_id: null },
+      agent_origin: null,
+      cleanup: { cleaned: false, cleaned_at: null, retention_policy: "delete_on_finalize" },
+      transcript: {
+        conversation_id: "tmp-1",
+        branch_id: "main",
+        floors: [
+          {
+            id: "floor-1",
+            floor_no: 1,
+            branch_id: "main",
+            parent_floor_id: null,
+            state: "committed",
+            token_in: 0,
+            token_out: 0,
+            created_at: 10,
+            updated_at: 11,
+            step_narrations: [],
+            tool_executions: [
+              {
+                // 受限（agent-private）：service 已将 args / result / error_message 脱敏为 null，SDK 只透传。
+                id: "exec-1",
+                tool_name: "search_memory",
+                status: "success",
+                args: null,
+                result: null,
+                side_effect_level: "none",
+                commit_outcome: "committed",
+                error_message: null,
+                duration_ms: 12,
+                started_at: 100,
+                finished_at: 112,
+                attempt_no: 1,
+                replay_parent_execution_id: null,
+                generation_step_no: 3,
+              },
+              {
+                // 非受限形态：args / result 已解析，旧数据 generation_step_no 为 null。
+                id: "exec-2",
+                tool_name: "write_note",
+                status: "error",
+                args: { text: "note" },
+                result: { ok: false },
+                side_effect_level: "sandbox",
+                commit_outcome: "discarded",
+                error_message: "boom",
+                duration_ms: 5,
+                started_at: 120,
+                finished_at: null,
+                attempt_no: 2,
+                replay_parent_execution_id: "exec-1",
+                generation_step_no: null,
+              },
+            ],
+            pages: [],
+          },
+          {
+            id: "floor-2",
+            floor_no: 2,
+            branch_id: "main",
+            parent_floor_id: "floor-1",
+            state: "committed",
+            token_in: 0,
+            token_out: 0,
+            created_at: 20,
+            updated_at: 21,
+            step_narrations: [],
+            // 故意不带 tool_executions：应归一为空数组。
+            pages: [],
+          },
+        ],
+      },
+      exports: [],
+    };
+
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ data: inspectPayload }));
+    const client = createTavernClient({ baseUrl, fetchImpl });
+
+    const inspect = await client.temporaryConversations.inspect({
+      accountId: "acc-1",
+      conversationId: "tmp-1",
+    });
+
+    expect(inspect.transcript.floors[0]?.toolExecutions).toEqual([
+      {
+        id: "exec-1",
+        toolName: "search_memory",
+        status: "success",
+        args: null,
+        result: null,
+        sideEffectLevel: "none",
+        commitOutcome: "committed",
+        errorMessage: null,
+        durationMs: 12,
+        startedAt: 100,
+        finishedAt: 112,
+        attemptNo: 1,
+        replayParentExecutionId: null,
+        generationStepNo: 3,
+      },
+      {
+        id: "exec-2",
+        toolName: "write_note",
+        status: "error",
+        args: { text: "note" },
+        result: { ok: false },
+        sideEffectLevel: "sandbox",
+        commitOutcome: "discarded",
+        errorMessage: "boom",
+        durationMs: 5,
+        startedAt: 120,
+        finishedAt: null,
+        attemptNo: 2,
+        replayParentExecutionId: "exec-1",
+        generationStepNo: null,
+      },
+    ]);
+    // 缺 tool_executions 的楼层归一为空数组。
+    expect(inspect.transcript.floors[1]?.toolExecutions).toEqual([]);
+  });
+
   it("streams reasoning deltas, forwards reasoning_effort, and maps reasoning_text on floors", async () => {
     const stream = [
       "event: start\n",

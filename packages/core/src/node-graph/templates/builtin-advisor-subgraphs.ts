@@ -233,7 +233,7 @@ export const NATIVE_PROMPT_FLOOR_SUBGRAPH_REF_TEMPLATE_ID =
  * `system.subgraph.continuity_verifier`子图（SG11-3）。
  *
  * 它是默认楼层模板的进阶变体：演示「楼层图用 group.node 引用内置顾问子图」的复用方式。
- * 顾问执行天然成为嵌套 graph run（与父图共享 parent_run_id /root_run_id 血缘）。
+ * 顾问执行是父图内的**嵌套执行（nested execution）**；持久 child `node_graph_run` 与 parent_run_id / root_run_id 血缘属计划中（NG2-13），当前尚未落地。
  * 结构其余部分（source / compose / narrator / commit）与边逐项沿用 DG11 骨架，
  * 权限沿用骨架声明（`project.agent.run`，由 director 子图上卷），`systemGraph = false` 可 fork。
  */

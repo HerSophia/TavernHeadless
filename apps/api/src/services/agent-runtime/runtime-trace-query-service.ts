@@ -61,6 +61,12 @@ export interface RuntimeTraceEntry {
   createdAt: number;
   sideEffects: unknown;
   nestedJobRefs: RuntimeTraceNestedJobRef[];
+  /** NG2-13 / NG2-14：血缘树角色（main / subgraph），从 trace_json 读回（可缺省）。 */
+  runRole?: string | null;
+  /** NG2-14：影子 run 标记，从 trace_json 读回（可缺省）。 */
+  shadow?: boolean | null;
+  /** NG2-14：主链 run 承载方式（system_graph 等），从 trace_json 读回（可缺省）。 */
+  carrier?: string | null;
 }
 
 export interface RuntimeTraceQueryInput {
@@ -100,6 +106,11 @@ export interface RuntimeGraphRunLineageResult {
     finishedAt: number | null;
   }>;
   nestedJobs: RuntimeTraceEntry[];
+  /**
+   * NG2-13：按 `node_graph_run.trace_json.parent_run_id === 目标 runId` 反查的**同步 child graph run**
+   * （`group.node` 子图持久血缘）。普通子图不入队 job，故不在 nestedJobs / payload.lineage 里。
+   */
+  childGraphRuns: RuntimeTraceEntry[];
 }
 
 export interface RuntimeAgentJobLineageInput {
@@ -152,7 +163,7 @@ export class RuntimeTraceQueryService {
       .get();
 
     if (!runRow) {
-      return { run: null, nodeRuns: [], nestedJobs: [] };
+      return { run: null, nodeRuns: [], nestedJobs: [], childGraphRuns: [] };
     }
 
     const run = mapNodeGraphRunEntry(runRow);
@@ -173,7 +184,34 @@ export class RuntimeTraceQueryService {
     }));
 
     const nestedJobs = this.resolveNestedAgentJobs(input.accountId, runRow.id, run.nestedJobRefs);
-    return { run, nodeRuns, nestedJobs };
+    const childGraphRuns = this.resolveChildGraphRuns(input.accountId, input.projectId ?? null, runRow.id);
+    return { run, nodeRuns, nestedJobs, childGraphRuns };
+  }
+
+  /**
+   * NG2-13：graph run -> 同步 child graph run（父 -> 子，第三条发现路径）。
+   *
+   * 按 `node_graph_run.trace_json.parent_run_id === 目标 runId` 反查。与 nestedJobRefs / payload.lineage
+   * 两条路径互补：普通 `group.node` 子图不入队后台 job，只能由此路径发现。
+   */
+  private resolveChildGraphRuns(
+    accountId: string,
+    projectId: string | null,
+    parentRunId: string,
+  ): RuntimeTraceEntry[] {
+    const filters: SQL[] = [eq(nodeGraphRuns.accountId, accountId)];
+    pushOptionalFilter(filters, nodeGraphRuns.projectId, projectId);
+    const rows = this.db
+      .select()
+      .from(nodeGraphRuns)
+      .where(and(...filters))
+      .orderBy(desc(nodeGraphRuns.createdAt))
+      .limit(MAX_LIMIT)
+      .all();
+    return rows
+      .map(mapNodeGraphRunEntry)
+      .filter((entry) => entry.parentRunId === parentRunId && entry.runId !== parentRunId)
+      .sort((left, right) => right.createdAt - left.createdAt);
   }
 
   /** agent job -> parent run（子 -> 父）。 */
@@ -359,6 +397,10 @@ function mapNodeGraphRunEntry(row: typeof nodeGraphRuns.$inferSelect): RuntimeTr
     createdAt: row.createdAt,
     sideEffects: isRecord(traceRecord.side_effects) ? traceRecord.side_effects : null,
     nestedJobRefs: readNestedJobRefs(traceRecord.nestedJobRefs),
+    // NG2-13 / NG2-14：从 trace_json 读回血缘角色 / 影子标记 / 承载方式（供 WB10 观测）。
+    runRole: readString(traceRecord.run_role),
+    shadow: typeof traceRecord.shadow === "boolean" ? traceRecord.shadow : null,
+    carrier: readString(traceRecord.carrier),
   };
 }
 
