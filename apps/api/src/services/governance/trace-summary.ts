@@ -26,6 +26,16 @@ export type NodeGraphRunGovernanceTraceInput = {
   jobType?: string | null;
   rootRunId?: string | null;
   parentRunId?: string | null;
+  /** NG2-13 / NG2-14：run 在血缘树中的角色（主链 / 子图 child）。缺省时不写入该字段。 */
+  runRole?: "main" | "subgraph" | null;
+  /** NG2-14：影子 / 观测用 run 标记。 */
+  shadow?: boolean;
+  /** NG2-13：子图 child run 的父图 `group.node` 节点 id。 */
+  parentNodeId?: string | null;
+  /** NG2-13：子图 child run 引用的子图引用。 */
+  subgraphRef?: { graphId: string; graphVersionId?: string | null } | null;
+  /** NG2-14：主链 run 承载方式（`system_graph` 等）。缺省时不写入该字段。 */
+  carrier?: string | null;
   status: string;
   intent?: string | null;
   dryRun?: boolean;
@@ -224,6 +234,19 @@ export function buildNodeGraphRunGovernanceTraceSummary(
     duration_ms: startedAt !== null && finishedAt !== null ? Math.max(0, finishedAt - startedAt) : null,
     dry_run: input.dryRun ?? intent === "dry_run",
     preview: input.preview ?? intent === "preview",
+    // NG2-13 / NG2-14：血缘树角色与子图引用标注（可选，缺省不写入，保持向后兼容）。
+    ...(input.runRole ? { run_role: input.runRole } : {}),
+    ...(input.shadow !== undefined ? { shadow: input.shadow } : {}),
+    ...(input.parentNodeId ? { parent_node_id: input.parentNodeId } : {}),
+    ...(input.subgraphRef
+      ? {
+          subgraph_ref: compactRef({
+            graph_id: input.subgraphRef.graphId,
+            graph_version_id: input.subgraphRef.graphVersionId ?? null,
+          }),
+        }
+      : {}),
+    ...(input.carrier ? { carrier: input.carrier } : {}),
     side_effects: summarizeNodeGraphSideEffects(trace),
   };
 }

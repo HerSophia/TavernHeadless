@@ -2158,6 +2158,24 @@ function toInspectTranscriptFloorResponse(floor: TemporaryConversationInspectTra
       text: narration.text,
       created_at: narration.createdAt,
     })),
+    // 工具执行旁路数组：floor 已由 service `toInspectTranscriptFloor` 脱敏，route 原样序列化（不重复脱敏）。
+    // 字段与 transcript floor 的 tool_executions 逐字段一致（snake_case）；受限时 args / result / error_message 为 null。
+    tool_executions: floor.toolExecutions.map((exec) => ({
+      id: exec.id,
+      tool_name: exec.toolName,
+      status: exec.status,
+      args: exec.args,
+      result: exec.result,
+      side_effect_level: exec.sideEffectLevel,
+      commit_outcome: exec.commitOutcome,
+      error_message: exec.errorMessage,
+      duration_ms: exec.durationMs,
+      started_at: exec.startedAt,
+      finished_at: exec.finishedAt,
+      attempt_no: exec.attemptNo,
+      replay_parent_execution_id: exec.replayParentExecutionId,
+      generation_step_no: exec.generationStepNo,
+    })),
     pages: floor.pages.map((page) => ({
       id: page.id,
       page_no: page.pageNo,

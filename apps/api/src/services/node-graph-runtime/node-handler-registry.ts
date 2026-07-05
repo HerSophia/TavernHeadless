@@ -16,7 +16,7 @@ export type NodeGraphNodeInputs = Record<string, unknown>;
  * NG2-β：`group.node`（NodeGroup 实例）递归执行的注入式运行器。
  *
  * handler 负责把父图实例端口值映射为子图边界输入（按 portName），调用 runner 加载并以
- * **嵌套 graph run** 执行被引用的子图，再把子图边界输出按 portName 映射回实例输出。
+ * **嵌套执行（nested execution）**运行被引用的子图（当前不建持久 child `node_graph_run`），再把子图边界输出按 portName 映射回实例输出。
  * runner 的实际实现（加载子图版本 + 复用 executor 递归 + 血缘 + 环检测）由运行编排处注入；
  * 不注入时 handler 走 dry/synthetic 兜底（不崩溃）。
  */

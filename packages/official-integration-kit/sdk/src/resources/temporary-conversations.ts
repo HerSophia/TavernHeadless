@@ -379,6 +379,12 @@ export type TemporaryConversationInspectTranscriptFloor = {
   reasoningText: string | null;
   /** 该楼层的 native 多步中间叙述（旁路数组）。agent-private 受限时 text 为空串，保留结构。 */
   stepNarrations: TemporaryConversationTranscriptStepNarration[];
+  /**
+   * 该楼层的工具执行记录（旁路数组，与 transcript 共用同一 wire 形状）。
+   *
+   * agent-private 受限时 args / result / errorMessage 为 null（脱敏由 service 独占），结构字段保留；无工具调用时为空数组。
+   */
+  toolExecutions: TemporaryConversationTranscriptToolExecution[];
   pages: TemporaryConversationInspectTranscriptPage[];
 };
 
@@ -1234,6 +1240,11 @@ function mapTemporaryConversationInspectFloor(value: unknown): TemporaryConversa
     stepNarrations: readArray(record?.step_narrations)
       .map(mapTemporaryConversationTranscriptStepNarration)
       .filter((narration): narration is TemporaryConversationTranscriptStepNarration => narration !== null),
+    // 复用 transcript 的工具执行 mapper；缺 tool_executions 时 readArray 归一为空数组。
+    // 受限时 args / result / errorMessage 已由 service 脱敏为 null，此处仅透传。
+    toolExecutions: readArray(record?.tool_executions)
+      .map(mapTemporaryConversationTranscriptToolExecution)
+      .filter((exec): exec is TemporaryConversationTranscriptToolExecution => exec !== null),
     pages: readArray(record?.pages)
       .map(mapTemporaryConversationInspectPage)
       .filter((page): page is TemporaryConversationInspectTranscriptPage => page !== null),
