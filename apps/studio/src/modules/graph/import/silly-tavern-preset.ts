@@ -77,12 +77,28 @@ export interface SillyTavernPreset {
 /** 聚类模式：strict 严格保序分段；loose 宽松聚合（默认）。 */
 export type PresetClusterMode = "strict" | "loose";
 
-/** 导入用途：普通 Narrator 图草稿，或用于显式绑定的 compat 默认楼层图草稿。 */
-export type PresetImportPurpose = "narrator_graph" | "compat_floor_graph";
+/**
+ * 导入用途（NG2-10）：
+ * - `narrator_graph`：把预设**打散**成可视化 Narrator 图（默认）。打散出的 `compose.template_render`
+ *   正文块**不驱动真实运行**——运行仍由 narrator 的 `presetRef` / 会话预设决定。用于理解 / 编辑预设结构。
+ * - `compat_floor_graph`：同为打散产物，另标记用途以显式绑定 compat 默认楼层图。
+ * - `preset_reference`：**整体引用**模式。不打散，产出瘦承载图，narrator 持 `source: 'preset'`（+ 可选
+ *   `presetRef`），把预设作为**整体资产**被承载节点引用，与真实运行严格一致（NG2-8：`presetRef → assemblePrompt`）。
+ */
+export type PresetImportPurpose = "narrator_graph" | "compat_floor_graph" | "preset_reference";
 
 /** 当导入的预设包含 output regex 时显示的运行语义提示。 */
 export const SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING =
   "已读取预设中的输出正则并保存到 narrator config.outputRegex；当前它不会自动作为运行时后处理执行。";
+
+/**
+ * 整体引用（`preset_reference`）导入但未提供 `presetRef` 时的绑定提示。
+ *
+ * 导入器**不凭空制造 presetId**（拿到的是原始 ST JSON，而非已存储的预设资源）。未绑定时 narrator 仍为
+ * `source: 'preset'` 且无 `presetRef`——按 NG2-8 语义回退**会话预设**叙事（合法、可运行），可在检查器绑定。
+ */
+export const SILLY_TAVERN_PRESET_REFERENCE_BINDING_WARNING =
+  "已按整体引用导入，但未绑定预设主体引用（presetRef）；当前将回退会话预设叙事，可在检查器绑定 presetId。";
 
 export interface PresetImportSummary {
   presetName: string;
@@ -117,6 +133,11 @@ export interface PresetImportOptions {
   presetHash?: string;
   /** 导入用途；默认保持既有普通 Narrator 图草稿行为。 */
   purpose?: PresetImportPurpose;
+  /**
+   * 整体引用（`preset_reference`）模式下嵌入承载节点的预设主体引用；不提供则 narrator 无 `presetRef`
+   * （回退会话预设 + 绑定提示 warning）。导入器不造 id，`presetId` 须来自已存在预设资源或用户绑定。
+   */
+  presetRef?: { presetId: string; presetVersionId?: string | null };
 }
 
 /**
@@ -484,6 +505,135 @@ function buildInjection(
 }
 
 /**
+ * NG2-10 整体引用（`preset_reference`）：产出**瘦承载图**。
+ *
+ * 结构（不打散提示块，验证零 error）：
+ * ```
+ * source.user_input (n_user_input) ─text─┐
+ * compose.final_messages (n_compose) ─messages─▶ narration.narrator (n_narrator) ─text─▶ output.commit_gate (n_commit)
+ * ```
+ * narrator `config` 持 `source: 'preset'` + 可选 `presetRef`（仅当调用方显式提供时嵌入）；无 presetRef 时
+ * 追加绑定提示 warning。sampling / outputRegex 仍可随预设保留，但**不作为运行驱动**（与传统链路一致，
+ * 正则随预设资源本身生效）。clusterMode 被忽略（不打散、无分组）。
+ */
+function buildPresetReferenceResult(args: {
+  preset: SillyTavernPreset;
+  options: PresetImportOptions;
+  presetName: string;
+  graphName: string;
+  clusterMode: PresetClusterMode;
+  warnings: string[];
+}): PresetImportResult {
+  const { preset, options, presetName, graphName, clusterMode, warnings } = args;
+
+  const { sampling, keys: samplerKeys } = extractSampling(preset);
+  const regexScripts = extractRegexScripts(preset);
+  if (regexScripts.length > 0) {
+    warnings.push(SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING);
+  }
+
+  // presetId 诚实处理：仅当调用方显式提供时嵌入 presetRef；缺失则回退会话预设 + warning。
+  const presetRef = options.presetRef
+    ? { presetId: options.presetRef.presetId, presetVersionId: options.presetRef.presetVersionId ?? null }
+    : undefined;
+  if (!presetRef) {
+    warnings.push(SILLY_TAVERN_PRESET_REFERENCE_BINDING_WARNING);
+  }
+
+  const withPosition = (node: NodeGraphNode, x: number, y: number): NodeGraphNode => {
+    node.ui = { ...(node.ui ?? {}), position: { x, y } };
+    return node;
+  };
+
+  const nodes: NodeGraphNode[] = [
+    withPosition(
+      { id: "n_user_input", type: "source.user_input", typeVersion: "1", name: "当前用户输入", phase: "pre_response", scope: "floor_stable" },
+      0,
+      0,
+    ),
+    withPosition(
+      { id: "n_compose", type: "compose.final_messages", typeVersion: "1", name: "最终消息装配", phase: "response" },
+      360,
+      0,
+    ),
+    withPosition(
+      pruneUndefined({
+        id: "n_narrator",
+        type: "narration.narrator",
+        typeVersion: "1",
+        name: `主叙事 Narrator（${presetName}）`,
+        phase: "response",
+        scope: "page_volatile",
+        config: pruneUndefined({
+          // NG2-7 承载来源二选一：整体引用固定为预设承载。
+          source: "preset",
+          presetRef,
+          presetName,
+          // sampling / outputRegex 随预设保留，但不驱动运行（传统链路由预设资源生效）。
+          sampling: samplerKeys.length > 0 ? sampling : undefined,
+          outputRegex: regexScripts.length > 0 ? regexScripts : undefined,
+        }),
+      }) as NodeGraphNode,
+      360,
+      280,
+    ),
+    withPosition(
+      { id: "n_commit", type: "output.commit_gate", typeVersion: "1", name: "CommitGate（唯一正史边界）", phase: "commit" },
+      720,
+      140,
+    ),
+  ];
+  const edges: NodeGraphEdge[] = [
+    { id: "e_compose_narrator", from: { nodeId: "n_compose", port: "messages" }, to: { nodeId: "n_narrator", port: "messages" } },
+    // 用户输入 → 叙述者必填 user_input 端口（缺此连线会触发 node_graph_required_input_missing）。
+    { id: "e_user_input_narrator", from: { nodeId: "n_user_input", port: "text" }, to: { nodeId: "n_narrator", port: "user_input" } },
+    { id: "e_narrator_commit", from: { nodeId: "n_narrator", port: "text" }, to: { nodeId: "n_commit", port: "text" } },
+  ];
+
+  const document: NodeGraphDocument = {
+    schemaVersion: 2,
+    graphId: "imported-narrator",
+    name: graphName,
+    description: `从酒馆 OpenAI 预设导入（整体引用）：${presetName}`,
+    mode: "native_graph",
+    nodes,
+    edges,
+    // Narrator 主体组（compose + narrator），与打散模式一致的可视化边界。
+    groups: [
+      { id: "g_narrator", name: "Narrator 主体（唯一持笔人）", kind: "subgraph", nodeIds: ["n_compose", "n_narrator"], collapsed: true },
+    ],
+    policies: {},
+    metadata: pruneUndefined({
+      systemGraph: false,
+      importedFrom: "sillytavern_openai_preset",
+      importPurpose: "preset_reference",
+      presetName,
+      presetHash: options.presetHash,
+      clusterMode,
+      presetSource: JSON.parse(JSON.stringify(preset)) as unknown,
+    }),
+  };
+
+  return {
+    document,
+    warnings,
+    summary: {
+      presetName,
+      // 整体引用未打散：无提示块 / 无语义源节点 / 无分组。
+      blockCount: 0,
+      slotNodeCount: 0,
+      disabledCount: 0,
+      hasHistory: false,
+      groupCount: 0,
+      clusterMode,
+      samplerKeys,
+      regexCount: regexScripts.length,
+      skippedCount: 0,
+    },
+  };
+}
+
+/**
  * 把酒馆 OpenAI 预设导入为一张 Narrator 图。
  * @throws 当 value 不是合法预设（缺少 `prompts` 数组）时抛错。
  */
@@ -498,7 +648,11 @@ export function importSillyTavernPreset(
   const warnings: string[] = [];
   const clusterMode: PresetClusterMode = options.clusterMode === "strict" ? "strict" : "loose";
   const purpose: PresetImportPurpose =
-    options.purpose === "compat_floor_graph" ? "compat_floor_graph" : "narrator_graph";
+    options.purpose === "compat_floor_graph"
+      ? "compat_floor_graph"
+      : options.purpose === "preset_reference"
+        ? "preset_reference"
+        : "narrator_graph";
 
   const prompts = preset.prompts ?? [];
   const promptsById = new Map<string, SillyTavernPromptDef>();
@@ -513,6 +667,12 @@ export function importSillyTavernPreset(
     options.name ||
     "酒馆预设";
   const graphName = options.name || (typeof (preset as { name?: unknown }).name === "string" ? (preset as { name: string }).name : "") || "导入的 Narrator";
+
+  // NG2-10 整体引用：不打散提示块，产出瘦承载图（narrator 持 source:'preset' + 可选 presetRef）。
+  // clusterMode 在该用途下被忽略（不打散、无分组）。
+  if (purpose === "preset_reference") {
+    return buildPresetReferenceResult({ preset, options, presetName, graphName, clusterMode, warnings });
+  }
 
   const order = pickPromptOrder(preset, promptsById);
 

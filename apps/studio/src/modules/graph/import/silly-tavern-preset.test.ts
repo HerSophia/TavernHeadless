@@ -7,6 +7,7 @@ import {
   parseSectionTag,
   parseSlotLabel,
   SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING,
+  SILLY_TAVERN_PRESET_REFERENCE_BINDING_WARNING,
   type SillyTavernPreset,
 } from "./silly-tavern-preset";
 
@@ -437,6 +438,106 @@ describe("importSillyTavernPreset", () => {
     expect(second.warnings).not.toContain(SILLY_TAVERN_OUTPUT_REGEX_RUNTIME_WARNING);
   });
 
+});
+
+// NG2-10 整体引用（preset_reference）：不打散预设、产瘦承载图、narrator source:'preset'。
+describe("importSillyTavernPreset · preset_reference", () => {
+  it("produces a thin carrier graph without exploding prompt blocks", () => {
+    const result = importSillyTavernPreset(samplePreset(), { purpose: "preset_reference" });
+
+    // 干净可执行（与后端同源校验），零 error。
+    const validation = validateGraphDocument(result.document);
+    expect(validation.counts.error).toBe(0);
+    expect(validation.isExecutable).toBe(true);
+
+    // 不打散：无任何 template_render / 语义源节点 / 历史节点。
+    expect(result.document.nodes.some((n) => n.type === "compose.template_render")).toBe(false);
+    expect(result.document.nodes.some((n) => n.type === "source.character")).toBe(false);
+    expect(result.document.nodes.some((n) => n.type === "source.chat_history")).toBe(false);
+
+    // 瘦承载图骨架：user_input + compose + narrator + commit = 4 节点、3 边。
+    expect(result.document.nodes).toHaveLength(4);
+    expect(result.document.edges).toHaveLength(3);
+    expect(result.document.nodes.filter((n) => n.type === "source.user_input")).toHaveLength(1);
+    expect(result.document.nodes.filter((n) => n.type === "compose.final_messages")).toHaveLength(1);
+    expect(result.document.nodes.filter((n) => n.type === "narration.narrator")).toHaveLength(1);
+    expect(result.document.nodes.filter((n) => n.type === "output.commit_gate")).toHaveLength(1);
+
+    // narrator 固定为预设承载来源。
+    const narrator = result.document.nodes.find((n) => n.type === "narration.narrator");
+    const config = narrator?.config as { source?: string; presetName?: string } | undefined;
+    expect(config?.source).toBe("preset");
+    expect(config?.presetName).toBe("测试预设");
+
+    // 元数据标注整体引用；未打散 → 计数为 0。
+    expect(result.document.metadata?.importPurpose).toBe("preset_reference");
+    expect(result.document.metadata?.importedFrom).toBe("sillytavern_openai_preset");
+    expect(result.summary.blockCount).toBe(0);
+    expect(result.summary.slotNodeCount).toBe(0);
+    expect(result.summary.groupCount).toBe(0);
+  });
+
+  it("embeds a provided presetRef (version defaults to null)", () => {
+    const result = importSillyTavernPreset(samplePreset(), {
+      purpose: "preset_reference",
+      presetRef: { presetId: "preset-abc" },
+    });
+    const narrator = result.document.nodes.find((n) => n.type === "narration.narrator");
+    const config = narrator?.config as
+      | { source?: string; presetRef?: { presetId?: string; presetVersionId?: string | null } }
+      | undefined;
+
+    expect(config?.source).toBe("preset");
+    expect(config?.presetRef).toEqual({ presetId: "preset-abc", presetVersionId: null });
+    // 已绑定 → 不触发绑定提示 warning。
+    expect(result.warnings).not.toContain(SILLY_TAVERN_PRESET_REFERENCE_BINDING_WARNING);
+    expect(validateGraphDocument(result.document).counts.error).toBe(0);
+  });
+
+  it("embeds an explicit presetVersionId when provided", () => {
+    const result = importSillyTavernPreset(samplePreset(), {
+      purpose: "preset_reference",
+      presetRef: { presetId: "preset-abc", presetVersionId: "v3" },
+    });
+    const narrator = result.document.nodes.find((n) => n.type === "narration.narrator");
+    const config = narrator?.config as { presetRef?: { presetId?: string; presetVersionId?: string | null } } | undefined;
+    expect(config?.presetRef).toEqual({ presetId: "preset-abc", presetVersionId: "v3" });
+  });
+
+  it("omits presetRef and warns to bind when none is provided", () => {
+    const result = importSillyTavernPreset(samplePreset(), { purpose: "preset_reference" });
+    const narrator = result.document.nodes.find((n) => n.type === "narration.narrator");
+    const config = narrator?.config as { source?: string; presetRef?: unknown } | undefined;
+
+    expect(config?.source).toBe("preset");
+    expect(config?.presetRef).toBeUndefined();
+    expect(result.warnings).toContain(SILLY_TAVERN_PRESET_REFERENCE_BINDING_WARNING);
+    // 无 presetRef 仍合法可执行（回退会话预设）。
+    expect(validateGraphDocument(result.document).isExecutable).toBe(true);
+  });
+
+  it("ignores clusterMode and reports it verbatim in the summary", () => {
+    const result = importSillyTavernPreset(samplePreset(), { purpose: "preset_reference", clusterMode: "strict" });
+    // 未打散 → 无功能组，仅 Narrator 主体组。
+    expect(result.document.groups).toHaveLength(1);
+    expect(result.document.groups?.[0]?.id).toBe("g_narrator");
+    expect(result.summary.groupCount).toBe(0);
+    expect(result.summary.clusterMode).toBe("strict");
+  });
+
+  it("keeps the two existing purposes byte-identical (zero regression)", () => {
+    const preset = samplePreset();
+    // 默认用途与显式 narrator_graph 不因新增分支而改变产物。
+    const defaultResult = importSillyTavernPreset(preset);
+    const narratorResult = importSillyTavernPreset(preset, { purpose: "narrator_graph" });
+    expect(JSON.stringify(narratorResult.document)).toBe(JSON.stringify(defaultResult.document));
+    expect(defaultResult.document.metadata?.importPurpose).toBe("narrator_graph");
+
+    const compatResult = importSillyTavernPreset(preset, { purpose: "compat_floor_graph" });
+    expect(compatResult.document.metadata?.importPurpose).toBe("compat_floor_graph");
+    // compat 仍打散（与 preset_reference 分支互不影响）。
+    expect(compatResult.document.nodes.some((n) => n.type === "compose.template_render")).toBe(true);
+  });
 });
 
 describe("importSillyTavernPreset: preset hash metadata", () => {

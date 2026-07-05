@@ -25,7 +25,12 @@ const error = ref<string | null>(null);
 const result = ref<PresetImportResult | null>(null);
 const clusterMode = ref<PresetClusterMode>("loose");
 const importPurpose = ref<PresetImportPurpose>("narrator_graph");
-const importPurposeOptions = ["narrator_graph", "compat_floor_graph"] as const;
+const importPurposeOptions = ["narrator_graph", "compat_floor_graph", "preset_reference"] as const;
+/** 整体引用（preset_reference）模式下可选绑定的预设主体引用（手输，透传给导入器 options.presetRef）。 */
+const presetRefId = ref("");
+const presetRefVersion = ref("");
+/** 是否处于整体引用模式（决定 presetId 输入展示与 clusterMode 是否适用）。 */
+const isPresetReference = computed(() => importPurpose.value === "preset_reference");
 /** 缓存已解析的原始 JSON 与回退名，供切换聚类模式时重新导入。 */
 const parsedPreset = ref<unknown>(null);
 const fallbackName = ref("");
@@ -67,30 +72,57 @@ const counts = computed(() => {
 const loadable = computed(() => Boolean(result.value) && (counts.value?.error ?? 1) === 0);
 
 function purposeLabel(purpose: PresetImportPurpose): string {
-  return t(purpose === "compat_floor_graph" ? "graph.preset.purposeCompat" : "graph.preset.purposeNarrator");
+  const key =
+    purpose === "compat_floor_graph"
+      ? "graph.preset.purposeCompat"
+      : purpose === "preset_reference"
+        ? "graph.preset.purposeReference"
+        : "graph.preset.purposeNarrator";
+  return t(key);
 }
 
 function purposeHint(purpose: PresetImportPurpose): string {
-  return t(
+  const key =
     purpose === "compat_floor_graph"
       ? "graph.preset.purposeCompatHint"
-      : "graph.preset.purposeNarratorHint",
-  );
+      : purpose === "preset_reference"
+        ? "graph.preset.purposeReferenceHint"
+        : "graph.preset.purposeNarratorHint";
+  return t(key);
 }
 
 function reimportPreset(options: { name?: string; syncName?: boolean } = {}): void {
   if (parsedPreset.value === null) {
     return;
   }
+  // 整体引用且已手输 presetId 时组装 presetRef（版本号空则为 null）；否则不传（产出无 presetRef 的承载图 + warning）。
+  const presetRef =
+    isPresetReference.value && presetRefId.value.trim().length > 0
+      ? { presetId: presetRefId.value.trim(), presetVersionId: presetRefVersion.value.trim() || null }
+      : undefined;
   const imported = importSillyTavernPreset(parsedPreset.value, {
     name: options.name ?? (name.value.trim() || fallbackName.value),
     clusterMode: clusterMode.value,
     presetHash: presetHash.value || undefined,
     purpose: importPurpose.value,
+    presetRef,
   });
   result.value = imported;
   if (options.syncName === true) {
     name.value = imported.document.name;
+  }
+}
+
+/** 整体引用模式下手输 presetId / presetVersionId 变更：用缓存 JSON 重新导入以嵌入 / 清除 presetRef。 */
+function onPresetRefChange(): void {
+  if (parsedPreset.value === null || !isPresetReference.value) {
+    return;
+  }
+  error.value = null;
+  try {
+    reimportPreset();
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause);
   }
 }
 
@@ -213,7 +245,29 @@ function onLoad(): void {
           </div>
         </div>
 
-        <div class="space-y-1">
+        <!-- 整体引用：可选手输 presetId / presetVersionId（绑定预设主体；不填则回退会话预设）。 -->
+        <div v-if="isPresetReference" class="space-y-1.5">
+          <span class="text-xs text-text-secondary">{{ t("graph.preset.presetRef") }}</span>
+          <p class="text-[10px] leading-snug text-text-muted">{{ t("graph.preset.presetRefHint") }}</p>
+          <input
+            v-model="presetRefId"
+            class="w-full rounded-md border border-line-subtle bg-float px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+            :placeholder="t('graph.preset.presetRefIdPlaceholder')"
+            @change="onPresetRefChange"
+          />
+          <input
+            v-model="presetRefVersion"
+            class="w-full rounded-md border border-line-subtle bg-float px-2.5 py-1.5 text-sm text-text-primary placeholder:text-text-muted hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
+            :placeholder="t('graph.preset.presetRefVersionPlaceholder')"
+            @change="onPresetRefChange"
+          />
+        </div>
+
+        <!-- clusterMode 仅对打散模式适用；整体引用不打散，故隐藏并标注不适用。 -->
+        <p v-if="isPresetReference" class="text-[10px] leading-snug text-text-muted">
+          {{ t("graph.preset.clusterModeNotApplicable") }}
+        </p>
+        <div v-else class="space-y-1">
           <span class="text-xs text-text-secondary">{{ t("graph.preset.clusterMode") }}</span>
           <div class="flex gap-2">
             <button
