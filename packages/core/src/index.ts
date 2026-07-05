@@ -485,6 +485,9 @@ export {
   NodeGraphPackageParseError,
   parseNodeGraphPackage,
   preflightNodeGraphPackage,
+  findNodeGraphPersistentOutputNodeIds,
+  isNodeGraphPersistentOutputNodeType,
+  NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE,
 } from "./node-graph/index.js";
 
 // ── LLM ───────────────────────────────────────────────

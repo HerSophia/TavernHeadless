@@ -1,4 +1,8 @@
-import { createEventBus, type NodeGraphDocument } from "@tavern/core";
+import {
+  createEventBus,
+  NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE,
+  type NodeGraphDocument,
+} from "@tavern/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase, type DatabaseConnection } from "../../db/client.js";
@@ -733,5 +737,184 @@ describe("NodeGraph runtime", () => {
     expect(gRun?.status).toBe("succeeded");
     const preview = JSON.parse(gRun!.previewJson!);
     expect(preview.value).toMatchObject({ out_1: "hello" });
+  });
+
+  // NG2-13 方案 A（缺口 4.5）：被 group.node 引用的子图不得包含持久 output.* 写节点，
+  // 运行时在加载后、执行前静态拒绝（诊断码 node_graph_subgraph_persistent_output_forbidden），
+  // 正史写入只能发生在主图的单一 CommitGate 边界。
+  it("rejects a subgraph that contains a persistent output write node (方案 A static enforcement)", async () => {
+    const service = new NodeGraphDefinitionService(database.db);
+
+    // 子图内含 output.derived_output 写节点（子图自身声明 allowPersistentOutputs 才能通过静态编译）。
+    const sub = service.create({
+      actor: ACTOR,
+      projectId: "proj_1",
+      document: {
+        schemaVersion: 2,
+        graphId: "ngraph_sub_write",
+        name: "Sub With Persistent Output",
+        mode: "native_graph",
+        policies: { allowPersistentOutputs: true },
+        permissions: { required: ["project.derived_output.write"] },
+        metadata: { subgraph: true },
+        nodes: [
+          { id: "gi", type: "group.input", typeVersion: "1", phase: "pre_response", config: { ports: [{ name: "in_1", type: "json" }] } },
+          { id: "write", type: "output.derived_output", typeVersion: "1", phase: "commit" },
+        ],
+        edges: [{ id: "e_gi_write", kind: "data", from: { nodeId: "gi", port: "in_1" }, to: { nodeId: "write", port: "value" } }],
+      },
+    });
+
+    const parent = service.create({
+      actor: ACTOR,
+      projectId: "proj_1",
+      document: {
+        schemaVersion: 2,
+        graphId: "ngraph_parent_forbidden",
+        name: "Parent Referencing Forbidden Sub",
+        mode: "native_graph",
+        policies: {},
+        permissions: { required: [] },
+        nodes: [
+          { id: "value", type: "source.character", typeVersion: "1", phase: "pre_response" },
+          {
+            id: "g",
+            type: "group.node",
+            typeVersion: "1",
+            phase: "pre_response",
+            config: {
+              ref: { graphId: sub.definition.id, versionId: sub.version.id },
+              interface: { inputs: [{ name: "in_1", type: "json" }], outputs: [] },
+            },
+          },
+        ],
+        edges: [{ id: "e_value_g", kind: "data", from: { nodeId: "value", port: "json" }, to: { nodeId: "g", port: "in_1" } }],
+      },
+    });
+
+    enqueueGraphRun(database, {
+      accountId: "default-admin",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+      graphId: parent.definition.id,
+      graphVersionId: parent.version.id,
+      intent: "normal",
+      dryRun: false,
+      inputJson: { character: { name: "Ada" } },
+    });
+
+    const worker = new NodeGraphWorker(database.db, {
+      workerId: "node-graph-worker-forbidden-test",
+      pollIntervalMs: 60_000,
+    });
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    // 静态拒绝发生在 recordChildRun 之前：不落 child run，父图记 1 条失败 run，且零持久输出。
+    const runs = database.db.select().from(nodeGraphRuns).all();
+    expect(runs).toHaveLength(1);
+    const run = runs[0]!;
+    expect(run.status).toBe("failed");
+    const trace = JSON.parse(run.traceJson!);
+    expect(trace.failedNodeId).toBe("g");
+    expect(trace.reason_code).toBe(NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE);
+    expect(database.db.select().from(derivedOutputs).all()).toHaveLength(0);
+  });
+
+  // NG2-13 缺口 4.2：group.node 触发的用户子图执行落一条持久 child run，
+  // 血缘写入 trace_json（run_role="subgraph"、parent_run_id、root_run_id、parent_node_id、subgraph_ref）。
+  it("writes a persistent child run with subgraph lineage for a group.node user subgraph", async () => {
+    const service = new NodeGraphDefinitionService(database.db);
+
+    const sub = service.create({
+      actor: ACTOR,
+      projectId: "proj_1",
+      document: {
+        schemaVersion: 2,
+        graphId: "ngraph_sub_lineage",
+        name: "Lineage Sub",
+        mode: "native_graph",
+        policies: {},
+        permissions: { required: [] },
+        metadata: { subgraph: true },
+        nodes: [
+          { id: "gi", type: "group.input", typeVersion: "1", phase: "pre_response", config: { ports: [{ name: "in_1", type: "text" }] } },
+          { id: "go", type: "group.output", typeVersion: "1", phase: "commit", config: { ports: [{ name: "out_1", type: "text" }] } },
+        ],
+        edges: [{ id: "e_gi_go", kind: "data", from: { nodeId: "gi", port: "in_1" }, to: { nodeId: "go", port: "out_1" } }],
+      },
+    });
+
+    const parent = service.create({
+      actor: ACTOR,
+      projectId: "proj_1",
+      document: {
+        schemaVersion: 2,
+        graphId: "ngraph_parent_lineage",
+        name: "Parent Lineage",
+        mode: "native_graph",
+        policies: {},
+        permissions: { required: [] },
+        nodes: [
+          { id: "u", type: "source.user_input", typeVersion: "1", phase: "pre_response" },
+          {
+            id: "g",
+            type: "group.node",
+            typeVersion: "1",
+            phase: "pre_response",
+            config: {
+              ref: { graphId: sub.definition.id, versionId: sub.version.id },
+              interface: { inputs: [{ name: "in_1", type: "text" }], outputs: [{ name: "out_1", type: "text" }] },
+            },
+          },
+        ],
+        edges: [{ id: "e_u_g", kind: "data", from: { nodeId: "u", port: "text" }, to: { nodeId: "g", port: "in_1" } }],
+      },
+    });
+
+    enqueueGraphRun(database, {
+      accountId: "default-admin",
+      workspaceId: "ws_1",
+      projectId: "proj_1",
+      graphId: parent.definition.id,
+      graphVersionId: parent.version.id,
+      intent: "normal",
+      dryRun: false,
+      inputJson: { user_input: "hello" },
+    });
+
+    const worker = new NodeGraphWorker(database.db, {
+      workerId: "node-graph-worker-lineage-test",
+      pollIntervalMs: 60_000,
+    });
+    await expect(worker.processOneDueJob()).resolves.toBe(true);
+
+    const runs = database.db.select().from(nodeGraphRuns).all();
+    expect(runs).toHaveLength(2);
+    const childRun = runs.find((row) => {
+      const t = JSON.parse(row.traceJson!);
+      return t.run_role === "subgraph";
+    });
+    const parentRun = runs.find((row) => row.id !== childRun?.id);
+    expect(childRun).toBeTruthy();
+    expect(parentRun).toBeTruthy();
+    expect(parentRun!.status).toBe("succeeded");
+    expect(childRun!.status).toBe("succeeded");
+
+    // 用户子图 child run：FK 列写真实子图定义/版本。
+    expect(childRun!.graphId).toBe(sub.definition.id);
+    expect(childRun!.graphVersionId).toBe(sub.version.id);
+
+    const childTrace = JSON.parse(childRun!.traceJson!);
+    expect(childTrace.run_role).toBe("subgraph");
+    expect(childTrace.parent_run_id).toBe(parentRun!.id);
+    expect(childTrace.root_run_id).toBe(parentRun!.id);
+    expect(childTrace.parent_node_id).toBe("g");
+    expect(childTrace.subgraph_ref).toMatchObject({
+      graph_id: sub.definition.id,
+      graph_version_id: sub.version.id,
+    });
+
+    // 方案 A 不变量：child run 零持久输出。
+    expect(database.db.select().from(derivedOutputs).all()).toHaveLength(0);
   });
 });
