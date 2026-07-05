@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { compileNodeGraph } from '../compiler.js';
-import { deriveSubgraphInterface, groupSwitchState } from '../subgraph.js';
+import {
+  deriveSubgraphInterface,
+  findNodeGraphPersistentOutputNodeIds,
+  groupSwitchState,
+  isNodeGraphPersistentOutputNodeType,
+  NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE,
+} from '../subgraph.js';
 import type { NodeGraphDocument } from '../types.js';
 
 function doc(overrides: Partial<NodeGraphDocument>): NodeGraphDocument {
@@ -181,5 +187,52 @@ describe('group.node validation', () => {
       }),
     );
     expect(compiled.diagnostics.map((d) => d.code)).toContain('node_graph_input_cardinality_violation');
+  });
+});
+
+describe('persistent output detection (NG2-13 方案 A)', () => {
+  it('exposes the subgraph persistent output forbidden diagnostic code', () => {
+    expect(NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE).toBe(
+      'node_graph_subgraph_persistent_output_forbidden',
+    );
+  });
+
+  it('recognizes registry write nodes as persistent output types', () => {
+    expect(isNodeGraphPersistentOutputNodeType('output.session_state_proposal')).toBe(true);
+    expect(isNodeGraphPersistentOutputNodeType('output.derived_output')).toBe(true);
+    expect(isNodeGraphPersistentOutputNodeType('output.project_inbox')).toBe(true);
+  });
+
+  it('does not flag non-write node types', () => {
+    expect(isNodeGraphPersistentOutputNodeType('source.user_input')).toBe(false);
+    expect(isNodeGraphPersistentOutputNodeType('group.node')).toBe(false);
+    expect(isNodeGraphPersistentOutputNodeType('group.output')).toBe(false);
+    expect(isNodeGraphPersistentOutputNodeType('unknown.node')).toBe(false);
+  });
+
+  it('collects ids of persistent output write nodes in a document', () => {
+    const ids = findNodeGraphPersistentOutputNodeIds(
+      doc({
+        nodes: [
+          { id: 'in', type: 'group.input', typeVersion: '1', phase: 'pre_response' },
+          { id: 'w1', type: 'output.derived_output', typeVersion: '1', phase: 'commit' },
+          { id: 'noise', type: 'source.user_input', typeVersion: '1', phase: 'pre_response' },
+          { id: 'w2', type: 'output.project_inbox', typeVersion: '1', phase: 'commit' },
+        ],
+      }),
+    );
+    expect(ids).toEqual(['w1', 'w2']);
+  });
+
+  it('returns an empty list when no persistent output nodes are present', () => {
+    const ids = findNodeGraphPersistentOutputNodeIds(
+      doc({
+        nodes: [
+          { id: 'in', type: 'group.input', typeVersion: '1', phase: 'pre_response' },
+          { id: 'out', type: 'group.output', typeVersion: '1', phase: 'response' },
+        ],
+      }),
+    );
+    expect(ids).toEqual([]);
   });
 });

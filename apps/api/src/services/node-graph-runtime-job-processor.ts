@@ -4,8 +4,10 @@ import type { NodeGraphDiagnostic, NodeGraphDocument } from "@tavern/core";
 import {
   BUILTIN_ADVISOR_SUBGRAPH_VERSION,
   DEFAULT_NODE_GRAPH_RUNTIME_BUDGET,
+  findNodeGraphPersistentOutputNodeIds,
   getBuiltinAdvisorSubgraphById,
   isBuiltinAdvisorSubgraphId,
+  NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE,
   resolveNodeGraphBudget,
 } from "@tavern/core";
 
@@ -37,6 +39,7 @@ import {
   NODE_GRAPH_OUTPUT_TARGET_NOT_IN_MANIFEST_REASON,
   type NodeGraphOutputDispatchTraceRef,
   type NodeGraphExecutionResult,
+  type NodeGraphExecutedNodeRun,
   type NodeGraphSubgraphRunner,
   type NodeGraphSubgraphRunResult,
 } from "./node-graph-runtime/index.js";
@@ -58,6 +61,42 @@ export type NodeGraphRunJobPrepared = {
    * null 表示未声明 manifest 级收窄，commit 退化为仅依赖全局输出策略。
    */
   manifestOutputTargets: string[] | null;
+  /**
+   * NG2-13：prepare 阶段收集的 `group.node` 子图持久 child run 记录，
+   * 由 commit 与主 run 同一 tx 原子落库（守住 prepare 纯计算 / commit 落库边界）。
+   */
+  childRunRecords: ChildGraphRunRecord[];
+};
+
+/**
+ * NG2-13：`group.node` 子图持久 child run 记录（prepare 收集 → commit 落库）。
+ *
+ * 方案 A 已禁止子图持久 `output.*` 写节点，故 child run 恒零派发。血缘沿用 trace_json：
+ * `parent_run_id` = 直接父图 run id、`root_run_id` = 顶层主 run、`run_role="subgraph"`、
+ * `parent_node_id` = 触发子图的 `group.node`、`subgraph_ref` = 权威子图身份。
+ */
+export type ChildGraphRunRecord = {
+  /** 生成的 child graph run id（`ngrun_...`，与主链 run id 生成一致）。 */
+  childGraphRunId: string;
+  /**
+   * `node_graph_run.graphId` 列值（FK-safe）：用户子图 = 子图定义 id；
+   * 内置顾问子图在 DB 无定义行，回退父图 id 避免外键违例（真实身份见 `subgraphRef`）。
+   */
+  graphId: string;
+  /** `node_graph_run.graphVersionId` 列值（FK-safe）：用户子图 = 子图版本 id；内置顾问子图 = 父图版本 id。 */
+  graphVersionId: string;
+  /** 权威子图身份，写入 trace.subgraph_ref（内置顾问子图 = 内置 id / `builtin:...`）。 */
+  subgraphRef: { graphId: string; graphVersionId: string | null };
+  /** 直接父图的 graphRunId（多层子图逐层指向直接父，形成链）。 */
+  parentRunId: string;
+  /** 顶层主 run 的 graphRunId。 */
+  rootRunId: string;
+  /** 父图中触发该子图的 `group.node` 节点 id。 */
+  parentNodeId: string | null;
+  status: "succeeded" | "failed";
+  nodeRuns: NodeGraphExecutedNodeRun[];
+  /** child 执行 trace（供 attachNodeGraphRunGovernanceTraceSummary 提炼摘要）。 */
+  trace: NodeGraphExecutionResult["trace"];
 };
 
 export type NodeGraphRunJobResult = {
@@ -135,7 +174,7 @@ export class NodeGraphRuntimeJobProcessor
     const availablePermissions = new Set<string>(document.permissions?.required ?? []);
     // NG2-β：注入子图递归运行器（加载子图版本 + 嵌套 executor + 边界 I/O 映射 + 环检测）。
     // SG11-3：`ref.graphId` 命中内置 id（`system.subgraph.*`）时从内置注册表加载，否则查 DB。
-    const subgraphRunner = buildSubgraphRunner({ db, payload, executor, availablePermissions });
+    const { runner: subgraphRunner, childRunRecords } = buildSubgraphRunner({ db, payload, executor, availablePermissions });
     const execution = await executor.execute({
       document,
       graphVersionId: version.id,
@@ -170,6 +209,7 @@ export class NodeGraphRuntimeJobProcessor
       nodePhases,
       graphRunId,
       manifestOutputTargets: resolveNodeGraphManifestOutputTargets(document),
+      childRunRecords,
     };
   }
 
@@ -272,6 +312,66 @@ export class NodeGraphRuntimeJobProcessor
         startedAt: nodeRun.startedAt ?? completedAt,
         finishedAt: nodeRun.finishedAt ?? completedAt,
       });
+    }
+
+    // NG2-13：子图持久血缘落库。遍历 prepare 收集的 child run 记录，与主 run 同一 tx 原子落库：
+    // 每条 createRun（trace 带 run_role="subgraph"、parent_run_id、root_run_id、parent_node_id、subgraph_ref）
+    // + 逐 child node run appendNodeRun。方案 A 已禁止子图持久 output.*，故 child run 恒零派发。
+    // 内置顾问子图的 FK 列已在 prepare 回退到父图（graphId/graphVersionId），避免外键违例。
+    for (const child of prepared.childRunRecords) {
+      const childTrace = attachNodeGraphRunGovernanceTraceSummary({
+        trace: child.trace,
+        graphRunId: child.childGraphRunId,
+        graphId: child.graphId,
+        graphVersionId: child.graphVersionId,
+        accountId: payload.accountId,
+        workspaceId: payload.workspaceId,
+        projectId: payload.projectId,
+        sessionId: payload.sessionId ?? null,
+        floorId: payload.floorId ?? null,
+        pageId: payload.pageId ?? null,
+        jobId: context.job.id,
+        jobType: context.job.jobType,
+        rootRunId: child.rootRunId,
+        parentRunId: child.parentRunId,
+        runRole: "subgraph",
+        parentNodeId: child.parentNodeId,
+        subgraphRef: { graphId: child.subgraphRef.graphId, graphVersionId: child.subgraphRef.graphVersionId },
+        status: child.status,
+        intent: payload.intent,
+        dryRun: payload.dryRun,
+        preview: payload.intent === "preview",
+        finishedAt: completedAt,
+      });
+      const childRun = runService.createRun({
+        id: child.childGraphRunId,
+        accountId: payload.accountId,
+        workspaceId: payload.workspaceId,
+        projectId: payload.projectId,
+        sessionId: payload.sessionId ?? null,
+        floorId: payload.floorId ?? null,
+        pageId: payload.pageId ?? null,
+        graphId: child.graphId,
+        graphVersionId: child.graphVersionId,
+        intent: payload.intent,
+        status: child.status,
+        trace: childTrace,
+        now: completedAt,
+      });
+      for (const nodeRun of child.nodeRuns) {
+        runService.appendNodeRun({
+          graphRunId: childRun.id,
+          nodeId: nodeRun.nodeId,
+          phase: nodeRun.phase,
+          status: nodeRun.status,
+          inputHash: nodeRun.inputHash ?? null,
+          outputHash: nodeRun.outputHash ?? null,
+          output: nodeRun.output,
+          diagnostics: nodeRun.diagnostics ?? null,
+          startedAt: nodeRun.startedAt ?? completedAt,
+          finishedAt: nodeRun.finishedAt ?? completedAt,
+        });
+      }
     }
 
     // NG2-CORE：持久化 floor checkpoint（仅真实运行 + 有 floorId）。对 floor-eligible 且本次
@@ -508,8 +608,8 @@ function loadSubgraphVersion(
 }
 
 /**
- * 构造生产级 `subgraphRunner`：被 `group.node` handler 调用，加载被引用子图并以**嵌套 graph run**
- * 复用同一 executor 递归执行；把实例输入端口值（按 portName）经 `context.input` 喂给子图 `group.input`，
+ * 构造生产级 `subgraphRunner`：被 `group.node` handler 调用，加载被引用子图并以**嵌套执行（nested execution）**
+ * 复用同一 executor 递归执行；当前不创建持久 child `node_graph_run` / 血缘（持久血缘属 NG2-13）。把实例输入端口值（按 portName）经 `context.input` 喂给子图 `group.input`，
  * 再把子图 `group.output` 的值按 portName 映射回实例输出端口。含引用环检测与深度上限。
  */
 function buildSubgraphRunner(input: {
@@ -518,8 +618,10 @@ function buildSubgraphRunner(input: {
   executor: ReturnType<typeof createDefaultNodeGraphExecutor>;
   /** SG11-3：父图 manifest 声明的可用权限，用于内置顾问子图引用的权限上卷校验。 */
   availablePermissions: Set<string>;
-}): NodeGraphSubgraphRunner {
+}): { runner: NodeGraphSubgraphRunner; childRunRecords: ChildGraphRunRecord[] } {
   const { db, payload, executor, availablePermissions } = input;
+  // NG2-13：prepare 阶段累加子图 child run 记录（不写库）；由 prepare 上抛、commit 落库。
+  const childRunRecords: ChildGraphRunRecord[] = [];
   const runner: NodeGraphSubgraphRunner = async (subInput, parentContext) => {
     const stack = parentContext.subgraphStack ?? [];
     if (stack.includes(subInput.ref.graphId)) {
@@ -560,6 +662,43 @@ function buildSubgraphRunner(input: {
       return subgraphFailure("node_graph_subgraph_not_found", `Subgraph definition not found: ${subInput.ref.graphId}`);
     }
 
+    // NG2-13 方案 A（缺口 4.5）静态执法：被 `group.node` 引用的子图（含内置顾问子图与用户子图）
+    // 不得包含持久 `output.*` 写节点——正史写入只能发生在主图（父图）的单一 CommitGate 边界。
+    // 在加载后、执行前拒绝，避免子图旁路 CommitGate 写正史。
+    const persistentOutputNodeIds = findNodeGraphPersistentOutputNodeIds(loaded.document);
+    if (persistentOutputNodeIds.length > 0) {
+      return subgraphFailure(
+        NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE,
+        `Subgraph '${subInput.ref.graphId}' contains persistent output write node(s) [${persistentOutputNodeIds.join(", ")}]; persistent history writes must happen at the parent graph's CommitGate, not inside a group.node subgraph.`,
+      );
+    }
+
+    // NG2-13：为本次子图执行生成 child run id 与血缘元数据（prepare 仅收集，不写库）。
+    const childGraphRunId = `ngrun_${nanoid(12)}`;
+    const parentRunId = parentContext.graphRunId ?? parentContext.rootRunId ?? childGraphRunId;
+    const rootRunId = parentContext.rootRunId ?? parentContext.graphRunId ?? childGraphRunId;
+    // 权威子图身份写入 trace.subgraph_ref。内置顾问子图在 DB 中无定义/版本行，若用其合成 id
+    // 落 node_graph_run 会违反 graphId/graphVersionId 外键，故 FK 列回退到父图（恒有效），
+    // 真实身份仍由 subgraph_ref 记录（供 WB10 展示 / 后续查询）。
+    const subgraphRef = { graphId: subInput.ref.graphId, graphVersionId: loaded.versionId };
+    const childColumns = isBuiltinAdvisorSubgraphId(subInput.ref.graphId)
+      ? { graphId: payload.graphId, graphVersionId: payload.graphVersionId }
+      : { graphId: subInput.ref.graphId, graphVersionId: loaded.versionId };
+    const recordChildRun = (status: "succeeded" | "failed", execResult: NodeGraphExecutionResult): void => {
+      childRunRecords.push({
+        childGraphRunId,
+        graphId: childColumns.graphId,
+        graphVersionId: childColumns.graphVersionId,
+        subgraphRef,
+        parentRunId,
+        rootRunId,
+        parentNodeId: subInput.parentNode?.id ?? null,
+        status,
+        nodeRuns: execResult.nodeRuns,
+        trace: execResult.trace,
+      });
+    };
+
     const childExecution = await executor.execute({
       document: loaded.document,
       graphVersionId: loaded.versionId,
@@ -569,12 +708,17 @@ function buildSubgraphRunner(input: {
         userInput: undefined,
         chatHistory: undefined,
         graphVersionId: loaded.versionId,
+        // NG2-13：把 child run id 作为子图执行上下文的 graphRunId，使更深层嵌套子图能把
+        // parent_run_id 指向直接父（逐层成链）；rootRunId 由 spread 保留为顶层 root。
+        graphRunId: childGraphRunId,
         budget: resolveNodeGraphBudget(parentContext.budget ?? DEFAULT_NODE_GRAPH_RUNTIME_BUDGET, loaded.document.budgets),
         subgraphStack: [...stack, subInput.ref.graphId],
         subgraphRunner: runner,
       },
     });
     if (childExecution.status !== "succeeded") {
+      // NG2-13：失败点也记录 child run（供父子树观测失败子图）。
+      recordChildRun("failed", childExecution);
       const diagnostics: NodeGraphDiagnostic[] = childExecution.trace.failedNodes.flatMap((failed) => failed.diagnostics);
       return {
         status: "failed",
@@ -585,6 +729,19 @@ function buildSubgraphRunner(input: {
       };
     }
 
+    // NG2-13 方案 A runtime 兜底（缺口 4.5 修复）：若子图执行仍产出了持久输出派发请求，
+    // **不派发、不静默丢弃**，而是显式失败（同一诊断码）。静态执法已在加载后拒绝含 output.* 的子图，
+    // 此处作为防御：把「被静默丢弃」变成「显式拒绝」，保证子图零派发、正史入口唯一。
+    if (childExecution.pendingOutputDispatchRequests.length > 0) {
+      recordChildRun("failed", childExecution);
+      return subgraphFailure(
+        NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE,
+        `Subgraph '${subInput.ref.graphId}' produced ${childExecution.pendingOutputDispatchRequests.length} persistent output dispatch request(s); subgraphs must not write persistent history (route persistent writes through the parent graph's CommitGate).`,
+      );
+    }
+
+    // NG2-13：成功点记录 child run（child run 恒零派发，与不变量一致）。
+    recordChildRun("succeeded", childExecution);
     const outputsByPort: Record<string, unknown> = {};
     for (const node of loaded.document.nodes) {
       if (node.type !== "group.output") {
@@ -608,7 +765,7 @@ function buildSubgraphRunner(input: {
     }
     return { status: "succeeded", outputsByPort };
   };
-  return runner;
+  return { runner, childRunRecords };
 }
 
 function readTraceString(value: unknown): string | null {

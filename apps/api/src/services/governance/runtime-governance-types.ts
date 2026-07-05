@@ -119,6 +119,22 @@ export type RuntimeGovernanceTraceSummary = {
   run_id?: string | null;
   root_run_id?: string | null;
   parent_run_id?: string | null;
+  /**
+   * NG2-13 / NG2-14：本次 run 在血缘树中的角色。`main` = 主链 run，`subgraph` = `group.node`
+   * 触发的持久 child run。缺省（旧 run / 未标注）不影响现有消费方。
+   */
+  run_role?: "main" | "subgraph" | null;
+  /** NG2-14：true 表示影子 / 观测用 run（非正史、无副作用）。 */
+  shadow?: boolean;
+  /** NG2-13：子图 child run 的父图中触发它的 `group.node` 节点 id。 */
+  parent_node_id?: string | null;
+  /** NG2-13：子图 child run 引用的子图（graph_id / graph_version_id）。 */
+  subgraph_ref?: RuntimeGovernanceRef | null;
+  /**
+   * NG2-14：主链 run 的承载方式（`system_graph` 表示由 system graph 承载）。缺省（旧 run /
+   * 子图 child run）不影响现有消费方。
+   */
+  carrier?: string | null;
   source_kind?: string | null;
   source_ref?: RuntimeGovernanceRef | null;
   target_kind?: string | null;

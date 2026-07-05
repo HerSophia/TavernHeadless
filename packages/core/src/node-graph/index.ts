@@ -153,14 +153,17 @@ export {
 } from './agent-source.js';
 export {
   deriveSubgraphInterface,
+  findNodeGraphPersistentOutputNodeIds,
   groupSwitchState,
   isNodeGraphGroupNodeType,
+  isNodeGraphPersistentOutputNodeType,
   readGroupNodeInterface,
   readGroupNodeRef,
   resolveNodeGraphNodePorts,
   NODE_GRAPH_GROUP_INPUT_TYPE,
   NODE_GRAPH_GROUP_NODE_TYPE,
   NODE_GRAPH_GROUP_OUTPUT_TYPE,
+  NODE_GRAPH_SUBGRAPH_PERSISTENT_OUTPUT_FORBIDDEN_CODE,
   type NodeGraphGroupNodeRef,
   type NodeGraphGroupSwitchState,
   type NodeGraphSubgraphInterface,
