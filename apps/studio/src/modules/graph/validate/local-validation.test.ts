@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { SAMPLE_NODE_GRAPH_DOCUMENT } from "../canvas/sample-document";
 import {
   diagnosticTarget,
+  findCarrierSubgraphPersistentOutputDiagnostics,
   sortDiagnostics,
   validateGraphDocument,
   withDiagnosticSource,
@@ -77,6 +78,78 @@ describe("validateGraphDocument", () => {
     );
     expect(result.diagnostics.some((d) => Boolean(d.nodeId))).toBe(true);
     expect(result.isExecutable).toBe(false);
+  });
+
+  it("warns when a subgraph-shaped graph contains persistent output writers (NG2-13)", () => {
+    // 含 group.output 接口 → 子图形态；同时含持久写节点 → 不能作为承载子图。
+    const result = validateGraphDocument(
+      doc({
+        nodes: [
+          { id: "out", type: "group.output", typeVersion: "1", phase: "response" },
+          { id: "w", type: "output.session_state_proposal", typeVersion: "1", phase: "commit" },
+        ],
+        policies: { allowPersistentOutputs: true },
+      }),
+    );
+    const hit = result.diagnostics.find(
+      (d) => d.code === "node_graph_subgraph_persistent_output_forbidden",
+    );
+    expect(hit).toBeDefined();
+    expect(hit?.severity).toBe("warning");
+    expect(hit?.nodeId).toBe("w");
+    expect(hit?.source).toBe("local");
+    // warning 不阻断：该图作为独立顶层图仍可执行（与后端 compileNodeGraph 同源）。
+    expect(result.counts.warning).toBeGreaterThan(0);
+  });
+
+  it("does not warn for a top-level graph with an output writer but no subgraph interface", () => {
+    const result = validateGraphDocument(
+      doc({
+        nodes: [
+          { id: "w", type: "output.session_state_proposal", typeVersion: "1", phase: "commit" },
+        ],
+        policies: { allowPersistentOutputs: true },
+      }),
+    );
+    expect(
+      result.diagnostics.some((d) => d.code === "node_graph_subgraph_persistent_output_forbidden"),
+    ).toBe(false);
+  });
+});
+
+describe("findCarrierSubgraphPersistentOutputDiagnostics", () => {
+  it("flags each persistent output writer inside a subgraph-shaped graph", () => {
+    const diagnostics = findCarrierSubgraphPersistentOutputDiagnostics(
+      doc({
+        nodes: [
+          { id: "in", type: "group.input", typeVersion: "1", phase: "pre_response" },
+          { id: "w1", type: "output.session_state_proposal", typeVersion: "1", phase: "commit" },
+          { id: "w2", type: "output.derived_output", typeVersion: "1", phase: "commit" },
+        ],
+      }),
+    );
+    expect(diagnostics.map((d) => d.nodeId).sort()).toEqual(["w1", "w2"]);
+    expect(diagnostics.every((d) => d.severity === "warning")).toBe(true);
+  });
+
+  it("returns empty for a subgraph without persistent output writers", () => {
+    expect(
+      findCarrierSubgraphPersistentOutputDiagnostics(
+        doc({ nodes: [{ id: "out", type: "group.output", typeVersion: "1", phase: "response" }] }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("returns empty when there is no subgraph interface, even with output writers", () => {
+    expect(
+      findCarrierSubgraphPersistentOutputDiagnostics(
+        doc({
+          nodes: [
+            { id: "w", type: "output.session_state_proposal", typeVersion: "1", phase: "commit" },
+          ],
+        }),
+      ),
+    ).toEqual([]);
   });
 });
 

@@ -589,6 +589,41 @@
                         "when":  1768300000000,
                         "tag":  "0083_project_floor_graph_binding",
                         "breakpoints":  true
+                    },
+                    {
+                        "idx":  84,
+                        "version":  "7",
+                        "when":  1768400000000,
+                        "tag":  "0084_workspace_manual_kind_archived_at",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  85,
+                        "version":  "7",
+                        "when":  1768500000000,
+                        "tag":  "0085_project_archived_at",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  86,
+                        "version":  "7",
+                        "when":  1768600000000,
+                        "tag":  "0086_tool_policy_preset",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  87,
+                        "version":  "7",
+                        "when":  1768700000000,
+                        "tag":  "0087_session_tool_preset_key",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  88,
+                        "version":  "7",
+                        "when":  1768800000000,
+                        "tag":  "0088_session_todo_list",
+                        "breakpoints":  true
                     }
                 ]
 }

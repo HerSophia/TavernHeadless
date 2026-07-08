@@ -228,7 +228,29 @@ export const graph = {
       "compatImportDraftUnsaved": "这是从酒馆预设导入的 compat 楼层图草稿。请先保存为项目图，再显式设为 compat 默认楼层图。",
       "compatImportDraftSavedUnbound": "保存完成。可以设为 compat 默认楼层图。",
       "compatImportDraftBound": "当前版本已作为 compat 默认楼层图生效。",
-      "compatImportDraftVersionMismatch": "compat 绑定的是本图旧版本 v{version}；保存新版本不会自动更新绑定。"
+      "compatImportDraftVersionMismatch": "compat 绑定的是本图旧版本 v{version}；保存新版本不会自动更新绑定。",
+      "projectScopeNote": "楼层图绑定对整个项目生效（native / compat 分别设置）。",
+      "bound": "已绑定「{graph}」v{version}",
+      "notBound": "未绑定",
+      "pickGraph": "选择图",
+      "pickVersion": "选择版本",
+      "currentVersion": "当前版本",
+      "setBinding": "设为默认楼层图",
+      "setting": "设置中…",
+      "noGraphs": "项目暂无可绑定的图",
+      "selectProjectFirst": "请先选择项目",
+      "setFailed": "设置绑定失败",
+      "clearFailed": "清除绑定失败",
+      "clearConfirmTitle": "清除楼层图绑定？",
+      "clearConfirmMessage": "将清除 {kind} 默认楼层图绑定；本项目将回退到默认楼层生成。",
+      "clearConfirm": "清除",
+      "cancel": "取消",
+      "constraints": {
+        "title": "约束",
+        "compatNoAgentVerify": "compat 图不能包含 agent.* / verify.* 节点。",
+        "exactlyOneNarrator": "楼层图必须恰好包含 1 个 narration.narrator 节点。",
+        "needConfigWrite": "设置 / 清除绑定需要 project.config.write 权限。"
+      }
     },
     "diagnostics": {
       "title": "诊断",
@@ -836,7 +858,29 @@ export const graph = {
       "compatImportDraftUnsaved": "This is a compat floor graph draft imported from a SillyTavern preset. Save it as a project graph first, then explicitly set it as the compat default floor graph.",
       "compatImportDraftSavedUnbound": "Saved. You can now set it as the compat default floor graph.",
       "compatImportDraftBound": "The current version is active as the compat default floor graph.",
-      "compatImportDraftVersionMismatch": "compat is bound to an older version of this graph, v{version}. Saving a new version does not update the binding automatically."
+      "compatImportDraftVersionMismatch": "compat is bound to an older version of this graph, v{version}. Saving a new version does not update the binding automatically.",
+      "projectScopeNote": "Floor graph bindings apply to the whole project (set separately for native / compat).",
+      "bound": "Bound to \"{graph}\" v{version}",
+      "notBound": "Not bound",
+      "pickGraph": "Select graph",
+      "pickVersion": "Select version",
+      "currentVersion": "Current version",
+      "setBinding": "Set as default floor graph",
+      "setting": "Setting…",
+      "noGraphs": "No graphs available to bind in this project",
+      "selectProjectFirst": "Select a project first",
+      "setFailed": "Failed to set binding",
+      "clearFailed": "Failed to clear binding",
+      "clearConfirmTitle": "Clear floor graph binding?",
+      "clearConfirmMessage": "This clears the {kind} default floor graph binding; the project falls back to default floor generation.",
+      "clearConfirm": "Clear",
+      "cancel": "Cancel",
+      "constraints": {
+        "title": "Constraints",
+        "compatNoAgentVerify": "A compat graph must not contain agent.* / verify.* nodes.",
+        "exactlyOneNarrator": "A floor graph must contain exactly one narration.narrator node.",
+        "needConfigWrite": "Setting / clearing a binding requires the project.config.write permission."
+      }
     },
     "diagnostics": {
       "title": "Diagnostics",
