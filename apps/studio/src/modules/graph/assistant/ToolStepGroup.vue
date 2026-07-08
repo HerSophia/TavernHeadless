@@ -1,10 +1,23 @@
 <script setup lang="ts">
-import { Ban, Check, ChevronRight, Clock, Loader, RotateCcw, Wrench, X } from"lucide-vue-next";
-import { computed,ref, type Component } from "vue";
+import {
+  Ban,
+  Check,
+  ChevronRight,
+  Clock,
+  Loader,
+  RotateCcw,
+  Wrench,
+  X,
+} from "lucide-vue-next";
+import { computed, ref, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 
 import ToolCallCard from "./ToolCallCard.vue";
-import { aggregateToolCallStatus, type ToolCallStatusKind, type ToolCallView } from "./tool-call-view";
+import {
+  aggregateToolCallStatus,
+  type ToolCallStatusKind,
+  type ToolCallView,
+} from "./tool-call-view";
 
 /** 工具分组内单步：视图 + 全局 step 序号（供 step 级重试定位）。 */
 interface ToolStepItem {
@@ -19,7 +32,7 @@ const props = defineProps<{
   /** 默认是否展开：流式期间默认展开，历史楼层默认折叠。 */
   defaultOpen?: boolean;
   /** 所属楼层 id，供 step 级重试事件回传。 */
- floorId: string;
+  floorId: string;
   /** 任何生成进行中（全局忙碌或本楼层未落定）时禁用重试此步。 */
   disabled?: boolean;
 }>();
@@ -52,19 +65,27 @@ const statusIcon = computed(() => STATUS_ICON[aggregateStatus.value]);
 <template>
   <div class="tsg">
     <button type="button" class="tsg__toggle" @click="open = !open">
-      <ChevronRight class="tsg__chevron" :class="open ? 'tsg__chevron--open' : ''" :size="12" :stroke-width="1.5" />
-   <Wrench :size="12" :stroke-width="1.5" />
-      {{ t("graphAssistant.floor.tools") }}
-      <span class="tsg__count">{{ items.length }}</span>
-<component
-        :is="statusIcon"
-        class="tsg__status"
-        :class="[`tsg__status--${aggregateStatus}`, aggregateStatus === 'running' ? 'tsg__spin' : '']"
+      <ChevronRight
+        class="tsg__chevron"
+        :class="open ? 'tsg__chevron--open' : ''"
         :size="12"
         :stroke-width="1.5"
-    />
+      />
+      <Wrench :size="12" :stroke-width="1.5" />
+      {{ t("graphAssistant.floor.tools") }}
+      <span class="tsg__count">{{ items.length }}</span>
+      <component
+        :is="statusIcon"
+        class="tsg__status"
+        :class="[
+          `tsg__status--${aggregateStatus}`,
+          aggregateStatus === 'running' ? 'tsg__spin' : '',
+        ]"
+        :size="12"
+        :stroke-width="1.5"
+      />
     </button>
-<div v-if="open" class="tsg__list">
+    <div v-if="open" class="tsg__list">
       <div v-for="item in items" :key="item.view.key" class="tsg__step">
         <ToolCallCard :view="item.view" />
         <!-- step 级重试：从该步重新生成。写类起点拦截与副作用确认弹框在上层处理。 -->
@@ -89,7 +110,7 @@ const statusIcon = computed(() => STATUS_ICON[aggregateStatus.value]);
 }
 
 .tsg__toggle {
-display: flex;
+  display: flex;
   width: 100%;
   align-items: center;
   gap: 4px;
@@ -100,7 +121,7 @@ display: flex;
 }
 
 .tsg__toggle:hover {
-  color:var(--color-text-secondary);
+  color: var(--color-text-secondary);
 }
 
 .tsg__chevron {

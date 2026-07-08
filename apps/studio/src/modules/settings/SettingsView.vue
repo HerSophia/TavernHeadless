@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { Cpu, Server, SlidersHorizontal } from "lucide-vue-next";
+import { Cpu, Server, SlidersHorizontal, Wrench } from "lucide-vue-next";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import BackendConnectionPanel from "./backend/BackendConnectionPanel.vue";
 import LlmInstancePanel from "./instances/LlmInstancePanel.vue";
 import ModelProfilePanel from "./profiles/ModelProfilePanel.vue";
+import ToolPolicyPresetPanel from "./tools/ToolPolicyPresetPanel.vue";
 
 const { t } = useI18n();
 
-type SettingsTab = "backend" | "profiles" | "instances";
+type SettingsTab = "backend" | "profiles" | "instances" | "tools";
 
 const tab = ref<SettingsTab>("backend");
 
@@ -17,6 +18,7 @@ const tabs = computed(() => [
   { id: "backend" as const, label: t("settings.tabs.backend"), icon: Server },
   { id: "profiles" as const, label: t("settings.tabs.profiles"), icon: Cpu },
   { id: "instances" as const, label: t("settings.tabs.instances"), icon: SlidersHorizontal },
+  { id: "tools" as const, label: t("settings.tabs.tools"), icon: Wrench },
 ]);
 </script>
 
@@ -44,6 +46,7 @@ const tabs = computed(() => [
       <BackendConnectionPanel v-if="tab === 'backend'" />
       <ModelProfilePanel v-else-if="tab === 'profiles'" />
       <LlmInstancePanel v-else-if="tab === 'instances'" />
+      <ToolPolicyPresetPanel v-else-if="tab === 'tools'" />
     </div>
   </div>
 </template>

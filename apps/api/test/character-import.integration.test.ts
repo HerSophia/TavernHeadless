@@ -34,6 +34,52 @@ const CHARACTER_CARD_V2 = {
   },
 };
 
+// 方案 B：内嵌 character_book（v2 数组格式）会被抽取为独立世界书资产。
+const CHARACTER_CARD_V2_WITH_BOOK = {
+  spec: "chara_card_v2",
+  spec_version: "2.0",
+  data: {
+    name: "Nova",
+    description: "A guide through nebulae.",
+    personality: "Warm and observant.",
+    scenario: "Aboard a drifting observatory.",
+    first_mes: "The nebula charts are ready when you are.",
+    mes_example: "<START>\nNova: Ask me about the stars.",
+    character_book: {
+      name: "Nova Codex",
+      entries: [
+        {
+          keys: ["nebula"],
+          content: "A nebula is a vast cloud of gas and dust.",
+          enabled: true,
+          insertion_order: 10,
+        },
+        {
+          keys: ["observatory"],
+          content: "The observatory drifts along the cosmic tides.",
+          enabled: true,
+          insertion_order: 20,
+        },
+      ],
+    },
+  },
+};
+
+// 内嵌 character_book 存在但没有条目：应回退到旧行为（保留内嵌，不生成独立世界书）。
+const CHARACTER_CARD_V2_WITH_EMPTY_BOOK = {
+  spec: "chara_card_v2",
+  spec_version: "2.0",
+  data: {
+    name: "Echo",
+    description: "A voice among empty halls.",
+    first_mes: "Hello?",
+    character_book: {
+      name: "Echo Codex",
+      entries: [],
+    },
+  },
+};
+
 describe("Character Import Route", () => {
   let app: FastifyInstance;
   let database: AppDb;
@@ -245,7 +291,8 @@ describe("Character Import Route", () => {
       payload: {
         payload: {
           name: "BigCard",
-          description: "x".repeat(210_000),
+          // 超过 5MB payload 上限但仍在 8MB 路由 bodyLimit 以内，触发应用层 import_payload_too_large
+          description: "x".repeat(5_100_000),
         },
       },
     });
@@ -253,5 +300,158 @@ describe("Character Import Route", () => {
     expect(res.statusCode).toBe(413);
     const body = res.json<{ error: { code: string } }>();
     expect(body.error.code).toBe("import_payload_too_large");
+  });
+
+  it("extracts an embedded character_book into an independent worldbook and binds it to the created session", async () => {
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/character",
+      payload: { payload: CHARACTER_CARD_V2_WITH_BOOK },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const importBody = importRes.json<{
+      data: {
+        create_session: boolean;
+        session: { id: string };
+        worldbook?: {
+          id: string;
+          version_id: string;
+          name: string;
+          entry_count: number;
+          source: string;
+        };
+      };
+    }>();
+
+    // 响应回显抽取出的世界书
+    expect(importBody.data.worldbook).toBeDefined();
+    const worldbook = importBody.data.worldbook!;
+    expect(worldbook.name).toBe("Nova Codex");
+    expect(worldbook.entry_count).toBe(2);
+    expect(worldbook.source).toBe("character_book");
+    expect(worldbook.id).toBeDefined();
+    expect(worldbook.version_id).toBeDefined();
+
+    // 世界书出现在独立世界书列表里
+    const listRes = await app.inject({ method: "GET", url: "/worldbooks" });
+    expect(listRes.statusCode).toBe(200);
+    const listBody = listRes.json<{ data: Array<{ id: string; name: string }> }>();
+    expect(listBody.data.map((item) => item.id)).toContain(worldbook.id);
+
+    // 世界书条目被完整创建
+    const detailRes = await app.inject({ method: "GET", url: `/worldbooks/${worldbook.id}` });
+    expect(detailRes.statusCode).toBe(200);
+    const detailBody = detailRes.json<{
+      data: { name: string; data: { entries: Array<{ content: string }> } };
+    }>();
+    expect(detailBody.data.data.entries).toHaveLength(2);
+    const contents = detailBody.data.data.entries.map((entry) => entry.content);
+    expect(contents).toContain("A nebula is a vast cloud of gas and dust.");
+    expect(contents).toContain("The observatory drifts along the cosmic tides.");
+
+    // 会话被绑定到抽取出的世界书
+    const sessionId = importBody.data.session.id;
+    const sessionRes = await app.inject({ method: "GET", url: `/sessions/${sessionId}` });
+    expect(sessionRes.statusCode).toBe(200);
+    const sessionBody = sessionRes.json<{
+      data: {
+        worldbook_profile_id: string | null;
+        worldbook_version_id: string | null;
+        character_binding: { character_version_id: string } | null;
+      };
+    }>();
+    expect(sessionBody.data.worldbook_profile_id).toBe(worldbook.id);
+    expect(sessionBody.data.worldbook_version_id).toBe(worldbook.version_id);
+
+    // 角色快照里的内嵌 characterBook 已被移除
+    const characterVersionId = sessionBody.data.character_binding!.character_version_id;
+    const [versionRow] = await database
+      .select()
+      .from(characterVersions)
+      .where(eq(characterVersions.id, characterVersionId))
+      .limit(1);
+    expect(versionRow).toBeDefined();
+    const snapshot = JSON.parse(versionRow?.dataJson ?? "{}") as { characterBook?: unknown };
+    expect(snapshot.characterBook).toBeUndefined();
+  });
+
+  it("extracts an embedded character_book with create_session=false", async () => {
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/character",
+      payload: {
+        payload: CHARACTER_CARD_V2_WITH_BOOK,
+        create_session: false,
+      },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const importBody = importRes.json<{
+      data: {
+        create_session: boolean;
+        character_id: string;
+        character_version_id: string;
+        session?: unknown;
+        worldbook?: { id: string; name: string; entry_count: number; source: string };
+      };
+    }>();
+
+    expect(importBody.data.create_session).toBe(false);
+    expect(importBody.data.session).toBeUndefined();
+    expect(importBody.data.worldbook).toBeDefined();
+    expect(importBody.data.worldbook!.name).toBe("Nova Codex");
+    expect(importBody.data.worldbook!.entry_count).toBe(2);
+    expect(importBody.data.worldbook!.source).toBe("character_book");
+
+    // 未建会话
+    const sessionsRes = await app.inject({ method: "GET", url: "/sessions" });
+    expect(sessionsRes.json<{ data: unknown[] }>().data).toHaveLength(0);
+
+    // 世界书已作为独立资产创建
+    const listRes = await app.inject({ method: "GET", url: "/worldbooks" });
+    expect(listRes.json<{ data: Array<{ id: string }> }>().data.map((item) => item.id)).toContain(
+      importBody.data.worldbook!.id,
+    );
+
+    // 角色快照里的内嵌 characterBook 已被移除
+    const [versionRow] = await database
+      .select()
+      .from(characterVersions)
+      .where(eq(characterVersions.id, importBody.data.character_version_id))
+      .limit(1);
+    const snapshot = JSON.parse(versionRow?.dataJson ?? "{}") as { characterBook?: unknown };
+    expect(snapshot.characterBook).toBeUndefined();
+  });
+
+  it("keeps the character_book embedded when it has no entries (fallback)", async () => {
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/import/character",
+      payload: {
+        payload: CHARACTER_CARD_V2_WITH_EMPTY_BOOK,
+        create_session: false,
+      },
+    });
+
+    expect(importRes.statusCode, importRes.body).toBe(201);
+    const importBody = importRes.json<{
+      data: { character_version_id: string; worldbook?: unknown };
+    }>();
+
+    // 无条目时不生成独立世界书
+    expect(importBody.data.worldbook).toBeUndefined();
+
+    const listRes = await app.inject({ method: "GET", url: "/worldbooks" });
+    expect(listRes.json<{ data: unknown[] }>().data).toHaveLength(0);
+
+    // 内嵌 characterBook 被保留（回退旧行为）
+    const [versionRow] = await database
+      .select()
+      .from(characterVersions)
+      .where(eq(characterVersions.id, importBody.data.character_version_id))
+      .limit(1);
+    const snapshot = JSON.parse(versionRow?.dataJson ?? "{}") as { characterBook?: unknown };
+    expect(snapshot.characterBook).toBeDefined();
   });
 });

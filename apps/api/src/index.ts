@@ -59,6 +59,8 @@ const { app } = await buildApp({
   enableUnsafeScriptHandler: config.enableUnsafeScriptHandler,
   enableClientData: config.enableClientData,
   clientData: config.clientData,
+  // 生产/开发服务启用内置资产幂等 seed（SC2-11）；测试默认不启用。
+  seedBuiltinAssets: true,
 
 });
 

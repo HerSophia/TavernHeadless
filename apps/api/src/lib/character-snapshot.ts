@@ -197,3 +197,24 @@ export function parseSessionCharacterSnapshot(snapshotJson: string | null): Sess
     return undefined;
   }
 }
+
+/**
+ * SC2-10（批次四）：从角色快照读取内置工具预设 key。
+ *
+ * 内置「资产管理助手」把 `extensions.tavernheadless.toolPresetKey` 设为 `asset-management`，
+ * 建会话时据此为会话套用默认工具预设。缺失/非字符串时返回 null（会话不绑定预设）。
+ */
+export function readToolPresetKeyFromCharacterSnapshot(
+  snapshot: SessionCharacterSnapshot | undefined,
+): string | null {
+  const extensions = snapshot?.extensions;
+  if (!extensions || typeof extensions !== "object") {
+    return null;
+  }
+  const tavernheadless = (extensions as Record<string, unknown>).tavernheadless;
+  if (!tavernheadless || typeof tavernheadless !== "object") {
+    return null;
+  }
+  const key = (tavernheadless as Record<string, unknown>).toolPresetKey;
+  return typeof key === "string" && key.trim().length > 0 ? key.trim() : null;
+}
