@@ -17,8 +17,8 @@ export interface EffectiveToolPolicySelector {
 }
 
 export interface ToolPolicyResolutionLayerTrace {
-  kind: "session_base" | "project_policy_overlay" | "request_overlay";
-  source: "session_metadata" | "project_policy_override" | "request_overlay";
+  kind: "session_base" | "project_policy_overlay" | "request_overlay" | "session_tool_preset";
+  source: "session_metadata" | "project_policy_override" | "request_overlay" | "session_tool_preset";
   policyId?: string;
   applied: boolean;
   reason:

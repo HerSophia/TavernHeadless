@@ -6,12 +6,13 @@ import { accounts, workspaces } from "../db/schema.js";
 export const DEFAULT_WORKSPACE_NAME = "默认 Workspace";
 
 export type WorkspaceScopeStatus = "active" | "archived";
+export type WorkspaceKind = "default" | "manual";
 
 export type WorkspaceRecord = {
   id: string;
   accountId: string;
   name: string;
-  kind: "default";
+  kind: WorkspaceKind;
   isDefault: boolean;
   status: WorkspaceScopeStatus;
   settingsJson: string;

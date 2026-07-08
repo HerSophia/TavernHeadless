@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
 import type { DatabaseConnection } from "../db/client.js";
-import { parseWithSchema, sendError } from "../lib/http.js";
+import { parseJsonField, parseWithSchema, sendError } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import {
   AgentPermissionPolicyError,
@@ -13,8 +13,110 @@ import {
   type AgentTypeRecord,
 } from "../services/agent-type-service.js";
 import { AGENT_SCOPE_KIND_VALUES, AGENT_TYPE_STATUS_VALUES } from "../services/agent-scope-types.js";
+import {
+  WorkspaceManagementService,
+  WorkspaceManagementServiceError,
+  type WorkspaceManagementActor,
+  type WorkspaceManagementRecord,
+} from "../services/workspace-management-service.js";
+import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
 
 const workspaceIdParamsSchema = z.object({ id: z.string().min(1) });
+
+const workspaceSettingsSchema = z.record(z.string(), z.unknown());
+
+const listWorkspacesQuerySchema = z
+  .object({
+    status: z.enum(["active", "archived"]).optional(),
+    include_archived: z.boolean().optional(),
+  })
+  .strict();
+
+const createWorkspaceBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    settings: workspaceSettingsSchema.optional(),
+  })
+  .strict();
+
+const updateWorkspaceBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    settings: workspaceSettingsSchema.nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.name !== undefined || Object.prototype.hasOwnProperty.call(value, "settings"),
+    { message: "At least one workspace field must be provided" },
+  );
+
+const workspaceJsonSchema = {
+  type: "object",
+  required: [
+    "id",
+    "account_id",
+    "name",
+    "kind",
+    "is_default",
+    "status",
+    "settings",
+    "archived_at",
+    "created_at",
+    "updated_at",
+  ],
+  properties: {
+    id: { type: "string" },
+    account_id: { type: "string" },
+    name: { type: "string" },
+    kind: { type: "string", enum: ["default", "manual"] },
+    is_default: { type: "boolean" },
+    status: { type: "string", enum: ["active", "archived"] },
+    settings: {},
+    archived_at: { anyOf: [{ type: "integer", minimum: 0 }, { type: "null" }] },
+    created_at: { type: "integer", minimum: 0 },
+    updated_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const workspaceListResponseJsonSchema = {
+  type: "object",
+  required: ["items"],
+  properties: {
+    items: { type: "array", items: workspaceJsonSchema },
+  },
+  additionalProperties: false,
+} as const;
+
+const listWorkspacesQueryJsonSchema = {
+  type: "object",
+  properties: {
+    status: { type: "string", enum: ["active", "archived"] },
+    include_archived: { type: "boolean" },
+  },
+  additionalProperties: false,
+} as const;
+
+const createWorkspaceBodyJsonSchema = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    settings: { type: "object", additionalProperties: true },
+  },
+  additionalProperties: false,
+} as const;
+
+const updateWorkspaceBodyJsonSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    settings: { anyOf: [{ type: "object", additionalProperties: true }, { type: "null" }] },
+  },
+  additionalProperties: false,
+} as const;
+
 const agentTypeIdParamsSchema = z.object({
   id: z.string().min(1),
   agent_type_id: z.string().min(1),
@@ -58,18 +160,63 @@ type AgentDefaultsBody = z.infer<typeof agentDefaultsSchema>;
 function requireAccountActor(
   request: FastifyRequest,
   reply: FastifyReply,
+  options: { code?: string; message?: string } = {},
 ): { accountId: string } | null {
   const auth = getRequestAuthContext(request);
   if (auth.actorType !== "account") {
- sendError(
+    sendError(
       reply,
       403,
-      "agent_type_account_only",
-      "Workspace-level agent type management requires an account actor",
+      options.code ?? "agent_type_account_only",
+      options.message ?? "Workspace-level agent type management requires an account actor",
     );
     return null;
   }
   return { accountId: auth.accountId };
+}
+
+function requireWorkspaceAccountActor(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): { accountId: string } | null {
+  return requireAccountActor(request, reply, {
+    code: "workspace_account_only",
+    message: "Workspace management requires an account actor",
+  });
+}
+
+function buildWorkspaceActor(request: FastifyRequest): WorkspaceManagementActor {
+  const auth = getRequestAuthContext(request);
+  return {
+    actorType: auth.actorType,
+    actorId: auth.actorId,
+    actorAccountId: auth.actorAccountId,
+    actorClientId: auth.actorClientId,
+    source: "api",
+    requestId: typeof request.id === "string" && request.id.trim().length > 0 ? request.id : null,
+  };
+}
+
+function workspaceToResponse(record: WorkspaceManagementRecord) {
+  return {
+    id: record.id,
+    account_id: record.accountId,
+    name: record.name,
+    kind: record.kind,
+    is_default: record.isDefault,
+    status: record.status,
+    settings: parseJsonField(record.settingsJson),
+    archived_at: record.archivedAt,
+    created_at: record.createdAt,
+    updated_at: record.updatedAt,
+  };
+}
+
+function handleWorkspaceManagementError(error: unknown, reply: FastifyReply) {
+  if (error instanceof WorkspaceManagementServiceError) {
+    return sendError(reply, error.statusCode, error.code, error.message);
+  }
+  throw error;
 }
 
 function agentTypeToResponse(record: AgentTypeRecord) {
@@ -125,6 +272,212 @@ export async function registerWorkspaceRoutes(
   connection: DatabaseConnection,
 ): Promise<void> {
   const db = connection.db;
+  const workspaceManagementService = new WorkspaceManagementService(db);
+
+  app.get(
+    "/workspaces",
+    {
+      schema: {
+        tags: ["workspaces"],
+        summary: "List workspaces",
+        querystring: listWorkspacesQueryJsonSchema,
+        response: {
+          200: workspaceListResponseJsonSchema,
+          400: errorResponseJsonSchema,
+          403: errorResponseJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const actor = requireWorkspaceAccountActor(request, reply);
+      if (!actor) return;
+      const parsed = parseWithSchema(listWorkspacesQuerySchema, request.query, reply);
+      if (!parsed.ok) return;
+      const records = workspaceManagementService.list({
+        accountId: actor.accountId,
+        status: parsed.data.status,
+        includeArchived: parsed.data.include_archived,
+      });
+      return reply.send({ items: records.map(workspaceToResponse) });
+    },
+  );
+
+  app.get(
+    "/workspaces/:id",
+    {
+      schema: {
+        tags: ["workspaces"],
+        summary: "Get workspace detail",
+        params: idParamsJsonSchema,
+        response: {
+          200: workspaceJsonSchema,
+          400: errorResponseJsonSchema,
+          403: errorResponseJsonSchema,
+          404: errorResponseJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const actor = requireWorkspaceAccountActor(request, reply);
+      if (!actor) return;
+      const parsed = parseWithSchema(workspaceIdParamsSchema, request.params, reply);
+      if (!parsed.ok) return;
+      try {
+        const record = workspaceManagementService.getById({
+          accountId: actor.accountId,
+          id: parsed.data.id,
+        });
+        return reply.send(workspaceToResponse(record));
+      } catch (error) {
+        return handleWorkspaceManagementError(error, reply);
+      }
+    },
+  );
+
+  app.post(
+    "/workspaces",
+    {
+      schema: {
+        tags: ["workspaces"],
+        summary: "Create workspace",
+        body: createWorkspaceBodyJsonSchema,
+        response: {
+          201: workspaceJsonSchema,
+          400: errorResponseJsonSchema,
+          403: errorResponseJsonSchema,
+          404: errorResponseJsonSchema,
+          409: errorResponseJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const actor = requireWorkspaceAccountActor(request, reply);
+      if (!actor) return;
+      const parsed = parseWithSchema(createWorkspaceBodySchema, request.body, reply);
+      if (!parsed.ok) return;
+      try {
+        const record = workspaceManagementService.create({
+          accountId: actor.accountId,
+          name: parsed.data.name,
+          settings: parsed.data.settings,
+          actor: buildWorkspaceActor(request),
+        });
+        return reply.code(201).send(workspaceToResponse(record));
+      } catch (error) {
+        return handleWorkspaceManagementError(error, reply);
+      }
+    },
+  );
+
+  app.patch(
+    "/workspaces/:id",
+    {
+      schema: {
+        tags: ["workspaces"],
+        summary: "Update workspace",
+        params: idParamsJsonSchema,
+        body: updateWorkspaceBodyJsonSchema,
+        response: {
+          200: workspaceJsonSchema,
+          400: errorResponseJsonSchema,
+          403: errorResponseJsonSchema,
+          404: errorResponseJsonSchema,
+          409: errorResponseJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const actor = requireWorkspaceAccountActor(request, reply);
+      if (!actor) return;
+      const params = parseWithSchema(workspaceIdParamsSchema, request.params, reply);
+      if (!params.ok) return;
+      const body = parseWithSchema(updateWorkspaceBodySchema, request.body, reply);
+      if (!body.ok) return;
+      const settingsPatch = Object.prototype.hasOwnProperty.call(body.data, "settings")
+        ? { settings: body.data.settings ?? null }
+        : {};
+      try {
+        const record = workspaceManagementService.update({
+          accountId: actor.accountId,
+          id: params.data.id,
+          name: body.data.name,
+          ...settingsPatch,
+          actor: buildWorkspaceActor(request),
+        });
+        return reply.send(workspaceToResponse(record));
+      } catch (error) {
+        return handleWorkspaceManagementError(error, reply);
+      }
+    },
+  );
+
+  app.post(
+    "/workspaces/:id/archive",
+    {
+      schema: {
+        tags: ["workspaces"],
+        summary: "Archive workspace",
+        params: idParamsJsonSchema,
+        response: {
+          200: workspaceJsonSchema,
+          400: errorResponseJsonSchema,
+          403: errorResponseJsonSchema,
+          404: errorResponseJsonSchema,
+          409: errorResponseJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const actor = requireWorkspaceAccountActor(request, reply);
+      if (!actor) return;
+      const parsed = parseWithSchema(workspaceIdParamsSchema, request.params, reply);
+      if (!parsed.ok) return;
+      try {
+        const record = workspaceManagementService.archive({
+          accountId: actor.accountId,
+          id: parsed.data.id,
+          actor: buildWorkspaceActor(request),
+        });
+        return reply.send(workspaceToResponse(record));
+      } catch (error) {
+        return handleWorkspaceManagementError(error, reply);
+      }
+    },
+  );
+
+  app.post(
+    "/workspaces/:id/restore",
+    {
+      schema: {
+        tags: ["workspaces"],
+        summary: "Restore workspace",
+        params: idParamsJsonSchema,
+        response: {
+          200: workspaceJsonSchema,
+          400: errorResponseJsonSchema,
+          403: errorResponseJsonSchema,
+          404: errorResponseJsonSchema,
+          409: errorResponseJsonSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const actor = requireWorkspaceAccountActor(request, reply);
+      if (!actor) return;
+      const parsed = parseWithSchema(workspaceIdParamsSchema, request.params, reply);
+      if (!parsed.ok) return;
+      try {
+        const record = workspaceManagementService.restore({
+          accountId: actor.accountId,
+          id: parsed.data.id,
+          actor: buildWorkspaceActor(request),
+        });
+        return reply.send(workspaceToResponse(record));
+      } catch (error) {
+        return handleWorkspaceManagementError(error, reply);
+      }
+    },
+  );
 
   app.get(
     "/workspaces/:id/agent-types",

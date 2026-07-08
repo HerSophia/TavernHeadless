@@ -22,6 +22,7 @@ import type {
   InstanceSlot,
   StructuredTextHunk,
   TextHunkApplyResult,
+  ToolSideEffectLevel,
 } from "@tavern/core";
 
 import type { AppDb, DbExecutor } from "../db/client.js";
@@ -843,6 +844,29 @@ const RESOURCE_TOOLS: ToolDefinition[] = [
     ...RESOURCE_COMMON,
   },
 ];
+
+// ── Tool catalog export ─────────────────────────────────
+
+/** 资源工具目录条目：工具名 + 副作用级别 + 描述。 */
+export interface ResourceToolCatalogEntry {
+  name: string;
+  sideEffectLevel: ToolSideEffectLevel;
+  description: string;
+}
+
+/**
+ * 资源工具目录（名称 + sideEffectLevel + 描述）。
+ *
+ * 直接从工具定义派生，供「工具目录聚合」与工具策略预设默认值推导使用，
+ * 避免与实际工具定义脱节（写工具 = irreversible → 默认 confirm；只读工具 = none → 默认 auto）。
+ */
+export const RESOURCE_TOOL_CATALOG: ResourceToolCatalogEntry[] = RESOURCE_TOOLS.map(
+  (tool) => ({
+    name: tool.name,
+    sideEffectLevel: tool.sideEffectLevel ?? "none",
+    description: tool.description,
+  }),
+);
 
 // ── Helpers ─────────────────────────────────────────────
 
