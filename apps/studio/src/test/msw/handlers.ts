@@ -196,6 +196,109 @@ export const graphAssistantToolPolicyHandlers = [
   }),
 ];
 
+/** 工具策略预设：统一工具目录样本。 */
+export const sampleToolCatalog = [
+  {
+    tool_name: "create_character",
+    category: "character",
+    side_effect_level: "irreversible",
+    description: "Create a character.",
+  },
+  {
+    tool_name: "list_characters",
+    category: "character",
+    side_effect_level: "none",
+    description: "List characters.",
+  },
+  {
+    tool_name: "update_todo_list",
+    category: "todo",
+    side_effect_level: "sandbox",
+    description: "Rewrite or update the todo list.",
+  },
+] as const;
+
+/** 工具策略预设：预设摘要样本（一个内置 + 一个自定义）。 */
+export const sampleToolPolicyPresets = [
+  {
+    preset_key: "regular-chat",
+    kind: "builtin",
+    display_name: "Regular Chat",
+    customized: false,
+    enabled_count: 0,
+    auto_count: 0,
+    confirm_count: 0,
+  },
+  {
+    preset_key: "asset-management",
+    kind: "builtin",
+    display_name: "Asset Management",
+    customized: false,
+    enabled_count: 3,
+    auto_count: 1,
+    confirm_count: 2,
+  },
+] as const;
+
+function buildPresetDetail(presetKey: string, enabledTools: string[]) {
+  const enabled = new Set(enabledTools);
+  const tools = sampleToolCatalog.map((entry) => {
+    const defaultDecision = entry.side_effect_level === "irreversible" ? "confirm" : "auto";
+    return {
+      ...entry,
+      enabled: enabled.has(entry.tool_name),
+      default_decision: defaultDecision,
+      decision: defaultDecision,
+      source: "default" as const,
+    };
+  });
+  const summary = sampleToolPolicyPresets.find((preset) => preset.preset_key === presetKey) ?? {
+    preset_key: presetKey,
+    kind: "custom" as const,
+    display_name: presetKey,
+    customized: true,
+    enabled_count: enabledTools.length,
+    auto_count: 0,
+    confirm_count: 0,
+  };
+  return {
+    ...summary,
+    enabled_count: enabledTools.length,
+    config: { enabled_tools: enabledTools, decisions: {} },
+    tools,
+  };
+}
+
+/** 工具策略预设第一方路由 handlers（project p1）。 */
+export const toolPolicyPresetHandlers = [
+  http.get(`${API_BASE}/projects/p1/tool-policy-presets`, () =>
+    HttpResponse.json({ tool_catalog: sampleToolCatalog, presets: sampleToolPolicyPresets }),
+  ),
+  http.get(`${API_BASE}/projects/p1/tool-policy-presets/:key`, ({ params }) => {
+    const key = String(params.key);
+    const enabled = key === "asset-management" ? sampleToolCatalog.map((entry) => entry.tool_name) : [];
+    return HttpResponse.json(buildPresetDetail(key, enabled));
+  }),
+  http.put(`${API_BASE}/projects/p1/tool-policy-presets/:key`, async ({ params, request }) => {
+    const key = String(params.key);
+    const body = (await request.json()) as { enabled_tools?: string[] };
+    return HttpResponse.json(buildPresetDetail(key, body.enabled_tools ?? []));
+  }),
+  http.post(`${API_BASE}/projects/p1/tool-policy-presets/:key/reset`, ({ params }) =>
+    HttpResponse.json(buildPresetDetail(String(params.key), [])),
+  ),
+  http.post(`${API_BASE}/projects/p1/tool-policy-presets`, async ({ request }) => {
+    const body = (await request.json()) as { preset_key: string; config?: { enabled_tools?: string[] } };
+    return HttpResponse.json(
+      buildPresetDetail(body.preset_key, body.config?.enabled_tools ?? []),
+      { status: 201 },
+    );
+  }),
+  http.delete(`${API_BASE}/projects/p1/tool-policy-presets/:key`, () =>
+    HttpResponse.json({ ok: true }),
+  ),
+];
+
 /** 一条待确认工具调用样本（后端 snake_case 形态；会话 c1）。 */
 export const samplePendingToolCall = {
   id: "ptc1",

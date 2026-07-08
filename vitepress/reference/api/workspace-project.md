@@ -22,7 +22,8 @@ Workspace 和 Project 是账号下的两层组织边界。Workspace 用于归拢
 
 | 路由族 | 主要入口 | 说明 | 文档 |
 | ---- | ---- | ---- | ---- |
-| Projects 基础 | `GET /projects`、`/projects/:id/sessions`、`/projects/:id/events`、`/projects/:id/members` | 列出 Project、读会话摘要、查询和订阅事件、维护成员 | [Projects](./projects) |
+| Workspaces 管理 | `GET/POST /workspaces`、`GET/PATCH /workspaces/:id`、`/workspaces/:id/archive`、`/workspaces/:id/restore` | 列出、读取、创建、更新、归档、恢复 Workspace | [Workspaces](./workspaces) |
+| Projects 基础 | `GET/POST /projects`、`PATCH /projects/:id`、`/projects/:id/archive`、`/projects/:id/restore`、`/projects/:id/duplicate`、`/projects/:id/sessions`、`/projects/:id/events`、`/projects/:id/members` | 创建/更新/归档/恢复/复制 Project、列出、读会话摘要、查询和订阅事件、维护成员 | [Projects](./projects) |
 | Derived Outputs | `/projects/:id/derived-outputs` | 保存 Project 范围内的派生 JSON 结果 | [Project Derived Outputs](./projects-derived-outputs) |
 | Inbox | `/projects/:id/inbox` | 保存待 owner 决策的收件箱条目 | [Project Inbox](./projects-inbox) |
 | Agent Types | `/workspaces/:id/agent-types` | Workspace 级 Agent 模板定义 | [Agent Types](./agent-types) |
@@ -36,7 +37,8 @@ Workspace 和 Project 是账号下的两层组织边界。Workspace 用于归拢
 
 | 你要解决的问题 | 先看 |
 | ---- | ---- |
-| 列出 Project、查事件、加成员 | [Projects](./projects) |
+| 创建、更新、归档 Workspace | [Workspaces](./workspaces) |
+| 创建、更新、归档、复制 Project，列出、查事件、加成员 | [Projects](./projects) |
 | 让 deriver 写入分析结果 | [Project Derived Outputs](./projects-derived-outputs) |
 | 给 owner 留待决策的建议 | [Project Inbox](./projects-inbox) |
 | 定义一个可复用的 Agent 模板 | [Agent Types](./agent-types) |
@@ -127,9 +129,8 @@ Agent 在当前版本不能写主叙事正史，也不能直接写入 `session_m
 
 下面这些能力当前明确不提供，请不要按猜测调用：
 
-- 完整 Workspace 成员体系。
-- 完整 `GET/POST/PATCH /workspaces` 管理 API。
-- 完整 `POST/PATCH/DELETE /projects` 管理 API。
+- 完整 Workspace 成员体系（多账号协作）。
+- Project 的物理删除（`DELETE /projects/:id`）。归档请改用 `POST /projects/:id/archive`。
 - 具体 Agent Processor 执行（当前是占位实现）。
 - Agent 自动写主 Session。
 - Inbox accept 自动合并到主 Session。

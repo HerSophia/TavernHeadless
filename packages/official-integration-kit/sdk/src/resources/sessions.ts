@@ -120,6 +120,8 @@ export type SessionRecord = {
   userBinding: SessionUserBinding | null;
   worldbookProfileId: string | null;
   worldbookVersionId?: string | null;
+  /** 会话绑定的工具策略预设 key（SC2-10 / 批次五）；未绑定或旧后端未返回时为 null / 缺省。 */
+  toolPresetKey?: string | null;
 };
 
 export type SessionDetail = SessionRecord;
@@ -460,6 +462,8 @@ export type SessionsCreateOptions = {
   userSnapshot?: SessionUserSnapshotInput;
   worldbookProfileId?: string | null;
   worldbookVersionId?: string | null;
+  /** 会话绑定的工具策略预设 key（SC2-10 / 批次五）；null 表示不绑定预设。 */
+  toolPresetKey?: string | null;
 };
 
 export type SessionsGetDetailOptions = {
@@ -560,6 +564,8 @@ export type SessionsUpdateOptions = {
   userSnapshot?: SessionUserSnapshotInput;
   worldbookProfileId?: string | null;
   worldbookVersionId?: string | null;
+  /** 会话绑定的工具策略预设 key（SC2-10 / 批次五）；null 表示清除绑定。 */
+  toolPresetKey?: string | null;
 };
 
 export type SessionsRemoveOptions = {
@@ -1216,6 +1222,7 @@ function mapSessionWriteBody(options: SessionsCreateOptions | SessionsUpdateOpti
     user_snapshot: options.userSnapshot,
     worldbook_profile_id: options.worldbookProfileId,
     worldbook_version_id: options.worldbookVersionId,
+    tool_preset_key: options.toolPresetKey,
   });
 }
 
@@ -1654,6 +1661,9 @@ function mapSessionDetail(value: unknown): SessionDetail | null {
     worldbookProfileId: readNullableString(record.worldbook_profile_id),
     ...(record.worldbook_version_id !== undefined
       ? { worldbookVersionId: readNullableString(record.worldbook_version_id) }
+      : {}),
+    ...(record.tool_preset_key !== undefined
+      ? { toolPresetKey: readNullableString(record.tool_preset_key) }
       : {}),
   };
 }

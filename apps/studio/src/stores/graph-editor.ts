@@ -596,6 +596,36 @@ export const useGraphEditorStore = defineStore("graph-editor", () => {
     }
   }
 
+  /**
+   * 用**显式 graphId/versionId** 绑定楼层图（主会话侧用；与 `setCurrentGraphAsFloorBinding`
+   * 同构，但目标图/版本来自参数而非当前编辑图）。复用 `floorGraphBindings` 状态。
+   */
+  async function setFloorGraphBindingTo(
+    projectId: string,
+    kind: FloorGraphBindingKind,
+    graphId: string,
+    versionId: string,
+  ): Promise<boolean> {
+    floorGraphBindingSaving.value = true;
+    error.value = null;
+    try {
+      const result = await nodeGraphApi.setFloorGraphBinding(projectId, kind, {
+        graph_id: graphId,
+        graph_version_id: versionId,
+      });
+      floorGraphBindings.value = [
+        ...floorGraphBindings.value.filter((binding) => binding.kind !== kind),
+        result.item,
+      ];
+      return true;
+    } catch (cause) {
+      error.value = describeError(cause);
+      return false;
+    } finally {
+      floorGraphBindingSaving.value = false;
+    }
+  }
+
   async function clearFloorGraphBinding(projectId: string, kind: FloorGraphBindingKind): Promise<boolean> {
     floorGraphBindingSaving.value = true;
     error.value = null;
@@ -1474,6 +1504,7 @@ pushHistory();
     isCurrentVersionBoundAs,
     hasCurrentGraphFloorBindingVersionMismatch,
     setCurrentGraphAsFloorBinding,
+    setFloorGraphBindingTo,
     clearFloorGraphBinding,
     setAsCurrentVersion,
     validateOnServer,

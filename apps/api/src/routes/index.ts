@@ -34,6 +34,7 @@ import { registerClientRoutes } from "./clients.js";
 import { registerAssetVersionRoutes } from "./asset-versions.js";
 import { registerBranchVcRoutes } from "./branch-vc.js";
 import { registerOperationLogRoutes } from "./operation-logs.js";
+import { registerScopeIntegrityRoutes } from "./scope-integrity.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerWorkspaceRoutes } from "./workspaces.js";
 import { registerProjectAgentBindingRoutes } from "./project-agent-bindings.js";
@@ -42,6 +43,8 @@ import { registerProjectFloorGraphBindingRoutes } from "./project-floor-graph-bi
 import { registerNodeGraphRoutes } from "./node-graphs.js";
 import { registerGraphAssistantToolPolicyRoutes } from "./graph-assistant-tool-policy.js";
 import { registerGraphAssistantPromptConfigRoutes } from "./graph-assistant-prompt-config.js";
+import { registerToolPolicyPresetRoutes } from "./tool-policy-presets.js";
+import { registerSessionTodoListRoutes } from "./session-todo-list.js";
 import { registerVcTagRoutes } from "./vc-tags.js";
 import type { AccountMode } from "../accounts/constants.js";
 
@@ -94,6 +97,8 @@ export async function registerCrudRoutes(
   });
   await registerGraphAssistantToolPolicyRoutes(app, connection);
   await registerGraphAssistantPromptConfigRoutes(app, connection);
+  await registerToolPolicyPresetRoutes(app, connection);
+  await registerSessionTodoListRoutes(app, connection);
   await registerCharacterRoutes(app, connection);
   await registerFloorRoutes(app, connection, {
     floorRun: options.floorRun,
@@ -126,6 +131,7 @@ export async function registerCrudRoutes(
     floorRun: options.floorRun,
   });
   await registerOperationLogRoutes(app, connection);
+  await registerScopeIntegrityRoutes(app, connection);
   await registerVcTagRoutes(app, connection);
   await registerToolRoutes(app, connection, {
     enableUnsafeScriptHandler: options.enableUnsafeScriptHandler,

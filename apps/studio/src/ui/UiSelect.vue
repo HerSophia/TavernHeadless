@@ -6,7 +6,7 @@
  * 配色与间距对齐设计令牌；菜单为克制浮层，不用大阴影。
  */
 import { Check, ChevronDown } from "lucide-vue-next";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 
 type SelectOption = { value: T; label: string; disabled?: boolean };
 
@@ -20,9 +20,28 @@ const props = defineProps<{
 const emit = defineEmits<{ "update:modelValue": [value: T] }>();
 
 const root = ref<HTMLElement | null>(null);
+const trigger = ref<HTMLButtonElement | null>(null);
 const open = ref(false);
 // 键盘高亮项索引（仅菜单展开时有意义）
 const activeIndex = ref(-1);
+// 菜单是否向上翻转（下方空间不足时，避免在对话框底部被 overflow-hidden 裁剪 / 被 footer 覆盖）
+const dropUp = ref(false);
+// 菜单最大高（与模板 max-h-60 对齐 = 15rem = 240px），用于翻转方向测算。
+const MENU_MAX_HEIGHT = 240;
+
+/** 根据触发器在视口中的位置决定菜单向上还是向下展开。 */
+function updateDropDirection(): void {
+  const el = trigger.value;
+  if (!el || typeof window === "undefined") {
+    dropUp.value = false;
+    return;
+  }
+  const rect = el.getBoundingClientRect();
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  // 下方装不下菜单且上方更宽裕时向上翻转。
+  dropUp.value = spaceBelow < MENU_MAX_HEIGHT && spaceAbove > spaceBelow;
+}
 
 const selected = computed(() => props.options.find((option) => option.value === props.modelValue) ?? null);
 
@@ -32,6 +51,7 @@ function openMenu(): void {
   }
   open.value = true;
   activeIndex.value = props.options.findIndex((option) => option.value === props.modelValue);
+  void nextTick(updateDropDirection);
 }
 
 function closeMenu(): void {
@@ -126,6 +146,7 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", onPointerDown));
 <template>
   <div ref="root" class="relative">
     <button
+      ref="trigger"
       type="button"
       :disabled="disabled"
       class="flex w-full items-center justify-between gap-2 rounded-md border bg-float px-2.5 py-1.5 text-left text-sm text-text-primary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent disabled:cursor-not-allowed disabled:opacity-50"
@@ -146,7 +167,8 @@ onBeforeUnmount(() => window.removeEventListener("pointerdown", onPointerDown));
 
     <div
       v-if="open"
-      class="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-md border border-line-subtle bg-float py-1 shadow-[0_4px_16px_-8px_rgba(0,0,0,0.5)]"
+      class="absolute z-30 max-h-60 w-full overflow-auto rounded-md border border-line-subtle bg-float py-1 shadow-[0_4px_16px_-8px_rgba(0,0,0,0.5)]"
+      :class="dropUp ? 'bottom-full mb-1' : 'top-full mt-1'"
     >
       <button
         v-for="(option, index) in options"

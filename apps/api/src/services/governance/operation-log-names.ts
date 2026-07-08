@@ -58,17 +58,31 @@ export const GOVERNANCE_OPERATION_ACTIONS = {
     allowed: buildOperationLogAction("permission", "allowed"),
     denied: buildOperationLogAction("permission", "denied"),
   },
-  // WP-B1：Workspace 成员治理。
+  // WP-A1 / WP-B1：Workspace 生命周期与成员治理。
   workspace: {
+    create: buildOperationLogAction("workspace", "create"),
+    update: buildOperationLogAction("workspace", "update"),
+    archive: buildOperationLogAction("workspace", "archive"),
+    restore: buildOperationLogAction("workspace", "restore"),
     memberAdd: buildOperationLogResourceAction("workspace", "member", "add"),
     memberRemove: buildOperationLogResourceAction("workspace", "member", "remove"),
     memberUpdate: buildOperationLogResourceAction("workspace", "member", "update"),
   },
-  // WP-B1 / WP-A2：Project 成员与生命周期治理。
+  // WP-A2 / WP-B1：Project 生命周期与成员治理。
   project: {
+    create: buildOperationLogAction("project", "create"),
+    update: buildOperationLogAction("project", "update"),
+    archive: buildOperationLogAction("project", "archive"),
+    restore: buildOperationLogAction("project", "restore"),
+    duplicate: buildOperationLogAction("project", "duplicate"),
     memberAdd: buildOperationLogResourceAction("project", "member", "add"),
     memberRemove: buildOperationLogResourceAction("project", "member", "remove"),
     memberUpdate: buildOperationLogResourceAction("project", "member", "update"),
+  },
+  // WP-A4：ScopeIntegrity 受控诊断 / 修复审计。
+  scopeIntegrity: {
+    diagnose: buildOperationLogAction("scope_integrity", "diagnose"),
+    repair: buildOperationLogAction("scope_integrity", "repair"),
   },
 } as const;
 
