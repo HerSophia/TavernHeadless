@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { useContextStore } from "../../stores/context";
 
 const { t } = useI18n();
 const ctx = useContextStore();
+
+// 当前选中会话不在已加载列表中（被过滤/分页排除）时，仍允许下拉显示当前选择。
+const currentSessionMissing = computed(() => {
+  const id = ctx.currentSessionId;
+  return !!id && !ctx.sessions.some((session) => session.id === id);
+});
 
 onMounted(() => {
   if (ctx.projects.length === 0) {
@@ -44,10 +50,14 @@ function onSessionChange(event: Event): void {
       <select
         class="max-w-40 rounded-md border border-line-subtle bg-float px-2 py-1 text-text-secondary transition-colors duration-150 hover:border-line-active focus:outline-none focus-visible:ring-1 focus-visible:ring-signal-accent"
         :value="ctx.currentSessionId ?? ''"
-        :disabled="ctx.sessions.length === 0"
+        :disabled="ctx.sessions.length === 0 && !currentSessionMissing"
         @change="onSessionChange"
       >
-        <option v-if="ctx.sessions.length === 0" value="">—</option>
+        <option v-if="ctx.sessions.length === 0 && !currentSessionMissing" value="">—</option>
+        <option v-else-if="!ctx.currentSessionId" value="">—</option>
+        <option v-if="currentSessionMissing" :value="ctx.currentSessionId ?? ''">
+          {{ ctx.currentSessionId }}
+        </option>
         <option v-for="session in ctx.sessions" :key="session.id" :value="session.id">
           {{ session.title ?? session.id }}
         </option>

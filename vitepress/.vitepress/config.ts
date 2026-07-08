@@ -133,6 +133,7 @@ export default defineConfig({
               text: 'Workspace / Project（工作区与项目）',
               items: [
                 { text: '总览', link: '/reference/api/workspace-project' },
+                { text: 'Workspaces（Workspace 管理）', link: '/reference/api/workspaces' },
                 { text: 'Projects（项目基础接口）', link: '/reference/api/projects' },
                 { text: 'Derived Outputs（项目派生结果）', link: '/reference/api/projects-derived-outputs' },
                 { text: 'Inbox（项目收件箱）', link: '/reference/api/projects-inbox' },
@@ -169,6 +170,7 @@ export default defineConfig({
             },
             { text: 'Client Data（客户端专属数据域）', link: '/reference/api/client-data' },
             { text: 'Operation Logs（操作日志）', link: '/reference/api/operation-logs' },
+            { text: 'Scope Integrity（作用域一致性运维）', link: '/reference/api/scope-integrity' },
             { text: 'Clients（客户端身份）', link: '/reference/api/clients' },
             { text: 'VC Tags（版本标签）', link: '/reference/api/vc-tags' },
           ],

@@ -66,6 +66,79 @@ function repairKnownAdditiveSchemaDrift(sqlite: Database.Database): void {
   repairProjectFloorGraphBindingDrift(sqlite);
   repairFloorResultSnapshotReasoningDrift(sqlite);
   repairToolExecutionGenerationStepNoDrift(sqlite);
+  repairWorkspaceProjectLifecycleDrift(sqlite);
+  repairToolPolicyPresetDrift(sqlite);
+  repairSessionToolPresetKeyDrift(sqlite);
+  repairSessionTodoListDrift(sqlite);
+}
+
+// SC2-12（批次四）：会话待办事项清单表的 additive 漂移修复——历史库可能尚未创建该表。
+function repairSessionTodoListDrift(sqlite: Database.Database): void {
+  if (!tableExists(sqlite, "account") || !tableExists(sqlite, "session")) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "session_todo_list")) {
+    sqlite.exec(`CREATE TABLE \`session_todo_list\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`session_id\` text NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`items_json\` text NOT NULL DEFAULT '[]',
+  \`revision\` integer NOT NULL DEFAULT 0,
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON UPDATE no action ON DELETE restrict
+);`);
+  }
+
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `session_todo_list_session_uq` ON `session_todo_list` (`session_id`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `session_todo_list_account_updated_idx` ON `session_todo_list` (`account_id`, `updated_at`);");
+}
+
+// SC2-10（批次四）：session 新增 tool_preset_key 列的 additive 漂移修复。
+function repairSessionToolPresetKeyDrift(sqlite: Database.Database): void {
+  addColumnIfMissing(sqlite, "session", "tool_preset_key", "`tool_preset_key` text");
+}
+
+// SC2-10（批次四）：工具策略预设表的 additive 漂移修复——历史库可能尚未创建该表。
+function repairToolPolicyPresetDrift(sqlite: Database.Database): void {
+  if (
+    !tableExists(sqlite, "account")
+    || !tableExists(sqlite, "workspace")
+    || !tableExists(sqlite, "project")
+  ) {
+    return;
+  }
+
+  if (!tableExists(sqlite, "tool_policy_preset")) {
+    sqlite.exec(`CREATE TABLE \`tool_policy_preset\` (
+  \`id\` text PRIMARY KEY NOT NULL,
+  \`workspace_id\` text NOT NULL,
+  \`project_id\` text NOT NULL,
+  \`account_id\` text NOT NULL,
+  \`preset_key\` text NOT NULL,
+  \`kind\` text NOT NULL DEFAULT 'custom',
+  \`display_name\` text NOT NULL DEFAULT '',
+  \`config_json\` text NOT NULL DEFAULT '{}',
+  \`created_at\` integer NOT NULL,
+  \`updated_at\` integer NOT NULL,
+  FOREIGN KEY (\`workspace_id\`) REFERENCES \`workspace\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+  FOREIGN KEY (\`account_id\`) REFERENCES \`account\`(\`id\`) ON UPDATE no action ON DELETE restrict
+);`);
+  }
+
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS `tool_policy_preset_project_key_uq` ON `tool_policy_preset` (`project_id`, `preset_key`);");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS `tool_policy_preset_workspace_idx` ON `tool_policy_preset` (`workspace_id`, `created_at`);");
+}
+
+// WP-A1 / WP-A2：Workspace / Project 生命周期管理的 additive 漂移修复。
+// `workspace.archived_at` / `project.archived_at` 记录归档时间戳；
+// `workspace.kind` 的 `manual` 取值仅在 ORM/服务层约束，列上无 CHECK，无需重建表。
+function repairWorkspaceProjectLifecycleDrift(sqlite: Database.Database): void {
+  addColumnIfMissing(sqlite, "workspace", "archived_at", "`archived_at` integer");
+  addColumnIfMissing(sqlite, "project", "archived_at", "`archived_at` integer");
 }
 
 // 思维链全链路：floor_result_snapshot 新增 reasoning_text 列的 additive 漂移修复。
@@ -1867,6 +1940,34 @@ function resolveDatabasePath(databasePath: string): string {
   return resolvedPath;
 }
 
+/**
+ * Startup best-effort scope-integrity repair (WP-A4).
+ *
+ * Runs per account so each repair can be audited under a valid
+ * `operation_log.account_id` (the column is a non-null FK). Writes are tagged
+ * with a `system` actor and a `startup_repair` source, and
+ * {@link ScopeIntegrityService} only logs when an account actually had drift,
+ * so a clean database stays silent. Failures never block startup.
+ */
+function runStartupScopeIntegrityRepair(db: AppDb): void {
+  try {
+    const service = new ScopeIntegrityService(db);
+    const accountRows = db.select({ id: schema.accounts.id }).from(schema.accounts).all();
+    for (const { id: accountId } of accountRows) {
+      try {
+        service.repair({
+          accountId,
+          audit: { actorType: "system", source: "startup_repair" },
+        });
+      } catch {
+        // Per-account repair is best-effort; skip and continue.
+      }
+    }
+  } catch {
+    // Scope integrity repair is best-effort. Failures must not block startup.
+  }
+}
+
 export function createDatabase(
   databasePath = process.env.DATABASE_URL ?? DEFAULT_DATABASE_PATH,
   migrationsPath = DEFAULT_MIGRATIONS_PATH
@@ -1900,11 +2001,7 @@ export function createDatabase(
   repairKnownAdditiveSchemaDrift(sqlite);
   new AssetVersionService(db).ensureInitialVersionsForAllAccounts();
 
-  try {
-    new ScopeIntegrityService(db).repair({});
-  } catch {
-    // Scope integrity repair is best-effort. Failures must not block startup.
-  }
+  runStartupScopeIntegrityRepair(db);
 
   return {
     db,

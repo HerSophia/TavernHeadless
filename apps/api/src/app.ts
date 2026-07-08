@@ -58,6 +58,7 @@ import { registerRequestLogging } from "./plugins/request-logging";
 import { registerAuth, type AuthConfig } from "./plugins/auth";
 import { findNativePipelineError } from "./lib/native-pipeline-error";
 import { ensureDefaultAdminAccount } from "./accounts/service";
+import { ensureBuiltinAssets } from "./services/builtin-assets-seed.js";
 import { DEFAULT_ADMIN_ACCOUNT_ID, type AccountMode } from "./accounts/constants";
 import { registerCors, type CorsConfig } from "./plugins/cors";
 import { McpService } from "./services/tooling/mcp/mcp-service";
@@ -66,7 +67,7 @@ import { McpConnectionManager, McpToolProviderFactory } from "./services/tooling
 import { registerMcpRuntimeRoutes } from "./routes/tooling/mcp";
 import { SessionToolRegistryService } from "./services/tooling/session-tool-registry-service";
 import { ToolRegistry, BuiltinToolProvider } from "@tavern/core";
-import { ResourceToolProvider } from "./tools/index.js";
+import { ResourceToolProvider, TodoToolProvider } from "./tools/index.js";
 import { MemoryWorker } from "./services/memory-worker.js";
 import { AgentRuntimeWorker } from "./services/agent-runtime-worker.js";
 import { NodeGraphWorker } from "./services/node-graph-worker.js";
@@ -288,6 +289,12 @@ export type BuildAppOptions = {
   turnCommitRetryBaseDelayMs?: number;
   auth?: AuthConfig;
   accountMode?: AccountMode;
+  /**
+   * 是否幂等 seed 内置不可删除资产（SC2-11：两张内置角色卡 + 一本内置世界书）。
+   * 默认 `false`，保证集成测试拿到干净、可确定断言的 fixture；
+   * 生产入口（`index.ts`）显式置为 `true`，让真实部署自带内置资产。
+   */
+  seedBuiltinAssets?: boolean;
   cors?: CorsConfig;
   enableMcp?: boolean;
   enableUnsafeScriptHandler?: boolean;
@@ -441,6 +448,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   });
 
   await ensureDefaultAdminAccount(database.db);
+  // SC2-11：内置不可删除资产（两张角色卡 + 一本世界书）幂等 seed。
+  // 仅在显式开启时执行（生产入口置 true）；测试默认关闭以获得干净 fixture。
+  // 失败不阻断启动，仅记日志，避免种子问题影响服务可用性。
+  if (options.seedBuiltinAssets === true) {
+    try {
+      await ensureBuiltinAssets(database.db);
+    } catch (error) {
+      app.log.error({ err: error }, "Failed to seed builtin assets");
+    }
+  }
   const repairedCrossAccountCharacterBindings = await repairCrossAccountSessionCharacterBindings(database.db);
   if (repairedCrossAccountCharacterBindings > 0) {
     app.log.warn({
@@ -785,6 +802,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     baseToolRegistry.register(new ResourceToolProvider(database.db, {
       mutationRuntime: mutationRuntimeComponents.runtime,
     }));
+    // SC2-12（批次四）：待办事项工具与资源工具一样注册进 baseToolRegistry，
+    // 会话级可用性由工具策略预设（enabledTools）控制。
+    baseToolRegistry.register(new TodoToolProvider(database.db));
 
     const mcpDeferredHandler = mcpManager ? toolRuntimeComponents.handlerRegistry.find("mcp") : undefined;
     const mcpToolProviderFactory = mcpManager

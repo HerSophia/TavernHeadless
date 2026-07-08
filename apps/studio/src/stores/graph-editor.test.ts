@@ -933,6 +933,44 @@ describe("graph-editor store: version read / save", () => {
     expect(store.getFloorGraphBinding("native")).toBeNull();
   });
 
+  it("sets a floor graph binding with an explicit graph/version id", async () => {
+    vi.mocked(nodeGraphApi.setFloorGraphBinding).mockResolvedValue({
+      item: floorBindingResponse({
+        kind: "native",
+        graph_id: "g9",
+        graph_version_id: "v3",
+        graph_name: "Graph Nine",
+        graph_version_no: 3,
+      }),
+    });
+
+    const store = useGraphEditorStore();
+    const ok = await store.setFloorGraphBindingTo("p1", "native", "g9", "v3");
+    expect(ok).toBe(true);
+    expect(nodeGraphApi.setFloorGraphBinding).toHaveBeenCalledWith("p1", "native", {
+      graph_id: "g9",
+      graph_version_id: "v3",
+    });
+    expect(store.getFloorGraphBinding("native")).toMatchObject({
+      graph_id: "g9",
+      graph_version_id: "v3",
+    });
+    expect(store.floorGraphBindingSaving).toBe(false);
+  });
+
+  it("returns false and surfaces error when explicit floor graph binding fails", async () => {
+    vi.mocked(nodeGraphApi.setFloorGraphBinding).mockRejectedValue(
+      new NodeGraphApiError(400, { message: "compat graph must not include agent nodes" }),
+    );
+
+    const store = useGraphEditorStore();
+    const ok = await store.setFloorGraphBindingTo("p1", "compat", "g9", "v3");
+    expect(ok).toBe(false);
+    expect(store.error).toBe("compat graph must not include agent nodes");
+    expect(store.getFloorGraphBinding("compat")).toBeNull();
+    expect(store.floorGraphBindingSaving).toBe(false);
+  });
+
   it("does not bind an unsaved graph", async () => {
     const store = useGraphEditorStore();
     store.loadSample();

@@ -5,15 +5,16 @@
  * 走公共 `@tavern/sdk` 各资产资源（account 作用域）。详情/版本只读、删除。
  */
 import { apiClient } from "../sdk";
-import type { AssetKind, AssetVersionItem, LibraryAsset } from "./types";
+import type { AssetKind, AssetVersionItem, CharacterListQuery, LibraryAsset } from "./types";
 
-async function listCharacters(): Promise<LibraryAsset[]> {
+async function listCharacters(query?: CharacterListQuery): Promise<LibraryAsset[]> {
   const items = await apiClient.characters.list({
-    limit: 100,
-    offset: 0,
-    sortBy: "updated_at",
-    sortOrder: "desc",
-    status: "active",
+    limit: query?.limit ?? 100,
+    offset: query?.offset ?? 0,
+    sortBy: query?.sortBy ?? "updated_at",
+    sortOrder: query?.sortOrder ?? "desc",
+    status: query?.status ?? "active",
+    ...(query?.keyword ? { keyword: query.keyword } : {}),
   });
   return items.map((item) => ({
     kind: "character",
@@ -66,10 +67,16 @@ async function listRegex(): Promise<LibraryAsset[]> {
 }
 
 export const libraryApi = {
-  list(kind: AssetKind): Promise<LibraryAsset[]> {
+  /**
+   * 列出某类资产。
+   *
+   * - character：把 `query` 透传给服务端（keyword / sortBy / sortOrder / status / limit / offset）。
+   * - preset / worldbook / regex：SDK 无查询参数，忽略 `query`，取全量（前端过滤/排序）。
+   */
+  list(kind: AssetKind, query?: CharacterListQuery): Promise<LibraryAsset[]> {
     switch (kind) {
       case "character":
-        return listCharacters();
+        return listCharacters(query);
       case "preset":
         return listPresets();
       case "worldbook":

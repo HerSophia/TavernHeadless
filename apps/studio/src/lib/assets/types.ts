@@ -35,10 +35,40 @@ export interface LibraryAsset {
   updatedAt: number;
 }
 
+/** 资产排序字段（对齐 `characters.list` 的 sortBy，其余种类前端排序复用）。 */
+export type AssetSortBy = "created_at" | "name" | "updated_at";
+
+/** 排序方向。 */
+export type AssetSortOrder = "asc" | "desc";
+
+/** character 服务端列表查询（透传到 `characters.list`）。 */
+export interface CharacterListQuery {
+  keyword?: string;
+  sortBy?: AssetSortBy;
+  sortOrder?: AssetSortOrder;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface AssetVersionItem {
   id: string;
   versionNo: number;
   createdAt: number;
+}
+
+/**
+ * 资产选择器（SC2-3）对外产出的统一结果。
+ *
+ * `version: null` = 不锁版本（跟随最新）；选具体版本时带 `version`（版本号）与可选 `versionId`（版本记录 id）。
+ * SC2-4 会按 `SessionsCreateOptions` 把它映射为 `sessions.create` 的资产字段。
+ */
+export interface AssetSelection {
+  kind: AssetKind;
+  id: string;
+  name: string;
+  version: number | null;
+  versionId?: string;
 }
 
 export interface ImportedAssetSummary {

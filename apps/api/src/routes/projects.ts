@@ -7,6 +7,12 @@ import { projectMemberships, projects, sessions } from "../db/schema.js";
 import { parseJsonField, parseWithSchema, sendError } from "../lib/http.js";
 import { getRequestAuthContext } from "../plugins/auth.js";
 import { ProjectAccessService, ProjectAccessServiceError, type ProjectRole } from "../services/project-access-service.js";
+import {
+  ProjectLifecycleService,
+  ProjectLifecycleServiceError,
+  type ProjectLifecycleActor,
+  type ProjectLifecycleRecord,
+} from "../services/project-lifecycle-service.js";
 import type { ProjectEventLiveHub } from "../services/project-event-live-hub.js";
 import { ProjectEventService, type ProjectEventVisibility } from "../services/project-event-service.js";
 import { DerivedOutputService, DerivedOutputServiceError, type DerivedOutputRecord } from "../services/derived-output-service.js";
@@ -152,6 +158,33 @@ const decideProjectInboxItemSchema = z.object({
   note: z.string().trim().max(500).optional().nullable(),
 }).strict();
 
+const createProjectBodySchema = z
+  .object({
+    workspace_id: z.string().trim().min(1).optional(),
+    name: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2000).optional().nullable(),
+    settings: z.record(z.unknown()).optional().nullable(),
+  })
+  .strict();
+
+const updateProjectBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).optional().nullable(),
+    settings: z.record(z.unknown()).optional().nullable(),
+  })
+  .strict()
+  .refine(
+    (value) => value.name !== undefined || value.description !== undefined || value.settings !== undefined,
+    { message: "At least one field must be provided" },
+  );
+
+const duplicateProjectBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+  })
+  .strict();
+
 const nullableStringJsonSchema = { anyOf: [{ type: "string" }, { type: "null" }] } as const;
 
 const projectJsonSchema = {
@@ -181,6 +214,40 @@ const projectJsonSchema = {
     settings_override: {},
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
+  },
+  additionalProperties: false,
+} as const;
+
+const projectSettingsBodyJsonSchema = {
+  anyOf: [{ type: "object", additionalProperties: true }, { type: "null" }],
+} as const;
+
+const createProjectBodyJsonSchema = {
+  type: "object",
+  required: ["name"],
+  properties: {
+    workspace_id: { type: "string", minLength: 1 },
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    description: { anyOf: [{ type: "string", maxLength: 2000 }, { type: "null" }] },
+    settings: projectSettingsBodyJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const updateProjectBodyJsonSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    description: { anyOf: [{ type: "string", maxLength: 2000 }, { type: "null" }] },
+    settings: projectSettingsBodyJsonSchema,
+  },
+  additionalProperties: false,
+} as const;
+
+const duplicateProjectBodyJsonSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string", minLength: 1, maxLength: 200 },
   },
   additionalProperties: false,
 } as const;
@@ -474,6 +541,10 @@ export async function registerProjectRoutes(
   const { db } = connection;
   const accessService = new ProjectAccessService(db);
   const eventService = new ProjectEventService(db);
+  const lifecycleService = new ProjectLifecycleService(db, {
+    projectAccess: accessService,
+    projectEvents: eventService,
+  });
   const membershipService = new ProjectMembershipService(db);
   const derivedOutputService = new DerivedOutputService(db, {
     projectEventLiveHub: options.projectEventLiveHub,
@@ -549,6 +620,159 @@ export async function registerProjectRoutes(
         return sendError(reply, 404, "project_not_found", `Project not found: ${access.project.id}`);
       }
       return reply.send(toProjectResponse({ ...row, role: access.role }));
+    } catch (error) {
+      return handleProjectRouteError(error, reply);
+    }
+  });
+
+  app.post("/projects", {
+    schema: {
+      tags: ["projects"],
+      summary: "Create a manual project",
+      body: createProjectBodyJsonSchema,
+      response: {
+        201: projectJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedBody = parseWithSchema(createProjectBodySchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    try {
+      const record = lifecycleService.create({
+        actor: buildLifecycleActor(request),
+        workspaceId: parsedBody.data.workspace_id ?? null,
+        name: parsedBody.data.name,
+        description: parsedBody.data.description ?? null,
+        settings: parsedBody.data.settings ?? null,
+      });
+      return reply.code(201).send(lifecycleProjectToResponse(record));
+    } catch (error) {
+      return handleProjectRouteError(error, reply);
+    }
+  });
+
+  app.patch("/projects/:id", {
+    schema: {
+      tags: ["projects"],
+      summary: "Update project metadata",
+      params: idParamsJsonSchema,
+      body: updateProjectBodyJsonSchema,
+      response: {
+        200: projectJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(projectIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+    const parsedBody = parseWithSchema(updateProjectBodySchema, request.body, reply);
+    if (!parsedBody.ok) return;
+
+    try {
+      const record = lifecycleService.update({
+        actor: buildLifecycleActor(request),
+        id: parsedParams.data.id,
+        name: parsedBody.data.name,
+        description: parsedBody.data.description,
+        settings: parsedBody.data.settings,
+      });
+      return reply.send(lifecycleProjectToResponse(record));
+    } catch (error) {
+      return handleProjectRouteError(error, reply);
+    }
+  });
+
+  app.post("/projects/:id/archive", {
+    schema: {
+      tags: ["projects"],
+      summary: "Archive a project",
+      params: idParamsJsonSchema,
+      response: {
+        200: projectJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(projectIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    try {
+      const record = lifecycleService.archive({
+        actor: buildLifecycleActor(request),
+        id: parsedParams.data.id,
+      });
+      return reply.send(lifecycleProjectToResponse(record));
+    } catch (error) {
+      return handleProjectRouteError(error, reply);
+    }
+  });
+
+  app.post("/projects/:id/restore", {
+    schema: {
+      tags: ["projects"],
+      summary: "Restore an archived project",
+      params: idParamsJsonSchema,
+      response: {
+        200: projectJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(projectIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+
+    try {
+      const record = lifecycleService.restore({
+        actor: buildLifecycleActor(request),
+        id: parsedParams.data.id,
+      });
+      return reply.send(lifecycleProjectToResponse(record));
+    } catch (error) {
+      return handleProjectRouteError(error, reply);
+    }
+  });
+
+  app.post("/projects/:id/duplicate", {
+    schema: {
+      tags: ["projects"],
+      summary: "Duplicate a project (metadata only)",
+      params: idParamsJsonSchema,
+      body: duplicateProjectBodyJsonSchema,
+      response: {
+        201: projectJsonSchema,
+        400: errorResponseJsonSchema,
+        403: errorResponseJsonSchema,
+        404: errorResponseJsonSchema,
+        409: errorResponseJsonSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const parsedParams = parseWithSchema(projectIdParamsSchema, request.params, reply);
+    if (!parsedParams.ok) return;
+    const parsedBody = parseWithSchema(duplicateProjectBodySchema, request.body ?? {}, reply);
+    if (!parsedBody.ok) return;
+
+    try {
+      const record = lifecycleService.duplicate({
+        actor: buildLifecycleActor(request),
+        id: parsedParams.data.id,
+        name: parsedBody.data.name,
+      });
+      return reply.code(201).send(lifecycleProjectToResponse(record));
     } catch (error) {
       return handleProjectRouteError(error, reply);
     }
@@ -1571,6 +1795,33 @@ function toProjectResponse(row: ProjectListEntry) {
   };
 }
 
+function buildLifecycleActor(request: FastifyRequest): ProjectLifecycleActor {
+  const auth = getRequestAuthContext(request);
+  return {
+    actorType: auth.actorType,
+    actorAccountId: auth.actorAccountId,
+    actorClientId: auth.actorClientId,
+    source: "api",
+    requestId: requestCorrelationId(request),
+  };
+}
+
+function lifecycleProjectToResponse(record: ProjectLifecycleRecord) {
+  return toProjectResponse({
+    id: record.id,
+    accountId: record.accountId,
+    workspaceId: record.workspaceId,
+    name: record.name,
+    description: record.description,
+    kind: record.kind,
+    status: record.status,
+    settingsOverrideJson: record.settingsOverrideJson,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    role: "owner",
+  });
+}
+
 function toProjectSessionResponse(row: typeof sessions.$inferSelect) {
   return {
     id: row.id,
@@ -1655,6 +1906,7 @@ function handleProjectRouteError(error: unknown, reply: FastifyReply) {
     || error instanceof ProjectMembershipServiceError
     || error instanceof DerivedOutputServiceError
     || error instanceof ProjectInboxServiceError
+    || error instanceof ProjectLifecycleServiceError
   ) {
     if (error instanceof ProjectAccessServiceError && error.code === "project_access_denied" && error.denyReason === "not_a_member") {
       return sendError(reply, 404, "project_not_found", "Project not found");
