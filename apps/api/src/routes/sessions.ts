@@ -19,6 +19,7 @@ import {
   hasAnyGreeting,
   normalizeSessionCharacterSnapshot,
   parseSessionCharacterSnapshot,
+  readToolPresetKeyFromCharacterSnapshot,
   sessionCharacterSnapshotSchema as characterSnapshotSchema,
   type SessionCharacterSnapshot,
 } from "../lib/character-snapshot.js";
@@ -85,7 +86,9 @@ const createSessionSchema = z.object({
   model_name: z.string().trim().min(1).optional(),
   model_params: z.unknown().optional(),
   prompt_mode: promptModeSchema.optional(),
-  metadata: z.unknown().optional()
+  metadata: z.unknown().optional(),
+  // SC2-10：会话工具策略预设 key（project 级）。null=解除预设绑定；缺省=从角色快照推导默认。
+  tool_preset_key: z.string().trim().min(1).nullable().optional()
 });
 
 const updateSessionSchema = createSessionSchema
@@ -152,6 +155,7 @@ const sessionBodyExample = {
     source: "demo",
     tags: ["beta", "docs"],
   },
+  tool_preset_key: null,
 } as const;
 
 const sessionExample = {
@@ -191,6 +195,7 @@ const sessionExample = {
     source: "demo",
     tags: ["beta", "docs"],
   },
+  tool_preset_key: null,
   created_at: 1735689600000,
   updated_at: 1735689660000,
 } as const;
@@ -261,6 +266,7 @@ const sessionBodyJsonSchema = {
     model_params: {},
     prompt_mode: { type: "string", enum: ["compat_strict", "compat_plus", "native"] },
     metadata: {},
+    tool_preset_key: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
   },
   examples: [sessionBodyExample],
   additionalProperties: false,
@@ -345,6 +351,7 @@ const sessionJsonSchema = {
     "model_params",
     "prompt_mode",
     "metadata",
+    "tool_preset_key",
     "created_at",
     "updated_at",
   ],
@@ -366,6 +373,7 @@ const sessionJsonSchema = {
     model_params: {},
     prompt_mode: { anyOf: [{ type: "string", enum: ["compat_strict", "compat_plus", "native"] }, { type: "null" }] },
     metadata: {},
+    tool_preset_key: { anyOf: [{ type: "string" }, { type: "null" }] },
     created_at: { type: "integer", minimum: 0 },
     updated_at: { type: "integer", minimum: 0 },
   },
@@ -886,6 +894,7 @@ function toSessionResponse(row: typeof sessions.$inferSelect) {
     model_params: parseJsonField(row.modelParamsJson),
     prompt_mode: row.promptMode,
     metadata: parseJsonField(row.metadataJson),
+    tool_preset_key: row.toolPresetKey,
     created_at: row.createdAt,
     updated_at: row.updatedAt
   };
@@ -1571,6 +1580,13 @@ export async function registerSessionRoutes(
         const greetingCandidates = getGreetingCandidates(snapshot);
         const tokenCounter = new SimpleTokenCounter();
 
+        // SC2-10：会话工具预设。显式入参优先；否则从角色快照 extensions.tavernheadless.toolPresetKey
+        // 推导（内置「资产管理助手」默认 asset-management）；均无则为 null（沿用原有工具策略）。
+        const resolvedToolPresetKey =
+          parsedBody.data.tool_preset_key !== undefined
+            ? parsedBody.data.tool_preset_key
+            : readToolPresetKeyFromCharacterSnapshot(snapshot);
+
         const [insertedSession] = tx
           .insert(sessions)
           .values({
@@ -1598,6 +1614,7 @@ export async function registerSessionRoutes(
             modelParamsJson: stringifyJsonField(parsedBody.data.model_params),
             promptMode: parsedBody.data.prompt_mode ?? null,
             metadataJson: stringifyJsonField(parsedBody.data.metadata ?? {}),
+            toolPresetKey: resolvedToolPresetKey,
             createdAt: now,
             updatedAt: now,
           })
@@ -2103,6 +2120,11 @@ export async function registerSessionRoutes(
 
     if (parsedBody.data.metadata !== undefined) {
       updates.metadataJson = stringifyJsonField(parsedBody.data.metadata);
+    }
+
+    // SC2-10：允许更新会话绑定的工具预设（null 解除绑定）。
+    if (parsedBody.data.tool_preset_key !== undefined) {
+      updates.toolPresetKey = parsedBody.data.tool_preset_key;
     }
 
     const shouldReplaceFloorUserBinding =

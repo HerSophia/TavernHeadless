@@ -14,6 +14,8 @@ import {
   projectAgentBindings,
   runtimeJobs,
 } from "../db/schema.js";
+import { GOVERNANCE_OPERATION_ACTIONS } from "./governance/operation-log-names.js";
+import { OperationLogService } from "./operation-log-service.js";
 
 export type ScopeIntegrityIssueSeverity = "error" | "warning";
 
@@ -57,11 +59,59 @@ export type ScopeIntegrityReport = {
   truncated: boolean;
 };
 
+export type ScopeIntegrityIssueCodeSummary = {
+  code: ScopeIntegrityIssueCode;
+  severity: ScopeIntegrityIssueSeverity;
+  total: number;
+  repairable: number;
+  unrepairable: number;
+};
+
+/**
+ * Account-aggregated scope drift summary. Powers the controlled
+ * `/scope-integrity/report` entry point (WP-A4) and gives WP-A3 a compact
+ * baseline signal: how many sessions still miss workspace/project scope and how
+ * much of the total drift is additively repairable.
+ */
+export type ScopeIntegritySummary = {
+  totalIssues: number;
+  repairableIssues: number;
+  unrepairableIssues: number;
+  truncated: boolean;
+  sessionsMissingWorkspaceId: number;
+  sessionsMissingProjectId: number;
+  byCode: ScopeIntegrityIssueCodeSummary[];
+};
+
+/**
+ * Audit actor for controlled scope-integrity operations (WP-A4). When present
+ * on a {@link ScopeIntegrityRepairInput} together with an `accountId`, the
+ * service writes a `scope_integrity.repair` / `scope_integrity.diagnose`
+ * operation-log entry (see {@link ScopeIntegrityService.repair}).
+ */
+export type ScopeIntegrityAuditActor = {
+  /** Operation-log `actor_type`, e.g. `"account"` (HTTP) or `"system"` (startup). */
+  actorType: string;
+  actorId?: string | null;
+  actorAccountId?: string | null;
+  actorClientId?: string | null;
+  /** Operation-log `source_type`, e.g. `"api"` or `"startup_repair"`. */
+  source?: string;
+  requestId?: string | null;
+};
+
 export type ScopeIntegrityRepairInput = {
   accountId?: string;
   projectId?: string;
   dryRun?: boolean;
   now?: number;
+  /**
+   * When provided together with `accountId`, a controlled operation writes an
+   * audit log: `scope_integrity.repair` for a real repair, or
+   * `scope_integrity.diagnose` for a dry-run preview. No log is written for a
+   * clean account (zero issues) to avoid startup / polling noise.
+   */
+  audit?: ScopeIntegrityAuditActor;
 };
 
 export type ScopeIntegrityRepairReport = {
@@ -70,6 +120,15 @@ export type ScopeIntegrityRepairReport = {
 };
 
 const DEFAULT_DIAGNOSE_LIMIT = 500;
+
+/** Groups issues by code into a `{ [code]: count }` map for audit metadata. */
+function countByCode(issues: ScopeIntegrityIssue[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const issue of issues) {
+    counts[issue.code] = (counts[issue.code] ?? 0) + 1;
+  }
+  return counts;
+}
 
 /**
  * Diagnoses and repairs cross-table scope drift.
@@ -80,7 +139,14 @@ const DEFAULT_DIAGNOSE_LIMIT = 500;
  * or contradictory `source_floor_id` / `source_session_id` references.
  */
 export class ScopeIntegrityService {
-  constructor(private readonly db: AppDb | DbExecutor) {}
+  private readonly operationLog: OperationLogService;
+
+  constructor(
+    private readonly db: AppDb | DbExecutor,
+    options: { operationLog?: OperationLogService } = {},
+  ) {
+    this.operationLog = options.operationLog ?? new OperationLogService(db);
+  }
 
   diagnose(input: ScopeIntegrityDiagnoseInput = {}): ScopeIntegrityReport {
     const limit = Math.max(1, Math.trunc(input.limit ?? DEFAULT_DIAGNOSE_LIMIT));
@@ -110,6 +176,63 @@ export class ScopeIntegrityService {
     return { issues, truncated };
   }
 
+  /**
+   * Aggregates {@link diagnose} output into per-code counts plus the headline
+   * session scope-drift figures. Read-only; safe to call on the request path.
+   */
+  summarize(input: ScopeIntegrityDiagnoseInput = {}): ScopeIntegritySummary {
+    const report = this.diagnose(input);
+    const byCodeMap = new Map<ScopeIntegrityIssueCode, ScopeIntegrityIssueCodeSummary>();
+    let repairableIssues = 0;
+    let unrepairableIssues = 0;
+    let sessionsMissingWorkspaceId = 0;
+    let sessionsMissingProjectId = 0;
+
+    for (const issue of report.issues) {
+      if (issue.repairable) {
+        repairableIssues += 1;
+      } else {
+        unrepairableIssues += 1;
+      }
+
+      if (issue.code === "session_workspace_missing") {
+        sessionsMissingWorkspaceId += 1;
+      } else if (issue.code === "session_project_missing") {
+        sessionsMissingProjectId += 1;
+      }
+
+      const existing = byCodeMap.get(issue.code);
+      if (existing) {
+        existing.total += 1;
+        if (issue.repairable) {
+          existing.repairable += 1;
+        } else {
+          existing.unrepairable += 1;
+        }
+      } else {
+        byCodeMap.set(issue.code, {
+          code: issue.code,
+          severity: issue.severity,
+          total: 1,
+          repairable: issue.repairable ? 1 : 0,
+          unrepairable: issue.repairable ? 0 : 1,
+        });
+      }
+    }
+
+    const byCode = Array.from(byCodeMap.values()).sort((a, b) => a.code.localeCompare(b.code));
+
+    return {
+      totalIssues: report.issues.length,
+      repairableIssues,
+      unrepairableIssues,
+      truncated: report.truncated,
+      sessionsMissingWorkspaceId,
+      sessionsMissingProjectId,
+      byCode,
+    };
+  }
+
   repair(input: ScopeIntegrityRepairInput = {}): ScopeIntegrityRepairReport {
     const now = input.now ?? Date.now();
     const dryRun = input.dryRun === true;
@@ -136,7 +259,62 @@ export class ScopeIntegrityService {
       }
     }
 
-    return { repaired, remaining };
+    const result = { repaired, remaining };
+    this.appendRepairAudit(input, dryRun, report, result, now);
+    return result;
+  }
+
+  /**
+   * Writes a controlled scope-integrity audit when the caller opts in via
+   * {@link ScopeIntegrityRepairInput.audit} and provides an `accountId`
+   * (required by the `operation_log.account_id` FK). A clean account (no issues
+   * found) is never audited, so startup / polling stays noise-free.
+   */
+  private appendRepairAudit(
+    input: ScopeIntegrityRepairInput,
+    dryRun: boolean,
+    report: ScopeIntegrityReport,
+    result: ScopeIntegrityRepairReport,
+    now: number,
+  ): void {
+    const audit = input.audit;
+    if (!audit || !input.accountId) {
+      return;
+    }
+    if (report.issues.length === 0) {
+      return;
+    }
+
+    const action = dryRun
+      ? GOVERNANCE_OPERATION_ACTIONS.scopeIntegrity.diagnose
+      : GOVERNANCE_OPERATION_ACTIONS.scopeIntegrity.repair;
+
+    this.operationLog.append({
+      accountId: input.accountId,
+      actorType: audit.actorType,
+      actorId: audit.actorId ?? audit.actorClientId ?? audit.actorAccountId ?? null,
+      actorAccountId: audit.actorAccountId ?? null,
+      actorClientId: audit.actorClientId ?? null,
+      sourceType: audit.source ?? "api",
+      requestId: audit.requestId ?? null,
+      action,
+      status: "succeeded",
+      result: "allowed",
+      permissionAction: action,
+      projectId: input.projectId ?? null,
+      targetType: "scope_integrity",
+      targetId: input.projectId ?? input.accountId,
+      metadata: {
+        dry_run: dryRun,
+        issues_found: report.issues.length,
+        truncated: report.truncated,
+        repaired_count: result.repaired.length,
+        remaining_count: result.remaining.length,
+        repaired_by_code: countByCode(result.repaired),
+        remaining_by_code: countByCode(result.remaining),
+      },
+      createdAt: now,
+    });
   }
 
   private diagnoseSessions(input: ScopeIntegrityDiagnoseInput): ScopeIntegrityIssue[] {

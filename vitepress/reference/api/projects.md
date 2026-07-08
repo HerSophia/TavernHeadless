@@ -4,12 +4,13 @@ outline: [2, 3]
 
 # Projects（项目基础接口）
 
-这一页只讲 Project 的基础读取面和成员管理面：列出 Project、读取详情、列出会话、查询事件、订阅事件流、维护成员。
+这一页讲 Project 的生命周期写入面（创建 / 更新 / 归档 / 恢复 / 复制）、基础读取面和成员管理面：创建与维护 Project、列出 Project、读取详情、列出会话、查询事件、订阅事件流、维护成员。
 
 Project 级的派生结果、收件箱、Agent 启用和设置覆盖各有自己的页面，请从[总览](./workspace-project)进入。
 
 ## 什么时候需要看这页
 
+- 你要创建、更新、归档、恢复或复制一个 `manual` Project。
 - 你要列出当前账号可访问的 Project。
 - 你要查看某个 Project 下有哪些会话。
 - 你要按顺序查询 Project Event，或用 SSE 持续订阅。
@@ -177,6 +178,132 @@ GET /projects/:id
 | `409` | `project_archived` | Project 已归档 |
 
 非成员访问时统一返回 `404 project_not_found`，不暴露资源存在性。
+
+## 创建 Project
+
+```http
+POST /projects
+```
+
+创建一个 `manual` Project，归属当前调用方账号，并自动写入一条 owner 成员记录。创建会记录 `project.create` 操作日志，并向 Project 发出 `project.lifecycle.created` 事件。
+
+`session_default` Project 由服务端在创建 Session 时自动生成，不通过这个接口创建。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 是 | Project 名称，1–200 字符，首尾空白会被去除 |
+| `workspace_id` | string | 否 | 目标 Workspace。省略时落在当前账号的默认 Workspace |
+| `description` | string \| null | 否 | 描述，最长 2000 字符 |
+| `settings` | object \| null | 否 | Project 级设置覆盖，原样存储。审计日志只记录脱敏摘要 |
+
+### 请求示例
+
+```bash
+curl -X POST http://localhost:3000/projects \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "Research Container",
+    "description": "candidate drafts",
+    "settings": { "model": "gpt" }
+  }'
+```
+
+### 响应 `201`
+
+直接返回 [Project](#project) 对象，`kind` 为 `manual`，`role` 为 `owner`。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `project_name_required` | `name` 为空 |
+| `404` | `workspace_not_found` | 指定的 `workspace_id` 不存在或不属于当前账号 |
+| `409` | `workspace_archived` | 目标 Workspace 已归档 |
+
+## 更新 Project
+
+```http
+PATCH /projects/:id
+```
+
+需要 `project.manage_settings` 权限（owner）。只更新请求体中出现的字段，至少要提供一个。记录 `project.update` 操作日志并发出 `project.lifecycle.updated` 事件。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 否 | 新名称，1–200 字符 |
+| `description` | string \| null | 否 | 新描述。传 `null` 清空 |
+| `settings` | object \| null | 否 | 覆盖设置。传 `null` 清空为 `{}` |
+
+三个字段全部省略时返回 `400`。
+
+### 响应 `200`
+
+直接返回更新后的 [Project](#project) 对象。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `400` | `project_update_empty` | 没有提供任何可更新字段 |
+| `400` | `project_name_required` | `name` 传了但为空 |
+| `403` | `project_access_denied` | 当前角色不能改设置 |
+| `404` | `project_not_found` | Project 不存在或不可见 |
+| `409` | `project_archived` | Project 已归档 |
+
+## 归档与恢复 Project
+
+```http
+POST /projects/:id/archive
+POST /projects/:id/restore
+```
+
+需要 `project.write` 权限（owner）。归档把 `status` 置为 `archived` 并记录归档时间；恢复置回 `active`。归档会记录 `project.archive` 操作日志与 `project.lifecycle.archived` 事件，恢复对应 `project.restore` 与 `project.lifecycle.restored`。
+
+`session_default` Project 不能归档。归档事件在状态改写前写入，保证事件链不会因为归档而中断。
+
+### 响应 `200`
+
+直接返回操作后的 [Project](#project) 对象。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `403` | `project_access_denied` | 当前角色不能写 |
+| `404` | `project_not_found` | Project 不存在或不可见 |
+| `409` | `project_session_default_immutable` | `session_default` Project 不能归档 |
+| `409` | `project_not_archived` | 恢复一个并未归档的 Project |
+
+## 复制 Project
+
+```http
+POST /projects/:id/duplicate
+```
+
+需要 `project.manage_settings` 权限（owner）。只复制元数据（`name` / `description` / `settings`）到同一个 Workspace 下的新 `manual` Project，不复制 Session、事件和成员。新 Project 归当前调用方账号所有，并写入 owner 成员记录。记录 `project.duplicate` 操作日志并发出 `project.lifecycle.created` 事件。
+
+源 Project 即使已归档也可以复制，复制出的副本为 `active`。
+
+### 请求体
+
+| 字段 | 类型 | 必填 | 说明 |
+| ---- | ---- | ---- | ---- |
+| `name` | string | 否 | 副本名称。省略时用 `<源名称> (副本)` |
+
+### 响应 `201`
+
+直接返回新建的 [Project](#project) 对象。
+
+### 错误
+
+| 状态码 | `error.code` | 说明 |
+| ---- | ---- | ---- |
+| `403` | `project_access_denied` | 当前角色不能复制 |
+| `404` | `project_not_found` | 源 Project 不存在或不可见 |
 
 ## 列出 Project 下的会话
 

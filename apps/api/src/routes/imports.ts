@@ -53,6 +53,7 @@ import {
   REGEX_PLACEMENT,
   type CharacterProfile,
   type ImportedCharacterCard,
+  type STWorldBook,
   parseChatFile,
   groupMessagesIntoFloors,
   parseSendDate,
@@ -65,6 +66,7 @@ import {
   getPrimaryGreeting,
   hasAnyGreeting,
   parseSessionCharacterSnapshot,
+  readToolPresetKeyFromCharacterSnapshot,
   type SessionCharacterSnapshot,
 } from "../lib/character-snapshot.js";
 import { errorResponseJsonSchema, idParamsJsonSchema } from "./schemas/common.js";
@@ -221,7 +223,12 @@ const resourceDeleteQuerySchema = z.object({
 });
 
 
-const MAX_CHARACTER_IMPORT_BYTES = 200_000;
+// 角色卡 payload（标准化后的 TavernCard JSON，含描述 / 开场白 / 示例对话 / 内嵌世界书等）
+// 200KB 对真实 SillyTavern 角色卡偏小，这里放宽到 5MB，与聊天导入默认上限一致。
+const MAX_CHARACTER_IMPORT_BYTES = 5_000_000;
+// 角色卡导入路由的原始请求体上限：需高于 payload 校验值，给外层字段（title / create_session）留冗余，
+// 也避免 Fastify 默认 1MiB bodyLimit 抢先以通用 413 拒绝、绕过下面更友好的 import_payload_too_large 提示。
+const CHARACTER_IMPORT_BODY_LIMIT_BYTES = 8_000_000;
 const DEFAULT_CHAT_IMPORT_MAX_BYTES = 5_000_000;
 
 const resourceListItemExample = {
@@ -1316,6 +1323,7 @@ export async function registerImportRoutes(
    * 可选择仅返回标准化角色数据，或直接创建会话并写入 metadata。
    */
   app.post("/import/character", {
+    bodyLimit: CHARACTER_IMPORT_BODY_LIMIT_BYTES,
     schema: {
       tags: ["imports"],
       summary: "Import SillyTavern character card",
@@ -1367,16 +1375,24 @@ export async function registerImportRoutes(
     const snapshot = toSessionCharacterSnapshot(characterProfile);
     const sourceArtifact = toCharacterSourceArtifact(characterCard);
 
+    // 方案 B：把角色卡内嵌世界书（character_book）抽取为独立世界书资产，并从角色快照移除，
+    // 避免与后续绑定的世界书在运行时重复注入（解析失败 / 无条目时保留内嵌，回退旧行为）。
+    const embeddedWorldbook = extractEmbeddedWorldbook(snapshot.characterBook, characterProfile.core.name);
+    if (embeddedWorldbook) {
+      snapshot.characterBook = undefined;
+    }
+
     if (!parsed.data.create_session) {
       try {
         const operationId = nanoid();
-        const characterBinding = await executeResourceWriteOrThrow(() => createCharacterFromImport(db, request, {
+        const created = await executeResourceWriteOrThrow(() => createCharacterFromImport(db, request, {
           name: characterProfile.core.name,
           accountId: auth.accountId,
           workspaceId,
           snapshot,
           sourceArtifact,
           source: "sillytavern",
+          embeddedWorldbook,
           now: Date.now(),
           operationId,
           operationMetadata: {
@@ -1392,8 +1408,9 @@ export async function registerImportRoutes(
           data: {
             create_session: false,
             character: toCharacterResponse(characterProfile),
-            character_id: characterBinding.characterId,
-            character_version_id: characterBinding.characterVersionId,
+            character_id: created.characterBinding.characterId,
+            character_version_id: created.characterBinding.characterVersionId,
+            ...(created.worldbook ? { worldbook: toImportedWorldbookResponse(created.worldbook) } : {}),
           }
         });
       } catch (error) {
@@ -1414,6 +1431,7 @@ export async function registerImportRoutes(
         snapshot,
         sourceArtifact,
         source: "sillytavern",
+        embeddedWorldbook,
         title: parsed.data.title ?? characterProfile.core.name,
         now: Date.now(),
         operationId,
@@ -1430,7 +1448,8 @@ export async function registerImportRoutes(
         data: {
           create_session: true,
           character: toCharacterResponse(characterProfile),
-          session: imported.session
+          session: imported.session,
+          ...(imported.worldbook ? { worldbook: toImportedWorldbookResponse(imported.worldbook) } : {}),
         }
       });
     } catch (error) {
@@ -2272,6 +2291,15 @@ export async function registerImportRoutes(
     }
 
     const mutation = await executeResourceWrite(async () => {
+      // SC2-11：内置世界书不可删除（决策 D：可编辑、禁止删除）。两条删除路径前置统一守卫。
+      const [existing] = await db
+        .select({ source: worldbooks.source })
+        .from(worldbooks)
+        .where(and(eq(worldbooks.id, paramsParsed.data.id), eq(worldbooks.accountId, auth.accountId), worldbookWorkspaceClause(workspaceId)));
+      if (existing?.source === "builtin") {
+        return { kind: "error", statusCode: 409, code: "builtin_asset_immutable", message: "Built-in worldbooks cannot be deleted" };
+      }
+
       if (queryParsed.data.expected_version === undefined) {
         await db
           .delete(worldbooks)
@@ -2672,6 +2700,153 @@ function toCharacterSourceArtifact(card: ImportedCharacterCard): CharacterSource
   };
 }
 
+interface ImportedWorldbookBinding {
+  worldbookId: string;
+  worldbookVersionId: string;
+  worldbookName: string;
+  entryCount: number;
+}
+
+type ExtractedEmbeddedWorldbook = { stWorldBook: STWorldBook; name: string };
+
+/**
+ * 从角色卡内嵌的 character_book 抽取世界书。
+ * 无内容 / 无条目 / 解析失败时返回 null（此时保留内嵌，回退到旧行为）。
+ */
+function extractEmbeddedWorldbook(
+  characterBook: unknown,
+  characterName: string
+): ExtractedEmbeddedWorldbook | null {
+  if (!characterBook || typeof characterBook !== "object") {
+    return null;
+  }
+
+  const rawEntries = (characterBook as { entries?: unknown }).entries;
+  const hasEntries = Array.isArray(rawEntries)
+    ? rawEntries.length > 0
+    : rawEntries !== null && typeof rawEntries === "object"
+      ? Object.keys(rawEntries as Record<string, unknown>).length > 0
+      : false;
+  if (!hasEntries) {
+    return null;
+  }
+
+  const rawName = (characterBook as { name?: unknown }).name;
+  const name = typeof rawName === "string" && rawName.trim()
+    ? rawName.trim()
+    : `${characterName} Lorebook`;
+
+  try {
+    const stWorldBook = parseWorldBook(characterBook, name);
+    if (stWorldBook.entries.length === 0) {
+      return null;
+    }
+    return { stWorldBook, name };
+  } catch {
+    return null;
+  }
+}
+
+function toImportedWorldbookResponse(binding: ImportedWorldbookBinding) {
+  return {
+    id: binding.worldbookId,
+    version_id: binding.worldbookVersionId,
+    name: binding.worldbookName,
+    entry_count: binding.entryCount,
+    source: "character_book",
+  };
+}
+
+/**
+ * 在当前事务里创建世界书资产（供角色导入抽取内嵌世界书复用）。
+ */
+function createWorldbookAssetFromImportInternal(
+  db: any,
+  request: FastifyRequest,
+  input: {
+    name: string;
+    accountId: string;
+    workspaceId: string;
+    source: string;
+    stWorldBook: STWorldBook;
+    now: number;
+    operationId: string;
+    operationMetadata: Record<string, unknown>;
+  }
+): ImportedWorldbookBinding {
+  const worldbookId = nanoid();
+  const { entries } = input.stWorldBook;
+
+  const createdRow = {
+    id: worldbookId,
+    name: input.name,
+    source: input.source,
+    createdAt: input.now,
+    updatedAt: input.now,
+    version: 1,
+  };
+
+  db.insert(worldbooks).values({
+    id: worldbookId,
+    name: input.name,
+    source: input.source,
+    accountId: input.accountId,
+    workspaceId: input.workspaceId,
+    dataJson: JSON.stringify(buildPersistedWorldbookGlobalSettings(input.stWorldBook)),
+    createdAt: input.now,
+    updatedAt: input.now,
+  }).run();
+
+  if (entries.length > 0) {
+    db.insert(worldbookEntries).values(
+      entries.map((entry, index) => buildWorldbookEntryInsertValues(entry, {
+        id: nanoid(),
+        worldbookId,
+        uid: entry.uid ?? index,
+        createdAt: input.now,
+        updatedAt: input.now,
+      }))
+    ).run();
+  }
+
+  const version = new AssetVersionService(db).createWorldbookVersion(worldbookId, {
+    versionNo: 1,
+    createdByOperationId: input.operationId,
+    createdAt: input.now,
+  });
+
+  appendPromptAssetOperationLog(db, request, {
+    operationId: input.operationId,
+    accountId: input.accountId,
+    action: "import_worldbook",
+    assetKind: "worldbook",
+    assetId: worldbookId,
+    afterRef: toPromptAssetOperationRef("worldbook", createdRow, version),
+    metadata: input.operationMetadata,
+    createdAt: input.now,
+  });
+
+  return {
+    worldbookId,
+    worldbookVersionId: version.id,
+    worldbookName: input.name,
+    entryCount: entries.length,
+  };
+}
+
+function buildEmbeddedWorldbookMetadata(
+  characterId: string,
+  entryCount: number
+): Record<string, unknown> {
+  return {
+    route: "POST /import/character",
+    source: "sillytavern",
+    derived_from: "character_book",
+    character_id: characterId,
+    entry_count: entryCount,
+  };
+}
+
 function createCharacterFromImport(
   db: DatabaseConnection["db"],
   request: FastifyRequest,
@@ -2682,12 +2857,43 @@ function createCharacterFromImport(
     source: string;
     snapshot: SessionCharacterSnapshot;
     sourceArtifact: CharacterSourceArtifact;
+    embeddedWorldbook?: ExtractedEmbeddedWorldbook | null;
     now: number;
     operationId: string;
     operationMetadata: Record<string, unknown>;
   }
-): CharacterBindingPayload {
-  return db.transaction((tx) => createCharacterFromImportInternal(tx, request, input));
+): { characterBinding: CharacterBindingPayload; worldbook: ImportedWorldbookBinding | null } {
+  return db.transaction((tx) => {
+    const characterBinding = createCharacterFromImportInternal(tx, request, {
+      name: input.name,
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      source: input.source,
+      snapshot: input.snapshot,
+      sourceArtifact: input.sourceArtifact,
+      now: input.now,
+      operationId: input.operationId,
+      operationMetadata: input.operationMetadata,
+    });
+
+    const worldbook = input.embeddedWorldbook
+      ? createWorldbookAssetFromImportInternal(tx, request, {
+          name: input.embeddedWorldbook.name,
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          source: "sillytavern",
+          stWorldBook: input.embeddedWorldbook.stWorldBook,
+          now: input.now,
+          operationId: nanoid(),
+          operationMetadata: buildEmbeddedWorldbookMetadata(
+            characterBinding.characterId,
+            input.embeddedWorldbook.stWorldBook.entries.length
+          ),
+        })
+      : null;
+
+    return { characterBinding, worldbook };
+  });
 }
 
 function createCharacterWithSessionFromImport(
@@ -2700,12 +2906,13 @@ function createCharacterWithSessionFromImport(
     source: string;
     snapshot: SessionCharacterSnapshot;
     sourceArtifact: CharacterSourceArtifact;
+    embeddedWorldbook?: ExtractedEmbeddedWorldbook | null;
     title: string;
     now: number;
     operationId: string;
     operationMetadata: Record<string, unknown>;
   }
-): { characterBinding: CharacterBindingPayload; session: ImportedSessionResponse } {
+): { characterBinding: CharacterBindingPayload; session: ImportedSessionResponse; worldbook: ImportedWorldbookBinding | null } {
   return db.transaction((tx) => {
     const characterBinding = createCharacterFromImportInternal(tx, request, {
       name: input.name,
@@ -2720,11 +2927,33 @@ function createCharacterWithSessionFromImport(
       appendOperationLog: false,
     });
 
+    const worldbook = input.embeddedWorldbook
+      ? createWorldbookAssetFromImportInternal(tx, request, {
+          name: input.embeddedWorldbook.name,
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          source: "sillytavern",
+          stWorldBook: input.embeddedWorldbook.stWorldBook,
+          now: input.now,
+          operationId: nanoid(),
+          operationMetadata: buildEmbeddedWorldbookMetadata(
+            characterBinding.characterId,
+            input.embeddedWorldbook.stWorldBook.entries.length
+          ),
+        })
+      : null;
+
     const session = createSessionFromCharacterImportInternal(tx, {
       title: input.title,
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       characterBinding,
+      worldbookBinding: worldbook
+        ? { worldbookProfileId: worldbook.worldbookId, worldbookVersionId: worldbook.worldbookVersionId }
+        : null,
+      // SC2-10（批次四）：角色卡若在扩展字段声明工具策略预设（如「资产管理助手」= asset-management），
+      // 建会话时一并绑定，供运行时按预设生成工具策略 overlay。
+      toolPresetKey: readToolPresetKeyFromCharacterSnapshot(input.snapshot),
       now: input.now
     });
 
@@ -2744,7 +2973,7 @@ function createCharacterWithSessionFromImport(
       createdAt: input.now,
     });
 
-    return { characterBinding, session };
+    return { characterBinding, session, worldbook };
   });
 }
 
@@ -2826,7 +3055,17 @@ function createCharacterFromImportInternal(
 
 function createSessionFromCharacterImportInternal(
   db: any,
-  input: { title: string; accountId: string; workspaceId: string; characterBinding: CharacterBindingPayload; now: number }
+  input: {
+    title: string;
+    accountId: string;
+    workspaceId: string;
+    characterBinding: CharacterBindingPayload;
+    // 方案 B：角色卡内嵌世界书被抽取为独立资产后，在建会话时绑定给会话（运行时按 worldbookProfileId 注入）。
+    worldbookBinding?: { worldbookProfileId: string; worldbookVersionId: string } | null;
+    // SC2-10（批次四）：会话绑定的工具策略预设 key；为空则沿用原有工具策略。
+    toolPresetKey?: string | null;
+    now: number;
+  }
 ): ImportedSessionResponse {
   const sessionId = nanoid();
 
@@ -2842,11 +3081,15 @@ function createSessionFromCharacterImportInternal(
     characterSyncPolicy: "pin",
     presetId: null,
     regexProfileId: null,
-    worldbookProfileId: null,
+    // 绑定抽取出的独立世界书；deepBinding 保持默认 false，会话跟随该世界书最新版本。
+    worldbookProfileId: input.worldbookBinding?.worldbookProfileId ?? null,
+    worldbookVersionId: input.worldbookBinding?.worldbookVersionId ?? null,
     modelProvider: null,
     modelName: null,
     modelParamsJson: null,
     metadataJson: stringifyJsonField({}),
+    // SC2-10（批次四）：写入会话绑定的工具策略预设 key（为空即不启用预设 overlay）。
+    toolPresetKey: input.toolPresetKey ?? null,
     createdAt: input.now,
     updatedAt: input.now
   }).run();

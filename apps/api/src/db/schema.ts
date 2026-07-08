@@ -20,10 +20,11 @@ export const workspaces = sqliteTable(
     id: text("id").primaryKey(),
     accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
-    kind: text("kind", { enum: ["default"] }).notNull().default("default"),
+    kind: text("kind", { enum: ["default", "manual"] }).notNull().default("default"),
     isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
     status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
     settingsJson: text("settings_json").notNull().default("{}"),
+    archivedAt: integer("archived_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -46,6 +47,7 @@ export const projects = sqliteTable(
     kind: text("kind", { enum: ["session_default", "manual"] }).notNull().default("session_default"),
     status: text("status", { enum: ["active", "archived"] }).notNull().default("active"),
     settingsOverrideJson: text("settings_override_json").notNull().default("{}"),
+    archivedAt: integer("archived_at"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -303,6 +305,9 @@ export const sessions = sqliteTable(
     modelParamsJson: text("model_params_json"),
     promptMode: text("prompt_mode", { enum: ["compat_strict", "compat_plus", "native"] }),
     metadataJson: text("metadata_json"),
+    // SC2-10（批次四）：会话绑定的工具策略预设 key（project 级预设）。
+    // nullable —— 为 NULL 时沿用原有工具策略解析，不启用预设 overlay（存量会话完全惰性）。
+    toolPresetKey: text("tool_preset_key"),
     createdAt: integer("created_at").notNull(),
     updatedAt: integer("updated_at").notNull(),
   },
@@ -1788,6 +1793,73 @@ export const projectToolPolicyOverrides = sqliteTable(
       table.workspaceId,
       table.status,
       table.createdAt,
+    ),
+  })
+);
+
+/**
+ * 工具策略预设表（SC2-10 / 批次四）。
+ *
+ * 一个「工具策略预设」= 一组命名的「哪些工具可用 + 每个工具 auto/confirm」配置，供不同用途的
+ * 会话套用（如 `regular-chat` 常规聊天、`asset-management` 资产管理）。
+ *
+ * 内置预设（`regular-chat` / `asset-management`）的**默认值定义在代码中**（`tool-policy-preset-service.ts`），
+ * 因此新项目天然可用、无需 seed 行；本表仅存两类持久数据：
+ * - `kind="builtin"`：用户对内置预设的**覆盖**（编辑后落一行，reset 即删除该行回到代码默认）；
+ * - `kind="custom"`：用户自定义预设（完整配置）。
+ *
+ * `config_json` 存 { enabledTools: string[], decisions: Record<toolName, "auto"|"confirm">,
+ * maxCallsPerTurn?: number, allowIrreversible?: boolean }。项目级作用域（决策 A）。
+ */
+export const toolPolicyPresets = sqliteTable(
+  "tool_policy_preset",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    presetKey: text("preset_key").notNull(),
+    kind: text("kind", { enum: ["builtin", "custom"] }).notNull().default("custom"),
+    displayName: text("display_name").notNull().default(""),
+    configJson: text("config_json").notNull().default("{}"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    projectPresetUnique: uniqueIndex("tool_policy_preset_project_key_uq").on(
+      table.projectId,
+      table.presetKey,
+    ),
+    workspaceIdx: index("tool_policy_preset_workspace_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  })
+);
+
+/**
+ * `session_todo_list` — 会话级待办事项清单（SC2-12 / 批次四）。
+ *
+ * 每个会话最多一行（`session_id` 唯一）。TODO 由「待办事项工具」（TodoToolProvider）
+ * 读写，也在会话详情响应中回显，供主聊天顶部的待办摘要卡渲染。决策 E：TODO 落会话
+ * 状态命名空间，不进入变量 page/floor 沙盒生命周期——直接持久化，随会话删除级联清理。
+ */
+export const sessionTodoLists = sqliteTable(
+  "session_todo_list",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+    itemsJson: text("items_json").notNull().default("[]"),
+    revision: integer("revision").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => ({
+    sessionUnique: uniqueIndex("session_todo_list_session_uq").on(table.sessionId),
+    accountUpdatedIdx: index("session_todo_list_account_updated_idx").on(
+      table.accountId,
+      table.updatedAt,
     ),
   })
 );

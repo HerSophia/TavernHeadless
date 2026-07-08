@@ -112,9 +112,13 @@ export class ProjectAccessService {
     return this.resolveProjectAccessForActor(legacyAccountActor(actorAccountId), projectId);
   }
 
-  resolveProjectAccessForActor(actor: ProjectActorInput, projectId: string): ProjectAccess {
+  resolveProjectAccessForActor(
+    actor: ProjectActorInput,
+    projectId: string,
+    options: { allowArchived?: boolean } = {},
+  ): ProjectAccess {
     const normalizedProjectId = requireNonEmpty(projectId, "projectId");
-    const project = this.loadActiveProject(normalizedProjectId);
+    const project = this.loadProject(normalizedProjectId, options.allowArchived === true);
     const role = this.resolveRoleForActor(actor, project);
     if (!role) {
       throw new ProjectAccessServiceError(
@@ -139,8 +143,9 @@ export class ProjectAccessService {
     actor: ProjectActorInput,
     projectId: string,
     action: ProjectAction,
+    options: { allowArchived?: boolean } = {},
   ): ProjectAccess {
-    const access = this.resolveProjectAccessForActor(actor, projectId);
+    const access = this.resolveProjectAccessForActor(actor, projectId, options);
     if (!canPerformProjectAction(access.role, action)) {
       throw new ProjectAccessServiceError(
         403,
@@ -416,6 +421,10 @@ export class ProjectAccessService {
   }
 
   private loadActiveProject(projectId: string): ProjectAccessProject {
+    return this.loadProject(projectId, false);
+  }
+
+  private loadProject(projectId: string, allowArchived: boolean): ProjectAccessProject {
     const row = this.db
       .select({
         id: projects.id,
@@ -436,7 +445,7 @@ export class ProjectAccessService {
       );
     }
 
-    if (row.status === "archived") {
+    if (!allowArchived && row.status === "archived") {
       throw new ProjectAccessServiceError(
         409,
         "project_archived",

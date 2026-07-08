@@ -890,6 +890,14 @@ export async function registerCharacterRoutes(
         onMissing: () => new ResourceWriteRouteError(404, "not_found", "Character not found"),
         onRevisionConflict: createCharacterRevisionConflictError,
         mutate: ({ tx, row }) => {
+          // SC2-11：内置资产不可删除（决策 D：可编辑、禁止删除）。
+          if (row.source === "builtin") {
+            throw new ResourceWriteRouteError(
+              409,
+              "builtin_asset_immutable",
+              "Built-in characters cannot be deleted",
+            );
+          }
           if (row.status === "deleted") {
             return {
               id: row.id,
